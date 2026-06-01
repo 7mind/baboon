@@ -17,6 +17,7 @@ fn main() {
 
     let mut host = "127.0.0.1".to_string();
     let mut port: u16 = 8080;
+    let mut codec = client::CodecSelector::Both;
 
     let mut i = 2;
     while i < args.len() {
@@ -29,6 +30,15 @@ fn main() {
                 i += 1;
                 port = args[i].parse().expect("Invalid port number");
             }
+            "--codec" => {
+                i += 1;
+                codec = match args[i].as_str() {
+                    "json" => client::CodecSelector::Json,
+                    "ueba" => client::CodecSelector::Ueba,
+                    "both" => client::CodecSelector::Both,
+                    other => panic!("Invalid --codec value: {}. Use 'json', 'ueba', or 'both'.", other),
+                };
+            }
             other => panic!("Unknown argument: {}", other),
         }
         i += 1;
@@ -36,7 +46,7 @@ fn main() {
 
     match mode.as_str() {
         "server" => server::start(&host, port),
-        "client" => client::run(&host, port),
+        "client" => client::run(&host, port, codec),
         other => panic!("Unknown mode: {}. Use 'server' or 'client'.", other),
     }
 }

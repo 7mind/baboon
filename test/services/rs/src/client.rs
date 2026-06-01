@@ -26,9 +26,22 @@ fn post_bytes(host: &str, port: u16, path: &str, body: &[u8]) -> Vec<u8> {
     buf
 }
 
-pub fn run(host: &str, port: u16) {
-    run_json(host, port);
-    run_ueba(host, port);
+#[derive(Clone, Copy)]
+pub enum CodecSelector {
+    Json,
+    Ueba,
+    Both,
+}
+
+pub fn run(host: &str, port: u16, codec: CodecSelector) {
+    match codec {
+        CodecSelector::Json => run_json(host, port),
+        CodecSelector::Ueba => run_ueba(host, port),
+        CodecSelector::Both => {
+            run_json(host, port);
+            run_ueba(host, port);
+        }
+    }
     println!("OK");
 }
 
