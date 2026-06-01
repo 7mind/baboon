@@ -38,12 +38,12 @@ Future<Uint8List> postBytes(
   return Uint8List.fromList(chunks);
 }
 
-Future<void> runClient(String host, int port) async {
+Future<void> runClient(String host, int port, [String codec = 'both']) async {
+  final runJson = codec == 'json' || codec == 'both';
+  final runUeba = codec == 'ueba' || codec == 'both';
+
   final client = HttpClient();
   try {
-    // Reset
-    await _post(client, host, port, '/reset', '');
-
     // When both codecs are active the generated PetStoreClient takes two
     // transports: a binary UEBA transport (first) and a JSON transport
     // (second). Bare method names (`addPet`) drive UEBA; `*Json` names drive
@@ -56,6 +56,10 @@ Future<void> runClient(String host, int port) async {
     );
 
     // ---- JSON scenario -----------------------------------------------------
+
+    if (runJson) {
+    // Reset
+    await _post(client, host, port, '/reset', '');
 
     // Add Buddy
     final addBuddyOut = await petStore.addPetJson(
@@ -89,11 +93,13 @@ Future<void> runClient(String host, int port) async {
     final list2Out = await petStore.listPetsJson(listpets.in_());
     check(list2Out.pets.length == 1, 'expected 1 pet, got ${list2Out.pets.length}');
     check(list2Out.pets[0].name == 'Buddy', 'expected remaining pet Buddy, got ${list2Out.pets[0].name}');
+    } // runJson
 
     // ---- UEBA scenario -----------------------------------------------------
     // Re-run the identical scenario over the binary UEBA transport (bare method
     // names) and assert identical results.
 
+    if (runUeba) {
     await _post(client, host, port, '/reset', '');
 
     // Add Buddy
@@ -128,6 +134,7 @@ Future<void> runClient(String host, int port) async {
     final uList2Out = await petStore.listPets(listpets.in_());
     check(uList2Out.pets.length == 1, 'ueba: expected 1 pet, got ${uList2Out.pets.length}');
     check(uList2Out.pets[0].name == 'Buddy', 'ueba: expected remaining pet Buddy, got ${uList2Out.pets[0].name}');
+    } // runUeba
 
     print('OK');
   } finally {
