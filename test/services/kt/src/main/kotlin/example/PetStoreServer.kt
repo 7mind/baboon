@@ -53,13 +53,21 @@ object PetStoreServer {
 
             val serviceName = parts[0]
             val methodName = parts[1]
-            val body = exchange.requestBody.bufferedReader().readText()
+            val contentType = exchange.requestHeaders.getFirst("Content-Type") ?: ""
 
             try {
                 val methodId = BaboonMethodId(serviceName, methodName)
-                val result = PetStoreWiring.invokeJson(methodId, body, impl, ctx)
-                exchange.responseHeaders.add("Content-Type", "application/json")
-                exchange.sendText(200, result)
+                if (contentType.startsWith("application/octet-stream")) {
+                    val requestBytes = exchange.requestBody.use { it.readBytes() }
+                    val resultBytes = PetStoreWiring.invokeUeba(methodId, requestBytes, impl, ctx)
+                    exchange.responseHeaders.add("Content-Type", "application/octet-stream")
+                    exchange.sendBytes(200, resultBytes)
+                } else {
+                    val body = exchange.requestBody.bufferedReader().readText()
+                    val result = PetStoreWiring.invokeJson(methodId, body, impl, ctx)
+                    exchange.responseHeaders.add("Content-Type", "application/json")
+                    exchange.sendText(200, result)
+                }
             } catch (e: Exception) {
                 exchange.sendText(500, e.message ?: "Internal Server Error")
             }
@@ -81,7 +89,10 @@ object PetStoreServer {
     }
 
     private fun HttpExchange.sendText(code: Int, body: String) {
-        val bytes = body.toByteArray(Charsets.UTF_8)
+        sendBytes(code, body.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun HttpExchange.sendBytes(code: Int, bytes: ByteArray) {
         sendResponseHeaders(code, bytes.size.toLong())
         responseBody.use { it.write(bytes) }
     }
