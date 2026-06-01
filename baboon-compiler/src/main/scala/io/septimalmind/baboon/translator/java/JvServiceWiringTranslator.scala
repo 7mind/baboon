@@ -9,6 +9,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 trait JvServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[JvValue]]
+  def translateClient(defn: DomainMember.User): Option[TextTree[JvValue]]
   def translateServiceRt(domain: Domain): Option[TextTree[JvValue]]
 }
 
@@ -219,6 +220,209 @@ object JvServiceWiringTranslator {
             else generateErrorsWiring(service)
           Some(methods)
         case _ => None
+      }
+    }
+
+    // ========== Client stub generation ==========
+    //
+    // Emits a `${Svc}Client` class holding host-supplied transport
+    // callbacks (one per active wire format) plus a baked
+    // BaboonCodecContext. Each service method encodes its input to the
+    // wire form, routes through the transport by (serviceName,
+    // methodName), and decodes the response. When the Java asyncServices
+    // flag is on, methods return CompletableFuture<T> and the transport
+    // is the async (CompletableFuture-returning) variant; otherwise the
+    // synchronous variant is used and methods return the bare type.
+
+    private def isAsync: Boolean = target.language.asyncServices
+
+    override def translateClient(defn: DomainMember.User): Option[TextTree[JvValue]] = {
+      defn.defn match {
+        case service: Typedef.Service =>
+          val svcName = service.id.name.name
+          val hasJson = hasActiveJsonCodecs(service)
+          val hasUeba = hasActiveUebaCodecs(service)
+          if (!hasJson && !hasUeba) return None
+
+          val clientMethods = service.methods.flatMap {
+            m =>
+              val inRef = trans.asJvRef(m.sig, domain, evo)
+
+              val uebaMethod = if (hasUeba) Some(generateClientUebaMethod(svcName, m, inRef)) else None
+              val jsonMethod = if (hasJson) Some(generateClientJsonMethod(svcName, m, inRef)) else None
+              uebaMethod.toList ++ jsonMethod.toList
+          }
+
+          if (clientMethods.isEmpty) return None
+
+          val fields = List(
+            if (hasUeba) Some(uebaTransportFieldDecl) else None,
+            if (hasJson) Some(jsonTransportFieldDecl) else None,
+            Some(q"private final $baboonCodecContext ctx;"),
+          ).flatten
+
+          val ctorParams = List(
+            if (hasUeba) Some(uebaTransportParam("transportUeba")) else None,
+            if (hasJson) Some(jsonTransportParam("transportJson")) else None,
+            Some(q"$baboonCodecContext ctx"),
+          ).flatten
+
+          val ctorAssigns = List(
+            if (hasUeba) Some(q"this.transportUeba = transportUeba;") else None,
+            if (hasJson) Some(q"this.transportJson = transportJson;") else None,
+            Some(q"this.ctx = ctx;"),
+          ).flatten
+
+          // Convenience constructor defaulting ctx to BaboonCodecContext.Default.
+          val convCtorParams = List(
+            if (hasUeba) Some(uebaTransportParam("transportUeba")) else None,
+            if (hasJson) Some(jsonTransportParam("transportJson")) else None,
+          ).flatten
+          val convCtorArgs = List(
+            if (hasUeba) Some(q"transportUeba") else None,
+            if (hasJson) Some(q"transportJson") else None,
+            Some(q"$baboonCodecContext.Default"),
+          ).flatten
+
+          val convCtor =
+            q"""public ${svcName}Client(${convCtorParams.join(", ")}) {
+               |  this(${convCtorArgs.join(", ")});
+               |}""".stripMargin
+
+          Some(
+            q"""public final class ${svcName}Client {
+               |  ${fields.join("\n").shift(2).trim}
+               |
+               |  public ${svcName}Client(${ctorParams.join(", ")}) {
+               |    ${ctorAssigns.join("\n").shift(4).trim}
+               |  }
+               |
+               |  ${convCtor.shift(2).trim}
+               |
+               |  ${clientMethods.join("\n\n").shift(2).trim}
+               |}""".stripMargin
+          )
+        case _ => None
+      }
+    }
+
+    private def uebaTransportType: TextTree[JvValue]   = if (isAsync) q"$baboonClientTransportUebaAsync" else q"$baboonClientTransportUebaSync"
+    private def jsonTransportType: TextTree[JvValue]    = if (isAsync) q"$baboonClientTransportJsonAsync" else q"$baboonClientTransportJsonSync"
+    private def uebaTransportFieldDecl: TextTree[JvValue] = q"private final $uebaTransportType transportUeba;"
+    private def jsonTransportFieldDecl: TextTree[JvValue] = q"private final $jsonTransportType transportJson;"
+    private def uebaTransportParam(name: String): TextTree[JvValue] = q"$uebaTransportType $name"
+    private def jsonTransportParam(name: String): TextTree[JvValue] = q"$jsonTransportType $name"
+
+    // Boxed return element type for a method (used inside CompletableFuture<...>
+    // and as the sync return type). void output maps to Void/void respectively.
+    private def clientReturnType(out: Option[TypeRef]): TextTree[JvValue] = {
+      out match {
+        case Some(outRef) =>
+          val rendered = trans.asJvRef(outRef, domain, evo)
+          if (isAsync) q"$completableFuture<$rendered>" else rendered
+        case None =>
+          if (isAsync) q"$completableFuture<Void>" else q"void"
+      }
+    }
+
+    private def generateClientUebaMethod(
+      svcName: String,
+      m: Typedef.MethodDef,
+      inRef: TextTree[JvValue],
+    ): TextTree[JvValue] = {
+      val retType    = clientReturnType(m.out)
+      val methodName = m.name.name
+      val encodeIn   = uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"bw", q"arg")
+
+      // Encode argument into a byte[] payload.
+      val encodeBlock =
+        q"""var oms = new $byteArrayOutputStream();
+           |var bw = new $binaryOutput(oms);
+           |$encodeIn
+           |bw.flush();
+           |byte[] payload = oms.toByteArray();""".stripMargin
+
+      if (isAsync) {
+        val decodeBody = m.out match {
+          case Some(outRef) =>
+            val decodeExpr = uebaDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"br")
+            q"""var ims = new $byteArrayInputStream(resp);
+               |var br = new $binaryInput(ims);
+               |try {
+               |  return $decodeExpr;
+               |} catch (Exception ex) {
+               |  throw new RuntimeException(ex);
+               |}""".stripMargin
+          case None => q"return null;"
+        }
+        q"""public $retType $methodName($inRef arg) {
+           |  ${encodeBlock.shift(2).trim}
+           |  return transportUeba.apply("$svcName", "$methodName", payload).thenApply(resp -> {
+           |    ${decodeBody.shift(4).trim}
+           |  });
+           |}""".stripMargin
+      } else {
+        val decodeBody = m.out match {
+          case Some(outRef) =>
+            val decodeExpr = uebaDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"br")
+            q"""var ims = new $byteArrayInputStream(resp);
+               |var br = new $binaryInput(ims);
+               |return $decodeExpr;""".stripMargin
+          case None => q""
+        }
+        q"""public $retType $methodName($inRef arg) throws Exception {
+           |  ${encodeBlock.shift(2).trim}
+           |  byte[] resp = transportUeba.apply("$svcName", "$methodName", payload);
+           |  ${decodeBody.shift(2).trim}
+           |}""".stripMargin
+      }
+    }
+
+    private def generateClientJsonMethod(
+      svcName: String,
+      m: Typedef.MethodDef,
+      inRef: TextTree[JvValue],
+    ): TextTree[JvValue] = {
+      val retType    = clientReturnType(m.out)
+      val methodName = s"${m.name.name}Json"
+      val routeName  = m.name.name
+      val encodeIn   = jsonEncodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"arg")
+
+      val encodeBlock = q"String payload = $encodeIn.toString();"
+
+      if (isAsync) {
+        val decodeBody = m.out match {
+          case Some(outRef) =>
+            val decodeExpr = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"wire")
+            q"""try {
+               |  var mapper = new $objectMapper();
+               |  $jsonNode wire = mapper.readTree(resp);
+               |  return $decodeExpr;
+               |} catch (Exception ex) {
+               |  throw new RuntimeException(ex);
+               |}""".stripMargin
+          case None => q"return null;"
+        }
+        q"""public $retType $methodName($inRef arg) {
+           |  $encodeBlock
+           |  return transportJson.apply("$svcName", "$routeName", payload).thenApply(resp -> {
+           |    ${decodeBody.shift(4).trim}
+           |  });
+           |}""".stripMargin
+      } else {
+        val decodeBody = m.out match {
+          case Some(outRef) =>
+            val decodeExpr = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"wire")
+            q"""var mapper = new $objectMapper();
+               |$jsonNode wire = mapper.readTree(resp);
+               |return $decodeExpr;""".stripMargin
+          case None => q""
+        }
+        q"""public $retType $methodName($inRef arg) throws Exception {
+           |  $encodeBlock
+           |  String resp = transportJson.apply("$svcName", "$routeName", payload);
+           |  ${decodeBody.shift(2).trim}
+           |}""".stripMargin
       }
     }
 

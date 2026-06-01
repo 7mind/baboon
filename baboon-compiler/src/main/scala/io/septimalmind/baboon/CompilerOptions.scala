@@ -297,6 +297,7 @@ final case class JvOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  asyncServices: Boolean,
 )
 
 final case class DtOptions(

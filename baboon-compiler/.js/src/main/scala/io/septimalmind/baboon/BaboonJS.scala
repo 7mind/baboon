@@ -579,6 +579,7 @@ object BaboonJS {
                 serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
+                asyncServices               = opts.asyncServices.getOrElse(false),
               ),
             )
           case "dart" =>

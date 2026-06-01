@@ -50,6 +50,7 @@ abstract class IdentifierJavaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
       generateDomainFacade        = false,
+      asyncServices               = false,
     ),
   )
 

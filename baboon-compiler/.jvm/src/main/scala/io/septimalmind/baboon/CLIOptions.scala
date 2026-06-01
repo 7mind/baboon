@@ -342,6 +342,8 @@ case class JvCLIOptions(
   generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate async RPC client methods returning CompletableFuture (default: false)")
+  jvAsyncServices: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class DtCLIOptions(

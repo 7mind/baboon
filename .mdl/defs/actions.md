@@ -404,6 +404,7 @@ dep action.smoke
 dep action.test-editors
 dep action.test-acceptance
 dep action.test-service-acceptance
+dep action.test-jv-client-roundtrip
 
 ret success:bool=true
 ```
