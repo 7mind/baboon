@@ -221,4 +221,55 @@ class HktWiringTests extends AnyFlatSpec with Matchers {
       case MyBi.Bad(err) => fail(s"Expected Good, got Bad($err)")
     }
   }
+
+  // ==================== Client round-trip (HKT result container) ====================
+  // The generated ${Svc}Client is generic over the user's HKT F and decodes
+  // the transport response into F[BaboonWiringError, Out] via the same
+  // IBaboonServiceRt the server wiring uses. The in-process transport routes
+  // into ${Svc}Wiring and unwraps the MyBi.Good success wire.
+
+  private def jsonTransport(impl: testpkg.pkg0.I1[MyBi]): (String, String, String) => String =
+    (svc, method, data) =>
+      testpkg.pkg0.I1Wiring.invokeJson(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+        case MyBi.Good(wire) => wire
+        case MyBi.Bad(err)   => throw new BaboonWiringException(err.asInstanceOf[BaboonWiringError])
+      }
+
+  private def uebaTransport(impl: testpkg.pkg0.I1[MyBi]): (String, String, Array[Byte]) => Array[Byte] =
+    (svc, method, data) =>
+      testpkg.pkg0.I1Wiring.invokeUeba(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+        case MyBi.Good(wire) => wire
+        case MyBi.Bad(err)   => throw new BaboonWiringException(err.asInstanceOf[BaboonWiringError])
+      }
+
+  "I1Client.testCallJson" should "round-trip into MyBi.Good" in {
+    val impl   = new MockI1Hkt()
+    val client = new testpkg.pkg0.I1Client[MyBi](uebaTransport(impl), jsonTransport(impl), rt, ctx)
+
+    client.testCallJson(testpkg.pkg0.i1.testcall.In()) match {
+      case MyBi.Good(out) => out.i00 shouldBe 42
+      case MyBi.Bad(err)  => fail(s"Expected Good, got Bad($err)")
+    }
+  }
+
+  "I1Client.testCall (UEBA)" should "round-trip into MyBi.Good" in {
+    val impl   = new MockI1Hkt()
+    val client = new testpkg.pkg0.I1Client[MyBi](uebaTransport(impl), jsonTransport(impl), rt, ctx)
+
+    client.testCall(testpkg.pkg0.i1.testcall.In()) match {
+      case MyBi.Good(out) => out.i00 shouldBe 42
+      case MyBi.Bad(err)  => fail(s"Expected Good, got Bad($err)")
+    }
+  }
+
+  "I1Client" should "surface a DecoderFailed (MyBi.Bad) when the transport returns garbage" in {
+    val impl   = new MockI1Hkt()
+    val badTransport: (String, String, String) => String = (_, _, _) => "not valid json!!"
+    val client = new testpkg.pkg0.I1Client[MyBi](uebaTransport(impl), badTransport, rt, ctx)
+
+    client.testCallJson(testpkg.pkg0.i1.testcall.In()) match {
+      case MyBi.Bad(err) => err shouldBe a[BaboonWiringError.DecoderFailed]
+      case MyBi.Good(_)  => fail("Expected Bad(DecoderFailed)")
+    }
+  }
 }

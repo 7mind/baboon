@@ -221,4 +221,43 @@ class ResultWiringTests extends AnyFlatSpec with Matchers {
       case Result.Failure(err) => fail(s"Expected Success, got Failure($err)")
     }
   }
+
+  // ==================== Client round-trip (concrete Result container) ====================
+  // The generated ${Svc}Client decodes the transport response into
+  // Result[Out, BaboonWiringError] via the same IBaboonServiceRt the server
+  // wiring uses. The container has no HKT, so the client class is not generic.
+
+  private def jsonTransport(impl: testpkg.pkg0.I1): (String, String, String) => String =
+    (svc, method, data) =>
+      testpkg.pkg0.I1Wiring.invokeJson(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+        case Result.Success(wire) => wire
+        case Result.Failure(err)  => throw new BaboonWiringException(err.asInstanceOf[BaboonWiringError])
+      }
+
+  private def uebaTransport(impl: testpkg.pkg0.I1): (String, String, Array[Byte]) => Array[Byte] =
+    (svc, method, data) =>
+      testpkg.pkg0.I1Wiring.invokeUeba(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+        case Result.Success(wire) => wire
+        case Result.Failure(err)  => throw new BaboonWiringException(err.asInstanceOf[BaboonWiringError])
+      }
+
+  "I1Client.testCallJson" should "round-trip into Result.Success" in {
+    val impl   = new MockI1Result()
+    val client = new testpkg.pkg0.I1Client(uebaTransport(impl), jsonTransport(impl), rt, ctx)
+
+    client.testCallJson(testpkg.pkg0.i1.testcall.In()) match {
+      case Result.Success(out) => out.i00 shouldBe 42
+      case Result.Failure(err) => fail(s"Expected Success, got Failure($err)")
+    }
+  }
+
+  "I1Client.testCall (UEBA)" should "round-trip into Result.Success" in {
+    val impl   = new MockI1Result()
+    val client = new testpkg.pkg0.I1Client(uebaTransport(impl), jsonTransport(impl), rt, ctx)
+
+    client.testCall(testpkg.pkg0.i1.testcall.In()) match {
+      case Result.Success(out) => out.i00 shouldBe 42
+      case Result.Failure(err) => fail(s"Expected Success, got Failure($err)")
+    }
+  }
 }

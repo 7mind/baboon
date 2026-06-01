@@ -10,6 +10,8 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait ScServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[ScValue]]
 
+  def translateClient(defn: DomainMember.User): Option[TextTree[ScValue]]
+
   def translateServiceRt(domain: Domain): Option[TextTree[ScValue]]
 }
 
@@ -252,6 +254,165 @@ object ScServiceWiringTranslator {
             if (resolved.noErrors) generateNoErrorsWiring(service)
             else generateErrorsWiring(service)
           Some(methods)
+        case _ => None
+      }
+    }
+
+    // ========== Client stub generation ==========
+    //
+    // Emits a `${Svc}Client` class holding user-supplied transport callbacks.
+    // Each callback maps `(serviceName, methodName, wireData) => wireResponse`
+    // (String for JSON, Array[Byte] for UEBA). Per endpoint we emit a UEBA
+    // method (default name) and, when JSON codecs are active too, a
+    // `${method}Json` variant. The client encodes the input via the generated
+    // codec, calls the transport with the routing key `(svcName, methodName)`,
+    // then decodes the response into the endpoint's output type.
+    //
+    // The return type mirrors the server wiring's ServiceResult/HKT handling:
+    // in noErrors mode the method returns the bare output type; in errors mode
+    // it returns `F[BaboonWiringError, Out]` (the same result container the
+    // service trait uses, parameterised by the user's HKT or concrete result
+    // type), reusing the `rt: IBaboonServiceRt` runtime to lift the decoded
+    // value and to surface decode failures as `BaboonWiringError.DecoderFailed`.
+    override def translateClient(defn: DomainMember.User): Option[TextTree[ScValue]] = {
+      defn.defn match {
+        case service: Typedef.Service =>
+          val svcName = service.id.name.name
+          val hasJson = hasActiveJsonCodecs(service)
+          val hasUeba = hasActiveUebaCodecs(service)
+          if (!hasJson && !hasUeba) return None
+
+          val clientMethods = service.methods.flatMap {
+            m =>
+              val outRefOpt = m.out.map(o => trans.asScRef(o, domain, evo))
+              val outFq     = outRefOpt.map(renderFq).getOrElse("Unit")
+              val retType   = if (resolved.noErrors) outFq else ct(bweFq, outFq)
+
+              // The client does not take the abstract service-context param: that
+              // is a server-side concern (it is forwarded to the service impl).
+              // The client only threads the codec ctx (a class field).
+              val uebaMethod = if (hasUeba) {
+                val encodeIn = uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"bw", q"arg")
+                val body = m.out match {
+                  case Some(outRef) =>
+                    val decodeOut = uebaDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"br")
+                    if (resolved.noErrors) {
+                      q"""val oms = new $byteArrayOutputStream()
+                         |val bw = new $binaryOutput(oms)
+                         |$encodeIn
+                         |bw.flush()
+                         |val resp = transportUeba("$svcName", "${m.name.name}", oms.toByteArray)
+                         |val br = new $binaryInput(new java.io.ByteArrayInputStream(resp))
+                         |$decodeOut""".stripMargin
+                    } else {
+                      q"""val oms = new $byteArrayOutputStream()
+                         |val bw = new $binaryOutput(oms)
+                         |$encodeIn
+                         |bw.flush()
+                         |val resp = transportUeba("$svcName", "${m.name.name}", oms.toByteArray)
+                         |try {
+                         |  val br = new $binaryInput(new java.io.ByteArrayInputStream(resp))
+                         |  rt.pure[$bweFq, $outFq]($decodeOut)
+                         |} catch {
+                         |  case ex: Throwable =>
+                         |    rt.fail[$bweFq, $outFq]($bweFq.DecoderFailed($baboonMethodId("$svcName", "${m.name.name}"), ex))
+                         |}""".stripMargin
+                    }
+                  case None =>
+                    if (resolved.noErrors) {
+                      q"""val oms = new $byteArrayOutputStream()
+                         |val bw = new $binaryOutput(oms)
+                         |$encodeIn
+                         |bw.flush()
+                         |val _ = transportUeba("$svcName", "${m.name.name}", oms.toByteArray)
+                         |()""".stripMargin
+                    } else {
+                      q"""val oms = new $byteArrayOutputStream()
+                         |val bw = new $binaryOutput(oms)
+                         |$encodeIn
+                         |bw.flush()
+                         |val _ = transportUeba("$svcName", "${m.name.name}", oms.toByteArray)
+                         |rt.pure[$bweFq, Unit](())""".stripMargin
+                    }
+                }
+                Some(
+                  q"""def ${m.name.name}(arg: ${trans.asScRef(m.sig, domain, evo)}): $retType = {
+                     |  ${body.shift(2).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              val jsonMethod = if (hasJson) {
+                val encodeIn = jsonEncodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"arg")
+                val body = m.out match {
+                  case Some(outRef) =>
+                    val decodeOut = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"wire")
+                    if (resolved.noErrors) {
+                      q"""val encoded = $encodeIn.noSpaces
+                         |val resp = transportJson("$svcName", "${m.name.name}", encoded)
+                         |val wire = io.circe.parser.parse(resp).fold(throw _, identity)
+                         |$decodeOut""".stripMargin
+                    } else {
+                      q"""val encoded = $encodeIn.noSpaces
+                         |val resp = transportJson("$svcName", "${m.name.name}", encoded)
+                         |try {
+                         |  val wire = io.circe.parser.parse(resp).fold(throw _, identity)
+                         |  rt.pure[$bweFq, $outFq]($decodeOut)
+                         |} catch {
+                         |  case ex: Throwable =>
+                         |    rt.fail[$bweFq, $outFq]($bweFq.DecoderFailed($baboonMethodId("$svcName", "${m.name.name}"), ex))
+                         |}""".stripMargin
+                    }
+                  case None =>
+                    if (resolved.noErrors) {
+                      q"""val encoded = $encodeIn.noSpaces
+                         |val _ = transportJson("$svcName", "${m.name.name}", encoded)
+                         |()""".stripMargin
+                    } else {
+                      q"""val encoded = $encodeIn.noSpaces
+                         |val _ = transportJson("$svcName", "${m.name.name}", encoded)
+                         |rt.pure[$bweFq, Unit](())""".stripMargin
+                    }
+                }
+                Some(
+                  q"""def ${m.name.name}Json(arg: ${trans.asScRef(m.sig, domain, evo)}): $retType = {
+                     |  ${body.shift(2).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              uebaMethod.toList ++ jsonMethod.toList
+          }
+
+          if (clientMethods.isEmpty) return None
+
+          // Constructor fields, in a fixed order: transports first, then the
+          // result runtime (errors mode only). All are vals so methods can use
+          // them. The codec ctx is a defaulted val field.
+          val transportFields = List(
+            if (hasUeba) Some(q"transportUeba: (String, String, Array[Byte]) => Array[Byte]") else None,
+            if (hasJson) Some(q"transportJson: (String, String, String) => String") else None,
+          ).flatten
+
+          val rtField: Option[TextTree[ScValue]] =
+            if (resolved.noErrors) None
+            else Some(q"rt: $iBaboonServiceRtFq$rtTypeArg")
+
+          val ctorParams = (transportFields ++ rtField.toList).map(t => q"val $t")
+
+          val ctxField = q"val ctx: $baboonCodecContext = $baboonCodecContext.Default"
+
+          // The client is generic over the user's HKT only (the abstract
+          // service-context type param is server-side and unused here).
+          val clientTypeParam = resolved.hkt.map(h => s"[${h.name}${h.signature}]").getOrElse("")
+
+          Some(
+            q"""class ${svcName}Client$clientTypeParam(
+               |  ${(ctorParams :+ ctxField).join(",\n").shift(2).trim}
+               |) {
+               |  ${clientMethods.toSeq.join("\n\n").shift(2).trim}
+               |}""".stripMargin
+          )
         case _ => None
       }
     }
