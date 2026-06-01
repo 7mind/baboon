@@ -10,6 +10,10 @@ import 'generated/petstore/api/petstore/getpet/in.dart' as getpet;
 import 'generated/petstore/api/petstore/listpets/in.dart' as listpets;
 import 'generated/petstore/api/petstore/deletepet/in.dart' as deletepet;
 
+void check(bool cond, String msg) {
+  if (!cond) throw StateError(msg);
+}
+
 Future<String> _post(HttpClient client, String host, int port, String path, String body) async {
   final request = await client.postUrl(Uri.parse('http://$host:$port$path'));
   final bytes = utf8.encode(body);
@@ -58,33 +62,33 @@ Future<void> runClient(String host, int port) async {
       addpet.in_(name: 'Buddy', status: PetStatus.Available, tag: 'dog'),
     );
     final buddyId = addBuddyOut.pet.id;
-    assert(addBuddyOut.pet.name == 'Buddy', 'expected name Buddy, got ${addBuddyOut.pet.name}');
+    check(addBuddyOut.pet.name == 'Buddy', 'expected name Buddy, got ${addBuddyOut.pet.name}');
 
     // Add Whiskers
     final addWhiskersOut = await petStore.addPetJson(
       addpet.in_(name: 'Whiskers', status: PetStatus.Pending, tag: 'cat'),
     );
     final whiskersId = addWhiskersOut.pet.id;
-    assert(addWhiskersOut.pet.name == 'Whiskers', 'expected name Whiskers, got ${addWhiskersOut.pet.name}');
+    check(addWhiskersOut.pet.name == 'Whiskers', 'expected name Whiskers, got ${addWhiskersOut.pet.name}');
 
     // List pets (expect 2)
     final listOut = await petStore.listPetsJson(listpets.in_());
-    assert(listOut.pets.length == 2, 'expected 2 pets, got ${listOut.pets.length}');
+    check(listOut.pets.length == 2, 'expected 2 pets, got ${listOut.pets.length}');
 
     // Get Buddy
     final getBuddyOut = await petStore.getPetJson(getpet.in_(id: buddyId));
-    assert(getBuddyOut.pet.name == 'Buddy', 'expected Buddy, got ${getBuddyOut.pet.name}');
-    assert(getBuddyOut.pet.status == PetStatus.Available, 'expected Available, got ${getBuddyOut.pet.status}');
-    assert(getBuddyOut.pet.tag == 'dog', 'expected tag dog, got ${getBuddyOut.pet.tag}');
+    check(getBuddyOut.pet.name == 'Buddy', 'expected Buddy, got ${getBuddyOut.pet.name}');
+    check(getBuddyOut.pet.status == PetStatus.Available, 'expected Available, got ${getBuddyOut.pet.status}');
+    check(getBuddyOut.pet.tag == 'dog', 'expected tag dog, got ${getBuddyOut.pet.tag}');
 
     // Delete Whiskers
     final deleteOut = await petStore.deletePetJson(deletepet.in_(id: whiskersId));
-    assert(deleteOut.deleted == true, 'expected deleted=true, got ${deleteOut.deleted}');
+    check(deleteOut.deleted == true, 'expected deleted=true, got ${deleteOut.deleted}');
 
     // List pets again (expect 1)
     final list2Out = await petStore.listPetsJson(listpets.in_());
-    assert(list2Out.pets.length == 1, 'expected 1 pet, got ${list2Out.pets.length}');
-    assert(list2Out.pets[0].name == 'Buddy', 'expected remaining pet Buddy, got ${list2Out.pets[0].name}');
+    check(list2Out.pets.length == 1, 'expected 1 pet, got ${list2Out.pets.length}');
+    check(list2Out.pets[0].name == 'Buddy', 'expected remaining pet Buddy, got ${list2Out.pets[0].name}');
 
     // ---- UEBA scenario -----------------------------------------------------
     // Re-run the identical scenario over the binary UEBA transport (bare method
@@ -97,33 +101,33 @@ Future<void> runClient(String host, int port) async {
       addpet.in_(name: 'Buddy', status: PetStatus.Available, tag: 'dog'),
     );
     final uBuddyId = uAddBuddyOut.pet.id;
-    assert(uAddBuddyOut.pet.name == 'Buddy', 'ueba: expected name Buddy, got ${uAddBuddyOut.pet.name}');
+    check(uAddBuddyOut.pet.name == 'Buddy', 'ueba: expected name Buddy, got ${uAddBuddyOut.pet.name}');
 
     // Add Whiskers
     final uAddWhiskersOut = await petStore.addPet(
       addpet.in_(name: 'Whiskers', status: PetStatus.Pending, tag: 'cat'),
     );
     final uWhiskersId = uAddWhiskersOut.pet.id;
-    assert(uAddWhiskersOut.pet.name == 'Whiskers', 'ueba: expected name Whiskers, got ${uAddWhiskersOut.pet.name}');
+    check(uAddWhiskersOut.pet.name == 'Whiskers', 'ueba: expected name Whiskers, got ${uAddWhiskersOut.pet.name}');
 
     // List pets (expect 2)
     final uListOut = await petStore.listPets(listpets.in_());
-    assert(uListOut.pets.length == 2, 'ueba: expected 2 pets, got ${uListOut.pets.length}');
+    check(uListOut.pets.length == 2, 'ueba: expected 2 pets, got ${uListOut.pets.length}');
 
     // Get Buddy
     final uGetBuddyOut = await petStore.getPet(getpet.in_(id: uBuddyId));
-    assert(uGetBuddyOut.pet.name == 'Buddy', 'ueba: expected Buddy, got ${uGetBuddyOut.pet.name}');
-    assert(uGetBuddyOut.pet.status == PetStatus.Available, 'ueba: expected Available, got ${uGetBuddyOut.pet.status}');
-    assert(uGetBuddyOut.pet.tag == 'dog', 'ueba: expected tag dog, got ${uGetBuddyOut.pet.tag}');
+    check(uGetBuddyOut.pet.name == 'Buddy', 'ueba: expected Buddy, got ${uGetBuddyOut.pet.name}');
+    check(uGetBuddyOut.pet.status == PetStatus.Available, 'ueba: expected Available, got ${uGetBuddyOut.pet.status}');
+    check(uGetBuddyOut.pet.tag == 'dog', 'ueba: expected tag dog, got ${uGetBuddyOut.pet.tag}');
 
     // Delete Whiskers
     final uDeleteOut = await petStore.deletePet(deletepet.in_(id: uWhiskersId));
-    assert(uDeleteOut.deleted == true, 'ueba: expected deleted=true, got ${uDeleteOut.deleted}');
+    check(uDeleteOut.deleted == true, 'ueba: expected deleted=true, got ${uDeleteOut.deleted}');
 
     // List pets again (expect 1)
     final uList2Out = await petStore.listPets(listpets.in_());
-    assert(uList2Out.pets.length == 1, 'ueba: expected 1 pet, got ${uList2Out.pets.length}');
-    assert(uList2Out.pets[0].name == 'Buddy', 'ueba: expected remaining pet Buddy, got ${uList2Out.pets[0].name}');
+    check(uList2Out.pets.length == 1, 'ueba: expected 1 pet, got ${uList2Out.pets.length}');
+    check(uList2Out.pets[0].name == 'Buddy', 'ueba: expected remaining pet Buddy, got ${uList2Out.pets[0].name}');
 
     print('OK');
   } finally {
