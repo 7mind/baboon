@@ -31,6 +31,21 @@ object CSServiceWiringTranslator {
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "cs", target.language.serviceContext, target.language.pragmas)
 
+    // When the C# `asyncServices` flag is on, the service interface methods
+    // return `Task<T>` (mirrored in CSDefnTranslator), so the impl call must be
+    // awaited; the Invoke dispatchers and the muxer-wrapper `Invoke` become
+    // `async Task<...>`, and the client transport callbacks/methods go async
+    // too. When off (the default) the sync path is emitted byte-for-byte
+    // unchanged. Same axis the Rust/TypeScript/Java backends already gate.
+    private val isAsync: Boolean = target.language.asyncServices
+    private val asyncKw: String  = if (isAsync) "async " else ""
+    private val awaitKw: String  = if (isAsync) "await " else ""
+
+    // Wrap a wire-shape return type in `Task<...>` under async; identity in
+    // sync mode so the default path renders byte-for-byte unchanged.
+    private def taskWrap(inner: TextTree[CSValue]): TextTree[CSValue] =
+      if (isAsync) q"System.Threading.Tasks.Task<$inner>" else inner
+
     private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
       codecs.exists {
         c =>
@@ -239,9 +254,12 @@ object CSServiceWiringTranslator {
       * in the server wiring; `BaboonCodecContext` is threaded as the trailing
       * `ctx` parameter (defaulting to `BaboonCodecContext.Default`).
       *
-      * The C# backend has no `asyncServices` option, so — like the existing C#
-      * server wiring — the client is emitted sync-only (methods return `T`
-      * directly, not `Task<T>`).
+      * Under the `asyncServices` flag the client methods become `async` and
+      * return `Task<T>` (or `Task` for void), the transport callbacks become
+      * `Task`-returning delegates (`Func<…, Task<byte[]>>` /
+      * `Func<…, Task<string>>`), and each method `await`s its transport call.
+      * With the flag off (default) the client is emitted sync-only (methods
+      * return `T` directly, not `Task<T>`) — the existing path, unchanged.
       */
     override def translateClient(defn: DomainMember.User): Option[TextTree[CSValue]] = {
       defn.defn match {
@@ -251,10 +269,19 @@ object CSServiceWiringTranslator {
           val hasUeba = hasActiveUebaCodecs(service)
           if (!hasJson && !hasUeba) return None
 
+          // Client method return type: `T`/`void` in sync mode, `Task<T>`/`Task`
+          // under async. The transport callback becomes a `Task`-returning
+          // delegate so the client `await`s it.
+          val awaitTransport = if (isAsync) "await " else ""
+          def clientRet(out: Option[TypeRef]): TextTree[CSValue] = out match {
+            case Some(o) => taskWrap(trans.asCsRef(o, domain, evo))
+            case None    => if (isAsync) q"System.Threading.Tasks.Task" else q"void"
+          }
+
           val clientMethods = service.methods.flatMap {
             m =>
               val inRef   = trans.asCsRef(m.sig, domain, evo)
-              val retType = m.out.map(o => trans.asCsRef(o, domain, evo)).getOrElse(q"void")
+              val retType = clientRet(m.out)
 
               val uebaMethod = if (hasUeba) {
                 val encodeIn = uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"bw", q"arg")
@@ -267,13 +294,13 @@ object CSServiceWiringTranslator {
                   case None => q"return;"
                 }
                 Some(
-                  q"""public $retType ${m.name.name}($ctxParamDecl$inRef arg, $baboonCodecContext ctx)
+                  q"""public $asyncKw$retType ${m.name.name}($ctxParamDecl$inRef arg, $baboonCodecContext ctx)
                      |{
                      |    var oms = new $memoryStream();
                      |    var bw = new $binaryWriter(oms);
                      |    $encodeIn
                      |    bw.Flush();
-                     |    var resp = _transportUeba("$svcName", "${m.name.name}", oms.ToArray());
+                     |    var resp = ${awaitTransport}_transportUeba("$svcName", "${m.name.name}", oms.ToArray());
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -288,10 +315,10 @@ object CSServiceWiringTranslator {
                   case None => q"return;"
                 }
                 Some(
-                  q"""public $retType ${m.name.name}Json($ctxParamDecl$inRef arg, $baboonCodecContext ctx)
+                  q"""public $asyncKw$retType ${m.name.name}Json($ctxParamDecl$inRef arg, $baboonCodecContext ctx)
                      |{
                      |    var encoded = $encodeIn;
-                     |    var resp = _transportJson("$svcName", "${m.name.name}", encoded.ToString($nsFormatting.None));
+                     |    var resp = ${awaitTransport}_transportJson("$svcName", "${m.name.name}", encoded.ToString($nsFormatting.None));
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -302,8 +329,12 @@ object CSServiceWiringTranslator {
 
           if (clientMethods.isEmpty) return None
 
-          val uebaTransportType = q"System.Func<$csString, $csString, byte[], byte[]>"
-          val jsonTransportType = q"System.Func<$csString, $csString, $csString, $csString>"
+          val uebaTransportType =
+            if (isAsync) q"System.Func<$csString, $csString, byte[], System.Threading.Tasks.Task<byte[]>>"
+            else q"System.Func<$csString, $csString, byte[], byte[]>"
+          val jsonTransportType =
+            if (isAsync) q"System.Func<$csString, $csString, $csString, System.Threading.Tasks.Task<$csString>>"
+            else q"System.Func<$csString, $csString, $csString, $csString>"
 
           val fieldDecls = List(
             if (hasUeba) Some(q"private readonly $uebaTransportType _transportUeba;") else None,
@@ -368,9 +399,11 @@ object CSServiceWiringTranslator {
       * data, ctx)` contract stays codec-flavour-symmetric and
       * language-uniform.
       *
-      * C# wiring is currently sync-only — no `Task<…>` variant is emitted.
-      * The runtime `JsonMuxer<R>` / `UebaMuxer<R>` stay parametric in R so
-      * a future async axis could plug in without breaking the contract.
+      * Under the `asyncServices` flag R is `Task<string>` / `Task<byte[]>`
+      * (or the Task-wrapped service-result container in errors mode); the
+      * wrapper's `Invoke` forwards the already-`Task`-typed wiring result
+      * straight through. The runtime `JsonMuxer<R>` / `UebaMuxer<R>` stay
+      * parametric in R so both axes plug in without changing the contract.
       */
     private def generateServiceWrappers(
       service: Typedef.Service,
@@ -474,8 +507,8 @@ object CSServiceWiringTranslator {
 
       val wrappers = generateServiceWrappers(
         service,
-        jsonRetType = q"$csString",
-        uebaRetType = q"byte[]",
+        jsonRetType = taskWrap(q"$csString"),
+        uebaRetType = taskWrap(q"byte[]"),
       )
 
       Seq(Some(wiringClass), wrappers).flatten.join("\n\n")
@@ -497,8 +530,8 @@ object CSServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"var result = impl.${m.name.name}(${ctxArgPass}decoded);"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded);"
+            case Some(_) => q"var result = ${awaitKw}impl.${m.name.name}(${ctxArgPass}decoded);"
+            case None    => q"${awaitKw}impl.${m.name.name}(${ctxArgPass}decoded);"
           }
 
           q"""case "${m.name.name}":
@@ -510,7 +543,7 @@ object CSServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""public static $csString InvokeJson$genericParam(
+      q"""public static $asyncKw${taskWrap(q"$csString")} InvokeJson$genericParam(
          |    $baboonMethodId method,
          |    $csString data,
          |    I${svcName.capitalize}$genericParam impl,
@@ -544,8 +577,8 @@ object CSServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"var result = impl.${m.name.name}(${ctxArgPass}decoded);"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded);"
+            case Some(_) => q"var result = ${awaitKw}impl.${m.name.name}(${ctxArgPass}decoded);"
+            case None    => q"${awaitKw}impl.${m.name.name}(${ctxArgPass}decoded);"
           }
 
           q"""case "${m.name.name}":
@@ -558,7 +591,7 @@ object CSServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""public static byte[] InvokeUeba$genericParam(
+      q"""public static $asyncKw${taskWrap(q"byte[]")} InvokeUeba$genericParam(
          |    $baboonMethodId method,
          |    byte[] data,
          |    I${svcName.capitalize}$genericParam impl,
@@ -605,8 +638,8 @@ object CSServiceWiringTranslator {
 
       val wrappers = generateServiceWrappers(
         service,
-        jsonRetType = q"$jsonContainer",
-        uebaRetType = q"$uebaContainer",
+        jsonRetType = taskWrap(q"$jsonContainer"),
+        uebaRetType = taskWrap(q"$uebaContainer"),
       )
 
       Seq(Some(wiringClass), wrappers).flatten.join("\n\n")
@@ -628,6 +661,8 @@ object CSServiceWiringTranslator {
           val inRef    = trans.asCsRef(m.sig, domain, evo)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
+          if (isAsync) generateErrorsJsonCaseAsync(m, inRef, decodeIn)
+          else {
           val decodeStep =
             q"""${ct("BaboonWiringError", renderFq(inRef))} input;
                |try
@@ -724,9 +759,10 @@ object CSServiceWiringTranslator {
              |    ${decodeStep.shift(4).trim}
              |    ${callAndEncodeStep.shift(4).trim}
              |}""".stripMargin
+          }
       }.join("\n")
 
-      q"""public static $wiringRetType InvokeJson$genericParam(
+      q"""public static $asyncKw${taskWrap(q"$wiringRetType")} InvokeJson$genericParam(
          |    $baboonMethodId method,
          |    $csString data,
          |    I${svcName.capitalize}$genericParam impl,
@@ -742,6 +778,122 @@ object CSServiceWiringTranslator {
          |}""".stripMargin
     }
 
+    /** Async errors-mode JSON case (one `switch` arm). Mirrors the TS reference:
+      * the decoded input stays a raw value (never re-wrapped in the result
+      * container) so the impl `Task<…>` can be `await`ed in straight-line code
+      * — the abstract `IBaboonServiceRt` exposes no async bind, so the sync
+      * `FlatMap(input, v => …)` closure form (which cannot `await`) is replaced
+      * by linear try/await/early-return. Wrapping happens only at the
+      * `rt.Pure` / `rt.Fail` boundaries, identical to the sync arm's results.
+      */
+    private def generateErrorsJsonCaseAsync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[CSValue],
+      decodeIn: TextTree[CSValue],
+    ): TextTree[CSValue] = {
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val decodeStep =
+        q"""$inRef decoded;
+           |try
+           |{
+           |    var wire = $nsJToken.Parse(data);
+           |    decoded = $decodeIn;
+           |}
+           |catch ($csException ex)
+           |{
+           |    return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.DecoderFailed(method, ex));
+           |}""".stripMargin
+
+      // Encode-after-call, expressed with the abstract `rt.FlatMap` so it stays
+      // container-agnostic: the only async hop (the impl `Task`) is awaited
+      // first, then the already-resolved container is threaded synchronously.
+      val encodeFlatMap = m.out match {
+        case Some(outRef) =>
+          val outType   = trans.asCsRef(outRef, domain, evo)
+          val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
+          q"""return rt.FlatMap<$baboonWiringError, $outType, $csString>(output, v =>
+             |{
+             |    try
+             |    {
+             |        var encoded = $encodeOut;
+             |        return rt.Pure<$baboonWiringError, $csString>(encoded.ToString($nsFormatting.None));
+             |    }
+             |    catch ($csException ex)
+             |    {
+             |        return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.EncoderFailed(method, ex));
+             |    }
+             |});""".stripMargin
+        case None => q""
+      }
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val outType = trans.asCsRef(outRef, domain, evo)
+
+          val callStep = if (hasErrType) {
+            val errType = trans.asCsRef(m.err.get, domain, evo)
+            q"""${ct("BaboonWiringError", renderFq(outType))} output;
+               |try
+               |{
+               |    var callResult = await impl.${m.name.name}(${ctxArgPass}decoded);
+               |    output = rt.LeftMap<$errType, $outType, $baboonWiringError>(
+               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          } else {
+            q"""${ct("BaboonWiringError", renderFq(outType))} output;
+               |try
+               |{
+               |    var callResultValue = await impl.${m.name.name}(${ctxArgPass}decoded);
+               |    output = rt.Pure<$baboonWiringError, $outType>(callResultValue);
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          }
+
+          q"""$callStep
+             |${encodeFlatMap.trim}""".stripMargin
+
+        case None =>
+          if (hasErrType) {
+            val errType = trans.asCsRef(m.err.get, domain, evo)
+            q"""try
+               |{
+               |    var callResult = await impl.${m.name.name}(${ctxArgPass}decoded);
+               |    var mapped = rt.LeftMap<$errType, $unit, $baboonWiringError>(
+               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
+               |    return rt.FlatMap<$baboonWiringError, $unit, $csString>(mapped, v => rt.Pure<$baboonWiringError, $csString>("null"));
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          } else {
+            q"""try
+               |{
+               |    await impl.${m.name.name}(${ctxArgPass}decoded);
+               |    return rt.Pure<$baboonWiringError, $csString>("null");
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          }
+      }
+
+      q"""case "${m.name.name}":
+         |{
+         |    ${decodeStep.shift(4).trim}
+         |    ${callAndEncodeStep.shift(4).trim}
+         |}""".stripMargin
+    }
+
     private def generateErrorsUebaMethod(service: Typedef.Service): TextTree[CSValue] = {
       val svcName       = service.id.name.name
       val wiringRetType = ct("BaboonWiringError", "byte[]")
@@ -751,6 +903,8 @@ object CSServiceWiringTranslator {
           val inRef    = trans.asCsRef(m.sig, domain, evo)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
+          if (isAsync) generateErrorsUebaCaseAsync(m, inRef, decodeIn)
+          else {
           val decodeStep =
             q"""${ct("BaboonWiringError", renderFq(inRef))} input;
                |try
@@ -851,9 +1005,10 @@ object CSServiceWiringTranslator {
              |    ${decodeStep.shift(4).trim}
              |    ${callAndEncodeStep.shift(4).trim}
              |}""".stripMargin
+          }
       }.join("\n")
 
-      q"""public static $wiringRetType InvokeUeba$genericParam(
+      q"""public static $asyncKw${taskWrap(q"$wiringRetType")} InvokeUeba$genericParam(
          |    $baboonMethodId method,
          |    byte[] data,
          |    I${svcName.capitalize}$genericParam impl,
@@ -866,6 +1021,118 @@ object CSServiceWiringTranslator {
          |        default:
          |            return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.NoMatchingMethod(method));
          |    }
+         |}""".stripMargin
+    }
+
+    /** Async errors-mode UEBA case (one `switch` arm). See
+      * [[generateErrorsJsonCaseAsync]] for the await-then-thread rationale.
+      */
+    private def generateErrorsUebaCaseAsync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[CSValue],
+      decodeIn: TextTree[CSValue],
+    ): TextTree[CSValue] = {
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val decodeStep =
+        q"""$inRef decoded;
+           |try
+           |{
+           |    var ms = new $memoryStream(data);
+           |    var br = new $binaryReader(ms);
+           |    decoded = $decodeIn;
+           |}
+           |catch ($csException ex)
+           |{
+           |    return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.DecoderFailed(method, ex));
+           |}""".stripMargin
+
+      val encodeFlatMap = m.out match {
+        case Some(outRef) =>
+          val outType = trans.asCsRef(outRef, domain, evo)
+          val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
+          q"""return rt.FlatMap<$baboonWiringError, $outType, byte[]>(output, v =>
+             |{
+             |    try
+             |    {
+             |        var oms = new $memoryStream();
+             |        var bw = new $binaryWriter(oms);
+             |        $encStmt
+             |        bw.Flush();
+             |        return rt.Pure<$baboonWiringError, byte[]>(oms.ToArray());
+             |    }
+             |    catch ($csException ex)
+             |    {
+             |        return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.EncoderFailed(method, ex));
+             |    }
+             |});""".stripMargin
+        case None => q""
+      }
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val outType = trans.asCsRef(outRef, domain, evo)
+
+          val callStep = if (hasErrType) {
+            val errType = trans.asCsRef(m.err.get, domain, evo)
+            q"""${ct("BaboonWiringError", renderFq(outType))} output;
+               |try
+               |{
+               |    var callResult = await impl.${m.name.name}(${ctxArgPass}decoded);
+               |    output = rt.LeftMap<$errType, $outType, $baboonWiringError>(
+               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          } else {
+            q"""${ct("BaboonWiringError", renderFq(outType))} output;
+               |try
+               |{
+               |    var callResultValue = await impl.${m.name.name}(${ctxArgPass}decoded);
+               |    output = rt.Pure<$baboonWiringError, $outType>(callResultValue);
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          }
+
+          q"""$callStep
+             |${encodeFlatMap.trim}""".stripMargin
+
+        case None =>
+          if (hasErrType) {
+            val errType = trans.asCsRef(m.err.get, domain, evo)
+            q"""try
+               |{
+               |    var callResult = await impl.${m.name.name}(${ctxArgPass}decoded);
+               |    var mapped = rt.LeftMap<$errType, $unit, $baboonWiringError>(
+               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
+               |    return rt.FlatMap<$baboonWiringError, $unit, byte[]>(mapped, v => rt.Pure<$baboonWiringError, byte[]>(new byte[0]));
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          } else {
+            q"""try
+               |{
+               |    await impl.${m.name.name}(${ctxArgPass}decoded);
+               |    return rt.Pure<$baboonWiringError, byte[]>(new byte[0]);
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          }
+      }
+
+      q"""case "${m.name.name}":
+         |{
+         |    ${decodeStep.shift(4).trim}
+         |    ${callAndEncodeStep.shift(4).trim}
          |}""".stripMargin
     }
   }

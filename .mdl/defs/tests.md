@@ -2332,6 +2332,77 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-cs-wiring-async
+
+Generate ASYNC C# service wiring for the petstore model
+(`--cs-async-services=true`, noErrors flavour, both codec families). Emits the
+`IPetStore` interface with `Task<T>` methods, `PetStoreWiring.Invoke{Json,Ueba}`
+as `async Task<...>`, the muxer wrappers parameterised over `Task<...>`, and the
+`PetStoreClient` with `async`/`await` over `Task`-returning transport delegates.
+A minimal async `IPetStore` impl is scaffolded inline so `dotnet build`
+type-checks the emitted async surface (interface conformance, await sites,
+delegate signatures).
+
+NOTE: requires the native binary (`action.build`) and dotnet. Authored to
+mirror the sync `test-gen-cs-client` lane; not wired into the aggregate `:test`
+target yet and UNRUN in CI as of this commit — verified locally only via
+`sbt baboonJVM/runMain ...` + `dotnet build`.
+
+```bash
+dep action.restore-dotnet
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-wiring-async"
+
+mkdir -p "$TEST_DIR/gen"
+rm -rf "$TEST_DIR/gen"
+mkdir -p "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore.baboon \
+  :cs \
+  --output "$TEST_DIR/gen" \
+  --cs-async-services=true \
+  --service-result-no-errors=true \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+cat > "$TEST_DIR/gen/Build.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>
+EOF
+
+cat > "$TEST_DIR/gen/AsyncImpl.cs" <<'EOF'
+#nullable enable
+using System.Threading.Tasks;
+namespace Petstore.Api {
+    public sealed class PetStoreAsyncImpl : IPetStore {
+        public Task<PetStore.AddPet.Out> addPet(PetStore.AddPet.In arg) => Task.FromResult<PetStore.AddPet.Out>(null!);
+        public Task<PetStore.GetPet.Out> getPet(PetStore.GetPet.In arg) => Task.FromResult<PetStore.GetPet.Out>(null!);
+        public Task<PetStore.ListPets.Out> listPets(PetStore.ListPets.In arg) => Task.FromResult<PetStore.ListPets.Out>(null!);
+        public Task<PetStore.DeletePet.Out> deletePet(PetStore.DeletePet.In arg) => Task.FromResult<PetStore.DeletePet.Out>(null!);
+    }
+}
+EOF
+
+pushd "$TEST_DIR/gen"
+dotnet build -c Release Build.csproj
+popd
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
 # action: test-jv-client-roundtrip
 
 Exercise the GENERATED Java RPC client (`${Svc}Client`) end to end with an
