@@ -53,14 +53,22 @@ object PetStoreServer {
         val path  = exchange.getRequestURI.getPath
         val parts = path.split("/").filter(_.nonEmpty)
         if (parts.length == 2) {
-          val service = parts(0)
-          val method  = parts(1)
-          val body    = new String(exchange.getRequestBody.readAllBytes(), "UTF-8")
+          val service     = parts(0)
+          val method      = parts(1)
+          val contentType = Option(exchange.getRequestHeaders.getFirst("Content-Type")).getOrElse("")
+          val rawBody     = exchange.getRequestBody.readAllBytes()
           try {
             val methodId = BaboonMethodId(service, method)
-            val result   = PetStoreWiring.invokeJson(methodId, body, impl, ctx)
-            exchange.getResponseHeaders.set("Content-Type", "application/json")
-            sendResponse(exchange, 200, result)
+            if (contentType.startsWith("application/octet-stream")) {
+              val result = PetStoreWiring.invokeUeba(methodId, rawBody, impl, ctx)
+              exchange.getResponseHeaders.set("Content-Type", "application/octet-stream")
+              sendResponseBytes(exchange, 200, result)
+            } else {
+              val body   = new String(rawBody, "UTF-8")
+              val result = PetStoreWiring.invokeJson(methodId, body, impl, ctx)
+              exchange.getResponseHeaders.set("Content-Type", "application/json")
+              sendResponse(exchange, 200, result)
+            }
           } catch {
             case e: Exception =>
               sendResponse(exchange, 500, e.getMessage)
@@ -77,7 +85,10 @@ object PetStoreServer {
   }
 
   private def sendResponse(exchange: HttpExchange, code: Int, body: String): Unit = {
-    val bytes = body.getBytes("UTF-8")
+    sendResponseBytes(exchange, code, body.getBytes("UTF-8"))
+  }
+
+  private def sendResponseBytes(exchange: HttpExchange, code: Int, bytes: Array[Byte]): Unit = {
     exchange.sendResponseHeaders(code, bytes.length.toLong)
     val os = exchange.getResponseBody
     os.write(bytes)
