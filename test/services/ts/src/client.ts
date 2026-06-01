@@ -50,14 +50,9 @@ function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-export async function runClient(host: string, port: number): Promise<void> {
-  // Drive the compiler-generated client over HTTP. The generated client takes
-  // both a binary (UEBA) transport and a string (JSON) transport.
-  const client = new PetStore.PetStoreClient(
-    (service, method, data) => postBytes(host, port, `/${service}/${method}`, data),
-    (service, method, data) => post(host, port, `/${service}/${method}`, data)
-  );
+type PetStoreClientType = InstanceType<typeof PetStore.PetStoreClient>;
 
+async function runJson(host: string, port: number, client: PetStoreClientType): Promise<void> {
   // --- JSON scenario ---
   await post(host, port, '/reset', '');
 
@@ -83,7 +78,9 @@ export async function runClient(host: string, port: number): Promise<void> {
   const list2Out = await client.listPetsJson(new ListPetsIn());
   assert(list2Out.pets.length === 1, `expected 1 pet, got ${list2Out.pets.length}`);
   assert(list2Out.pets[0].name === 'Buddy', `expected remaining pet Buddy, got ${list2Out.pets[0].name}`);
+}
 
+async function runUeba(host: string, port: number, client: PetStoreClientType): Promise<void> {
   // --- UEBA scenario (bare method names, binary transport) ---
   // Identical operations, asserting the same results over the UEBA codec.
   await post(host, port, '/reset', '');
@@ -110,6 +107,26 @@ export async function runClient(host: string, port: number): Promise<void> {
   const uebaList2 = await client.listPets(new ListPetsIn());
   assert(uebaList2.pets.length === 1, `[ueba] expected 1 pet, got ${uebaList2.pets.length}`);
   assert(uebaList2.pets[0].name === 'Buddy', `[ueba] expected remaining pet Buddy, got ${uebaList2.pets[0].name}`);
+}
+
+export async function runClient(host: string, port: number, codec: string = 'both'): Promise<void> {
+  // Drive the compiler-generated client over HTTP. The generated client takes
+  // both a binary (UEBA) transport and a string (JSON) transport.
+  const client = new PetStore.PetStoreClient(
+    (service, method, data) => postBytes(host, port, `/${service}/${method}`, data),
+    (service, method, data) => post(host, port, `/${service}/${method}`, data)
+  );
+
+  if (codec === 'json') {
+    await runJson(host, port, client);
+  } else if (codec === 'ueba') {
+    await runUeba(host, port, client);
+  } else if (codec === 'both') {
+    await runJson(host, port, client);
+    await runUeba(host, port, client);
+  } else {
+    throw new Error(`Unknown --codec value: ${codec} (expected json|ueba|both)`);
+  }
 
   console.log('OK');
 }
