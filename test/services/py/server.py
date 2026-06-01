@@ -1,34 +1,13 @@
-import json
 import signal
 import sys
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from Generated.baboon_codecs import BaboonCodecContext
-from Generated.petstore.api.petstore.addpet.In import In_JsonCodec as AddPetInCodec
-from Generated.petstore.api.petstore.addpet.Out import Out_JsonCodec as AddPetOutCodec
-from Generated.petstore.api.petstore.getpet.In import In_JsonCodec as GetPetInCodec
-from Generated.petstore.api.petstore.getpet.Out import Out_JsonCodec as GetPetOutCodec
-from Generated.petstore.api.petstore.listpets.In import In_JsonCodec as ListPetsInCodec
-from Generated.petstore.api.petstore.listpets.Out import Out_JsonCodec as ListPetsOutCodec
-from Generated.petstore.api.petstore.deletepet.In import In_JsonCodec as DeletePetInCodec
-from Generated.petstore.api.petstore.deletepet.Out import Out_JsonCodec as DeletePetOutCodec
+from Generated.baboon_service_wiring import BaboonMethodId, BaboonWiringException
+from Generated.petstore.api.PetStore_Wiring import invoke_json_PetStore, invoke_ueba_PetStore
 from petstore_impl import PetStoreImpl
 
 ctx = BaboonCodecContext.compact()
-
-HANDLERS: dict[str, tuple[object, object]] = {
-    "addPet": (AddPetInCodec.instance(), AddPetOutCodec.instance()),
-    "getPet": (GetPetInCodec.instance(), GetPetOutCodec.instance()),
-    "listPets": (ListPetsInCodec.instance(), ListPetsOutCodec.instance()),
-    "deletePet": (DeletePetInCodec.instance(), DeletePetOutCodec.instance()),
-}
-
-DISPATCH = {
-    "addPet": lambda impl, inp: impl.add_pet(inp),
-    "getPet": lambda impl, inp: impl.get_pet(inp),
-    "listPets": lambda impl, inp: impl.list_pets(inp),
-    "deletePet": lambda impl, inp: impl.delete_pet(inp),
-}
 
 impl = PetStoreImpl()
 
@@ -71,26 +50,38 @@ class PetStoreHandler(BaseHTTPRequestHandler):
 
         parts = [p for p in self.path.split("/") if p]
         if len(parts) == 2:
-            _service, method = parts
-            if method in HANDLERS:
-                content_length = int(self.headers.get("Content-Length", 0))
-                body = self.rfile.read(content_length).decode("utf-8")
-                try:
-                    in_codec, out_codec = HANDLERS[method]
-                    decoded = in_codec.decode(ctx, body)
-                    result = DISPATCH[method](impl, decoded)
-                    response_body = out_codec.encode(ctx, result)
+            service, method = parts
+            content_length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(content_length)
+            content_type = self.headers.get("Content-Type", "")
+            method_id = BaboonMethodId(service, method)
+            try:
+                if content_type == "application/octet-stream":
+                    response_bytes = invoke_ueba_PetStore(method_id, raw, impl, ctx)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.end_headers()
+                    self.wfile.write(response_bytes)
+                    return
+                else:
+                    response_body = invoke_json_PetStore(method_id, raw.decode("utf-8"), impl, ctx)
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
                     self.wfile.write(response_body.encode("utf-8"))
                     return
-                except Exception as e:
-                    self.send_response(500)
-                    self.send_header("Content-Type", "text/plain")
-                    self.end_headers()
-                    self.wfile.write(str(e).encode("utf-8"))
-                    return
+            except BaboonWiringException as e:
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(str(e).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(str(e).encode("utf-8"))
+                return
 
         self.send_response(404)
         self.send_header("Content-Type", "text/plain")
