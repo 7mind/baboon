@@ -55,10 +55,11 @@ func runAsyncWiringSmoke() async throws {
             try await PetStoreWiring.invokeJson(BaboonMethodId(serviceId: svc, methodName: method), data, impl, ctx)
         }
     )
+    // Two pets were added above (Buddy via the dispatcher, Whiskers via the wrapper thunk).
     let listJson = try await client.listPetsJson(arg: petstore.listpets.`in`())
-    assert(listJson.pets.count == 3, "expected 3 pets, got \(listJson.pets.count)")
+    assert(listJson.pets.count == 2, "expected 2 pets, got \(listJson.pets.count)")
     let listUeba = try await client.listPets(arg: petstore.listpets.`in`())
-    assert(listUeba.pets.count == 3, "expected 3 pets (ueba), got \(listUeba.pets.count)")
+    assert(listUeba.pets.count == 2, "expected 2 pets (ueba), got \(listUeba.pets.count)")
 
     print("OK")
 }
