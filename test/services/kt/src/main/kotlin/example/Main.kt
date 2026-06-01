@@ -8,6 +8,7 @@ fun main(args: Array<String>) {
     val mode = args[0]
     var host = "127.0.0.1"
     var port = 18080
+    var codec = "both"
 
     var i = 1
     while (i < args.size) {
@@ -20,13 +21,17 @@ fun main(args: Array<String>) {
                 port = args[i + 1].toInt()
                 i += 2
             }
+            "--codec" -> {
+                codec = args[i + 1]
+                i += 2
+            }
             else -> i++
         }
     }
 
     when (mode) {
         "server" -> PetStoreServer.start(host, port)
-        "client" -> PetStoreClient.run(host, port)
+        "client" -> PetStoreClient.run(host, port, codec)
         else -> throw IllegalArgumentException("Unknown mode: $mode")
     }
 }
