@@ -58,17 +58,22 @@ def _scenario(label: str, add, get, lst, dele) -> None:
     assert list2_out.pets[0].name == "Buddy", f"[{label}] expected remaining pet Buddy, got {list2_out.pets[0].name}"
 
 
-def run_client(host: str, port: int) -> None:
+def run_client(host: str, port: int, codec: str = "both") -> None:
     transport_ueba = lambda service, method, data: post_bytes(host, port, f"/{service}/{method}", data)
     transport_json = lambda service, method, data: post(host, port, f"/{service}/{method}", data)
     client = PetStoreClient(transport_ueba, transport_json, ctx)
 
-    # JSON pass
-    post(host, port, "/reset", "")
-    _scenario("JSON", client.addPet_json, client.getPet_json, client.listPets_json, client.deletePet_json)
+    run_json = codec in ("json", "both")
+    run_ueba = codec in ("ueba", "both")
 
-    # UEBA pass — same scenario over the binary transport
-    post(host, port, "/reset", "")
-    _scenario("UEBA", client.addPet, client.getPet, client.listPets, client.deletePet)
+    if run_json:
+        # JSON pass
+        post(host, port, "/reset", "")
+        _scenario("JSON", client.addPet_json, client.getPet_json, client.listPets_json, client.deletePet_json)
+
+    if run_ueba:
+        # UEBA pass — same scenario over the binary transport
+        post(host, port, "/reset", "")
+        _scenario("UEBA", client.addPet, client.getPet, client.listPets, client.deletePet)
 
     print("OK")

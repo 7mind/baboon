@@ -12,6 +12,7 @@ def main() -> None:
     mode = args[0]
     host = "127.0.0.1"
     port = 18080
+    codec = "both"
     i = 1
     while i < len(args):
         if args[i] == "--host" and i + 1 < len(args):
@@ -20,13 +21,16 @@ def main() -> None:
         elif args[i] == "--port" and i + 1 < len(args):
             port = int(args[i + 1])
             i += 2
+        elif args[i] == "--codec" and i + 1 < len(args):
+            codec = args[i + 1]
+            i += 2
         else:
             i += 1
 
     if mode == "server":
         start_server(host, port)
     elif mode == "client":
-        run_client(host, port)
+        run_client(host, port, codec)
     elif mode == "client-roundtrip":
         run_client_roundtrip()
     else:
