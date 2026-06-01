@@ -11,6 +11,7 @@ guard args.count >= 2 else { printUsageAndExit() }
 let mode = args[1]
 var host = "127.0.0.1"
 var port: UInt16 = 18080
+var codec: ClientCodec = .both
 
 var i = 2
 while i < args.count {
@@ -24,6 +25,13 @@ while i < args.count {
         }
         port = p
         i += 2
+    } else if args[i] == "--codec", i + 1 < args.count {
+        guard let c = ClientCodec(rawValue: args[i + 1]) else {
+            fputs("Invalid codec: \(args[i + 1]) (expected json|ueba|both)\n", stderr)
+            exit(1)
+        }
+        codec = c
+        i += 2
     } else {
         i += 1
     }
@@ -33,7 +41,7 @@ switch mode {
 case "server":
     startServer(host: host, port: port)
 case "client":
-    runClient(host: host, port: port)
+    runClient(host: host, port: port, codec: codec)
 case "selftest":
     runSelfTest()
 default:
