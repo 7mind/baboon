@@ -221,8 +221,9 @@ object DtServiceWiringTranslator {
     // `IBaboonServiceRt`): it only encodes the input, hands the wire bytes/string
     // to a user-supplied transport callback, and decodes the response. Dart is
     // inherently async, so every method returns `Future<T>` and awaits the
-    // transport. When both codecs are active each endpoint gets a UEBA method
-    // (default name) plus a JSON-suffixed variant.
+    // transport. The UEBA method carries the bare endpoint name; the JSON
+    // method always carries a `Json` suffix — even when only JSON codecs are
+    // active — to match the naming convention used by the other 8 backends.
     override def translateClient(defn: DomainMember.User): Option[TextTree[DtValue]] = {
       defn.defn match {
         case service: Typedef.Service =>
@@ -255,7 +256,7 @@ object DtServiceWiringTranslator {
                 )
               } else None
 
-              val jsonMethodName = if (hasUeba) s"${m.name.name}Json" else m.name.name
+              val jsonMethodName = s"${m.name.name}Json"
               val jsonMethod = if (hasJson) {
                 val encodeIn = jsonEncodeExpr(m.sig.id, q"arg")
                 val decodeOut = m.out match {
