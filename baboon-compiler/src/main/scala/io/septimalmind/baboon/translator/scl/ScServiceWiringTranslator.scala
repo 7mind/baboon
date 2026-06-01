@@ -456,8 +456,20 @@ object ScServiceWiringTranslator {
       case None    => ""
     }
 
+    // Root-anchor every cross-package reference. Without `_root_.` a leading package segment
+    // (e.g. `petstore` in `petstore.api.petstore.addpet.Out`) binds to a NESTED sub-package of
+    // the enclosing `package petstore.api`, producing "object api is not a member of package
+    // petstore.api.petstore" in depth-2+ packages. ScTypes constants already carry `_root_`;
+    // user refs from `trans.asScRef` / `toScPkg` do not, so we prepend it here. Predef types
+    // (Int, String, …) render bare and need no qualification.
     private def renderFq(tree: TextTree[ScValue]): String = tree.mapRender {
-      case t: ScValue.ScType => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
+      case t: ScValue.ScType =>
+        if (t.predef) t.name
+        else {
+          val parts = (t.pkg.parts :+ t.name).toList
+          val anchored = if (parts.headOption.contains("_root_")) parts else "_root_" :: parts
+          anchored.mkString(".")
+        }
     }
 
     /** Emits the cross-domain Muxer-entry wrapper classes for a service.
@@ -583,7 +595,6 @@ object ScServiceWiringTranslator {
           }
 
           q"""case "${m.name.name}" =>
-             |  val json = $circeJson.fromString(data).fold(throw _, identity)
              |  val wire = io.circe.parser.parse(data).fold(throw _, identity)
              |  val decoded = $decodeIn
              |  $callExpr
@@ -679,7 +690,7 @@ object ScServiceWiringTranslator {
     // so that wiring objects inside a namespace sub-package can still reference it.
     private val iBaboonServiceRtFq: String = {
       val rootPkg = trans.toScPkg(domain.id, domain.version, evo)
-      (rootPkg.parts.toList :+ "IBaboonServiceRt").mkString(".")
+      ("_root_" :: (rootPkg.parts.toList :+ "IBaboonServiceRt")).mkString(".")
     }
 
     private def ct(error: String, success: String): String = renderContainer(error, success)

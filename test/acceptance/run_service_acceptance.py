@@ -667,46 +667,6 @@ def _patch_scala_missing_imports(sc_dir: Path):
 
         sc_file.write_text(content, encoding="utf-8")
 
-    # Patch wiring + client files specifically
-    _patch_scala_wiring(gen_dir)
-
-
-def _patch_scala_wiring(gen_dir: Path):
-    """Fix wiring/client file references that get shadowed by sub-packages.
-
-    Both the generated *Wiring* and *Client* files live in the depth-2 package
-    `petstore.api` and reference `petstore.api.petstore.X`, where `petstore`
-    resolves to the nested sub-package rather than the root. The depth>2 patch
-    in _patch_scala_missing_imports skips them, so rewrite the nested references
-    to absolute `_root_` paths here.
-    """
-    import re
-
-    wiring_files = list(gen_dir.rglob("*Wiring*.scala"))
-    client_files = list(gen_dir.rglob("*Client*.scala"))
-    for wiring_file in wiring_files + client_files:
-        content = wiring_file.read_text(encoding="utf-8")
-
-        # In package petstore.api, references to petstore.api.petstore.X
-        # resolve petstore as sub-package. Add _root_ prefix.
-        # Match patterns like: petstore.api.petstore.addpet.In_JsonCodec
-        content = re.sub(
-            r'(?<!\.)(?<![_])petstore\.api\.petstore\.',
-            '_root_.petstore.api.petstore.',
-            content
-        )
-
-        content = content.replace(
-            "val json = Json.fromString(data).fold(throw _, identity)\n",
-            "",
-        )
-        content = content.replace(
-            ".mkString(\", \")",
-            ".toString",
-        )
-
-        wiring_file.write_text(content, encoding="utf-8")
-
 
 async def build_language(
     lang: Lang, target_dir: Path, semaphore: asyncio.Semaphore, timeout: int
