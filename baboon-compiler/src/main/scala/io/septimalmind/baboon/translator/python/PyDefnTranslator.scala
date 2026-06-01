@@ -429,8 +429,9 @@ object PyDefnTranslator {
               val methodBodyParts: List[TextTree[PyValue]] =
                 methodDocTree.toList :+ q"raise NotImplementedError"
               val methodBodyTree = methodBodyParts.joinN()
+              val asyncKw        = if (target.language.asyncServices) "async " else ""
               q"""|@$pyAbstractMethod
-                  |def ${m.name.name}(self, ${ctxParam}arg: $inType) -> $retAnnotation:
+                  |${asyncKw}def ${m.name.name}(self, ${ctxParam}arg: $inType) -> $retAnnotation:
                   |    ${methodBodyTree.shift(4).trim}
                   |""".stripMargin
           }

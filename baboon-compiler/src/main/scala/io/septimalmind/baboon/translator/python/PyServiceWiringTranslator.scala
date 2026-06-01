@@ -33,6 +33,11 @@ object PyServiceWiringTranslator {
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "python", target.language.serviceContext, target.language.pragmas)
 
+    private val isAsync: Boolean = target.language.asyncServices
+
+    private val asyncPrefix: String = if (isAsync) "async " else ""
+    private val awaitPrefix: String = if (isAsync) "await " else ""
+
     private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
       codecs.exists {
         c =>
@@ -218,9 +223,10 @@ object PyServiceWiringTranslator {
       *
       * The codec context is held on the client (`self.ctx`) and rebound to a
       * local `ctx` inside each method so the shared codec-resolution helpers
-      * (`jsonEncodeExpr`, `uebaDecodeExpr`, …) resolve. Python has no
-      * `--py-async-services` flag (see `PyOptions`), so the client is
-      * synchronous, mirroring the synchronous server wiring.
+      * (`jsonEncodeExpr`, `uebaDecodeExpr`, …) resolve. When
+      * `--py-async-services=true` the client methods become `async def` and
+      * `await` the transport callbacks (typed `Callable[..., Awaitable[...]]`),
+      * mirroring the async server wiring; otherwise they are synchronous.
       */
     override def translateClient(defn: DomainMember.User): Option[TextTree[PyValue]] = {
       defn.defn match {
@@ -246,12 +252,12 @@ object PyServiceWiringTranslator {
                   case None => q"return None"
                 }
                 Some(
-                  q"""def ${m.name.name}(self, ${ctxParamDecl}arg: $inType) -> $retAnnot:
+                  q"""${asyncPrefix}def ${m.name.name}(self, ${ctxParamDecl}arg: $inType) -> $retAnnot:
                      |    ctx = self.ctx
                      |    output_stream = $pyBytesIO()
                      |    writer = $baboonLEDataOutputStream(output_stream)
                      |    $encStmt
-                     |    resp = self.transport_ueba("$svcName", "${m.name.name}", output_stream.getvalue())
+                     |    resp = ${awaitPrefix}self.transport_ueba("$svcName", "${m.name.name}", output_stream.getvalue())
                      |    ${decodeOut.shift(4).trim}
                      |""".stripMargin
                 )
@@ -266,10 +272,10 @@ object PyServiceWiringTranslator {
                   case None => q"return None"
                 }
                 Some(
-                  q"""def ${m.name.name}_json(self, ${ctxParamDecl}arg: $inType) -> $retAnnot:
+                  q"""${asyncPrefix}def ${m.name.name}_json(self, ${ctxParamDecl}arg: $inType) -> $retAnnot:
                      |    ctx = self.ctx
                      |    encoded = $encExpr
-                     |    resp = self.transport_json("$svcName", "${m.name.name}", encoded)
+                     |    resp = ${awaitPrefix}self.transport_json("$svcName", "${m.name.name}", encoded)
                      |    ${decodeOut.shift(4).trim}
                      |""".stripMargin
                 )
@@ -280,9 +286,12 @@ object PyServiceWiringTranslator {
 
           if (clientMethods.isEmpty) return None
 
+          val uebaRet: TextTree[PyValue] = if (isAsync) q"$pyAwaitable[bytes]" else q"bytes"
+          val jsonRet: TextTree[PyValue] = if (isAsync) q"$pyAwaitable[str]" else q"str"
+
           val ctorParams: List[TextTree[PyValue]] = {
-            val ueba = if (hasUeba) List[TextTree[PyValue]](q"transport_ueba: $pyCallable[[str, str, bytes], bytes]") else Nil
-            val json = if (hasJson) List[TextTree[PyValue]](q"transport_json: $pyCallable[[str, str, str], str]") else Nil
+            val ueba = if (hasUeba) List[TextTree[PyValue]](q"transport_ueba: $pyCallable[[str, str, bytes], $uebaRet]") else Nil
+            val json = if (hasJson) List[TextTree[PyValue]](q"transport_json: $pyCallable[[str, str, str], $jsonRet]") else Nil
             ueba ++ json :+ q"ctx: $baboonCodecContext"
           }
 
@@ -330,10 +339,11 @@ object PyServiceWiringTranslator {
       * functions consume (`rt` in errors mode, plus any service-context
       * parameter) are baked at construction time so the runtime
       * `IBaboon*Service.invoke(method, data, ctx)` contract stays uniform.
-      * Python has no `--py-async-services` flag, so the wrappers' `invoke`
-      * return type is plain `str` / `bytes` (noErrors mode) or unannotated
-      * (errors mode, where the underlying invoker already returns the
-      * configured result container).
+      * Under `--py-async-services=true` the wrapper's `invoke` is `async def`
+      * and `await`s the underlying invoker; the return annotation stays plain
+      * `str` / `bytes` (noErrors mode — an `async def -> str` resolves to `str`)
+      * or unannotated (errors mode, where the underlying invoker already
+      * returns the configured result container).
       */
     private def generateServiceWrappers(service: Typedef.Service, svcType: PyType): TextTree[PyValue] = {
       val jsonWrapper =
@@ -420,8 +430,8 @@ object PyServiceWiringTranslator {
          |    def __init__(self, ${ctorParams.join(", ")}) -> None:
          |        ${ctorAssigns.join("\n").shift(8).trim}
          |
-         |    def invoke(self, method: $baboonMethodId, data: $wireType, ctx: $baboonCodecContext)$invokeReturnArrow:
-         |        return $invokerFn(${invokerArgs.join(", ")})
+         |    ${asyncPrefix}def invoke(self, method: $baboonMethodId, data: $wireType, ctx: $baboonCodecContext)$invokeReturnArrow:
+         |        return ${awaitPrefix}$invokerFn(${invokerArgs.join(", ")})
          |""".stripMargin
     }
 
@@ -452,13 +462,13 @@ object PyServiceWiringTranslator {
           val encodeAndReturn = m.out match {
             case Some(outRef) =>
               val encExpr = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"result")
-              q"""result = impl.${m.name.name}(${ctxArgPass}decoded)
+              q"""result = ${awaitPrefix}impl.${m.name.name}(${ctxArgPass}decoded)
                  |try:
                  |    return $encExpr
                  |except Exception as e:
                  |    raise $baboonWiringException($baboonEncoderFailed(method, e))""".stripMargin
             case None =>
-              q"""impl.${m.name.name}(${ctxArgPass}decoded)
+              q"""${awaitPrefix}impl.${m.name.name}(${ctxArgPass}decoded)
                  |return "null"
                  |""".stripMargin
           }
@@ -472,7 +482,7 @@ object PyServiceWiringTranslator {
              |    ${encodeAndReturn.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: $svcType, ${ctxParamDecl}ctx: $baboonCodecContext) -> str:
+      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: $svcType, ${ctxParamDecl}ctx: $baboonCodecContext) -> str:
          |    ${cases.shift(4).trim}
          |    raise $baboonWiringException($baboonNoMatchingMethod(method))
          |""".stripMargin
@@ -484,7 +494,7 @@ object PyServiceWiringTranslator {
           val encodeAndReturn = m.out match {
             case Some(outRef) =>
               val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"result")
-              q"""result = impl.${m.name.name}(${ctxArgPass}decoded)
+              q"""result = ${awaitPrefix}impl.${m.name.name}(${ctxArgPass}decoded)
                  |try:
                  |    output_stream = $pyBytesIO()
                  |    writer = $baboonLEDataOutputStream(output_stream)
@@ -493,7 +503,7 @@ object PyServiceWiringTranslator {
                  |except Exception as e:
                  |    raise $baboonWiringException($baboonEncoderFailed(method, e))""".stripMargin
             case None =>
-              q"""impl.${m.name.name}(${ctxArgPass}decoded)
+              q"""${awaitPrefix}impl.${m.name.name}(${ctxArgPass}decoded)
                  |return bytes()
                  |""".stripMargin
           }
@@ -508,13 +518,66 @@ object PyServiceWiringTranslator {
              |    ${encodeAndReturn.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: $svcType, ${ctxParamDecl}ctx: $baboonCodecContext) -> bytes:
+      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: $svcType, ${ctxParamDecl}ctx: $baboonCodecContext) -> bytes:
          |    ${cases.shift(4).trim}
          |    raise $baboonWiringException($baboonNoMatchingMethod(method))
          |""".stripMargin
     }
 
     // ========== errors mode ==========
+
+    /** Async errors-mode call+encode body.
+      *
+      * The synchronous errors path threads the result container through
+      * `rt.flat_map(input_val, _call)` closures. That structure cannot host an
+      * `await impl(...)` — a synchronous `flat_map` callback may not be a
+      * coroutine. So, mirroring the TypeScript async errors path
+      * (`TsServiceWiringTranslator.generateErrorsMethodBody`, `isAsync`
+      * branch), we emit a linear body that short-circuits on the concrete
+      * `BaboonLeft` and `await`s the impl directly. This couples the async
+      * errors path to the builtin-either container (`BaboonLeft`/`BaboonRight`),
+      * exactly as the TypeScript reference couples to its `{tag:'Left'}` shape.
+      *
+      * `encode` yields the success-encode block for the `m.out=Some` case (it
+      * must `return rt.pure(...)` / `rt.fail(EncoderFailed)`); when `m.out` is
+      * `None`, `voidReturn` (e.g. `rt.pure("null")`) is returned after the call.
+      */
+    private def asyncCallAndEncode(
+      m: Typedef.MethodDef,
+      hasErrType: Boolean,
+      voidReturn: TextTree[PyValue],
+      encode: TextTree[PyValue] => Option[TextTree[PyValue]],
+    ): TextTree[PyValue] = {
+      val shortCircuitInput =
+        q"""if isinstance(input_val, $baboonLeftType):
+           |    return input_val
+           |decoded_v = input_val.value""".stripMargin
+
+      val callStep = if (hasErrType) {
+        q"""try:
+           |    call_result = ${awaitPrefix}impl.${m.name.name}(${ctxArgPass}decoded_v)
+           |    output = rt.left_map(call_result, lambda err: $baboonCallFailed(method, err))
+           |except Exception as e:
+           |    return rt.fail($baboonCallFailed(method, e))
+           |if isinstance(output, $baboonLeftType):
+           |    return output
+           |output_v = output.value""".stripMargin
+      } else {
+        q"""try:
+           |    output_v = ${awaitPrefix}impl.${m.name.name}(${ctxArgPass}decoded_v)
+           |except Exception as e:
+           |    return rt.fail($baboonCallFailed(method, e))""".stripMargin
+      }
+
+      val encodeStep = encode(q"output_v") match {
+        case Some(block) => block
+        case None        => q"return $voidReturn"
+      }
+
+      q"""$shortCircuitInput
+         |$callStep
+         |$encodeStep""".stripMargin
+    }
 
     private def generateErrorsWiring(service: Typedef.Service): TextTree[PyValue] = {
       val svcName = service.id.name.name
@@ -548,61 +611,78 @@ object PyServiceWiringTranslator {
                |except Exception as e:
                |    input_val = rt.fail($baboonDecoderFailed(method, e))""".stripMargin
 
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val encExpr = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
+          val callAndEncodeStep =
+            if (isAsync)
+              asyncCallAndEncode(
+                m,
+                hasErrType,
+                voidReturn = q"rt.pure(\"null\")",
+                encode = (v: TextTree[PyValue]) =>
+                  m.out.map {
+                    o =>
+                      val encExpr = jsonEncodeExpr(o.id.asInstanceOf[TypeId.Scalar], v)
+                      q"""try:
+                         |    return rt.pure($encExpr)
+                         |except Exception as e:
+                         |    return rt.fail($baboonEncoderFailed(method, e))""".stripMargin
+                  },
+              )
+            else
+              m.out match {
+                case Some(outRef) =>
+                  val encExpr = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
 
-              val callBody = if (hasErrType) {
-                q"""def _call(v):
-                   |    try:
-                   |        call_result = impl.${m.name.name}(${ctxArgPass}v)
-                   |        return rt.left_map(call_result, lambda err: $baboonCallFailed(method, err))
-                   |    except Exception as e:
-                   |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
-              } else {
-                q"""def _call(v):
-                   |    try:
-                   |        return rt.pure(impl.${m.name.name}(${ctxArgPass}v))
-                   |    except Exception as e:
-                   |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  val callBody = if (hasErrType) {
+                    q"""def _call(v):
+                       |    try:
+                       |        call_result = impl.${m.name.name}(${ctxArgPass}v)
+                       |        return rt.left_map(call_result, lambda err: $baboonCallFailed(method, err))
+                       |    except Exception as e:
+                       |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  } else {
+                    q"""def _call(v):
+                       |    try:
+                       |        return rt.pure(impl.${m.name.name}(${ctxArgPass}v))
+                       |    except Exception as e:
+                       |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  }
+
+                  q"""$callBody
+                     |output = rt.flat_map(input_val, _call)
+                     |def _encode(v):
+                     |    try:
+                     |        return rt.pure($encExpr)
+                     |    except Exception as e:
+                     |        return rt.fail($baboonEncoderFailed(method, e))
+                     |return rt.flat_map(output, _encode)""".stripMargin
+
+                case None =>
+                  val callBody = if (hasErrType) {
+                    q"""def _call(v):
+                       |    try:
+                       |        call_result = impl.${m.name.name}(${ctxArgPass}v)
+                       |        return rt.left_map(call_result, lambda err: $baboonCallFailed(method, err))
+                       |    except Exception as e:
+                       |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  } else {
+                    q"""def _call(v):
+                       |    try:
+                       |        impl.${m.name.name}(${ctxArgPass}v)
+                       |        return rt.pure("null")
+                       |    except Exception as e:
+                       |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  }
+
+                  q"""$callBody
+                     |return rt.flat_map(input_val, _call)""".stripMargin
               }
-
-              q"""$callBody
-                 |output = rt.flat_map(input_val, _call)
-                 |def _encode(v):
-                 |    try:
-                 |        return rt.pure($encExpr)
-                 |    except Exception as e:
-                 |        return rt.fail($baboonEncoderFailed(method, e))
-                 |return rt.flat_map(output, _encode)""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                q"""def _call(v):
-                   |    try:
-                   |        call_result = impl.${m.name.name}(${ctxArgPass}v)
-                   |        return rt.left_map(call_result, lambda err: $baboonCallFailed(method, err))
-                   |    except Exception as e:
-                   |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
-              } else {
-                q"""def _call(v):
-                   |    try:
-                   |        impl.${m.name.name}(${ctxArgPass}v)
-                   |        return rt.pure("null")
-                   |    except Exception as e:
-                   |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
-              }
-
-              q"""$callBody
-                 |return rt.flat_map(input_val, _call)""".stripMargin
-          }
 
           q"""if method.method_name == "${m.name.name}":
              |    ${decodeStep.shift(4).trim}
              |    ${callAndEncodeStep.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: $svcType, rt: $ibaboonServiceRtType, ${ctxParamDecl}ctx: $baboonCodecContext):
+      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: $svcType, rt: $ibaboonServiceRtType, ${ctxParamDecl}ctx: $baboonCodecContext):
          |    ${cases.shift(4).trim}
          |    return rt.fail($baboonNoMatchingMethod(method))
          |""".stripMargin
@@ -622,64 +702,84 @@ object PyServiceWiringTranslator {
                |except Exception as e:
                |    input_val = rt.fail($baboonDecoderFailed(method, e))""".stripMargin
 
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"v")
+          val callAndEncodeStep =
+            if (isAsync)
+              asyncCallAndEncode(
+                m,
+                hasErrType,
+                voidReturn = q"rt.pure(bytes())",
+                encode = (v: TextTree[PyValue]) =>
+                  m.out.map {
+                    o =>
+                      val encStmt = uebaEncodeStmt(o.id.asInstanceOf[TypeId.Scalar], q"writer", v)
+                      q"""try:
+                         |    output_stream = $pyBytesIO()
+                         |    writer = $baboonLEDataOutputStream(output_stream)
+                         |    $encStmt
+                         |    return rt.pure(output_stream.getvalue())
+                         |except Exception as e:
+                         |    return rt.fail($baboonEncoderFailed(method, e))""".stripMargin
+                  },
+              )
+            else
+              m.out match {
+                case Some(outRef) =>
+                  val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"v")
 
-              val callBody = if (hasErrType) {
-                q"""def _call(v):
-                   |    try:
-                   |        call_result = impl.${m.name.name}(${ctxArgPass}v)
-                   |        return rt.left_map(call_result, lambda err: $baboonCallFailed(method, err))
-                   |    except Exception as e:
-                   |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
-              } else {
-                q"""def _call(v):
-                   |    try:
-                   |        return rt.pure(impl.${m.name.name}(${ctxArgPass}v))
-                   |    except Exception as e:
-                   |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  val callBody = if (hasErrType) {
+                    q"""def _call(v):
+                       |    try:
+                       |        call_result = impl.${m.name.name}(${ctxArgPass}v)
+                       |        return rt.left_map(call_result, lambda err: $baboonCallFailed(method, err))
+                       |    except Exception as e:
+                       |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  } else {
+                    q"""def _call(v):
+                       |    try:
+                       |        return rt.pure(impl.${m.name.name}(${ctxArgPass}v))
+                       |    except Exception as e:
+                       |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  }
+
+                  q"""$callBody
+                     |output = rt.flat_map(input_val, _call)
+                     |def _encode(v):
+                     |    try:
+                     |        output_stream = $pyBytesIO()
+                     |        writer = $baboonLEDataOutputStream(output_stream)
+                     |        $encStmt
+                     |        return rt.pure(output_stream.getvalue())
+                     |    except Exception as e:
+                     |        return rt.fail($baboonEncoderFailed(method, e))
+                     |return rt.flat_map(output, _encode)""".stripMargin
+
+                case None =>
+                  val callBody = if (hasErrType) {
+                    q"""def _call(v):
+                       |    try:
+                       |        call_result = impl.${m.name.name}(${ctxArgPass}v)
+                       |        return rt.left_map(call_result, lambda err: $baboonCallFailed(method, err))
+                       |    except Exception as e:
+                       |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  } else {
+                    q"""def _call(v):
+                       |    try:
+                       |        impl.${m.name.name}(${ctxArgPass}v)
+                       |        return rt.pure(bytes())
+                       |    except Exception as e:
+                       |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
+                  }
+
+                  q"""$callBody
+                     |return rt.flat_map(input_val, _call)""".stripMargin
               }
-
-              q"""$callBody
-                 |output = rt.flat_map(input_val, _call)
-                 |def _encode(v):
-                 |    try:
-                 |        output_stream = $pyBytesIO()
-                 |        writer = $baboonLEDataOutputStream(output_stream)
-                 |        $encStmt
-                 |        return rt.pure(output_stream.getvalue())
-                 |    except Exception as e:
-                 |        return rt.fail($baboonEncoderFailed(method, e))
-                 |return rt.flat_map(output, _encode)""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                q"""def _call(v):
-                   |    try:
-                   |        call_result = impl.${m.name.name}(${ctxArgPass}v)
-                   |        return rt.left_map(call_result, lambda err: $baboonCallFailed(method, err))
-                   |    except Exception as e:
-                   |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
-              } else {
-                q"""def _call(v):
-                   |    try:
-                   |        impl.${m.name.name}(${ctxArgPass}v)
-                   |        return rt.pure(bytes())
-                   |    except Exception as e:
-                   |        return rt.fail($baboonCallFailed(method, e))""".stripMargin
-              }
-
-              q"""$callBody
-                 |return rt.flat_map(input_val, _call)""".stripMargin
-          }
 
           q"""if method.method_name == "${m.name.name}":
              |    ${decodeStep.shift(4).trim}
              |    ${callAndEncodeStep.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: $svcType, rt: $ibaboonServiceRtType, ${ctxParamDecl}ctx: $baboonCodecContext):
+      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: $svcType, rt: $ibaboonServiceRtType, ${ctxParamDecl}ctx: $baboonCodecContext):
          |    ${cases.shift(4).trim}
          |    return rt.fail($baboonNoMatchingMethod(method))
          |""".stripMargin
