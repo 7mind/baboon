@@ -9,6 +9,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 trait DtServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[DtValue]]
+  def translateClient(defn: DomainMember.User): Option[TextTree[DtValue]]
   def translateServiceRt(domain: Domain): Option[TextTree[DtValue]]
 }
 
@@ -210,6 +211,92 @@ object DtServiceWiringTranslator {
           // wrappers. The errors-mode dispatcher fix is a separate PR.
           else if (!resolved.noErrors) None
           else Some(generateNoErrorsWiring(service))
+        case _ => None
+      }
+    }
+
+    // ========== Client stub generation ==========
+    //
+    // The client is independent of the errors/result axis (it never threads
+    // `IBaboonServiceRt`): it only encodes the input, hands the wire bytes/string
+    // to a user-supplied transport callback, and decodes the response. Dart is
+    // inherently async, so every method returns `Future<T>` and awaits the
+    // transport. When both codecs are active each endpoint gets a UEBA method
+    // (default name) plus a JSON-suffixed variant.
+    override def translateClient(defn: DomainMember.User): Option[TextTree[DtValue]] = {
+      defn.defn match {
+        case service: Typedef.Service =>
+          val svcName = service.id.name.name
+          val hasUeba = hasActiveUebaCodecs(service)
+          val hasJson = hasActiveJsonCodecs(service)
+          if (!hasUeba && !hasJson) return None
+
+          val clientMethods = service.methods.flatMap {
+            m =>
+              val inTypeRef = trans.asDtRef(m.sig, domain, evo)
+              val retType   = m.out.map(o => trans.asDtRef(o, domain, evo)).getOrElse(q"void")
+
+              val uebaMethod = if (hasUeba) {
+                val encodeIn = uebaEncodeStmt(m.sig.id, q"writer", q"arg")
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val reader     = q"$baboonBinTools.createReader(resp)"
+                    val decodeExpr = uebaDecodeExpr(outRef.id, reader)
+                    q"return $decodeExpr;"
+                  case None => q"return;"
+                }
+                Some(
+                  q"""Future<$retType> ${m.name.name}($inTypeRef arg, [$baboonCodecContext ctx = $baboonCodecContext.defaultCtx]) async {
+                     |  final writer = $baboonBinTools.createWriter();
+                     |  $encodeIn
+                     |  final resp = await _transportUeba('$svcName', '${m.name.name}', writer.toBytes());
+                     |  ${decodeOut.shift(2).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              val jsonMethodName = if (hasUeba) s"${m.name.name}Json" else m.name.name
+              val jsonMethod = if (hasJson) {
+                val encodeIn = jsonEncodeExpr(m.sig.id, q"arg")
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val decodeExpr = jsonDecodeExpr(outRef.id, q"$dtJsonDecode(resp)")
+                    q"return $decodeExpr;"
+                  case None => q"return;"
+                }
+                Some(
+                  q"""Future<$retType> $jsonMethodName($inTypeRef arg, [$baboonCodecContext ctx = $baboonCodecContext.defaultCtx]) async {
+                     |  final encoded = $dtJsonEncode($encodeIn);
+                     |  final resp = await _transportJson('$svcName', '${m.name.name}', encoded);
+                     |  ${decodeOut.shift(2).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              uebaMethod.toList ++ jsonMethod.toList
+          }
+
+          if (clientMethods.isEmpty) return None
+
+          val transportFields = List(
+            if (hasUeba) Some(q"final Future<$dtUint8List> Function(String service, String method, $dtUint8List data) _transportUeba;") else None,
+            if (hasJson) Some(q"final Future<String> Function(String service, String method, String data) _transportJson;") else None,
+          ).flatten
+
+          val ctorParams = List(
+            if (hasUeba) Some(q"this._transportUeba") else None,
+            if (hasJson) Some(q"this._transportJson") else None,
+          ).flatten
+
+          Some(
+            q"""class ${svcName}Client {
+               |  ${transportFields.joinN().shift(2).trim}
+               |
+               |  ${svcName}Client(${ctorParams.join(", ")});
+               |
+               |  ${clientMethods.join("\n\n").shift(2).trim}
+               |}""".stripMargin
+          )
         case _ => None
       }
     }
