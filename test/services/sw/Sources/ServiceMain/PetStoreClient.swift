@@ -153,28 +153,28 @@ func runClient(host: String, port: UInt16) {
         arg: petstore.addpet.`in`(name: "Buddy", status: .Available, tag: "dog")
     )
     let buddyId = jsonBuddy.pet.id
-    assert(jsonBuddy.pet.name == "Buddy", "expected name Buddy, got \(jsonBuddy.pet.name)")
+    precondition(jsonBuddy.pet.name == "Buddy", "expected name Buddy, got \(jsonBuddy.pet.name)")
 
     let jsonWhiskers = try! client.addPetJson(
         arg: petstore.addpet.`in`(name: "Whiskers", status: .Pending, tag: "cat")
     )
     let whiskersId = jsonWhiskers.pet.id
-    assert(jsonWhiskers.pet.name == "Whiskers", "expected name Whiskers, got \(jsonWhiskers.pet.name)")
+    precondition(jsonWhiskers.pet.name == "Whiskers", "expected name Whiskers, got \(jsonWhiskers.pet.name)")
 
     let jsonList = try! client.listPetsJson(arg: petstore.listpets.`in`())
-    assert(jsonList.pets.count == 2, "expected 2 pets, got \(jsonList.pets.count)")
+    precondition(jsonList.pets.count == 2, "expected 2 pets, got \(jsonList.pets.count)")
 
     let jsonGetBuddy = try! client.getPetJson(arg: petstore.getpet.`in`(id: buddyId))
-    assert(jsonGetBuddy.pet.name == "Buddy", "expected Buddy, got \(jsonGetBuddy.pet.name)")
-    assert(jsonGetBuddy.pet.status == .Available, "expected Available, got \(jsonGetBuddy.pet.status)")
-    assert(jsonGetBuddy.pet.tag == "dog", "expected tag dog, got \(String(describing: jsonGetBuddy.pet.tag))")
+    precondition(jsonGetBuddy.pet.name == "Buddy", "expected Buddy, got \(jsonGetBuddy.pet.name)")
+    precondition(jsonGetBuddy.pet.status == .Available, "expected Available, got \(jsonGetBuddy.pet.status)")
+    precondition(jsonGetBuddy.pet.tag == "dog", "expected tag dog, got \(String(describing: jsonGetBuddy.pet.tag))")
 
     let jsonDelete = try! client.deletePetJson(arg: petstore.deletepet.`in`(id: whiskersId))
-    assert(jsonDelete.deleted == true, "expected deleted=true, got \(jsonDelete.deleted)")
+    precondition(jsonDelete.deleted == true, "expected deleted=true, got \(jsonDelete.deleted)")
 
     let jsonList2 = try! client.listPetsJson(arg: petstore.listpets.`in`())
-    assert(jsonList2.pets.count == 1, "expected 1 pet, got \(jsonList2.pets.count)")
-    assert(jsonList2.pets[0].name == "Buddy", "expected remaining pet Buddy, got \(jsonList2.pets[0].name)")
+    precondition(jsonList2.pets.count == 1, "expected 1 pet, got \(jsonList2.pets.count)")
+    precondition(jsonList2.pets[0].name == "Buddy", "expected remaining pet Buddy, got \(jsonList2.pets[0].name)")
 
     // --- UEBA pass (bare-named methods over the binary transport) ---
     // Replays the same scenario through the binary codec and asserts that every
@@ -186,25 +186,25 @@ func runClient(host: String, port: UInt16) {
         arg: petstore.addpet.`in`(name: "Buddy", status: .Available, tag: "dog")
     )
     let uebaBuddyId = uebaBuddy.pet.id
-    assert(uebaBuddy == jsonBuddy, "UEBA addPet(Buddy) differs from JSON: \(uebaBuddy) vs \(jsonBuddy)")
+    precondition(uebaBuddy == jsonBuddy, "UEBA addPet(Buddy) differs from JSON: \(uebaBuddy) vs \(jsonBuddy)")
 
     let uebaWhiskers = try! client.addPet(
         arg: petstore.addpet.`in`(name: "Whiskers", status: .Pending, tag: "cat")
     )
     let uebaWhiskersId = uebaWhiskers.pet.id
-    assert(uebaWhiskers == jsonWhiskers, "UEBA addPet(Whiskers) differs from JSON: \(uebaWhiskers) vs \(jsonWhiskers)")
+    precondition(uebaWhiskers == jsonWhiskers, "UEBA addPet(Whiskers) differs from JSON: \(uebaWhiskers) vs \(jsonWhiskers)")
 
     let uebaList = try! client.listPets(arg: petstore.listpets.`in`())
-    assert(uebaList == jsonList, "UEBA listPets differs from JSON: \(uebaList) vs \(jsonList)")
+    precondition(uebaList == jsonList, "UEBA listPets differs from JSON: \(uebaList) vs \(jsonList)")
 
     let uebaGetBuddy = try! client.getPet(arg: petstore.getpet.`in`(id: uebaBuddyId))
-    assert(uebaGetBuddy == jsonGetBuddy, "UEBA getPet(Buddy) differs from JSON: \(uebaGetBuddy) vs \(jsonGetBuddy)")
+    precondition(uebaGetBuddy == jsonGetBuddy, "UEBA getPet(Buddy) differs from JSON: \(uebaGetBuddy) vs \(jsonGetBuddy)")
 
     let uebaDelete = try! client.deletePet(arg: petstore.deletepet.`in`(id: uebaWhiskersId))
-    assert(uebaDelete == jsonDelete, "UEBA deletePet differs from JSON: \(uebaDelete) vs \(jsonDelete)")
+    precondition(uebaDelete == jsonDelete, "UEBA deletePet differs from JSON: \(uebaDelete) vs \(jsonDelete)")
 
     let uebaList2 = try! client.listPets(arg: petstore.listpets.`in`())
-    assert(uebaList2 == jsonList2, "UEBA listPets (post-delete) differs from JSON: \(uebaList2) vs \(jsonList2)")
+    precondition(uebaList2 == jsonList2, "UEBA listPets (post-delete) differs from JSON: \(uebaList2) vs \(jsonList2)")
 
     print("OK")
 }
