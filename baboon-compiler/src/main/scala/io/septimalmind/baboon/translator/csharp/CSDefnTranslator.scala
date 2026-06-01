@@ -122,7 +122,21 @@ object CSDefnTranslator {
             )
         }.toList
 
-      F.pure(mainOutput :: wiringOutput)
+      val clientOutput = wiringTranslator
+        .translateClient(defn).map {
+          clientTree =>
+            val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
+            val ns     = srcRef.pkg.parts
+            Output(
+              getOutputPath(defn, suffix = Some("_Client")),
+              Some(csTrees.inNs(ns.toSeq, clientTree)),
+              trans.toCsPkg(domain.id, domain.version, evo),
+              CompilerProduct.Definition,
+              origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
+            )
+        }.toList
+
+      F.pure(mainOutput :: wiringOutput ::: clientOutput)
     }
 
     override def translateFixtures(defn: DomainMember.User): Out[List[Output]] = {

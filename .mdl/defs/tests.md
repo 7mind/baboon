@@ -2287,6 +2287,51 @@ python3 test/acceptance/run_service_acceptance.py \
 ret success:bool=true
 ```
 
+# action: test-gen-cs-client
+
+Generate C# code for the generated-RPC-client round-trip test. Emits BOTH
+json + ueba codecs (noErrors flavour) so the generated PetStoreClient exposes
+both the UEBA (bare-name) and JSON (Json-suffixed) endpoint methods, plus the
+PetStoreWiring server invoker used as the in-process transport.
+
+```bash
+dep action.restore-dotnet
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-client"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ClientRoundTrip"
+
+rsync -a --exclude='Generated' --exclude='bin' --exclude='obj' \
+  ./test/services/cs/ClientRoundTrip/ "$TEST_DIR/ClientRoundTrip/"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore.baboon \
+  :cs \
+  --output "$TEST_DIR/ClientRoundTrip/Generated" \
+  --service-result-no-errors=true \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-client
+
+Build and run the C# generated-RPC-client in-process round-trip test
+(client-encode -> transport -> server-invoke -> decode, for both JSON and UEBA).
+
+```bash
+TEST_DIR="${action.test-gen-cs-client.test_dir}"
+pushd "$TEST_DIR/ClientRoundTrip"
+dotnet run -c Release
+popd
+
+ret success:bool=true
+```
+
 # action: test-editors
 
 Test editor extension grammars against real baboon files.
