@@ -8,7 +8,11 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 object PetStoreClient {
-    fun run(host: String, port: Int) {
+    fun run(host: String, port: Int, codec: String = "both") {
+        val runJson = codec == "json" || codec == "both"
+        val runUeba = codec == "ueba" || codec == "both"
+        require(runJson || runUeba) { "Unknown codec: $codec (expected json|ueba|both)" }
+
         val httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .build()
@@ -49,77 +53,85 @@ object PetStoreClient {
         )
 
         runBlocking {
-            // ---- JSON scenario ----
-            // Reset
-            post("/reset", "")
-
-            // Add Buddy
             val addBuddyIn = petstore.api.petstore.addpet.In(
                 name = "Buddy",
                 status = petstore.api.PetStatus.Available,
                 tag = "dog"
             )
-            val addBuddyOut = client.addPetJson(addBuddyIn)
-            val buddyId = addBuddyOut.pet.id
-            assert(addBuddyOut.pet.name == "Buddy") { "expected name Buddy, got ${addBuddyOut.pet.name}" }
-
-            // Add Whiskers
             val addWhiskersIn = petstore.api.petstore.addpet.In(
                 name = "Whiskers",
                 status = petstore.api.PetStatus.Pending,
                 tag = "cat"
             )
-            val addWhiskersOut = client.addPetJson(addWhiskersIn)
-            val whiskersId = addWhiskersOut.pet.id
-            assert(addWhiskersOut.pet.name == "Whiskers") { "expected name Whiskers, got ${addWhiskersOut.pet.name}" }
 
-            // List pets (expect 2)
-            val listOut = client.listPetsJson(petstore.api.petstore.listpets.In())
-            assert(listOut.pets.size == 2) { "expected 2 pets, got ${listOut.pets.size}" }
+            var buddyId: Long? = null
+            var whiskersId: Long? = null
 
-            // Get Buddy
-            val getBuddyOut = client.getPetJson(petstore.api.petstore.getpet.In(id = buddyId))
-            assert(getBuddyOut.pet.name == "Buddy") { "expected Buddy, got ${getBuddyOut.pet.name}" }
-            assert(getBuddyOut.pet.status == petstore.api.PetStatus.Available) { "expected Available, got ${getBuddyOut.pet.status}" }
-            assert(getBuddyOut.pet.tag == "dog") { "expected tag dog, got ${getBuddyOut.pet.tag}" }
+            if (runJson) {
+                // ---- JSON scenario ----
+                // Reset
+                post("/reset", "")
 
-            // Delete Whiskers
-            val deleteOut = client.deletePetJson(petstore.api.petstore.deletepet.In(id = whiskersId))
-            assert(deleteOut.deleted) { "expected deleted=true, got ${deleteOut.deleted}" }
+                // Add Buddy
+                val addBuddyOut = client.addPetJson(addBuddyIn)
+                buddyId = addBuddyOut.pet.id
+                assert(addBuddyOut.pet.name == "Buddy") { "expected name Buddy, got ${addBuddyOut.pet.name}" }
 
-            // List pets again (expect 1)
-            val list2Out = client.listPetsJson(petstore.api.petstore.listpets.In())
-            assert(list2Out.pets.size == 1) { "expected 1 pet, got ${list2Out.pets.size}" }
-            assert(list2Out.pets[0].name == "Buddy") { "expected remaining pet Buddy, got ${list2Out.pets[0].name}" }
+                // Add Whiskers
+                val addWhiskersOut = client.addPetJson(addWhiskersIn)
+                whiskersId = addWhiskersOut.pet.id
+                assert(addWhiskersOut.pet.name == "Whiskers") { "expected name Whiskers, got ${addWhiskersOut.pet.name}" }
 
-            // ---- UEBA scenario ----
-            // Same sequence over the binary transport; assert identical results.
-            post("/reset", "")
+                // List pets (expect 2)
+                val listOut = client.listPetsJson(petstore.api.petstore.listpets.In())
+                assert(listOut.pets.size == 2) { "expected 2 pets, got ${listOut.pets.size}" }
 
-            val addBuddyOutU = client.addPet(addBuddyIn)
-            val buddyIdU = addBuddyOutU.pet.id
-            assert(addBuddyOutU.pet.name == "Buddy") { "ueba: expected name Buddy, got ${addBuddyOutU.pet.name}" }
-            assert(buddyIdU == buddyId) { "ueba: expected buddyId $buddyId, got $buddyIdU" }
+                // Get Buddy
+                val getBuddyOut = client.getPetJson(petstore.api.petstore.getpet.In(id = buddyId))
+                assert(getBuddyOut.pet.name == "Buddy") { "expected Buddy, got ${getBuddyOut.pet.name}" }
+                assert(getBuddyOut.pet.status == petstore.api.PetStatus.Available) { "expected Available, got ${getBuddyOut.pet.status}" }
+                assert(getBuddyOut.pet.tag == "dog") { "expected tag dog, got ${getBuddyOut.pet.tag}" }
 
-            val addWhiskersOutU = client.addPet(addWhiskersIn)
-            val whiskersIdU = addWhiskersOutU.pet.id
-            assert(addWhiskersOutU.pet.name == "Whiskers") { "ueba: expected name Whiskers, got ${addWhiskersOutU.pet.name}" }
-            assert(whiskersIdU == whiskersId) { "ueba: expected whiskersId $whiskersId, got $whiskersIdU" }
+                // Delete Whiskers
+                val deleteOut = client.deletePetJson(petstore.api.petstore.deletepet.In(id = whiskersId))
+                assert(deleteOut.deleted) { "expected deleted=true, got ${deleteOut.deleted}" }
 
-            val listOutU = client.listPets(petstore.api.petstore.listpets.In())
-            assert(listOutU.pets.size == 2) { "ueba: expected 2 pets, got ${listOutU.pets.size}" }
+                // List pets again (expect 1)
+                val list2Out = client.listPetsJson(petstore.api.petstore.listpets.In())
+                assert(list2Out.pets.size == 1) { "expected 1 pet, got ${list2Out.pets.size}" }
+                assert(list2Out.pets[0].name == "Buddy") { "expected remaining pet Buddy, got ${list2Out.pets[0].name}" }
+            }
 
-            val getBuddyOutU = client.getPet(petstore.api.petstore.getpet.In(id = buddyIdU))
-            assert(getBuddyOutU.pet.name == "Buddy") { "ueba: expected Buddy, got ${getBuddyOutU.pet.name}" }
-            assert(getBuddyOutU.pet.status == petstore.api.PetStatus.Available) { "ueba: expected Available, got ${getBuddyOutU.pet.status}" }
-            assert(getBuddyOutU.pet.tag == "dog") { "ueba: expected tag dog, got ${getBuddyOutU.pet.tag}" }
+            if (runUeba) {
+                // ---- UEBA scenario ----
+                // Same sequence over the binary transport; assert identical results.
+                post("/reset", "")
 
-            val deleteOutU = client.deletePet(petstore.api.petstore.deletepet.In(id = whiskersIdU))
-            assert(deleteOutU.deleted) { "ueba: expected deleted=true, got ${deleteOutU.deleted}" }
+                val addBuddyOutU = client.addPet(addBuddyIn)
+                val buddyIdU = addBuddyOutU.pet.id
+                assert(addBuddyOutU.pet.name == "Buddy") { "ueba: expected name Buddy, got ${addBuddyOutU.pet.name}" }
+                if (buddyId != null) assert(buddyIdU == buddyId) { "ueba: expected buddyId $buddyId, got $buddyIdU" }
 
-            val list2OutU = client.listPets(petstore.api.petstore.listpets.In())
-            assert(list2OutU.pets.size == 1) { "ueba: expected 1 pet, got ${list2OutU.pets.size}" }
-            assert(list2OutU.pets[0].name == "Buddy") { "ueba: expected remaining pet Buddy, got ${list2OutU.pets[0].name}" }
+                val addWhiskersOutU = client.addPet(addWhiskersIn)
+                val whiskersIdU = addWhiskersOutU.pet.id
+                assert(addWhiskersOutU.pet.name == "Whiskers") { "ueba: expected name Whiskers, got ${addWhiskersOutU.pet.name}" }
+                if (whiskersId != null) assert(whiskersIdU == whiskersId) { "ueba: expected whiskersId $whiskersId, got $whiskersIdU" }
+
+                val listOutU = client.listPets(petstore.api.petstore.listpets.In())
+                assert(listOutU.pets.size == 2) { "ueba: expected 2 pets, got ${listOutU.pets.size}" }
+
+                val getBuddyOutU = client.getPet(petstore.api.petstore.getpet.In(id = buddyIdU))
+                assert(getBuddyOutU.pet.name == "Buddy") { "ueba: expected Buddy, got ${getBuddyOutU.pet.name}" }
+                assert(getBuddyOutU.pet.status == petstore.api.PetStatus.Available) { "ueba: expected Available, got ${getBuddyOutU.pet.status}" }
+                assert(getBuddyOutU.pet.tag == "dog") { "ueba: expected tag dog, got ${getBuddyOutU.pet.tag}" }
+
+                val deleteOutU = client.deletePet(petstore.api.petstore.deletepet.In(id = whiskersIdU))
+                assert(deleteOutU.deleted) { "ueba: expected deleted=true, got ${deleteOutU.deleted}" }
+
+                val list2OutU = client.listPets(petstore.api.petstore.listpets.In())
+                assert(list2OutU.pets.size == 1) { "ueba: expected 1 pet, got ${list2OutU.pets.size}" }
+                assert(list2OutU.pets[0].name == "Buddy") { "ueba: expected remaining pet Buddy, got ${list2OutU.pets[0].name}" }
+            }
 
             println("OK")
         }
