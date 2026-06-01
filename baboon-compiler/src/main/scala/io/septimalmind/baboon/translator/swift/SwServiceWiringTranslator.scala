@@ -11,6 +11,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait SwServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[SwValue]]
   def translateServiceRt(domain: Domain): Option[TextTree[SwValue]]
+  def translateClient(defn: DomainMember.User): Option[TextTree[SwValue]]
 }
 
 object SwServiceWiringTranslator {
@@ -207,6 +208,118 @@ object SwServiceWiringTranslator {
             if (resolved.noErrors) generateNoErrorsWiring(service)
             else generateErrorsWiring(service)
           Some(methods)
+        case _ => None
+      }
+    }
+
+    // ========== Client stub generation ==========
+
+    /** Emits a `${Service}Client` class that mirrors the server wiring in
+      * reverse: per endpoint it encodes the input argument, hands the bytes to
+      * a user-supplied transport callback keyed by `(serviceName, methodName)`,
+      * then decodes the transport's response into the endpoint's output type.
+      *
+      * Two transport callbacks are held — UEBA (`Data`) and JSON (`String`) —
+      * mirroring the `invokeUeba` / `invokeJson` server entry points. A UEBA
+      * method is emitted under the bare endpoint name; a JSON method under the
+      * `<name>Json` suffix, but only for the codec flavours active on the
+      * service (matching `hasActiveUebaCodecs` / `hasActiveJsonCodecs`).
+      *
+      * The generated methods are synchronous and `throws`, matching the
+      * existing Swift server-wiring convention (`SwOptions` carries no
+      * `asyncServices` flag; the async `async`/`await` variant would be gated
+      * on such a flag once introduced). `BaboonCodecContext` is threaded as a
+      * defaulted parameter so the codec calls observe the caller's context.
+      */
+    override def translateClient(defn: DomainMember.User): Option[TextTree[SwValue]] = {
+      defn.defn match {
+        case service: Typedef.Service =>
+          val svcName = service.id.name.name
+          val hasUeba = hasActiveUebaCodecs(service)
+          val hasJson = hasActiveJsonCodecs(service)
+          if (!hasUeba && !hasJson) return None
+
+          val clientMethods: Seq[TextTree[SwValue]] = service.methods.flatMap {
+            m =>
+              val inRef   = trans.asSwRef(m.sig, domain, evo)
+              val retType = m.out.map(o => trans.asSwRef(o, domain, evo))
+              val retDecl = retType.map(t => q" -> $t").getOrElse(q"")
+
+              val uebaMethod = if (hasUeba) {
+                val encodeIn = uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"writer", q"arg")
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val decodeExpr = uebaDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"reader")
+                    q"""let reader = $baboonBinTools.createReader(resp)
+                       |return $decodeExpr""".stripMargin
+                  case None =>
+                    q"return"
+                }
+                Some(
+                  q"""public func ${m.name.name}(arg: $inRef, ctx: $baboonCodecContext = $baboonCodecContext.defaultCtx) throws$retDecl {
+                     |    let writer = $baboonBinTools.createWriter()
+                     |    $encodeIn
+                     |    let resp = try self.transportUeba("$svcName", "${m.name.name}", writer.toData())
+                     |    ${decodeOut.shift(4).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              val jsonMethod = if (hasJson) {
+                val encodeIn = jsonEncodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"arg")
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val decodeExpr = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"wire")
+                    q"""let wire = try JSONSerialization.jsonObject(with: resp.data(using: .utf8)!, options: [.fragmentsAllowed])
+                       |return $decodeExpr""".stripMargin
+                  case None =>
+                    q"return"
+                }
+                Some(
+                  q"""public func ${m.name.name}Json(arg: $inRef, ctx: $baboonCodecContext = $baboonCodecContext.defaultCtx) throws$retDecl {
+                     |    let encoded = $encodeIn
+                     |    let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
+                     |    let encodedStr = String(data: jsonData, encoding: .utf8)!
+                     |    let resp = try self.transportJson("$svcName", "${m.name.name}", encodedStr)
+                     |    ${decodeOut.shift(4).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              uebaMethod.toList ++ jsonMethod.toList
+          }
+
+          if (clientMethods.isEmpty) return None
+
+          val uebaTransportType = q"(String, String, Data) throws -> Data"
+          val jsonTransportType = q"(String, String, String) throws -> String"
+
+          val transportFields = List(
+            if (hasUeba) Some(q"private let transportUeba: $uebaTransportType") else None,
+            if (hasJson) Some(q"private let transportJson: $jsonTransportType") else None,
+          ).flatten
+
+          val ctorParams = List(
+            if (hasUeba) Some(q"transportUeba: @escaping $uebaTransportType") else None,
+            if (hasJson) Some(q"transportJson: @escaping $jsonTransportType") else None,
+          ).flatten
+
+          val ctorAssigns = List(
+            if (hasUeba) Some(q"self.transportUeba = transportUeba") else None,
+            if (hasJson) Some(q"self.transportJson = transportJson") else None,
+          ).flatten
+
+          Some(
+            q"""public class ${svcName}Client {
+               |    ${transportFields.join("\n").shift(4).trim}
+               |
+               |    public init(${ctorParams.join(", ")}) {
+               |        ${ctorAssigns.join("\n").shift(8).trim}
+               |    }
+               |
+               |    ${clientMethods.join("\n\n").shift(4).trim}
+               |}""".stripMargin
+          )
         case _ => None
       }
     }

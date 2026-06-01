@@ -34,6 +34,8 @@ case "server":
     startServer(host: host, port: port)
 case "client":
     runClient(host: host, port: port)
+case "selftest":
+    runSelfTest()
 default:
     fputs("Unknown mode: \(mode)\n", stderr)
     exit(1)
