@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.swift
 
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.ServiceResultResolver
 import io.septimalmind.baboon.translator.swift.SwValue.SwType
 import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
@@ -869,11 +870,45 @@ object SwDefnTranslator {
       // client in SwServiceWiringTranslator. When disabled the signature is
       // emitted exactly as before (no `async`, no `throws`).
       val effectsKw = if (target.language.asyncServices) " async throws" else ""
+
+      val resolved = ServiceResultResolver.resolve(domain, "swift", target.language.serviceResult, target.language.pragmas)
+
+      // Render a Swift type ref to its keyword-escaped, fully-qualified string,
+      // matching SwBaboonTranslator.renderTree (each dotted path segment escaped
+      // independently). Used to build the result-container return type in errors
+      // mode; the container syntax itself is plain text emitted via SwTypeName so
+      // the no-codec backends never see it as a real symbol.
+      val swFqName: SwValue => String = {
+        case t: SwType if t.fq =>
+          val module = t.pkg.parts.head
+          val escaped = t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
+          s"$module.$escaped"
+        case t: SwType        => t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
+        case n: SwValue.SwTypeName => trans.escapeSwiftKeyword(n.name)
+      }
+
       val methods = service.methods.map {
         m =>
-          val in      = trans.asSwRef(m.sig, domain, evo)
-          val out     = m.out.map(trans.asSwRef(_, domain, evo))
-          val retStr  = out.map(o => q" -> $o").getOrElse(q"")
+          val in   = trans.asSwRef(m.sig, domain, evo)
+          val out  = m.out.map(trans.asSwRef(_, domain, evo))
+          val err  = m.err.map(trans.asSwRef(_, domain, evo))
+
+          // Bare-`out` cases (noErrors mode, or an err-free method) keep the
+          // original `out` SwType subtree verbatim so the render codec still
+          // collects its module for imports and the output is byte-identical to
+          // the prior emission. Only an err-carrying method in errors mode
+          // returns the result CONTAINER (e.g. BaboonEither<Err, Out>); the
+          // wiring's rt.leftMap relies on the impl returning that container.
+          val emitContainer = !resolved.noErrors && m.err.isDefined && out.isDefined
+          val retStr: TextTree[SwValue] =
+            if (emitContainer) {
+              val outStr     = out.map(_.mapRender(swFqName)).getOrElse("")
+              val errStr     = err.map(_.mapRender(swFqName))
+              val retTypeStr = resolved.renderReturnType(outStr, errStr, "Void")
+              q" -> ${SwValue.SwTypeName(retTypeStr)}"
+            } else {
+              out.map(o => q" -> $o").getOrElse(q"")
+            }
           val methodEx = q"func ${m.name.name}(arg: $in)$effectsKw$retStr"
           prependDocs(m.docs, methodEx)
       }

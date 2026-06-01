@@ -2205,6 +2205,66 @@ TEST_DIR="${action.test-gen-sw-wiring-async.test_dir}"
 ret success:bool=true
 ```
 
+# action: test-gen-sw-wiring-errors
+
+Generate the err-carrying petstore Swift service in ERRORS mode
+(`--service-result-no-errors=false`, BaboonEither container) into the
+`sw-errors` smoke package. Exercises the errors axis of the Swift service
+generator that the no-errors matrix never reaches: the service protocol returns
+the result CONTAINER (`BaboonEither<Err, Out>`), the wiring threads it via
+`rt.leftMap`, and the keyword-bearing `data in` (named `in`) container
+annotations are keyword-escaped.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-sw-wiring-errors"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sw-errors"
+
+rsync -a --exclude='.build' --exclude='.swiftpm' --exclude='Sources/Generated' \
+  ./test/services/sw-errors/ "$TEST_DIR/sw-errors/"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore-errors.baboon \
+  --lock-file="$TEST_DIR/baboon-sw-wiring-errors.lock" \
+  :swift \
+  --output "$TEST_DIR/sw-errors/Sources/Generated" \
+  --service-result-no-errors=false \
+  --service-result-type=BaboonEither \
+  --service-result-pattern="<\$error, \$success>" \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-sw-wiring-errors
+
+Build the errors-mode Swift wiring smoke package: confirms the generated
+container-returning service protocol, the errors-mode invoke dispatchers
+(JSON + UEBA), the muxer-wrapper and the client all type-check against the
+runtime and link. The bar is compile/link (`swift build`); the package also
+round-trips in-process when run.
+
+```bash
+if ! command -v swift &> /dev/null; then
+  if [[ "$(uname)" == "Linux" ]]; then
+    echo "Swift is required on Linux but was not found in PATH" >&2
+    exit 1
+  fi
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+TEST_DIR="${action.test-gen-sw-wiring-errors.test_dir}"
+./scripts/swift-xcode.sh "$TEST_DIR/sw-errors" build
+
+ret success:bool=true
+```
+
 # action: test-gen-graphql
 
 Generate GraphQL SDL schemas and validate them.
@@ -2339,6 +2399,7 @@ dep action.test-jv-wiring
 dep action.test-dt-wiring
 dep action.test-sw-wiring
 dep action.test-sw-wiring-async
+dep action.test-sw-wiring-errors
 
 ret success:bool=true
 ```
