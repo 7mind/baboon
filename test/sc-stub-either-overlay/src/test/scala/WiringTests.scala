@@ -322,4 +322,78 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
     val ex = intercept[BaboonWiringException](newUebaMuxer().invoke(method, Array.emptyByteArray, ctx))
     ex.error shouldBe a[BaboonWiringError.NoMatchingService]
   }
+
+  // ==================== Client round-trip ====================
+  // The generated ${Svc}Client encodes the request, hands it to a transport
+  // callback, and decodes the response into the same result container the
+  // server wiring uses (here: Either[BaboonWiringError, Out]). The in-process
+  // transport routes straight into ${Svc}Wiring.invoke{Json,Ueba} and returns
+  // the success wire, exercising the result-container path end-to-end.
+
+  private def jsonTransport(impl: testpkg.pkg0.I1): (String, String, String) => String =
+    (svc, method, data) =>
+      testpkg.pkg0.I1Wiring.invokeJson(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+        case Right(wire) => wire
+        case Left(err)   => throw new BaboonWiringException(err)
+      }
+
+  private def uebaTransport(impl: testpkg.pkg0.I1): (String, String, Array[Byte]) => Array[Byte] =
+    (svc, method, data) =>
+      testpkg.pkg0.I1Wiring.invokeUeba(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+        case Right(wire) => wire
+        case Left(err)   => throw new BaboonWiringException(err)
+      }
+
+  "I1Client.testCallJson" should "round-trip through the server wiring" in {
+    val impl   = new MockI1Either()
+    val client = new testpkg.pkg0.I1Client(uebaTransport(impl), jsonTransport(impl), rt, ctx)
+
+    client.testCallJson(testpkg.pkg0.i1.testcall.In()) match {
+      case Right(out) => out.i00 shouldBe 42
+      case Left(err)  => fail(s"Expected Right, got Left($err)")
+    }
+  }
+
+  "I1Client.testCall (UEBA)" should "round-trip through the server wiring" in {
+    val impl   = new MockI1Either()
+    val client = new testpkg.pkg0.I1Client(uebaTransport(impl), jsonTransport(impl), rt, ctx)
+
+    client.testCall(testpkg.pkg0.i1.testcall.In()) match {
+      case Right(out) => out.i00 shouldBe 42
+      case Left(err)  => fail(s"Expected Right, got Left($err)")
+    }
+  }
+
+  "I1Client" should "surface a DecoderFailed when the transport returns garbage" in {
+    val impl   = new MockI1Either()
+    val badTransport: (String, String, String) => String = (_, _, _) => "not valid json!!"
+    val client = new testpkg.pkg0.I1Client(uebaTransport(impl), badTransport, rt, ctx)
+
+    client.testCallJson(testpkg.pkg0.i1.testcall.In()) match {
+      case Left(err) => err shouldBe a[BaboonWiringError.DecoderFailed]
+      case Right(_)  => fail("Expected Left(DecoderFailed)")
+    }
+  }
+
+  "I2Client.noErrCallJson" should "round-trip through the server wiring" in {
+    val impl = new MockI2Either()
+    val jsonT: (String, String, String) => String =
+      (svc, method, data) =>
+        testpkg.pkg0.I2Wiring.invokeJson(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+          case Right(wire) => wire
+          case Left(err)   => throw new BaboonWiringException(err)
+        }
+    val uebaT: (String, String, Array[Byte]) => Array[Byte] =
+      (svc, method, data) =>
+        testpkg.pkg0.I2Wiring.invokeUeba(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+          case Right(wire) => wire
+          case Left(err)   => throw new BaboonWiringException(err)
+        }
+    val client = new testpkg.pkg0.I2Client(uebaT, jsonT, rt, ctx)
+
+    client.noErrCallJson(testpkg.pkg0.i2.noerrcall.In(value = 7)) match {
+      case Right(out) => out.result shouldBe "result_7"
+      case Left(err)  => fail(s"Expected Right, got Left($err)")
+    }
+  }
 }

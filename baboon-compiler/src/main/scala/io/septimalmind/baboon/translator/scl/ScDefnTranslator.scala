@@ -109,7 +109,20 @@ object ScDefnTranslator {
             )
         }.toList
 
-      F.pure(mainOutput :: wiringOutput)
+      val clientOutput = wiringTranslator
+        .translateClient(defn).map {
+          clientTree =>
+            val pkg     = srcRef.pkg
+            val wrapped = scTrees.inNs(pkg.parts.toSeq, clientTree)
+            Output(
+              getOutputPath(defn, suffix = Some("_Client")),
+              wrapped,
+              pkg,
+              CompilerProduct.Definition,
+            )
+        }.toList
+
+      F.pure(mainOutput :: wiringOutput ::: clientOutput)
     }
 
     override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {

@@ -221,4 +221,44 @@ class OutcomeWiringTests extends AnyFlatSpec with Matchers {
       case Outcome.Failure(err) => fail(s"Expected Success, got Failure($err)")
     }
   }
+
+  // ==================== Client round-trip (single-param Outcome container) ====================
+  // The generated ${Svc}Client decodes the transport response into Outcome[Out]
+  // via the same IBaboonServiceRt the server wiring uses. The container is
+  // single-parameter (success only), so the wiring error is type-erased into
+  // Outcome.Failure(Any).
+
+  private def jsonTransport(impl: testpkg.pkg0.I1): (String, String, String) => String =
+    (svc, method, data) =>
+      testpkg.pkg0.I1Wiring.invokeJson(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+        case Outcome.Success(wire) => wire
+        case Outcome.Failure(err)  => throw new BaboonWiringException(err.asInstanceOf[BaboonWiringError])
+      }
+
+  private def uebaTransport(impl: testpkg.pkg0.I1): (String, String, Array[Byte]) => Array[Byte] =
+    (svc, method, data) =>
+      testpkg.pkg0.I1Wiring.invokeUeba(BaboonMethodId(svc, method), data, impl, rt, ctx) match {
+        case Outcome.Success(wire) => wire
+        case Outcome.Failure(err)  => throw new BaboonWiringException(err.asInstanceOf[BaboonWiringError])
+      }
+
+  "I1Client.testCallJson" should "round-trip into Outcome.Success" in {
+    val impl   = new MockI1Outcome()
+    val client = new testpkg.pkg0.I1Client(uebaTransport(impl), jsonTransport(impl), rt, ctx)
+
+    client.testCallJson(testpkg.pkg0.i1.testcall.In()) match {
+      case Outcome.Success(out) => out.i00 shouldBe 42
+      case Outcome.Failure(err) => fail(s"Expected Success, got Failure($err)")
+    }
+  }
+
+  "I1Client.testCall (UEBA)" should "round-trip into Outcome.Success" in {
+    val impl   = new MockI1Outcome()
+    val client = new testpkg.pkg0.I1Client(uebaTransport(impl), jsonTransport(impl), rt, ctx)
+
+    client.testCall(testpkg.pkg0.i1.testcall.In()) match {
+      case Outcome.Success(out) => out.i00 shouldBe 42
+      case Outcome.Failure(err) => fail(s"Expected Success, got Failure($err)")
+    }
+  }
 }
