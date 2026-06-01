@@ -48,34 +48,34 @@ func runSelfTest() {
     let buddyOut = try! client.addPetJson(
         arg: petstore.addpet.`in`(name: "Buddy", status: .Available, tag: "dog")
     )
-    assert(buddyOut.pet.name == "Buddy", "expected name Buddy, got \(buddyOut.pet.name)")
+    precondition(buddyOut.pet.name == "Buddy", "expected name Buddy, got \(buddyOut.pet.name)")
     let buddyId = buddyOut.pet.id
 
     // addPet (Whiskers)
     let whiskersOut = try! client.addPetJson(
         arg: petstore.addpet.`in`(name: "Whiskers", status: .Pending, tag: "cat")
     )
-    assert(whiskersOut.pet.name == "Whiskers", "expected name Whiskers, got \(whiskersOut.pet.name)")
+    precondition(whiskersOut.pet.name == "Whiskers", "expected name Whiskers, got \(whiskersOut.pet.name)")
     let whiskersId = whiskersOut.pet.id
 
     // listPets -> 2
     let list = try! client.listPetsJson(arg: petstore.listpets.`in`())
-    assert(list.pets.count == 2, "expected 2 pets, got \(list.pets.count)")
+    precondition(list.pets.count == 2, "expected 2 pets, got \(list.pets.count)")
 
     // getPet (Buddy)
     let getBuddy = try! client.getPetJson(arg: petstore.getpet.`in`(id: buddyId))
-    assert(getBuddy.pet.name == "Buddy", "expected Buddy, got \(getBuddy.pet.name)")
-    assert(getBuddy.pet.status == .Available, "expected Available, got \(getBuddy.pet.status)")
-    assert(getBuddy.pet.tag == "dog", "expected tag dog, got \(String(describing: getBuddy.pet.tag))")
+    precondition(getBuddy.pet.name == "Buddy", "expected Buddy, got \(getBuddy.pet.name)")
+    precondition(getBuddy.pet.status == .Available, "expected Available, got \(getBuddy.pet.status)")
+    precondition(getBuddy.pet.tag == "dog", "expected tag dog, got \(String(describing: getBuddy.pet.tag))")
 
     // deletePet (Whiskers)
     let del = try! client.deletePetJson(arg: petstore.deletepet.`in`(id: whiskersId))
-    assert(del.deleted == true, "expected deleted=true, got \(del.deleted)")
+    precondition(del.deleted == true, "expected deleted=true, got \(del.deleted)")
 
     // listPets -> 1
     let list2 = try! client.listPetsJson(arg: petstore.listpets.`in`())
-    assert(list2.pets.count == 1, "expected 1 pet, got \(list2.pets.count)")
-    assert(list2.pets[0].name == "Buddy", "expected remaining pet Buddy, got \(list2.pets[0].name)")
+    precondition(list2.pets.count == 1, "expected 1 pet, got \(list2.pets.count)")
+    precondition(list2.pets[0].name == "Buddy", "expected remaining pet Buddy, got \(list2.pets[0].name)")
 
     print("OK")
 }
