@@ -667,15 +667,24 @@ def _patch_scala_missing_imports(sc_dir: Path):
 
         sc_file.write_text(content, encoding="utf-8")
 
-    # Patch wiring file specifically
+    # Patch wiring + client files specifically
     _patch_scala_wiring(gen_dir)
 
 
 def _patch_scala_wiring(gen_dir: Path):
-    """Fix wiring file references that get shadowed by sub-packages."""
+    """Fix wiring/client file references that get shadowed by sub-packages.
+
+    Both the generated *Wiring* and *Client* files live in the depth-2 package
+    `petstore.api` and reference `petstore.api.petstore.X`, where `petstore`
+    resolves to the nested sub-package rather than the root. The depth>2 patch
+    in _patch_scala_missing_imports skips them, so rewrite the nested references
+    to absolute `_root_` paths here.
+    """
     import re
 
-    for wiring_file in gen_dir.rglob("*Wiring*.scala"):
+    wiring_files = list(gen_dir.rglob("*Wiring*.scala"))
+    client_files = list(gen_dir.rglob("*Client*.scala"))
+    for wiring_file in wiring_files + client_files:
         content = wiring_file.read_text(encoding="utf-8")
 
         # In package petstore.api, references to petstore.api.petstore.X
