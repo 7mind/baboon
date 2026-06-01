@@ -32,14 +32,30 @@ public final class ClientApp {
         return response.body();
     }
 
+    private static byte[] postBytes(HttpClient httpClient, String host, int port, String path, byte[] body) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create("http://" + host + ":" + port + path))
+            .expectContinue(false)
+            .timeout(Duration.ofSeconds(10))
+            .header("Content-Type", "application/octet-stream")
+            .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+            .build();
+        HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        check(response.statusCode() == 200, "Expected 200, got " + response.statusCode()
+            + ": " + new String(response.body(), java.nio.charset.StandardCharsets.UTF_8));
+        return response.body();
+    }
+
     public static void run(String host, int port) throws Exception {
         HttpClient httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .build();
 
-        BaboonClientTransport.JsonSync transport =
+        BaboonClientTransport.JsonSync jsonTransport =
             (service, method, data) -> post(httpClient, host, port, "/" + service + "/" + method, data);
-        petstore.api.PetStoreClient client = new petstore.api.PetStoreClient(transport);
+        BaboonClientTransport.UebaSync uebaTransport =
+            (service, method, data) -> postBytes(httpClient, host, port, "/" + service + "/" + method, data);
+        petstore.api.PetStoreClient client = new petstore.api.PetStoreClient(uebaTransport, jsonTransport);
 
         // Reset
         post(httpClient, host, port, "/reset", "");
@@ -77,6 +93,34 @@ public final class ClientApp {
         var list2Out = client.listPetsJson(listIn);
         check(list2Out.pets().size() == 1, "expected 1 pet, got " + list2Out.pets().size());
         check(list2Out.pets().get(0).name().equals("Buddy"), "expected remaining pet Buddy, got " + list2Out.pets().get(0).name());
+
+        // ---- UEBA pass: identical scenario over binary transport, assert identical results ----
+        post(httpClient, host, port, "/reset", "");
+
+        var addBuddyOutU = client.addPet(addBuddyIn);
+        long buddyIdU = addBuddyOutU.pet().id();
+        check(buddyIdU == buddyId, "UEBA buddy id mismatch: json=" + buddyId + " ueba=" + buddyIdU);
+        check(addBuddyOutU.pet().name().equals(addBuddyOut.pet().name()), "UEBA buddy name mismatch");
+
+        var addWhiskersOutU = client.addPet(addWhiskersIn);
+        long whiskersIdU = addWhiskersOutU.pet().id();
+        check(whiskersIdU == whiskersId, "UEBA whiskers id mismatch: json=" + whiskersId + " ueba=" + whiskersIdU);
+        check(addWhiskersOutU.pet().name().equals(addWhiskersOut.pet().name()), "UEBA whiskers name mismatch");
+
+        var listOutU = client.listPets(listIn);
+        check(listOutU.pets().size() == listOut.pets().size(), "UEBA list size mismatch: json=" + listOut.pets().size() + " ueba=" + listOutU.pets().size());
+
+        var getBuddyOutU = client.getPet(new petstore.api.petstore.getpet.In(buddyIdU));
+        check(getBuddyOutU.pet().name().equals(getBuddyOut.pet().name()), "UEBA get name mismatch");
+        check(getBuddyOutU.pet().status() == getBuddyOut.pet().status(), "UEBA get status mismatch");
+        check(getBuddyOutU.pet().tag().equals(getBuddyOut.pet().tag()), "UEBA get tag mismatch: json=" + getBuddyOut.pet().tag() + " ueba=" + getBuddyOutU.pet().tag());
+
+        var deleteOutU = client.deletePet(new petstore.api.petstore.deletepet.In(whiskersIdU));
+        check(deleteOutU.deleted() == deleteOut.deleted(), "UEBA delete mismatch");
+
+        var list2OutU = client.listPets(listIn);
+        check(list2OutU.pets().size() == list2Out.pets().size(), "UEBA list2 size mismatch: json=" + list2Out.pets().size() + " ueba=" + list2OutU.pets().size());
+        check(list2OutU.pets().get(0).name().equals(list2Out.pets().get(0).name()), "UEBA list2 remaining pet mismatch");
 
         System.out.println("OK");
     }
