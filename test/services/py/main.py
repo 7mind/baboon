@@ -1,11 +1,12 @@
 import sys
 from server import start_server
 from client import run_client
+from client_roundtrip import run_client_roundtrip
 
 def main() -> None:
     args = sys.argv[1:]
     if not args:
-        print("Usage: main.py <server|client> --host <host> --port <port>", file=sys.stderr)
+        print("Usage: main.py <server|client|client-roundtrip> --host <host> --port <port>", file=sys.stderr)
         sys.exit(1)
 
     mode = args[0]
@@ -26,6 +27,8 @@ def main() -> None:
         start_server(host, port)
     elif mode == "client":
         run_client(host, port)
+    elif mode == "client-roundtrip":
+        run_client_roundtrip()
     else:
         print(f"Unknown mode: {mode}", file=sys.stderr)
         sys.exit(1)

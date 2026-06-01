@@ -13,6 +13,8 @@ trait PyServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[PyValue]]
 
   def translateServiceRt(domain: Domain): Option[TextTree[PyValue]]
+
+  def translateClient(defn: DomainMember.User): Option[TextTree[PyValue]]
 }
 
 object PyServiceWiringTranslator {
@@ -199,6 +201,110 @@ object PyServiceWiringTranslator {
             if (resolved.noErrors) generateNoErrorsWiring(service)
             else generateErrorsWiring(service)
           Some(methods)
+        case _ => None
+      }
+    }
+
+    /** Emits a `${Service}Client` class holding user-supplied transport
+      * callbacks plus a `BaboonCodecContext`, with one method per service
+      * endpoint that encodes the input, calls the transport `(service, method,
+      * data) -> data`, and decodes the output.
+      *
+      * Two methods are emitted per endpoint when both codecs are active: the
+      * UEBA path keeps the bare endpoint name and round-trips `bytes` via
+      * `transport_ueba`; the JSON path is `${method}_json` and round-trips
+      * `str` via `transport_json`. Routing is by `(serviceName, methodName)`
+      * string literals, matching the server-side wiring/muxer.
+      *
+      * The codec context is held on the client (`self.ctx`) and rebound to a
+      * local `ctx` inside each method so the shared codec-resolution helpers
+      * (`jsonEncodeExpr`, `uebaDecodeExpr`, …) resolve. Python has no
+      * `--py-async-services` flag (see `PyOptions`), so the client is
+      * synchronous, mirroring the synchronous server wiring.
+      */
+    override def translateClient(defn: DomainMember.User): Option[TextTree[PyValue]] = {
+      defn.defn match {
+        case service: Typedef.Service =>
+          val svcName = service.id.name.name
+          val hasJson = hasActiveJsonCodecs(service)
+          val hasUeba = hasActiveUebaCodecs(service)
+          if (!hasJson && !hasUeba) return None
+
+          val clientMethods = service.methods.flatMap {
+            m =>
+              val inType  = typeTranslator.asPyRef(m.sig, domain, evolution, fileTools.definitionsBasePkg)
+              val outType = m.out.map(o => typeTranslator.asPyRef(o, domain, evolution, fileTools.definitionsBasePkg))
+              val retAnnot: TextTree[PyValue] = outType.getOrElse(q"None")
+
+              val uebaMethod = if (hasUeba) {
+                val encStmt = uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"writer", q"arg")
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val decExpr = uebaDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"reader")
+                    q"""reader = $baboonLEDataInputStream($pyBytesIO(resp))
+                       |return $decExpr""".stripMargin
+                  case None => q"return None"
+                }
+                Some(
+                  q"""def ${m.name.name}(self, ${ctxParamDecl}arg: $inType) -> $retAnnot:
+                     |    ctx = self.ctx
+                     |    output_stream = $pyBytesIO()
+                     |    writer = $baboonLEDataOutputStream(output_stream)
+                     |    $encStmt
+                     |    resp = self.transport_ueba("$svcName", "${m.name.name}", output_stream.getvalue())
+                     |    ${decodeOut.shift(4).trim}
+                     |""".stripMargin
+                )
+              } else None
+
+              val jsonMethod = if (hasJson) {
+                val encExpr = jsonEncodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"arg")
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val decExpr = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"resp")
+                    q"return $decExpr"
+                  case None => q"return None"
+                }
+                Some(
+                  q"""def ${m.name.name}_json(self, ${ctxParamDecl}arg: $inType) -> $retAnnot:
+                     |    ctx = self.ctx
+                     |    encoded = $encExpr
+                     |    resp = self.transport_json("$svcName", "${m.name.name}", encoded)
+                     |    ${decodeOut.shift(4).trim}
+                     |""".stripMargin
+                )
+              } else None
+
+              uebaMethod.toList ++ jsonMethod.toList
+          }
+
+          if (clientMethods.isEmpty) return None
+
+          val ctorParams: List[TextTree[PyValue]] = {
+            val ueba = if (hasUeba) List[TextTree[PyValue]](q"transport_ueba: $pyCallable[[str, str, bytes], bytes]") else Nil
+            val json = if (hasJson) List[TextTree[PyValue]](q"transport_json: $pyCallable[[str, str, str], str]") else Nil
+            ueba ++ json :+ q"ctx: $baboonCodecContext"
+          }
+
+          val ctorAssigns: List[TextTree[PyValue]] = {
+            val ueba = if (hasUeba) List[TextTree[PyValue]](q"self.transport_ueba = transport_ueba") else Nil
+            val json = if (hasJson) List[TextTree[PyValue]](q"self.transport_json = transport_json") else Nil
+            ueba ++ json :+ q"self.ctx = ctx"
+          }
+
+          val clientTree =
+            q"""class ${svcName}Client:
+               |    \"\"\"RPC client for $svcName. Holds user-supplied transport callbacks
+               |    `(service, method, data) -> data` and a $baboonCodecContext, and exposes one
+               |    method per endpoint (UEBA: bare name / `bytes`; JSON: `_json` suffix / `str`).
+               |    \"\"\"
+               |    def __init__(self, ${ctorParams.join(", ")}) -> None:
+               |        ${ctorAssigns.join("\n").shift(8).trim}
+               |
+               |    ${clientMethods.joinNN().shift(4).trim}
+               |""".stripMargin
+
+          Some(clientTree)
         case _ => None
       }
     }

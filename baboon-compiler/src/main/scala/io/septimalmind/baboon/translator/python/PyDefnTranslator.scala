@@ -158,7 +158,21 @@ object PyDefnTranslator {
             )
         }.toList
 
-      F.pure(mainOutput :: wiringOutput)
+      val clientOutput = wiringTranslator
+        .translateClient(defn).map {
+          clientTree =>
+            val clientModule = typeTranslator
+              .toPyModule(defn.id, domain.version, evolution, fileTools.definitionsBasePkg)
+              .withModuleName(s"${defn.id.name.name}_Client")
+            Output(
+              getOutputPath(defn, suffix = Some("_Client")),
+              clientTree,
+              clientModule,
+              CompilerProduct.Definition,
+            )
+        }.toList
+
+      F.pure(mainOutput :: (wiringOutput ++ clientOutput))
     }
 
     private def makeFullRepr(defn: DomainMember.User): PyDefnRepr = {

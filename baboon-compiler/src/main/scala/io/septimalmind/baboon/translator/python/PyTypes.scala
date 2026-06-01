@@ -147,6 +147,7 @@ object PyTypes {
   val pyClassVar = PyType(pyTypingModule, "ClassVar")
   val pyAny      = PyType(pyTypingModule, "Any")
   val pyProtocol = PyType(pyTypingModule, "Protocol")
+  val pyCallable = PyType(pyTypingModule, "Callable")
 
   // json
   val pyJsonDumps = PyType(pyJson, "dumps")
