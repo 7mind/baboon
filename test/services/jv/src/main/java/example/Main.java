@@ -7,6 +7,7 @@ public final class Main {
         String mode = null;
         String host = "127.0.0.1";
         int port = 18080;
+        String codec = "both";
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -19,6 +20,10 @@ public final class Main {
                     if (i + 1 >= args.length) throw new IllegalArgumentException("--port requires a value");
                     port = Integer.parseInt(args[++i]);
                 }
+                case "--codec" -> {
+                    if (i + 1 >= args.length) throw new IllegalArgumentException("--codec requires a value");
+                    codec = args[++i];
+                }
                 default -> throw new IllegalArgumentException("Unknown argument: " + args[i]);
             }
         }
@@ -27,7 +32,7 @@ public final class Main {
 
         switch (mode) {
             case "server" -> PetStoreServer.start(host, port);
-            case "client" -> ClientApp.run(host, port);
+            case "client" -> ClientApp.run(host, port, codec);
             default -> throw new IllegalArgumentException("Unknown mode: " + mode);
         }
     }
