@@ -15,7 +15,7 @@ object PetStoreClient {
   // acceptance scenario. This always throws so the checks stay live.
   private def check(cond: Boolean, msg: String): Unit = if (!cond) throw new RuntimeException(msg)
 
-  def run(host: String, port: Int): Unit = {
+  def run(host: String, port: Int, codec: String): Unit = {
     val base = s"http://$host:$port"
 
     val client = new petstore.api.PetStoreClient(
@@ -23,8 +23,8 @@ object PetStoreClient {
       transportJson = (service, method, data) => post(base, s"/$service/$method", data),
     )
 
-    runJson(base, client)
-    runUeba(base, client)
+    if (codec == "json" || codec == "both") runJson(base, client)
+    if (codec == "ueba" || codec == "both") runUeba(base, client)
 
     println("OK")
   }

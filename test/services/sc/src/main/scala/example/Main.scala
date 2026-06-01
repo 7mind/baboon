@@ -5,8 +5,9 @@ object Main {
     assert(args.nonEmpty, "Usage: <server|client> --host <host> --port <port>")
 
     val mode = args(0)
-    var host = "127.0.0.1"
-    var port = 18080
+    var host  = "127.0.0.1"
+    var port  = 18080
+    var codec = "both"
 
     var i = 1
     while (i < args.length) {
@@ -19,6 +20,14 @@ object Main {
           assert(i + 1 < args.length, "--port requires a value")
           port = args(i + 1).toInt
           i += 2
+        case "--codec" =>
+          assert(i + 1 < args.length, "--codec requires a value")
+          codec = args(i + 1)
+          assert(
+            codec == "json" || codec == "ueba" || codec == "both",
+            s"--codec must be one of json|ueba|both, got: $codec",
+          )
+          i += 2
         case other =>
           throw new IllegalArgumentException(s"Unknown argument: $other")
       }
@@ -26,7 +35,7 @@ object Main {
 
     mode match {
       case "server" => PetStoreServer.start(host, port)
-      case "client" => PetStoreClient.run(host, port)
+      case "client" => PetStoreClient.run(host, port, codec)
       case _        => throw new IllegalArgumentException(s"Unknown mode: $mode")
     }
   }
