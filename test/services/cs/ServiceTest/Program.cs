@@ -15,6 +15,7 @@ public static class Program
         string mode = args[0];
         string host = "127.0.0.1";
         int port = 18080;
+        string codec = "both";
 
         int i = 1;
         while (i < args.Length)
@@ -29,6 +30,11 @@ public static class Program
                 port = int.Parse(args[i + 1]);
                 i += 2;
             }
+            else if (args[i] == "--codec" && i + 1 < args.Length)
+            {
+                codec = args[i + 1];
+                i += 2;
+            }
             else
             {
                 i++;
@@ -41,7 +47,7 @@ public static class Program
                 PetStoreServer.Start(host, port);
                 break;
             case "client":
-                PetStoreClient.Run(host, port);
+                PetStoreClient.Run(host, port, codec);
                 break;
             default:
                 Console.Error.WriteLine($"Unknown mode: {mode}");

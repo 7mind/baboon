@@ -7,7 +7,7 @@ namespace ServiceTest;
 
 public static class PetStoreClient
 {
-    public static void Run(string host, int port)
+    public static void Run(string host, int port, string codec = "both")
     {
         BaboonCodecContext ctx = BaboonCodecContext.Default;
         HttpClient http = new HttpClient();
@@ -18,11 +18,26 @@ public static class PetStoreClient
             (service, method, data) => Post(http, $"{baseUrl}/{service}/{method}", data)
         );
 
+        bool runJson = codec == "json" || codec == "both";
+        bool runUeba = codec == "ueba" || codec == "both";
+
+        if (!runJson && !runUeba)
+        {
+            Console.Error.WriteLine($"Unknown codec: {codec} (expected json|ueba|both)");
+            Environment.Exit(1);
+        }
+
         // JSON pass — drives the generated *Json methods over the string transport.
-        RunScenario(http, baseUrl, jsonClient, ctx, useUeba: false);
+        if (runJson)
+        {
+            RunScenario(http, baseUrl, jsonClient, ctx, useUeba: false);
+        }
 
         // UEBA pass — same scenario via the generated bare methods over the binary transport.
-        RunScenario(http, baseUrl, jsonClient, ctx, useUeba: true);
+        if (runUeba)
+        {
+            RunScenario(http, baseUrl, jsonClient, ctx, useUeba: true);
+        }
 
         Console.WriteLine("OK");
     }
