@@ -23,6 +23,47 @@ object SwServiceWiringTranslator {
     evo: BaboonEvolution,
   ) extends SwServiceWiringTranslator {
 
+    // Async axis. When enabled the service protocol methods (emitted in
+    // SwDefnTranslator), the invoke dispatchers, the client methods and the
+    // muxer wrappers all become `async throws` / `await`. When disabled the
+    // generated code is byte-identical to the previous synchronous `throws`
+    // output.
+    private val isAsync: Boolean = target.language.asyncServices
+
+    // Prefix used at every `impl.<method>(...)` call site. In async mode the
+    // protocol method is `async throws`, so the call needs `try await`. In sync
+    // mode the protocol method has no `throws`, so no prefix is emitted (kept
+    // identical to the prior output).
+    private val implCallPrefix: String = if (isAsync) "try await " else ""
+
+    // Effect keywords for the noErrors invoke dispatchers and their per-method
+    // handler closures. Sync: `throws `; async: `async throws `. The trailing
+    // space keeps the sync rendering identical to the prior output
+    // (`) throws -> String {`).
+    private val dispatcherEffects: String = if (isAsync) "async throws " else "throws "
+    private val closureEffects: String    = dispatcherEffects
+    // Prefix for invoking the resolved handler closure (`return <prefix> handler()`).
+    private val handlerCallPrefix: String = if (isAsync) "try await" else "try"
+
+    // Client method effects (`public func ...(...) <clientEffects><retDecl>`),
+    // the transport closure type effects, and the prefix used when invoking the
+    // transport callback. Sync renders identically to the prior output.
+    private val clientEffects: String        = if (isAsync) "async throws" else "throws"
+    private val transportTypeEffects: String = if (isAsync) "async throws " else "throws "
+    private val transportCallPrefix: String  = if (isAsync) "try await" else "try"
+
+    /** Associated-type `R` carried by the muxer wrapper's `IBaboon*Service`
+      * conformance. In sync mode it is the bare wire-shape result (`String` /
+      * `Data`, container-wrapped in errors mode). In async mode the runtime
+      * `IBaboon*Service.invoke` stays a synchronous `throws -> R`, so the
+      * asyncness is absorbed into `R` itself by making it a deferred
+      * `() async throws -> <base>` thunk — mirroring the Rust backend which
+      * makes `R` a `Pin<Box<dyn Future>>`. The caller awaits the thunk:
+      * `try await muxer.invoke(...)()`.
+      */
+    private def wrapperRetType(base: TextTree[SwValue]): TextTree[SwValue] =
+      if (isAsync) q"() async throws -> $base" else base
+
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "swift", target.language.serviceResult, target.language.pragmas)
 
@@ -204,6 +245,19 @@ object SwServiceWiringTranslator {
     override def translate(defn: DomainMember.User): Option[TextTree[SwValue]] = {
       defn.defn match {
         case service: Typedef.Service =>
+          // Async + errors mode is not supported for Swift: the `rt`
+          // combinators take synchronous closures, so an `async throws` impl
+          // call cannot be threaded through `rt.flatMap`/`rt.leftMap` without
+          // either an async-capable `IBaboonServiceRt` runtime contract or a
+          // container-introspecting rewrite. The async axis is supported only
+          // in noErrors (`--service-result-no-errors`) mode, matching the
+          // verified path. Fail fast rather than emit non-compiling code.
+          if (isAsync && !resolved.noErrors) {
+            throw new RuntimeException(
+              "Swift async service generation (--sw-async-services) is only supported with --service-result-no-errors. " +
+                s"Service ${service.id.name.name} uses the errors-mode service result, which has no async-compatible wiring."
+            )
+          }
           val methods =
             if (resolved.noErrors) generateNoErrorsWiring(service)
             else generateErrorsWiring(service)
@@ -225,11 +279,12 @@ object SwServiceWiringTranslator {
       * `<name>Json` suffix, but only for the codec flavours active on the
       * service (matching `hasActiveUebaCodecs` / `hasActiveJsonCodecs`).
       *
-      * The generated methods are synchronous and `throws`, matching the
-      * existing Swift server-wiring convention (`SwOptions` carries no
-      * `asyncServices` flag; the async `async`/`await` variant would be gated
-      * on such a flag once introduced). `BaboonCodecContext` is threaded as a
-      * defaulted parameter so the codec calls observe the caller's context.
+      * The generated methods are `throws` (sync) or `async throws` (when
+      * `SwOptions.asyncServices` is set), matching the service protocol and the
+      * invoke dispatchers; the transport callbacks become
+      * `(String, String, …) async throws -> …` accordingly. `BaboonCodecContext`
+      * is threaded as a defaulted parameter so the codec calls observe the
+      * caller's context.
       */
     override def translateClient(defn: DomainMember.User): Option[TextTree[SwValue]] = {
       defn.defn match {
@@ -256,10 +311,10 @@ object SwServiceWiringTranslator {
                     q"return"
                 }
                 Some(
-                  q"""public func ${m.name.name}(arg: $inRef, ctx: $baboonCodecContext = $baboonCodecContext.defaultCtx) throws$retDecl {
+                  q"""public func ${m.name.name}(arg: $inRef, ctx: $baboonCodecContext = $baboonCodecContext.defaultCtx) $clientEffects$retDecl {
                      |    let writer = $baboonBinTools.createWriter()
                      |    $encodeIn
-                     |    let resp = try self.transportUeba("$svcName", "${m.name.name}", writer.toData())
+                     |    let resp = $transportCallPrefix self.transportUeba("$svcName", "${m.name.name}", writer.toData())
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -276,11 +331,11 @@ object SwServiceWiringTranslator {
                     q"return"
                 }
                 Some(
-                  q"""public func ${m.name.name}Json(arg: $inRef, ctx: $baboonCodecContext = $baboonCodecContext.defaultCtx) throws$retDecl {
+                  q"""public func ${m.name.name}Json(arg: $inRef, ctx: $baboonCodecContext = $baboonCodecContext.defaultCtx) $clientEffects$retDecl {
                      |    let encoded = $encodeIn
                      |    let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
                      |    let encodedStr = String(data: jsonData, encoding: .utf8)!
-                     |    let resp = try self.transportJson("$svcName", "${m.name.name}", encodedStr)
+                     |    let resp = $transportCallPrefix self.transportJson("$svcName", "${m.name.name}", encodedStr)
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -291,8 +346,8 @@ object SwServiceWiringTranslator {
 
           if (clientMethods.isEmpty) return None
 
-          val uebaTransportType = q"(String, String, Data) throws -> Data"
-          val jsonTransportType = q"(String, String, String) throws -> String"
+          val uebaTransportType = q"(String, String, Data) $transportTypeEffects-> Data"
+          val jsonTransportType = q"(String, String, String) $transportTypeEffects-> String"
 
           val transportFields = List(
             if (hasUeba) Some(q"private let transportUeba: $uebaTransportType") else None,
@@ -369,8 +424,8 @@ object SwServiceWiringTranslator {
 
       val wrappers = generateServiceWrappers(
         service,
-        jsonRetType = q"String",
-        uebaRetType = q"Data",
+        jsonRetType = wrapperRetType(q"String"),
+        uebaRetType = wrapperRetType(q"Data"),
       )
 
       q"""public class ${svcName}Wiring {
@@ -397,8 +452,8 @@ object SwServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"let result = impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
-            case None    => q"impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+            case Some(_) => q"let result = ${implCallPrefix}impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+            case None    => q"${implCallPrefix}impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
           }
 
           q""""${m.name.name}": {
@@ -414,14 +469,14 @@ object SwServiceWiringTranslator {
          |    _ data: String,
          |    _ impl: $implType,
          |    ${ctxParamDecl}_ ctx: $baboonCodecContext
-         |) throws -> String {
-         |    let handlers: [String: () throws -> String] = [
+         |) $dispatcherEffects-> String {
+         |    let handlers: [String: () $closureEffects-> String] = [
          |        ${cases.shift(8).trim}
          |    ]
          |    guard let handler = handlers[method.methodName] else {
          |        throw $baboonWiringException($baboonWiringError.noMatchingMethod(method))
          |    }
-         |    return try handler()
+         |    return $handlerCallPrefix handler()
          |}""".stripMargin
     }
 
@@ -442,8 +497,8 @@ object SwServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"let result = impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
-            case None    => q"impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+            case Some(_) => q"let result = ${implCallPrefix}impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+            case None    => q"${implCallPrefix}impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
           }
 
           q""""${m.name.name}": {
@@ -459,14 +514,14 @@ object SwServiceWiringTranslator {
          |    _ data: Data,
          |    _ impl: $implType,
          |    ${ctxParamDecl}_ ctx: $baboonCodecContext
-         |) throws -> Data {
-         |    let handlers: [String: () throws -> Data] = [
+         |) $dispatcherEffects-> Data {
+         |    let handlers: [String: () $closureEffects-> Data] = [
          |        ${cases.shift(8).trim}
          |    ]
          |    guard let handler = handlers[method.methodName] else {
          |        throw $baboonWiringException($baboonWiringError.noMatchingMethod(method))
          |    }
-         |    return try handler()
+         |    return $handlerCallPrefix handler()
          |}""".stripMargin
     }
 
@@ -777,8 +832,12 @@ object SwServiceWiringTranslator {
         withSvcCtx :+ q"ctx"
       }
 
+      // Sync: forward directly to the (synchronous) dispatcher. Async (noErrors
+      // only — see the guard in `translate`): return a deferred thunk that
+      // awaits the (now `async throws`) dispatcher when the caller invokes it.
       val callExpr: TextTree[SwValue] =
-        if (resolved.noErrors) q"try $invokerCall(${callArgs.join(", ")})"
+        if (isAsync) q"{ try await $invokerCall(${callArgs.join(", ")}) }"
+        else if (resolved.noErrors) q"try $invokerCall(${callArgs.join(", ")})"
         else q"$invokerCall(${callArgs.join(", ")})"
 
       q"""public class $wrapperName: $ifaceType {

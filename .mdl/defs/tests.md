@@ -2114,6 +2114,60 @@ TEST_DIR="${action.test-gen-sw-wiring.test_dir}"
 ret success:bool=true
 ```
 
+# action: test-gen-sw-wiring-async
+
+Generate the petstore Swift service in ASYNC mode (`--sw-async-services=true`,
+no-errors service-result) into the `sw-async` smoke package. Exercises the
+async axis of the Swift service generator: `async throws` service protocol
+methods, invoke dispatchers, muxer-wrapper thunk, and client.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-sw-wiring-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sw-async"
+
+rsync -a --exclude='.build' --exclude='.swiftpm' --exclude='Sources/Generated' \
+  ./test/services/sw-async/ "$TEST_DIR/sw-async/"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore.baboon \
+  --lock-file="$TEST_DIR/baboon-sw-wiring-async.lock" \
+  :swift \
+  --output "$TEST_DIR/sw-async/Sources/Generated" \
+  --sw-async-services=true \
+  --service-result-no-errors=true \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-sw-wiring-async
+
+Build and run the async Swift wiring smoke package: confirms the generated
+`async throws` protocol, invoke dispatchers, muxer-wrapper thunk and client all
+type-check against the runtime and round-trip in-process (JSON + UEBA).
+
+```bash
+if ! command -v swift &> /dev/null; then
+  if [[ "$(uname)" == "Linux" ]]; then
+    echo "Swift is required on Linux but was not found in PATH" >&2
+    exit 1
+  fi
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+TEST_DIR="${action.test-gen-sw-wiring-async.test_dir}"
+./scripts/swift-xcode.sh "$TEST_DIR/sw-async" run AsyncMain
+
+ret success:bool=true
+```
+
 # action: test-gen-graphql
 
 Generate GraphQL SDL schemas and validate them.
@@ -2246,6 +2300,7 @@ dep action.test-kt-wiring
 dep action.test-jv-wiring
 dep action.test-dt-wiring
 dep action.test-sw-wiring
+dep action.test-sw-wiring-async
 
 ret success:bool=true
 ```
