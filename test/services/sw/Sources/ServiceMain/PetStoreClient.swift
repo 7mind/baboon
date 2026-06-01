@@ -10,8 +10,6 @@ import Darwin
 private let SOCK_STREAM_VALUE = SOCK_STREAM
 #endif
 
-private let ctx = BaboonCodecContext.defaultCtx
-
 private func decodeChunkedHttpBody(_ body: Data) -> Data? {
     var cursor = body.startIndex
     var decoded = Data()
@@ -120,60 +118,53 @@ private func post(host: String, port: UInt16, path: String, body: Data) -> Data 
     return Data(bodyData)
 }
 
-private func encodeToJson(_ value: Any) -> Data {
-    return try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
-}
-
-private func decodeFromJson(_ data: Data) -> Any {
-    return try! JSONSerialization.jsonObject(with: data, options: [])
-}
-
 func runClient(host: String, port: UInt16) {
+    // Drive the compiler-generated PetStoreClient. Its JSON transport callback
+    // wraps the hand-rolled HTTP `post`: encode the (service, method, payload)
+    // tuple to the wire path `/service/method` and decode the response body back
+    // to a String, the form the generated JSON transport expects.
+    let client = PetStoreClient(
+        transportJson: { service, method, data in
+            String(
+                decoding: post(host: host, port: port, path: "/\(service)/\(method)", body: Data(data.utf8)),
+                as: UTF8.self
+            )
+        }
+    )
+
     // Reset
     _ = post(host: host, port: port, path: "/reset", body: Data())
 
     // Add Buddy
-    let addBuddyIn = petstore.addpet.`in`(name: "Buddy", status: .Available, tag: "dog")
-    let addBuddyBody = encodeToJson(petstore.addpet.in_JsonCodec.instance.encode(ctx, addBuddyIn))
-    let addBuddyResp = post(host: host, port: port, path: "/PetStore/addPet", body: addBuddyBody)
-    let addBuddyOut = try! petstore.addpet.out_JsonCodec.instance.decode(ctx, decodeFromJson(addBuddyResp))
+    let addBuddyOut = try! client.addPetJson(
+        arg: petstore.addpet.`in`(name: "Buddy", status: .Available, tag: "dog")
+    )
     let buddyId = addBuddyOut.pet.id
     assert(addBuddyOut.pet.name == "Buddy", "expected name Buddy, got \(addBuddyOut.pet.name)")
 
     // Add Whiskers
-    let addWhiskersIn = petstore.addpet.`in`(name: "Whiskers", status: .Pending, tag: "cat")
-    let addWhiskersBody = encodeToJson(petstore.addpet.in_JsonCodec.instance.encode(ctx, addWhiskersIn))
-    let addWhiskersResp = post(host: host, port: port, path: "/PetStore/addPet", body: addWhiskersBody)
-    let addWhiskersOut = try! petstore.addpet.out_JsonCodec.instance.decode(ctx, decodeFromJson(addWhiskersResp))
+    let addWhiskersOut = try! client.addPetJson(
+        arg: petstore.addpet.`in`(name: "Whiskers", status: .Pending, tag: "cat")
+    )
     let whiskersId = addWhiskersOut.pet.id
     assert(addWhiskersOut.pet.name == "Whiskers", "expected name Whiskers, got \(addWhiskersOut.pet.name)")
 
     // List pets (expect 2)
-    let listIn = petstore.listpets.`in`()
-    let listBody = encodeToJson(petstore.listpets.in_JsonCodec.instance.encode(ctx, listIn))
-    let listResp = post(host: host, port: port, path: "/PetStore/listPets", body: listBody)
-    let listOut = try! petstore.listpets.out_JsonCodec.instance.decode(ctx, decodeFromJson(listResp))
+    let listOut = try! client.listPetsJson(arg: petstore.listpets.`in`())
     assert(listOut.pets.count == 2, "expected 2 pets, got \(listOut.pets.count)")
 
     // Get Buddy
-    let getBuddyIn = petstore.getpet.`in`(id: buddyId)
-    let getBuddyBody = encodeToJson(petstore.getpet.in_JsonCodec.instance.encode(ctx, getBuddyIn))
-    let getBuddyResp = post(host: host, port: port, path: "/PetStore/getPet", body: getBuddyBody)
-    let getBuddyOut = try! petstore.getpet.out_JsonCodec.instance.decode(ctx, decodeFromJson(getBuddyResp))
+    let getBuddyOut = try! client.getPetJson(arg: petstore.getpet.`in`(id: buddyId))
     assert(getBuddyOut.pet.name == "Buddy", "expected Buddy, got \(getBuddyOut.pet.name)")
     assert(getBuddyOut.pet.status == .Available, "expected Available, got \(getBuddyOut.pet.status)")
     assert(getBuddyOut.pet.tag == "dog", "expected tag dog, got \(String(describing: getBuddyOut.pet.tag))")
 
     // Delete Whiskers
-    let deleteIn = petstore.deletepet.`in`(id: whiskersId)
-    let deleteBody = encodeToJson(petstore.deletepet.in_JsonCodec.instance.encode(ctx, deleteIn))
-    let deleteResp = post(host: host, port: port, path: "/PetStore/deletePet", body: deleteBody)
-    let deleteOut = try! petstore.deletepet.out_JsonCodec.instance.decode(ctx, decodeFromJson(deleteResp))
+    let deleteOut = try! client.deletePetJson(arg: petstore.deletepet.`in`(id: whiskersId))
     assert(deleteOut.deleted == true, "expected deleted=true, got \(deleteOut.deleted)")
 
     // List pets again (expect 1)
-    let list2Resp = post(host: host, port: port, path: "/PetStore/listPets", body: listBody)
-    let list2Out = try! petstore.listpets.out_JsonCodec.instance.decode(ctx, decodeFromJson(list2Resp))
+    let list2Out = try! client.listPetsJson(arg: petstore.listpets.`in`())
     assert(list2Out.pets.count == 1, "expected 1 pet, got \(list2Out.pets.count)")
     assert(list2Out.pets[0].name == "Buddy", "expected remaining pet Buddy, got \(list2Out.pets[0].name)")
 
