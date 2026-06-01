@@ -146,8 +146,9 @@ object PyTypes {
   val pyOverride = PyType(pyTypingModule, "override")
   val pyClassVar = PyType(pyTypingModule, "ClassVar")
   val pyAny      = PyType(pyTypingModule, "Any")
-  val pyProtocol = PyType(pyTypingModule, "Protocol")
-  val pyCallable = PyType(pyTypingModule, "Callable")
+  val pyProtocol  = PyType(pyTypingModule, "Protocol")
+  val pyCallable  = PyType(pyTypingModule, "Callable")
+  val pyAwaitable = PyType(pyTypingModule, "Awaitable")
 
   // json
   val pyJsonDumps = PyType(pyJson, "dumps")

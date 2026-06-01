@@ -1891,6 +1891,43 @@ popd
 ret success:bool=true
 ```
 
+# action: test-py-wiring-async
+
+Generate async Python service wiring (`--py-async-services=true`) for the
+petstore model and assert syntactic validity via `py_compile`. This exercises
+the `async def` / `await` axis of `PyServiceWiringTranslator` +
+`PyDefnTranslator` (interface methods, invoke dispatchers, client). No async
+unittest overlay exists yet, so this lane is generation + compile-only; the
+synchronous wiring round-trips remain covered by the
+`test-py-wiring-{either,result,outcome}` lanes.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-py-wiring-async"
+
+rm -rf "$TEST_DIR"
+mkdir -p "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore.baboon \
+  --lock-file=./target/baboon-py-async.lock \
+  :python \
+  --output "$TEST_DIR/gen" \
+  --py-async-services=true \
+  --service-result-no-errors=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true
+
+python3 -m compileall -q "$TEST_DIR/gen"
+
+# Assert the async axis actually fired in generated service files.
+grep -q "async def" "$TEST_DIR/gen/petstore/api/PetStore.py"
+grep -q "await " "$TEST_DIR/gen/petstore/api/PetStore_Wiring.py"
+grep -q "Awaitable\[" "$TEST_DIR/gen/petstore/api/PetStore_Client.py"
+
+ret success:bool=true
+```
+
 # action: test-gen-kt-wiring
 
 Generate code for Kotlin wiring tests in no-errors service-result mode
@@ -2242,6 +2279,7 @@ dep action.test-rs-wiring-outcome
 dep action.test-py-wiring-either
 dep action.test-py-wiring-result
 dep action.test-py-wiring-outcome
+dep action.test-py-wiring-async
 dep action.test-kt-wiring
 dep action.test-jv-wiring
 dep action.test-dt-wiring
