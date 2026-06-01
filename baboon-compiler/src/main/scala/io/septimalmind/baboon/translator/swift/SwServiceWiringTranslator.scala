@@ -547,6 +547,34 @@ object SwServiceWiringTranslator {
 
     private def ct(error: String, success: String): String = renderContainer(error, success)
 
+    /** TextTree form of the result container, used for Swift type ANNOTATIONS
+      * (`var input: …` / `let output: …`). Unlike [[ct]] (which concatenates
+      * already-rendered FQN strings via [[renderFq]] and therefore cannot
+      * keyword-escape user-type path segments such as a method input named
+      * `in`), this splices the error/success subtrees verbatim so the final
+      * SwValue render codec (`SwBaboonTranslator.renderTree`) escapes each path
+      * segment. Mirrors the value-wrapping container produced by [[ct]] but
+      * stays sound for keyword-bearing FQNs.
+      */
+    private def ctTree(error: TextTree[SwValue], success: TextTree[SwValue]): TextTree[SwValue] = {
+      val typeName = resolved.hkt.map(_.name).getOrElse(resolved.resultType.get)
+      val p        = resolved.pattern.get
+      // The pattern is a string like "<$error, $success>"; split on the two
+      // placeholders so the surrounding literal punctuation stays text and the
+      // error/success types become real SwValue subtrees.
+      val errIdx  = p.indexOf("$error")
+      val sucIdx  = p.indexOf("$success")
+      require(errIdx >= 0 && sucIdx >= 0, s"BUG: service result pattern must contain both \\$$error and \\$$success: $p")
+      // $error always precedes $success in every supported pattern (e.g.
+      // "<$error, $success>"); assert it to fail fast if a future pattern
+      // violates the assumption rather than emit a silently-swapped container.
+      require(errIdx < sucIdx, s"BUG: service result pattern expected \\$$error before \\$$success: $p")
+      val pre  = p.substring(0, errIdx)
+      val mid  = p.substring(errIdx + "$error".length, sucIdx)
+      val post = p.substring(sucIdx + "$success".length)
+      q"$typeName$pre$error$mid$success$post"
+    }
+
     private def generateErrorsJsonMethod(service: Typedef.Service): TextTree[SwValue] = {
       val implType      = serviceImplType(service)
       val wiringRetType = ct(bweFq, "String")
@@ -595,7 +623,7 @@ object SwServiceWiringTranslator {
       decodeIn: TextTree[SwValue],
     ): TextTree[SwValue] = {
       val decodeStep =
-        q"""var input: ${ct(bweFq, renderFq(inRef))}
+        q"""var input: ${ctTree(q"$baboonWiringError", inRef)}
            |do {
            |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
            |    input = rt.pure($decodeIn)
@@ -699,7 +727,7 @@ object SwServiceWiringTranslator {
           val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
 
           val callStep = if (hasErrType) {
-            q"""let output: ${ct(bweFq, renderFq(trans.asSwRef(outRef, domain, evo)))}
+            q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
                |do {
                |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
                |    output = rt.leftMap(
@@ -708,7 +736,7 @@ object SwServiceWiringTranslator {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
                |}""".stripMargin
           } else {
-            q"""let output: ${ct(bweFq, renderFq(trans.asSwRef(outRef, domain, evo)))}
+            q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
                |do {
                |    let callResultValue = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
                |    output = rt.pure(callResultValue)
@@ -794,7 +822,7 @@ object SwServiceWiringTranslator {
       decodeIn: TextTree[SwValue],
     ): TextTree[SwValue] = {
       val decodeStep =
-        q"""var input: ${ct(bweFq, renderFq(inRef))}
+        q"""var input: ${ctTree(q"$baboonWiringError", inRef)}
            |do {
            |    let reader = $baboonBinTools.createReader(data)
            |    input = rt.pure($decodeIn)
@@ -890,7 +918,7 @@ object SwServiceWiringTranslator {
           val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"v")
 
           val callStep = if (hasErrType) {
-            q"""let output: ${ct(bweFq, renderFq(trans.asSwRef(outRef, domain, evo)))}
+            q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
                |do {
                |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
                |    output = rt.leftMap(
@@ -899,7 +927,7 @@ object SwServiceWiringTranslator {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
                |}""".stripMargin
           } else {
-            q"""let output: ${ct(bweFq, renderFq(trans.asSwRef(outRef, domain, evo)))}
+            q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
                |do {
                |    let callResultValue = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
                |    output = rt.pure(callResultValue)

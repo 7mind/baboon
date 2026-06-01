@@ -1,0 +1,58 @@
+model petstore.api
+
+version "1.0.0"
+
+enum PetStatus {
+  Available
+  Pending
+  Sold
+}
+
+data Pet {
+  id: i64
+  name: str
+  status: PetStatus
+  tag: opt[str]
+}
+
+data PetError {
+  code: i32
+  message: str
+}
+
+// Errors-mode service: every method carries an `err` type so the generated
+// protocol returns the result CONTAINER (e.g. BaboonEither<Err, Out>) and the
+// wiring threads it via rt.leftMap. The `data in {...}` form names the input
+// type `in` — a Swift keyword — exercising the keyword-escaping fix in the
+// errors-mode wiring's type annotations (`var input: …` / `let output: …`).
+root service PetStore {
+  def addPet (
+    data in {
+      name: str
+      status: PetStatus
+      tag: opt[str]
+    }
+
+    data out {
+      pet: Pet
+    }
+
+    data err {
+      problem: PetError
+    }
+  )
+
+  def getPet (
+    data in {
+      id: i64
+    }
+
+    data out {
+      pet: Pet
+    }
+
+    data err {
+      problem: PetError
+    }
+  )
+}
