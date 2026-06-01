@@ -311,6 +311,7 @@ object Baboon {
                             serviceResult                             = mkServiceResult(opts, ServiceResultConfig.csDefault),
                             serviceContext                            = mkServiceContext(opts),
                             pragmas                                   = parsePragmas(opts.pragma),
+                            asyncServices                             = opts.csAsyncServices.getOrElse(false),
                           ),
                         )
                     }
@@ -361,6 +362,7 @@ object Baboon {
                             serviceResult               = mkServiceResult(opts, ServiceResultConfig.pythonDefault),
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
+                            asyncServices               = opts.pyAsyncServices.getOrElse(false),
                           ),
                         )
                     }
@@ -520,6 +522,7 @@ object Baboon {
                             serviceResult               = mkServiceResult(opts, ServiceResultConfig.swiftDefault),
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
+                            asyncServices               = opts.swAsyncServices.getOrElse(false),
                           ),
                         )
                     }

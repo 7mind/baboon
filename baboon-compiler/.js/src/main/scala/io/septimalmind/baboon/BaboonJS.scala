@@ -267,6 +267,7 @@ object BaboonJS {
     val serviceContextParameterName: js.UndefOr[String]
     val pragma: js.UndefOr[js.Array[String]]
     val generateDomainFacade: js.UndefOr[Boolean]
+    val asyncServices: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -441,6 +442,7 @@ object BaboonJS {
                 serviceContext                            = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
                 pragmas                                   = parsePragmas(opts.pragma),
                 generateDomainFacade                      = opts.generateDomainFacade.getOrElse(true),
+                asyncServices                             = opts.asyncServices.getOrElse(false),
               ),
             )
           case "scala" =>
@@ -489,6 +491,7 @@ object BaboonJS {
                 serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
+                asyncServices               = opts.asyncServices.getOrElse(false),
               ),
             )
           case "rust" =>
@@ -618,6 +621,7 @@ object BaboonJS {
                 serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
+                asyncServices               = opts.asyncServices.getOrElse(false),
               ),
             )
           case "graphql" =>

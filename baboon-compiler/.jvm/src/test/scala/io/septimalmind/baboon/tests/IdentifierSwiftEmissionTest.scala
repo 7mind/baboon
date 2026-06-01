@@ -49,6 +49,7 @@ abstract class IdentifierSwiftEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonT
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
       generateDomainFacade        = false,
+      asyncServices               = false,
     ),
   )
 

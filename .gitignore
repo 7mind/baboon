@@ -209,3 +209,6 @@ pubspec.lock
 # Swift
 .build/
 .swiftpm/
+
+.worktrees/
+.codegraph/

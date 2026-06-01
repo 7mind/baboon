@@ -86,6 +86,8 @@ case class CsCLIOptions(
   generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate async service signatures + RPC client methods returning Task (default: false)")
+  csAsyncServices: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class ScCLIOptions(
@@ -167,6 +169,8 @@ case class PyCLIOptions(
   generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate async service signatures + RPC client methods using async def / awaitable coroutines (default: false)")
+  pyAsyncServices: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class RsCLIOptions(
@@ -465,6 +469,8 @@ case class SwCLIOptions(
   generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate async service signatures + RPC client methods using async/await (default: false)")
+  swAsyncServices: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class CLIOptions(

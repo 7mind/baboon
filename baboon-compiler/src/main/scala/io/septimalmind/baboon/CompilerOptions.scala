@@ -185,6 +185,7 @@ final case class PyOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  asyncServices: Boolean,
 )
 
 final case class ScOptions(
@@ -219,6 +220,7 @@ final case class CSOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  asyncServices: Boolean,
 )
 
 final case class RsOptions(
@@ -324,6 +326,7 @@ final case class SwOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  asyncServices: Boolean,
 )
 
 final case class GqlOptions(
