@@ -14,9 +14,29 @@ public static class PetStoreClient
         HttpClient http = new HttpClient();
         string baseUrl = $"http://{host}:{port}";
 
-        Petstore.Api.PetStoreClient client = new Petstore.Api.PetStoreClient(
+        Petstore.Api.PetStoreClient jsonClient = new Petstore.Api.PetStoreClient(
+            (service, method, data) => PostBytes(http, $"{baseUrl}/{service}/{method}", data),
             (service, method, data) => Post(http, $"{baseUrl}/{service}/{method}", data)
         );
+
+        // JSON pass — drives the generated *Json methods over the string transport.
+        RunScenario(http, baseUrl, jsonClient, ctx, useUeba: false);
+
+        // UEBA pass — same scenario via the generated bare methods over the binary transport.
+        RunScenario(http, baseUrl, jsonClient, ctx, useUeba: true);
+
+        Console.WriteLine("OK");
+    }
+
+    private static void RunScenario(
+        HttpClient http,
+        string baseUrl,
+        Petstore.Api.PetStoreClient client,
+        BaboonCodecContext ctx,
+        bool useUeba
+    )
+    {
+        string label = useUeba ? "ueba" : "json";
 
         // Reset
         Post(http, $"{baseUrl}/reset", "");
@@ -25,41 +45,45 @@ public static class PetStoreClient
         Petstore.Api.PetStore.AddPet.In addBuddyIn = new Petstore.Api.PetStore.AddPet.In(
             "Buddy", Petstore.Api.PetStatus.Available, "dog"
         );
-        Petstore.Api.PetStore.AddPet.Out addBuddyOut = client.addPetJson(addBuddyIn, ctx);
+        Petstore.Api.PetStore.AddPet.Out addBuddyOut =
+            useUeba ? client.addPet(addBuddyIn, ctx) : client.addPetJson(addBuddyIn, ctx);
         long buddyId = addBuddyOut.Pet.Id;
-        Debug.Assert(addBuddyOut.Pet.Name == "Buddy", $"expected name Buddy, got {addBuddyOut.Pet.Name}");
+        Debug.Assert(addBuddyOut.Pet.Name == "Buddy", $"[{label}] expected name Buddy, got {addBuddyOut.Pet.Name}");
 
         // Add Whiskers
         Petstore.Api.PetStore.AddPet.In addWhiskersIn = new Petstore.Api.PetStore.AddPet.In(
             "Whiskers", Petstore.Api.PetStatus.Pending, "cat"
         );
-        Petstore.Api.PetStore.AddPet.Out addWhiskersOut = client.addPetJson(addWhiskersIn, ctx);
+        Petstore.Api.PetStore.AddPet.Out addWhiskersOut =
+            useUeba ? client.addPet(addWhiskersIn, ctx) : client.addPetJson(addWhiskersIn, ctx);
         long whiskersId = addWhiskersOut.Pet.Id;
-        Debug.Assert(addWhiskersOut.Pet.Name == "Whiskers", $"expected name Whiskers, got {addWhiskersOut.Pet.Name}");
+        Debug.Assert(addWhiskersOut.Pet.Name == "Whiskers", $"[{label}] expected name Whiskers, got {addWhiskersOut.Pet.Name}");
 
         // List pets (expect 2)
         Petstore.Api.PetStore.ListPets.In listIn = new Petstore.Api.PetStore.ListPets.In();
-        Petstore.Api.PetStore.ListPets.Out listOut = client.listPetsJson(listIn, ctx);
-        Debug.Assert(listOut.Pets.Count == 2, $"expected 2 pets, got {listOut.Pets.Count}");
+        Petstore.Api.PetStore.ListPets.Out listOut =
+            useUeba ? client.listPets(listIn, ctx) : client.listPetsJson(listIn, ctx);
+        Debug.Assert(listOut.Pets.Count == 2, $"[{label}] expected 2 pets, got {listOut.Pets.Count}");
 
         // Get Buddy
         Petstore.Api.PetStore.GetPet.In getBuddyIn = new Petstore.Api.PetStore.GetPet.In(buddyId);
-        Petstore.Api.PetStore.GetPet.Out getBuddyOut = client.getPetJson(getBuddyIn, ctx);
-        Debug.Assert(getBuddyOut.Pet.Name == "Buddy", $"expected Buddy, got {getBuddyOut.Pet.Name}");
-        Debug.Assert(getBuddyOut.Pet.Status == Petstore.Api.PetStatus.Available, $"expected Available, got {getBuddyOut.Pet.Status}");
-        Debug.Assert(getBuddyOut.Pet.Tag == "dog", $"expected tag dog, got {getBuddyOut.Pet.Tag}");
+        Petstore.Api.PetStore.GetPet.Out getBuddyOut =
+            useUeba ? client.getPet(getBuddyIn, ctx) : client.getPetJson(getBuddyIn, ctx);
+        Debug.Assert(getBuddyOut.Pet.Name == "Buddy", $"[{label}] expected Buddy, got {getBuddyOut.Pet.Name}");
+        Debug.Assert(getBuddyOut.Pet.Status == Petstore.Api.PetStatus.Available, $"[{label}] expected Available, got {getBuddyOut.Pet.Status}");
+        Debug.Assert(getBuddyOut.Pet.Tag == "dog", $"[{label}] expected tag dog, got {getBuddyOut.Pet.Tag}");
 
         // Delete Whiskers
         Petstore.Api.PetStore.DeletePet.In deleteIn = new Petstore.Api.PetStore.DeletePet.In(whiskersId);
-        Petstore.Api.PetStore.DeletePet.Out deleteOut = client.deletePetJson(deleteIn, ctx);
-        Debug.Assert(deleteOut.Deleted == true, $"expected deleted=True, got {deleteOut.Deleted}");
+        Petstore.Api.PetStore.DeletePet.Out deleteOut =
+            useUeba ? client.deletePet(deleteIn, ctx) : client.deletePetJson(deleteIn, ctx);
+        Debug.Assert(deleteOut.Deleted == true, $"[{label}] expected deleted=True, got {deleteOut.Deleted}");
 
         // List pets again (expect 1)
-        Petstore.Api.PetStore.ListPets.Out list2Out = client.listPetsJson(listIn, ctx);
-        Debug.Assert(list2Out.Pets.Count == 1, $"expected 1 pet, got {list2Out.Pets.Count}");
-        Debug.Assert(list2Out.Pets[0].Name == "Buddy", $"expected remaining pet Buddy, got {list2Out.Pets[0].Name}");
-
-        Console.WriteLine("OK");
+        Petstore.Api.PetStore.ListPets.Out list2Out =
+            useUeba ? client.listPets(listIn, ctx) : client.listPetsJson(listIn, ctx);
+        Debug.Assert(list2Out.Pets.Count == 1, $"[{label}] expected 1 pet, got {list2Out.Pets.Count}");
+        Debug.Assert(list2Out.Pets[0].Name == "Buddy", $"[{label}] expected remaining pet Buddy, got {list2Out.Pets[0].Name}");
     }
 
     private static string Post(HttpClient http, string url, string body)
@@ -68,5 +92,14 @@ public static class PetStoreClient
         HttpResponseMessage response = http.PostAsync(url, content).Result;
         response.EnsureSuccessStatusCode();
         return response.Content.ReadAsStringAsync().Result;
+    }
+
+    private static byte[] PostBytes(HttpClient http, string url, byte[] body)
+    {
+        ByteArrayContent content = new ByteArrayContent(body);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        HttpResponseMessage response = http.PostAsync(url, content).Result;
+        response.EnsureSuccessStatusCode();
+        return response.Content.ReadAsByteArrayAsync().Result;
     }
 }

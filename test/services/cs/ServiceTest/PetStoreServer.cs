@@ -161,6 +161,25 @@ public static class PetStoreServer
             {
                 string method = parts[1];
 
+                if (request.ContentType != null && request.ContentType.StartsWith("application/octet-stream"))
+                {
+                    byte[] requestBytes;
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        request.InputStream.CopyTo(ms);
+                        requestBytes = ms.ToArray();
+                    }
+
+                    byte[] resultBytes = Petstore.Api.PetStoreWiring.InvokeUeba(
+                        new BaboonMethodId("PetStore", method), requestBytes, impl, ctx
+                    );
+
+                    response.StatusCode = 200;
+                    response.ContentType = "application/octet-stream";
+                    response.OutputStream.Write(resultBytes, 0, resultBytes.Length);
+                    return;
+                }
+
                 string body;
                 using (StreamReader sr = new StreamReader(request.InputStream))
                 {
