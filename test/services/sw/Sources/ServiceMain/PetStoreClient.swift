@@ -41,6 +41,14 @@ private func decodeChunkedHttpBody(_ body: Data) -> Data? {
 }
 
 private func post(host: String, port: UInt16, path: String, body: Data) -> Data {
+    return postWithContentType(host: host, port: port, path: path, contentType: "application/json", body: body)
+}
+
+private func postBytes(host: String, port: UInt16, path: String, body: Data) -> Data {
+    return postWithContentType(host: host, port: port, path: path, contentType: "application/octet-stream", body: body)
+}
+
+private func postWithContentType(host: String, port: UInt16, path: String, contentType: String, body: Data) -> Data {
     let fd = socket(AF_INET, SOCK_STREAM_VALUE, 0)
     assert(fd >= 0, "Failed to create socket")
     defer { close(fd) }
@@ -59,7 +67,7 @@ private func post(host: String, port: UInt16, path: String, body: Data) -> Data 
 
     var requestHead = "POST \(path) HTTP/1.1\r\n"
     requestHead += "Host: \(host):\(port)\r\n"
-    requestHead += "Content-Type: application/json\r\n"
+    requestHead += "Content-Type: \(contentType)\r\n"
     requestHead += "Content-Length: \(body.count)\r\n"
     requestHead += "Connection: close\r\n"
     requestHead += "\r\n"
@@ -119,11 +127,17 @@ private func post(host: String, port: UInt16, path: String, body: Data) -> Data 
 }
 
 func runClient(host: String, port: UInt16) {
-    // Drive the compiler-generated PetStoreClient. Its JSON transport callback
-    // wraps the hand-rolled HTTP `post`: encode the (service, method, payload)
-    // tuple to the wire path `/service/method` and decode the response body back
-    // to a String, the form the generated JSON transport expects.
+    // Drive the compiler-generated PetStoreClient. With both codecs active the
+    // generated client requires both transports:
+    //   - transportJson: encodes/decodes JSON `String` over `application/json`,
+    //     wrapping the hand-rolled `post`.
+    //   - transportUeba: encodes/decodes binary `Data` over
+    //     `application/octet-stream`, wrapping `postBytes`.
+    // Both target the same `/service/method` wire paths.
     let client = PetStoreClient(
+        transportUeba: { service, method, data in
+            postBytes(host: host, port: port, path: "/\(service)/\(method)", body: data)
+        },
         transportJson: { service, method, data in
             String(
                 decoding: post(host: host, port: port, path: "/\(service)/\(method)", body: Data(data.utf8)),
@@ -132,41 +146,65 @@ func runClient(host: String, port: UInt16) {
         }
     )
 
-    // Reset
+    // --- JSON pass (bare-named *Json methods) ---
     _ = post(host: host, port: port, path: "/reset", body: Data())
 
-    // Add Buddy
-    let addBuddyOut = try! client.addPetJson(
+    let jsonBuddy = try! client.addPetJson(
         arg: petstore.addpet.`in`(name: "Buddy", status: .Available, tag: "dog")
     )
-    let buddyId = addBuddyOut.pet.id
-    assert(addBuddyOut.pet.name == "Buddy", "expected name Buddy, got \(addBuddyOut.pet.name)")
+    let buddyId = jsonBuddy.pet.id
+    assert(jsonBuddy.pet.name == "Buddy", "expected name Buddy, got \(jsonBuddy.pet.name)")
 
-    // Add Whiskers
-    let addWhiskersOut = try! client.addPetJson(
+    let jsonWhiskers = try! client.addPetJson(
         arg: petstore.addpet.`in`(name: "Whiskers", status: .Pending, tag: "cat")
     )
-    let whiskersId = addWhiskersOut.pet.id
-    assert(addWhiskersOut.pet.name == "Whiskers", "expected name Whiskers, got \(addWhiskersOut.pet.name)")
+    let whiskersId = jsonWhiskers.pet.id
+    assert(jsonWhiskers.pet.name == "Whiskers", "expected name Whiskers, got \(jsonWhiskers.pet.name)")
 
-    // List pets (expect 2)
-    let listOut = try! client.listPetsJson(arg: petstore.listpets.`in`())
-    assert(listOut.pets.count == 2, "expected 2 pets, got \(listOut.pets.count)")
+    let jsonList = try! client.listPetsJson(arg: petstore.listpets.`in`())
+    assert(jsonList.pets.count == 2, "expected 2 pets, got \(jsonList.pets.count)")
 
-    // Get Buddy
-    let getBuddyOut = try! client.getPetJson(arg: petstore.getpet.`in`(id: buddyId))
-    assert(getBuddyOut.pet.name == "Buddy", "expected Buddy, got \(getBuddyOut.pet.name)")
-    assert(getBuddyOut.pet.status == .Available, "expected Available, got \(getBuddyOut.pet.status)")
-    assert(getBuddyOut.pet.tag == "dog", "expected tag dog, got \(String(describing: getBuddyOut.pet.tag))")
+    let jsonGetBuddy = try! client.getPetJson(arg: petstore.getpet.`in`(id: buddyId))
+    assert(jsonGetBuddy.pet.name == "Buddy", "expected Buddy, got \(jsonGetBuddy.pet.name)")
+    assert(jsonGetBuddy.pet.status == .Available, "expected Available, got \(jsonGetBuddy.pet.status)")
+    assert(jsonGetBuddy.pet.tag == "dog", "expected tag dog, got \(String(describing: jsonGetBuddy.pet.tag))")
 
-    // Delete Whiskers
-    let deleteOut = try! client.deletePetJson(arg: petstore.deletepet.`in`(id: whiskersId))
-    assert(deleteOut.deleted == true, "expected deleted=true, got \(deleteOut.deleted)")
+    let jsonDelete = try! client.deletePetJson(arg: petstore.deletepet.`in`(id: whiskersId))
+    assert(jsonDelete.deleted == true, "expected deleted=true, got \(jsonDelete.deleted)")
 
-    // List pets again (expect 1)
-    let list2Out = try! client.listPetsJson(arg: petstore.listpets.`in`())
-    assert(list2Out.pets.count == 1, "expected 1 pet, got \(list2Out.pets.count)")
-    assert(list2Out.pets[0].name == "Buddy", "expected remaining pet Buddy, got \(list2Out.pets[0].name)")
+    let jsonList2 = try! client.listPetsJson(arg: petstore.listpets.`in`())
+    assert(jsonList2.pets.count == 1, "expected 1 pet, got \(jsonList2.pets.count)")
+    assert(jsonList2.pets[0].name == "Buddy", "expected remaining pet Buddy, got \(jsonList2.pets[0].name)")
+
+    // --- UEBA pass (bare-named methods over the binary transport) ---
+    // Replays the same scenario through the binary codec and asserts that every
+    // response is identical to the JSON pass. Generated `out` types are
+    // Equatable, so `==` is an exact whole-value comparison.
+    _ = post(host: host, port: port, path: "/reset", body: Data())
+
+    let uebaBuddy = try! client.addPet(
+        arg: petstore.addpet.`in`(name: "Buddy", status: .Available, tag: "dog")
+    )
+    let uebaBuddyId = uebaBuddy.pet.id
+    assert(uebaBuddy == jsonBuddy, "UEBA addPet(Buddy) differs from JSON: \(uebaBuddy) vs \(jsonBuddy)")
+
+    let uebaWhiskers = try! client.addPet(
+        arg: petstore.addpet.`in`(name: "Whiskers", status: .Pending, tag: "cat")
+    )
+    let uebaWhiskersId = uebaWhiskers.pet.id
+    assert(uebaWhiskers == jsonWhiskers, "UEBA addPet(Whiskers) differs from JSON: \(uebaWhiskers) vs \(jsonWhiskers)")
+
+    let uebaList = try! client.listPets(arg: petstore.listpets.`in`())
+    assert(uebaList == jsonList, "UEBA listPets differs from JSON: \(uebaList) vs \(jsonList)")
+
+    let uebaGetBuddy = try! client.getPet(arg: petstore.getpet.`in`(id: uebaBuddyId))
+    assert(uebaGetBuddy == jsonGetBuddy, "UEBA getPet(Buddy) differs from JSON: \(uebaGetBuddy) vs \(jsonGetBuddy)")
+
+    let uebaDelete = try! client.deletePet(arg: petstore.deletepet.`in`(id: uebaWhiskersId))
+    assert(uebaDelete == jsonDelete, "UEBA deletePet differs from JSON: \(uebaDelete) vs \(jsonDelete)")
+
+    let uebaList2 = try! client.listPets(arg: petstore.listpets.`in`())
+    assert(uebaList2 == jsonList2, "UEBA listPets (post-delete) differs from JSON: \(uebaList2) vs \(jsonList2)")
 
     print("OK")
 }

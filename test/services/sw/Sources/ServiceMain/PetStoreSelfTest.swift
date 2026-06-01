@@ -20,9 +20,18 @@ func runSelfTest() {
     let ctx = BaboonCodecContext.defaultCtx
     let impl = PetStoreImpl()
 
-    // In-process JSON transport: route (service, method, payload) to the
-    // generated server wiring against the shared impl.
+    // In-process transports: route (service, method, payload) to the generated
+    // server wiring against the shared impl. Both codecs are active, so the
+    // generated client requires both transports.
     let client = PetStoreClient(
+        transportUeba: { service, method, data in
+            try PetStoreWiring.invokeUeba(
+                BaboonMethodId(serviceId: service, methodName: method),
+                data,
+                impl,
+                ctx
+            )
+        },
         transportJson: { service, method, data in
             try PetStoreWiring.invokeJson(
                 BaboonMethodId(serviceId: service, methodName: method),

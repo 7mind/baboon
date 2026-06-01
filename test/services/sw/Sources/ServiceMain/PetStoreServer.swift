@@ -12,38 +12,13 @@ private let SOCK_STREAM_VALUE = SOCK_STREAM
 
 private let ctx = BaboonCodecContext.defaultCtx
 
-private struct MethodHandler {
-    let decodeInput: (Any) throws -> Any
-    let dispatch: (PetStoreImpl, Any) -> Any
-    let encodeOutput: (Any) -> Any
-}
-
-private let handlers: [String: MethodHandler] = [
-    "addPet": MethodHandler(
-        decodeInput: { wire in try petstore.addpet.in_JsonCodec.instance.decode(ctx, wire) as Any },
-        dispatch: { impl, input in impl.addPet(arg: input as! petstore.addpet.`in`) as Any },
-        encodeOutput: { value in petstore.addpet.out_JsonCodec.instance.encode(ctx, value as! petstore.addpet.out) }
-    ),
-    "getPet": MethodHandler(
-        decodeInput: { wire in try petstore.getpet.in_JsonCodec.instance.decode(ctx, wire) as Any },
-        dispatch: { impl, input in impl.getPet(arg: input as! petstore.getpet.`in`) as Any },
-        encodeOutput: { value in petstore.getpet.out_JsonCodec.instance.encode(ctx, value as! petstore.getpet.out) }
-    ),
-    "listPets": MethodHandler(
-        decodeInput: { wire in try petstore.listpets.in_JsonCodec.instance.decode(ctx, wire) as Any },
-        dispatch: { impl, input in impl.listPets(arg: input as! petstore.listpets.`in`) as Any },
-        encodeOutput: { value in petstore.listpets.out_JsonCodec.instance.encode(ctx, value as! petstore.listpets.out) }
-    ),
-    "deletePet": MethodHandler(
-        decodeInput: { wire in try petstore.deletepet.in_JsonCodec.instance.decode(ctx, wire) as Any },
-        dispatch: { impl, input in impl.deletePet(arg: input as! petstore.deletepet.`in`) as Any },
-        encodeOutput: { value in petstore.deletepet.out_JsonCodec.instance.encode(ctx, value as! petstore.deletepet.out) }
-    ),
-]
+private let CONTENT_TYPE_JSON = "application/json"
+private let CONTENT_TYPE_OCTET_STREAM = "application/octet-stream"
 
 private struct HttpRequest {
     let method: String
     let path: String
+    let contentType: String
     let body: Data
 }
 
@@ -110,6 +85,15 @@ private func parseHttpRequest(from data: Data) -> HttpRequest? {
     let method = String(parts[0])
     let path = String(parts[1])
 
+    var contentType = ""
+    for line in lines.dropFirst() {
+        if line.lowercased().hasPrefix("content-type:") {
+            contentType = line.dropFirst("content-type:".count)
+                .trimmingCharacters(in: .whitespaces)
+                .lowercased()
+        }
+    }
+
     let parsedHeaders = parseContentHeaders(Array(lines.dropFirst()))
     let payload = data.dropFirst(headerEnd + 4)
     let body: Data
@@ -121,7 +105,7 @@ private func parseHttpRequest(from data: Data) -> HttpRequest? {
         body = Data(payload.prefix(parsedHeaders.contentLength))
     }
 
-    return HttpRequest(method: method, path: path, body: body)
+    return HttpRequest(method: method, path: path, contentType: contentType, body: body)
 }
 
 private func sendResponse(fd: Int32, statusCode: Int, statusText: String, contentType: String, body: Data) {
@@ -148,7 +132,11 @@ private func sendText(fd: Int32, statusCode: Int, statusText: String, text: Stri
 }
 
 private func sendJson(fd: Int32, body: Data) {
-    sendResponse(fd: fd, statusCode: 200, statusText: "OK", contentType: "application/json", body: body)
+    sendResponse(fd: fd, statusCode: 200, statusText: "OK", contentType: CONTENT_TYPE_JSON, body: body)
+}
+
+private func sendBinary(fd: Int32, body: Data) {
+    sendResponse(fd: fd, statusCode: 200, statusText: "OK", contentType: CONTENT_TYPE_OCTET_STREAM, body: body)
 }
 
 private func handleConnection(fd: Int32, impl: PetStoreImpl, serverFd: Int32, keepRunning: inout Bool) {
@@ -215,25 +203,34 @@ private func handleConnection(fd: Int32, impl: PetStoreImpl, serverFd: Int32, ke
     if request.method == "POST" {
         let pathParts = request.path.split(separator: "/").map(String.init)
         if pathParts.count == 2 {
+            let service = pathParts[0]
             let method = pathParts[1]
-            if let handler = handlers[method] {
-                do {
-                    let bodyObj: Any
-                    if request.body.isEmpty {
-                        bodyObj = [String: Any]()
-                    } else {
-                        bodyObj = try JSONSerialization.jsonObject(with: request.body, options: [])
-                    }
-                    let input = try handler.decodeInput(bodyObj)
-                    let output = handler.dispatch(impl, input)
-                    let encoded = handler.encodeOutput(output)
-                    let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys])
-                    sendJson(fd: fd, body: jsonData)
+            let methodId = BaboonMethodId(serviceId: service, methodName: method)
+            do {
+                if request.contentType.hasPrefix(CONTENT_TYPE_OCTET_STREAM) {
+                    // UEBA: decode/dispatch/encode through the generated binary wiring.
+                    let respData = try PetStoreWiring.invokeUeba(methodId, request.body, impl, ctx)
+                    sendBinary(fd: fd, body: respData)
                     return
-                } catch {
-                    sendText(fd: fd, statusCode: 500, statusText: "Internal Server Error", text: String(describing: error))
+                } else {
+                    // JSON (default): route the raw request body string through the
+                    // generated JSON wiring, which expects an encoded JSON String.
+                    let bodyStr = String(data: request.body, encoding: .utf8) ?? "{}"
+                    let respStr = try PetStoreWiring.invokeJson(methodId, bodyStr, impl, ctx)
+                    sendJson(fd: fd, body: Data(respStr.utf8))
                     return
                 }
+            } catch let wiring as BaboonWiringException {
+                // Unknown method -> 404 so the client surfaces a clear status.
+                if case .noMatchingMethod = wiring.error {
+                    sendText(fd: fd, statusCode: 404, statusText: "Not Found", text: "Not Found")
+                    return
+                }
+                sendText(fd: fd, statusCode: 500, statusText: "Internal Server Error", text: String(describing: wiring.error))
+                return
+            } catch {
+                sendText(fd: fd, statusCode: 500, statusText: "Internal Server Error", text: String(describing: error))
+                return
             }
         }
     }
