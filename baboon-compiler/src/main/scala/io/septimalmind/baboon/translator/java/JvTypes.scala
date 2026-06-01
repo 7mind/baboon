@@ -56,6 +56,13 @@ object JvTypes {
   val iBaboonJsonService: JvType    = JvType(baboonRuntimePkg, "IBaboonJsonService")
   val iBaboonUebaService: JvType    = JvType(baboonRuntimePkg, "IBaboonUebaService")
 
+  // baboon RPC client transport callback contracts
+  val baboonClientTransportJsonSync: JvType  = JvType(baboonRuntimePkg, "BaboonClientTransport.JsonSync")
+  val baboonClientTransportUebaSync: JvType  = JvType(baboonRuntimePkg, "BaboonClientTransport.UebaSync")
+  val baboonClientTransportJsonAsync: JvType = JvType(baboonRuntimePkg, "BaboonClientTransport.JsonAsync")
+  val baboonClientTransportUebaAsync: JvType = JvType(baboonRuntimePkg, "BaboonClientTransport.UebaAsync")
+  val completableFuture: JvType              = JvType(parseJvPkg("java.util.concurrent"), "CompletableFuture")
+
   // baboon conversions
   val baboonAbstractConversion: JvType  = JvType(baboonRuntimePkg, "AbstractConversion")
   val baboonAbstractConversions: JvType = JvType(baboonRuntimePkg, "AbstractBaboonConversions")

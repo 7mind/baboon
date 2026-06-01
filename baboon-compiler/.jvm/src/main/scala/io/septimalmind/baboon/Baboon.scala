@@ -473,6 +473,7 @@ object Baboon {
                             serviceResult               = mkServiceResult(opts, ServiceResultConfig.javaDefault),
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
+                            asyncServices               = opts.jvAsyncServices.getOrElse(false),
                           ),
                         )
                     }

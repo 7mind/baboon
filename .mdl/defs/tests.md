@@ -2332,6 +2332,46 @@ popd
 ret success:bool=true
 ```
 
+# action: test-jv-client-roundtrip
+
+Exercise the GENERATED Java RPC client (`${Svc}Client`) end to end with an
+in-process transport: client encode -> transport -> server
+`PetStoreWiring.invoke{Json,Ueba}` -> decode, for BOTH JSON and UEBA. Unlike
+the cross-language service-acceptance harness (which hand-rolls codecs over
+HTTP), this asserts the emitted client class compiles and round-trips. Runs
+the synchronous client (default; `--jv-async-services` left off) generated
+with both codec families active.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-jv-client-roundtrip"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/jv-client"
+rsync -a --exclude='generated' --exclude='target' \
+  ./test/services/jv-client/ "$TEST_DIR/jv-client/"
+mkdir -p "$TEST_DIR/model"
+cp ./test/services/petstore.baboon "$TEST_DIR/model/"
+
+$BABOON_BIN \
+  --model-dir "$TEST_DIR/model" \
+  --lock-file="$TEST_DIR/baboon.lock" \
+  :java \
+  --output "$TEST_DIR/jv-client/src/main/java/generated" \
+  --jv-write-evolution-dict=true \
+  --service-result-no-errors=true \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+pushd "$TEST_DIR/jv-client"
+mvn -q compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java
+popd
+
+ret success:bool=true
+```
+
 # action: test-editors
 
 Test editor extension grammars against real baboon files.

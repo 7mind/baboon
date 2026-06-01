@@ -113,7 +113,19 @@ object JvDefnTranslator {
             )
         }.toList
 
-      F.pure(mainOutput :: (codecOutputs ++ wiringOutput))
+      val clientOutput = wiringTranslator
+        .translateClient(defn).map {
+          clientTree =>
+            val wrapped = jvTrees.inPkg(pkg.parts.toSeq, clientTree)
+            Output(
+              getOutputPath(defn, suffix = Some("Client")),
+              wrapped,
+              pkg,
+              CompilerProduct.Definition,
+            )
+        }.toList
+
+      F.pure(mainOutput :: (codecOutputs ++ wiringOutput ++ clientOutput))
     }
 
     override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
