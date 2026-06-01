@@ -475,7 +475,12 @@ object CSDefnTranslator {
               }
               val outStr   = out.map(_.mapRender(csFqName)).getOrElse("")
               val errStr   = err.map(_.mapRender(csFqName))
-              val retStr   = resolved.renderReturnType(outStr, errStr, "void")
+              val syncRet  = resolved.renderReturnType(outStr, errStr, "void")
+              val retStr =
+                if (target.language.asyncServices) {
+                  if (syncRet == "void") "System.Threading.Tasks.Task"
+                  else s"System.Threading.Tasks.Task<$syncRet>"
+                } else syncRet
               val methodEx = q"""public $retStr ${m.name.name}($ctxParam${trans.asCsRef(m.sig, domain, evo)} arg);"""
               prependDocs(m.docs, methodEx)
           }.join("\n")
