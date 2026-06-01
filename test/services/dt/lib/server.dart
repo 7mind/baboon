@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:baboon_runtime/baboon_runtime.dart';
 import 'generated/petstore/api/pet_store.dart';
@@ -64,11 +65,33 @@ Future<void> _handleRequest(HttpRequest request) async {
     if (parts.length == 2) {
       final serviceName = parts[0];
       final method = parts[1];
-      final body = await utf8.decoder.bind(request).join();
+      final methodId = BaboonMethodId(serviceName, method);
+      final contentType = request.headers.contentType?.mimeType;
+      final isUeba = contentType == 'application/octet-stream';
       try {
+        if (isUeba) {
+          // Route binary requests through the generated UEBA dispatcher.
+          final chunks = await request.fold<List<int>>(
+            <int>[],
+            (acc, chunk) => acc..addAll(chunk),
+          );
+          final responseBytes = PetStoreWiring.invokeUeba(
+            methodId,
+            Uint8List.fromList(chunks),
+            _impl,
+            _ctx,
+          );
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType('application', 'octet-stream')
+            ..add(responseBytes);
+          await request.response.close();
+          return;
+        }
         // Route through the generated server wiring's static JSON dispatcher.
+        final body = await utf8.decoder.bind(request).join();
         final responseBody = PetStoreWiring.invokeJson(
-          BaboonMethodId(serviceName, method),
+          methodId,
           body,
           _impl,
           _ctx,
