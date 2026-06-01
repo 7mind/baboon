@@ -245,19 +245,6 @@ object SwServiceWiringTranslator {
     override def translate(defn: DomainMember.User): Option[TextTree[SwValue]] = {
       defn.defn match {
         case service: Typedef.Service =>
-          // Async + errors mode is not supported for Swift: the `rt`
-          // combinators take synchronous closures, so an `async throws` impl
-          // call cannot be threaded through `rt.flatMap`/`rt.leftMap` without
-          // either an async-capable `IBaboonServiceRt` runtime contract or a
-          // container-introspecting rewrite. The async axis is supported only
-          // in noErrors (`--service-result-no-errors`) mode, matching the
-          // verified path. Fail fast rather than emit non-compiling code.
-          if (isAsync && !resolved.noErrors) {
-            throw new RuntimeException(
-              "Swift async service generation (--sw-async-services) is only supported with --service-result-no-errors. " +
-                s"Service ${service.id.name.name} uses the errors-mode service result, which has no async-compatible wiring."
-            )
-          }
           val methods =
             if (resolved.noErrors) generateNoErrorsWiring(service)
             else generateErrorsWiring(service)
@@ -543,7 +530,11 @@ object SwServiceWiringTranslator {
       val jsonRet: TextTree[SwValue] = q"${SwValue.SwTypeName(ct(bweFq, "String"))}"
       val uebaRet: TextTree[SwValue] = q"${SwValue.SwTypeName(ct(bweFq, "Data"))}"
 
-      val wrappers = generateServiceWrappers(service, jsonRet, uebaRet)
+      // In async mode the errors-mode dispatcher is itself `async throws`, so
+      // the muxer-wrapper absorbs the asyncness into a deferred thunk `R`
+      // (`() async throws -> container`) exactly like the noErrors path; sync
+      // mode keeps `R = container` (`wrapperRetType` is identity).
+      val wrappers = generateServiceWrappers(service, wrapperRetType(jsonRet), wrapperRetType(uebaRet))
 
       q"""public class ${svcName}Wiring {
          |    ${methods.shift(4).trim}
@@ -564,79 +555,17 @@ object SwServiceWiringTranslator {
         m =>
           val inRef    = trans.asSwRef(m.sig, domain, evo)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
-
-          val decodeStep =
-            q"""var input: ${ct(bweFq, renderFq(inRef))}
-               |do {
-               |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
-               |    input = rt.pure($decodeIn)
-               |} catch {
-               |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
-               |}""".stripMargin
-
-          val hasErrType = m.err.isDefined && !resolved.noErrors
-
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
-
-              val callBody = if (hasErrType) {
-                q"""do {
-                   |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
-                   |    return rt.leftMap(
-                   |        callResult, { err in $baboonWiringError.callFailed(method, err) })
-                   |} catch {
-                   |    return rt.fail($baboonWiringError.callFailed(method, error))
-                   |}""".stripMargin
-              } else {
-                q"""do {
-                   |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
-                   |} catch {
-                   |    return rt.fail($baboonWiringError.callFailed(method, error))
-                   |}""".stripMargin
-              }
-
-              q"""let output = rt.flatMap(input) { v in
-                 |    ${callBody.shift(4).trim}
-                 |}
-                 |return rt.flatMap(output) { v in
-                 |    do {
-                 |        let encoded = $encodeOut
-                 |        let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
-                 |        return rt.pure(String(data: jsonData, encoding: .utf8)!)
-                 |    } catch {
-                 |        return rt.fail($baboonWiringError.encoderFailed(method, error))
-                 |    }
-                 |}""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                q"""do {
-                   |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
-                   |    return rt.leftMap(
-                   |        callResult, { err in $baboonWiringError.callFailed(method, err) })
-                   |} catch {
-                   |    return rt.fail($baboonWiringError.callFailed(method, error))
-                   |}""".stripMargin
-              } else {
-                q"""do {
-                   |    impl.${m.name.name}(arg: ${ctxArgPass}v)
-                   |    return rt.pure("null")
-                   |} catch {
-                   |    return rt.fail($baboonWiringError.callFailed(method, error))
-                   |}""".stripMargin
-              }
-
-              q"""return rt.flatMap(input) { v in
-                 |    ${callBody.shift(4).trim}
-                 |}""".stripMargin
-          }
-
-          q""""${m.name.name}": {
-             |    ${decodeStep.shift(4).trim}
-             |    ${callAndEncodeStep.shift(4).trim}
-             |},""".stripMargin
+          if (isAsync) generateErrorsJsonCaseAsync(m, inRef, decodeIn)
+          else generateErrorsJsonCaseSync(m, inRef, decodeIn)
       }.join("\n")
+
+      // Sync: handler closures are plain `() -> container` and the dispatcher
+      // forwards directly. Async: the impl hop is awaited inside each handler,
+      // so handler closures are `() async throws -> container` and the
+      // dispatcher (itself `async throws`) calls `try await handler()`.
+      val handlerType        = if (isAsync) q"() async throws -> $wiringRetType" else q"() -> $wiringRetType"
+      val dispatcherEffects0 = if (isAsync) q" async throws" else q""
+      val handlerInvoke      = if (isAsync) q"return try await handler()" else q"return handler()"
 
       q"""public static func invokeJson(
          |    _ method: $baboonMethodId,
@@ -644,15 +573,185 @@ object SwServiceWiringTranslator {
          |    _ impl: $implType,
          |    _ rt: IBaboonServiceRt,
          |    ${ctxParamDecl}_ ctx: $baboonCodecContext
-         |) -> $wiringRetType {
-         |    let handlers: [String: () -> $wiringRetType] = [
+         |)$dispatcherEffects0 -> $wiringRetType {
+         |    let handlers: [String: $handlerType] = [
          |        ${cases.shift(8).trim}
          |    ]
          |    guard let handler = handlers[method.methodName] else {
          |        return rt.fail($baboonWiringError.noMatchingMethod(method))
          |    }
-         |    return handler()
+         |    $handlerInvoke
          |}""".stripMargin
+    }
+
+    /** Sync errors-mode JSON handler arm. Byte-identical to the prior output:
+      * decode wraps into the container via `rt.pure`/`rt.fail`, the impl hop is
+      * threaded through `rt.flatMap`, and the encode step is a second
+      * `rt.flatMap`.
+      */
+    private def generateErrorsJsonCaseSync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[SwValue],
+      decodeIn: TextTree[SwValue],
+    ): TextTree[SwValue] = {
+      val decodeStep =
+        q"""var input: ${ct(bweFq, renderFq(inRef))}
+           |do {
+           |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
+           |    input = rt.pure($decodeIn)
+           |} catch {
+           |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
+           |}""".stripMargin
+
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
+
+          val callBody = if (hasErrType) {
+            q"""do {
+               |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    return rt.leftMap(
+               |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          } else {
+            q"""do {
+               |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          }
+
+          q"""let output = rt.flatMap(input) { v in
+             |    ${callBody.shift(4).trim}
+             |}
+             |return rt.flatMap(output) { v in
+             |    do {
+             |        let encoded = $encodeOut
+             |        let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
+             |        return rt.pure(String(data: jsonData, encoding: .utf8)!)
+             |    } catch {
+             |        return rt.fail($baboonWiringError.encoderFailed(method, error))
+             |    }
+             |}""".stripMargin
+
+        case None =>
+          val callBody = if (hasErrType) {
+            q"""do {
+               |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    return rt.leftMap(
+               |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          } else {
+            q"""do {
+               |    impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    return rt.pure("null")
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          }
+
+          q"""return rt.flatMap(input) { v in
+             |    ${callBody.shift(4).trim}
+             |}""".stripMargin
+      }
+
+      q""""${m.name.name}": {
+         |    ${decodeStep.shift(4).trim}
+         |    ${callAndEncodeStep.shift(4).trim}
+         |},""".stripMargin
+    }
+
+    /** Async errors-mode JSON handler arm. Mirrors the C# reference
+      * (`generateErrorsJsonCaseAsync`): the decoded input stays a raw value
+      * (never re-wrapped in the container) so the impl `async throws` call can
+      * be `try await`ed in straight-line code — the abstract `IBaboonServiceRt`
+      * exposes no async bind, so the sync `rt.flatMap(input) { v in … }` closure
+      * form (which cannot `await`) is replaced by linear decode → `try await`
+      * impl → early-return on failure. The single async hop is hoisted out of
+      * any closure; the encode step keeps the SYNC `rt.flatMap(output)` (no
+      * `await` inside it). Container wrapping happens only at the
+      * `rt.pure`/`rt.fail`/`rt.leftMap` boundaries, identical to the sync arm.
+      */
+    private def generateErrorsJsonCaseAsync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[SwValue],
+      decodeIn: TextTree[SwValue],
+    ): TextTree[SwValue] = {
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val decodeStep =
+        q"""let decoded: $inRef
+           |do {
+           |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
+           |    decoded = $decodeIn
+           |} catch {
+           |    return rt.fail($baboonWiringError.decoderFailed(method, error))
+           |}""".stripMargin
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
+
+          val callStep = if (hasErrType) {
+            q"""let output: ${ct(bweFq, renderFq(trans.asSwRef(outRef, domain, evo)))}
+               |do {
+               |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    output = rt.leftMap(
+               |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          } else {
+            q"""let output: ${ct(bweFq, renderFq(trans.asSwRef(outRef, domain, evo)))}
+               |do {
+               |    let callResultValue = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    output = rt.pure(callResultValue)
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          }
+
+          q"""$callStep
+             |return rt.flatMap(output) { v in
+             |    do {
+             |        let encoded = $encodeOut
+             |        let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
+             |        return rt.pure(String(data: jsonData, encoding: .utf8)!)
+             |    } catch {
+             |        return rt.fail($baboonWiringError.encoderFailed(method, error))
+             |    }
+             |}""".stripMargin
+
+        case None =>
+          if (hasErrType) {
+            q"""do {
+               |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    let mapped = rt.leftMap(
+               |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+               |    return rt.flatMap(mapped) { v in rt.pure("null") }
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          } else {
+            q"""do {
+               |    try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    return rt.pure("null")
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          }
+      }
+
+      q""""${m.name.name}": {
+         |    ${decodeStep.shift(4).trim}
+         |    ${callAndEncodeStep.shift(4).trim}
+         |},""".stripMargin
     }
 
     private def generateErrorsUebaMethod(service: Typedef.Service): TextTree[SwValue] = {
@@ -663,79 +762,13 @@ object SwServiceWiringTranslator {
         m =>
           val inRef    = trans.asSwRef(m.sig, domain, evo)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"reader")
-
-          val decodeStep =
-            q"""var input: ${ct(bweFq, renderFq(inRef))}
-               |do {
-               |    let reader = $baboonBinTools.createReader(data)
-               |    input = rt.pure($decodeIn)
-               |} catch {
-               |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
-               |}""".stripMargin
-
-          val hasErrType = m.err.isDefined && !resolved.noErrors
-
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"v")
-
-              val callBody = if (hasErrType) {
-                q"""do {
-                   |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
-                   |    return rt.leftMap(
-                   |        callResult, { err in $baboonWiringError.callFailed(method, err) })
-                   |} catch {
-                   |    return rt.fail($baboonWiringError.callFailed(method, error))
-                   |}""".stripMargin
-              } else {
-                q"""do {
-                   |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
-                   |} catch {
-                   |    return rt.fail($baboonWiringError.callFailed(method, error))
-                   |}""".stripMargin
-              }
-
-              q"""let output = rt.flatMap(input) { v in
-                 |    ${callBody.shift(4).trim}
-                 |}
-                 |return rt.flatMap(output) { v in
-                 |    do {
-                 |        let writer = $baboonBinTools.createWriter()
-                 |        $encStmt
-                 |        return rt.pure(writer.toData())
-                 |    } catch {
-                 |        return rt.fail($baboonWiringError.encoderFailed(method, error))
-                 |    }
-                 |}""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                q"""do {
-                   |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
-                   |    return rt.leftMap(
-                   |        callResult, { err in $baboonWiringError.callFailed(method, err) })
-                   |} catch {
-                   |    return rt.fail($baboonWiringError.callFailed(method, error))
-                   |}""".stripMargin
-              } else {
-                q"""do {
-                   |    impl.${m.name.name}(arg: ${ctxArgPass}v)
-                   |    return rt.pure(Data())
-                   |} catch {
-                   |    return rt.fail($baboonWiringError.callFailed(method, error))
-                   |}""".stripMargin
-              }
-
-              q"""return rt.flatMap(input) { v in
-                 |    ${callBody.shift(4).trim}
-                 |}""".stripMargin
-          }
-
-          q""""${m.name.name}": {
-             |    ${decodeStep.shift(4).trim}
-             |    ${callAndEncodeStep.shift(4).trim}
-             |},""".stripMargin
+          if (isAsync) generateErrorsUebaCaseAsync(m, inRef, decodeIn)
+          else generateErrorsUebaCaseSync(m, inRef, decodeIn)
       }.join("\n")
+
+      val handlerType        = if (isAsync) q"() async throws -> $wiringRetType" else q"() -> $wiringRetType"
+      val dispatcherEffects0 = if (isAsync) q" async throws" else q""
+      val handlerInvoke      = if (isAsync) q"return try await handler()" else q"return handler()"
 
       q"""public static func invokeUeba(
          |    _ method: $baboonMethodId,
@@ -743,15 +776,173 @@ object SwServiceWiringTranslator {
          |    _ impl: $implType,
          |    _ rt: IBaboonServiceRt,
          |    ${ctxParamDecl}_ ctx: $baboonCodecContext
-         |) -> $wiringRetType {
-         |    let handlers: [String: () -> $wiringRetType] = [
+         |)$dispatcherEffects0 -> $wiringRetType {
+         |    let handlers: [String: $handlerType] = [
          |        ${cases.shift(8).trim}
          |    ]
          |    guard let handler = handlers[method.methodName] else {
          |        return rt.fail($baboonWiringError.noMatchingMethod(method))
          |    }
-         |    return handler()
+         |    $handlerInvoke
          |}""".stripMargin
+    }
+
+    /** Sync errors-mode UEBA handler arm. Byte-identical to the prior output. */
+    private def generateErrorsUebaCaseSync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[SwValue],
+      decodeIn: TextTree[SwValue],
+    ): TextTree[SwValue] = {
+      val decodeStep =
+        q"""var input: ${ct(bweFq, renderFq(inRef))}
+           |do {
+           |    let reader = $baboonBinTools.createReader(data)
+           |    input = rt.pure($decodeIn)
+           |} catch {
+           |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
+           |}""".stripMargin
+
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"v")
+
+          val callBody = if (hasErrType) {
+            q"""do {
+               |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    return rt.leftMap(
+               |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          } else {
+            q"""do {
+               |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          }
+
+          q"""let output = rt.flatMap(input) { v in
+             |    ${callBody.shift(4).trim}
+             |}
+             |return rt.flatMap(output) { v in
+             |    do {
+             |        let writer = $baboonBinTools.createWriter()
+             |        $encStmt
+             |        return rt.pure(writer.toData())
+             |    } catch {
+             |        return rt.fail($baboonWiringError.encoderFailed(method, error))
+             |    }
+             |}""".stripMargin
+
+        case None =>
+          val callBody = if (hasErrType) {
+            q"""do {
+               |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    return rt.leftMap(
+               |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          } else {
+            q"""do {
+               |    impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    return rt.pure(Data())
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          }
+
+          q"""return rt.flatMap(input) { v in
+             |    ${callBody.shift(4).trim}
+             |}""".stripMargin
+      }
+
+      q""""${m.name.name}": {
+         |    ${decodeStep.shift(4).trim}
+         |    ${callAndEncodeStep.shift(4).trim}
+         |},""".stripMargin
+    }
+
+    /** Async errors-mode UEBA handler arm. See [[generateErrorsJsonCaseAsync]]
+      * for the await-then-thread rationale.
+      */
+    private def generateErrorsUebaCaseAsync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[SwValue],
+      decodeIn: TextTree[SwValue],
+    ): TextTree[SwValue] = {
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val decodeStep =
+        q"""let decoded: $inRef
+           |do {
+           |    let reader = $baboonBinTools.createReader(data)
+           |    decoded = $decodeIn
+           |} catch {
+           |    return rt.fail($baboonWiringError.decoderFailed(method, error))
+           |}""".stripMargin
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"v")
+
+          val callStep = if (hasErrType) {
+            q"""let output: ${ct(bweFq, renderFq(trans.asSwRef(outRef, domain, evo)))}
+               |do {
+               |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    output = rt.leftMap(
+               |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          } else {
+            q"""let output: ${ct(bweFq, renderFq(trans.asSwRef(outRef, domain, evo)))}
+               |do {
+               |    let callResultValue = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    output = rt.pure(callResultValue)
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          }
+
+          q"""$callStep
+             |return rt.flatMap(output) { v in
+             |    do {
+             |        let writer = $baboonBinTools.createWriter()
+             |        $encStmt
+             |        return rt.pure(writer.toData())
+             |    } catch {
+             |        return rt.fail($baboonWiringError.encoderFailed(method, error))
+             |    }
+             |}""".stripMargin
+
+        case None =>
+          if (hasErrType) {
+            q"""do {
+               |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    let mapped = rt.leftMap(
+               |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+               |    return rt.flatMap(mapped) { v in rt.pure(Data()) }
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          } else {
+            q"""do {
+               |    try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    return rt.pure(Data())
+               |} catch {
+               |    return rt.fail($baboonWiringError.callFailed(method, error))
+               |}""".stripMargin
+          }
+      }
+
+      q""""${m.name.name}": {
+         |    ${decodeStep.shift(4).trim}
+         |    ${callAndEncodeStep.shift(4).trim}
+         |},""".stripMargin
     }
 
     /** Emits the cross-domain Muxer-entry wrapper classes for a service.
@@ -832,9 +1023,10 @@ object SwServiceWiringTranslator {
         withSvcCtx :+ q"ctx"
       }
 
-      // Sync: forward directly to the (synchronous) dispatcher. Async (noErrors
-      // only — see the guard in `translate`): return a deferred thunk that
-      // awaits the (now `async throws`) dispatcher when the caller invokes it.
+      // Sync: forward directly to the dispatcher (errors mode is non-throwing,
+      // so no `try`). Async: return a deferred thunk that awaits the (now
+      // `async throws`) dispatcher when the caller invokes it — true for both
+      // noErrors and errors modes, since both dispatchers are `async throws`.
       val callExpr: TextTree[SwValue] =
         if (isAsync) q"{ try await $invokerCall(${callArgs.join(", ")}) }"
         else if (resolved.noErrors) q"try $invokerCall(${callArgs.join(", ")})"
