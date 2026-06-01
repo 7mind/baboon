@@ -42,6 +42,7 @@ object SwDefnTranslator {
   )
 
   class SwDefnTranslatorImpl[F[+_, +_]: Applicative2](
+    target: io.septimalmind.baboon.CompilerTarget.SwTarget,
     domain: Domain,
     evo: BaboonEvolution,
     swFiles: SwFileTools,
@@ -863,12 +864,17 @@ object SwDefnTranslator {
       name: SwType,
     ): DefnRepr = {
       val service = defn.defn.asInstanceOf[Typedef.Service]
+      // Async axis: when enabled, service protocol methods become
+      // `func ... async throws -> T`, matching the async invoke dispatchers /
+      // client in SwServiceWiringTranslator. When disabled the signature is
+      // emitted exactly as before (no `async`, no `throws`).
+      val effectsKw = if (target.language.asyncServices) " async throws" else ""
       val methods = service.methods.map {
         m =>
           val in      = trans.asSwRef(m.sig, domain, evo)
           val out     = m.out.map(trans.asSwRef(_, domain, evo))
           val retStr  = out.map(o => q" -> $o").getOrElse(q"")
-          val methodEx = q"func ${m.name.name}(arg: $in)$retStr"
+          val methodEx = q"func ${m.name.name}(arg: $in)$effectsKw$retStr"
           prependDocs(m.docs, methodEx)
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
