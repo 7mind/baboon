@@ -27,7 +27,7 @@ public final class Main {
 
         switch (mode) {
             case "server" -> PetStoreServer.start(host, port);
-            case "client" -> PetStoreClient.run(host, port);
+            case "client" -> ClientApp.run(host, port);
             default -> throw new IllegalArgumentException("Unknown mode: " + mode);
         }
     }
