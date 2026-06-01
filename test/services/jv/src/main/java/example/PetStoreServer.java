@@ -52,14 +52,25 @@ public final class PetStoreServer {
                 String method = parts[2];
                 try {
                     byte[] bodyBytes = exchange.getRequestBody().readAllBytes();
-                    String body = new String(bodyBytes, StandardCharsets.UTF_8);
-                    String result = PetStoreWiring.invokeJson(
-                        new BaboonMethodId(service, method),
-                        body,
-                        impl,
-                        BaboonCodecContext.Default
-                    );
-                    sendJson(exchange, 200, result);
+                    String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+                    if (contentType != null && contentType.contains("application/octet-stream")) {
+                        byte[] result = PetStoreWiring.invokeUeba(
+                            new BaboonMethodId(service, method),
+                            bodyBytes,
+                            impl,
+                            BaboonCodecContext.Default
+                        );
+                        sendBytes(exchange, 200, result);
+                    } else {
+                        String body = new String(bodyBytes, StandardCharsets.UTF_8);
+                        String result = PetStoreWiring.invokeJson(
+                            new BaboonMethodId(service, method),
+                            body,
+                            impl,
+                            BaboonCodecContext.Default
+                        );
+                        sendJson(exchange, 200, result);
+                    }
                 } catch (Exception e) {
                     sendText(exchange, 500, e.getMessage());
                 }
@@ -92,6 +103,14 @@ public final class PetStoreServer {
     private static void sendJson(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
+    }
+
+    private static void sendBytes(HttpExchange exchange, int status, byte[] bytes) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", "application/octet-stream");
         exchange.sendResponseHeaders(status, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);
