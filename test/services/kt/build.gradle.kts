@@ -27,4 +27,7 @@ sourceSets {
 
 application {
     mainClass.set("example.MainKt")
+    // Enable JVM assertions so the `assert(...)` checks in the client actually execute;
+    // Gradle's JavaExec disables them by default, which would make all assertions vacuous.
+    applicationDefaultJvmArgs = listOf("-ea")
 }
