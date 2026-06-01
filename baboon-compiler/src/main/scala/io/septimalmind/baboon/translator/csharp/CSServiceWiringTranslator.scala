@@ -12,6 +12,8 @@ trait CSServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[CSValue]]
 
   def translateServiceRt(domain: Domain): Option[TextTree[CSValue]]
+
+  def translateClient(defn: DomainMember.User): Option[TextTree[CSValue]]
 }
 
 object CSServiceWiringTranslator {
@@ -220,6 +222,120 @@ object CSServiceWiringTranslator {
             if (resolved.noErrors) generateNoErrorsWiring(service)
             else generateErrorsWiring(service)
           Some(methods)
+        case _ => None
+      }
+    }
+
+    /** Emits a `${Service}Client` class that turns typed endpoint calls into
+      * encode -> transport -> decode round-trips. The client is transport-
+      * agnostic: it holds user-supplied callbacks `(service, method, data) ->
+      * result` (JSON: `string -> string`, UEBA: `byte[] -> byte[]`) and routes
+      * each call by `(serviceName, methodName)`.
+      *
+      * One method per endpoint is emitted per active codec: the UEBA variant
+      * keeps the bare method name, the JSON variant gets a `Json` suffix (the
+      * same naming convention the Rust/TypeScript clients use). The service
+      * context, when configured, is threaded as a leading parameter exactly as
+      * in the server wiring; `BaboonCodecContext` is threaded as the trailing
+      * `ctx` parameter (defaulting to `BaboonCodecContext.Default`).
+      *
+      * The C# backend has no `asyncServices` option, so — like the existing C#
+      * server wiring — the client is emitted sync-only (methods return `T`
+      * directly, not `Task<T>`).
+      */
+    override def translateClient(defn: DomainMember.User): Option[TextTree[CSValue]] = {
+      defn.defn match {
+        case service: Typedef.Service =>
+          val svcName = service.id.name.name
+          val hasJson = hasActiveJsonCodecs(service)
+          val hasUeba = hasActiveUebaCodecs(service)
+          if (!hasJson && !hasUeba) return None
+
+          val clientMethods = service.methods.flatMap {
+            m =>
+              val inRef   = trans.asCsRef(m.sig, domain, evo)
+              val retType = m.out.map(o => trans.asCsRef(o, domain, evo)).getOrElse(q"void")
+
+              val uebaMethod = if (hasUeba) {
+                val encodeIn = uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"bw", q"arg")
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val decExpr = uebaDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"br")
+                    q"""var ims = new $memoryStream(resp);
+                       |var br = new $binaryReader(ims);
+                       |return $decExpr;""".stripMargin
+                  case None => q"return;"
+                }
+                Some(
+                  q"""public $retType ${m.name.name}($ctxParamDecl$inRef arg, $baboonCodecContext ctx)
+                     |{
+                     |    var oms = new $memoryStream();
+                     |    var bw = new $binaryWriter(oms);
+                     |    $encodeIn
+                     |    bw.Flush();
+                     |    var resp = _transportUeba("$svcName", "${m.name.name}", oms.ToArray());
+                     |    ${decodeOut.shift(4).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              val jsonMethod = if (hasJson) {
+                val encodeIn = jsonEncodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"arg")
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val decExpr = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"$nsJToken.Parse(resp)")
+                    q"return $decExpr;"
+                  case None => q"return;"
+                }
+                Some(
+                  q"""public $retType ${m.name.name}Json($ctxParamDecl$inRef arg, $baboonCodecContext ctx)
+                     |{
+                     |    var encoded = $encodeIn;
+                     |    var resp = _transportJson("$svcName", "${m.name.name}", encoded.ToString($nsFormatting.None));
+                     |    ${decodeOut.shift(4).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              uebaMethod.toList ++ jsonMethod.toList
+          }
+
+          if (clientMethods.isEmpty) return None
+
+          val uebaTransportType = q"System.Func<$csString, $csString, byte[], byte[]>"
+          val jsonTransportType = q"System.Func<$csString, $csString, $csString, $csString>"
+
+          val fieldDecls = List(
+            if (hasUeba) Some(q"private readonly $uebaTransportType _transportUeba;") else None,
+            if (hasJson) Some(q"private readonly $jsonTransportType _transportJson;") else None,
+          ).flatten
+
+          val ctorParams = List(
+            if (hasUeba) Some(q"$uebaTransportType transportUeba") else None,
+            if (hasJson) Some(q"$jsonTransportType transportJson") else None,
+          ).flatten
+
+          val ctorAssigns = List(
+            if (hasUeba) Some(q"_transportUeba = transportUeba;") else None,
+            if (hasJson) Some(q"_transportJson = transportJson;") else None,
+          ).flatten
+
+          val clientName = s"${svcName}Client"
+
+          val clientTree =
+            q"""public sealed class $clientName
+               |{
+               |    ${fieldDecls.join("\n").shift(4).trim}
+               |
+               |    public $clientName(${ctorParams.join(", ")})
+               |    {
+               |        ${ctorAssigns.join("\n").shift(8).trim}
+               |    }
+               |
+               |    ${clientMethods.join("\n\n").shift(4).trim}
+               |}""".stripMargin
+
+          Some(clientTree)
         case _ => None
       }
     }
