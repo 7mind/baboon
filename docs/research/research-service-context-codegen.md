@@ -260,3 +260,26 @@ abstract context at all:
 
 This inconsistency is itself a finding: the intended client contract for abstract context
 is undefined across the codebase. The fix must pick one (recorded as a delivery question).
+
+---
+
+## CI follow-up (2026-06-03) — Windows build red: 64KB embedded-constant limit
+
+After merge `23d6b561` was pushed to `origin/main`, CI `build-windows-amd64` failed:
+`UTF8 string too large … bad String constant of length 66052` while emitting
+`BaboonRuntimeResources$`. Root cause: `PortableResource.embedSources` embeds each
+runtime resource file as ONE JVM `CONSTANT_Utf8` (hard cap 65535 bytes). The
+abstract-context additions grew `baboon_runtime.swift` 59341→64260 bytes (modified-UTF8
+66052) — over the limit. The local scalac 2.13.16/JDK25 backend silently splits
+oversized constants (verified: the locally-compiled class DID embed the 66052-byte
+content and compiled), masking the defect; CI's backend errors instead — so `mdl :build`
+was green locally while CI was red.
+
+Fix (commit `435f7281`): extracted the swift service-wiring/RPC runtime block out of the
+`baboon_runtime.swift` monolith into a new `baboon_service_wiring.swift` resource —
+mirroring every other language (which already ships a separate `baboon_service_wiring.*`).
+Registered in `SwBaboonTranslator.sharedRuntime`; cache-bust comment bumped. After:
+`baboon_runtime.swift` 53989 B, `baboon_service_wiring.swift` 10290 B; the largest
+baboon-runtime resource is now `baboon_codecs_facade.rs` 58490 B (pre-existing,
+CI-passing). Operational criterion: no embedded constant exceeds 65535 on ANY backend.
+`mdl :build` + `:test-sw-wiring` + `:test-swift-regular` green.
