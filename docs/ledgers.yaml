@@ -1,0 +1,410 @@
+version: 1
+ledgers:
+  - name: milestones
+    schema:
+      statusValues:
+        - open
+        - done
+        - postponed
+        - blocked
+      terminalStatuses:
+        - done
+      fields:
+        title:
+          type: string
+          required: true
+        description:
+          type: string
+          required: false
+        blockedBy:
+          type: id[]
+          required: false
+        dependsOn:
+          type: id[]
+          required: false
+      idPrefix: M
+      transitions:
+        open:
+          - done
+          - postponed
+          - blocked
+        postponed:
+          - open
+          - done
+          - blocked
+        blocked:
+          - open
+          - done
+          - postponed
+        done: []
+  - name: defects
+    schema:
+      statusValues:
+        - open
+        - wip
+        - blocked
+        - resolved
+        - abandoned
+      terminalStatuses:
+        - resolved
+        - abandoned
+      fields:
+        headline:
+          type: string
+          required: true
+        description:
+          type: string
+          required: false
+        rootCause:
+          type: string
+          required: false
+        suggestedFix:
+          type: string
+          required: false
+        fix:
+          type: string
+          required: false
+        severity:
+          type: string
+          required: true
+        sourceRefs:
+          type: string[]
+          required: false
+        blockedBy:
+          type: id[]
+          required: false
+        dependsOn:
+          type: id[]
+          required: false
+        ledgerRefs:
+          type: id[]
+          required: false
+        tags:
+          type: string[]
+          required: false
+        suggestedModel:
+          type: string
+          required: false
+      idPrefix: D
+      transitions:
+        open:
+          - wip
+          - blocked
+          - resolved
+          - abandoned
+        wip:
+          - blocked
+          - resolved
+          - abandoned
+        blocked:
+          - open
+          - wip
+          - resolved
+          - abandoned
+        resolved: []
+        abandoned: []
+  - name: tasks
+    schema:
+      statusValues:
+        - planned
+        - wip
+        - done
+        - blocked
+        - abandoned
+      terminalStatuses:
+        - done
+        - abandoned
+      fields:
+        headline:
+          type: string
+          required: true
+        description:
+          type: string
+          required: false
+        acceptance:
+          type: string
+          required: false
+        planDoc:
+          type: string
+          required: false
+        resultCommit:
+          type: string
+          required: false
+        completion:
+          type: string
+          required: false
+        severity:
+          type: string
+          required: false
+        sourceRefs:
+          type: string[]
+          required: false
+        blockedBy:
+          type: id[]
+          required: false
+        dependsOn:
+          type: id[]
+          required: false
+        ledgerRefs:
+          type: id[]
+          required: false
+        tags:
+          type: string[]
+          required: false
+        suggestedModel:
+          type: string
+          required: false
+      idPrefix: T
+      transitions:
+        planned:
+          - wip
+          - blocked
+          - done
+          - abandoned
+        wip:
+          - blocked
+          - done
+          - abandoned
+        blocked:
+          - planned
+          - wip
+          - done
+          - abandoned
+        done: []
+        abandoned: []
+  - name: hypothesis
+    schema:
+      statusValues:
+        - open
+        - uncertain
+        - confirmed
+        - wrong
+      terminalStatuses:
+        - confirmed
+        - wrong
+      fields:
+        headline:
+          type: string
+          required: true
+        description:
+          type: string
+          required: false
+        rationale:
+          type: string
+          required: false
+        parentHypothesis:
+          type: id
+          required: false
+        evidence:
+          type: string[]
+          required: false
+        sourceRefs:
+          type: string[]
+          required: false
+        blockedBy:
+          type: id[]
+          required: false
+        dependsOn:
+          type: id[]
+          required: false
+        ledgerRefs:
+          type: id[]
+          required: false
+        tags:
+          type: string[]
+          required: false
+        suggestedModel:
+          type: string
+          required: false
+      idPrefix: H
+      transitions:
+        open:
+          - uncertain
+          - confirmed
+          - wrong
+        uncertain:
+          - confirmed
+          - wrong
+        confirmed: []
+        wrong: []
+  - name: questions
+    schema:
+      statusValues:
+        - open
+        - answered
+        - withdrawn
+      terminalStatuses:
+        - answered
+        - withdrawn
+      fields:
+        question:
+          type: string
+          required: true
+        context:
+          type: string
+          required: false
+        suggestions:
+          type: string[]
+          required: false
+        recommendation:
+          type: string
+          required: false
+        answer:
+          type: string
+          required: false
+        sourceRefs:
+          type: string[]
+          required: false
+        blockedBy:
+          type: id[]
+          required: false
+        dependsOn:
+          type: id[]
+          required: false
+        ledgerRefs:
+          type: id[]
+          required: false
+        tags:
+          type: string[]
+          required: false
+        suggestedModel:
+          type: string
+          required: false
+      idPrefix: Q
+      transitions:
+        open:
+          - answered
+          - withdrawn
+        answered: []
+        withdrawn: []
+  - name: decisions
+    schema:
+      statusValues:
+        - proposed
+        - locked
+        - superseded
+      terminalStatuses:
+        - locked
+        - superseded
+      fields:
+        headline:
+          type: string
+          required: true
+        rationale:
+          type: string
+          required: false
+        alternatives:
+          type: string
+          required: false
+        supersedes:
+          type: id[]
+          required: false
+        landsIn:
+          type: id[]
+          required: false
+        sourceRefs:
+          type: string[]
+          required: false
+        blockedBy:
+          type: id[]
+          required: false
+        dependsOn:
+          type: id[]
+          required: false
+        ledgerRefs:
+          type: id[]
+          required: false
+        tags:
+          type: string[]
+          required: false
+        suggestedModel:
+          type: string
+          required: false
+      idPrefix: K
+      transitions:
+        proposed:
+          - locked
+          - superseded
+        locked: []
+        superseded: []
+  - name: goals
+    schema:
+      statusValues:
+        - clarifying
+        - planning
+        - planned
+        - building
+        - done
+        - abandoned
+      terminalStatuses:
+        - done
+        - abandoned
+      fields:
+        title:
+          type: string
+          required: true
+        description:
+          type: string
+          required: true
+        milestones:
+          type: id[]
+          required: false
+        grounding:
+          type: string
+          required: false
+        tags:
+          type: string[]
+          required: false
+        sourceRefs:
+          type: string[]
+          required: false
+      idPrefix: G
+      transitions:
+        clarifying:
+          - planning
+          - abandoned
+        planning:
+          - clarifying
+          - planned
+          - abandoned
+        planned:
+          - building
+          - abandoned
+          - planning
+        building:
+          - done
+          - abandoned
+          - planning
+        done: []
+        abandoned: []
+  - name: reviews
+    schema:
+      statusValues:
+        - go-ahead
+        - revise
+      terminalStatuses:
+        - go-ahead
+        - revise
+      fields:
+        summary:
+          type: string
+          required: false
+        new_questions:
+          type: string[]
+          required: false
+        criticism:
+          type: string[]
+          required: false
+        ledgerRefs:
+          type: id[]
+          required: false
+        tags:
+          type: string[]
+          required: false
+        sourceRefs:
+          type: string[]
+          required: false
+      idPrefix: R
+      transitions:
+        go-ahead: []
+        revise: []
