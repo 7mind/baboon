@@ -42,6 +42,12 @@ class RsTypes(val cratePrefix: String) {
   val ibaboonUebaService: RsType          = RsType(baboonServiceWiringCrate, "IBaboonUebaService")
   val baboonJsonMuxer: RsType             = RsType(baboonServiceWiringCrate, "JsonMuxer")
   val baboonUebaMuxer: RsType             = RsType(baboonServiceWiringCrate, "UebaMuxer")
+  // Context-carrying variants (emitted only when a service.context mode is
+  // active). Additive — the context-free traits/muxers above are unchanged.
+  val ibaboonJsonServiceCtx: RsType       = RsType(baboonServiceWiringCrate, "IBaboonJsonServiceCtx")
+  val ibaboonUebaServiceCtx: RsType       = RsType(baboonServiceWiringCrate, "IBaboonUebaServiceCtx")
+  val baboonJsonMuxerCtx: RsType          = RsType(baboonServiceWiringCrate, "JsonMuxerCtx")
+  val baboonUebaMuxerCtx: RsType          = RsType(baboonServiceWiringCrate, "UebaMuxerCtx")
 
   // baboon conversions
   val baboonAbstractConversion: RsType  = RsType(baboonRuntimeCrate, "AbstractConversion")

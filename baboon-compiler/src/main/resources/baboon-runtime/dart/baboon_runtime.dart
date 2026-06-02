@@ -997,6 +997,78 @@ class UebaMuxer<R> {
   Iterable<String> serviceNames() => _table.keys;
 }
 
+// Context-carrying variants, emitted when a service.context mode (`abstract`
+// or `type`) is active. The abstract/concrete service context `Ctx` is
+// supplied per-invocation (alongside the codec context) rather than baked into
+// the wrapper, so callers thread a fresh context through each dispatch. The
+// context-free interfaces and muxers above are left untouched so
+// `--service-context-mode none` output (and the service-acceptance matrix) is
+// byte-identical.
+
+abstract interface class IBaboonJsonServiceCtx<Ctx, R> {
+  String get serviceName;
+  R invoke(BaboonMethodId method, String data, Ctx ctx, BaboonCodecContext codecCtx);
+}
+
+abstract interface class IBaboonUebaServiceCtx<Ctx, R> {
+  String get serviceName;
+  R invoke(BaboonMethodId method, Uint8List data, Ctx ctx, BaboonCodecContext codecCtx);
+}
+
+class JsonMuxerCtx<Ctx, R> {
+  final Map<String, IBaboonJsonServiceCtx<Ctx, R>> _table = <String, IBaboonJsonServiceCtx<Ctx, R>>{};
+
+  JsonMuxerCtx([Iterable<IBaboonJsonServiceCtx<Ctx, R>> services = const []]) {
+    for (final s in services) {
+      register(s);
+    }
+  }
+
+  void register(IBaboonJsonServiceCtx<Ctx, R> service) {
+    if (_table.containsKey(service.serviceName)) {
+      throw BaboonWiringException(BaboonWiringError.duplicateService(service.serviceName));
+    }
+    _table[service.serviceName] = service;
+  }
+
+  R invoke(BaboonMethodId method, String data, Ctx ctx, BaboonCodecContext codecCtx) {
+    final service = _table[method.serviceId];
+    if (service == null) {
+      throw BaboonWiringException(BaboonWiringError.noMatchingService(method));
+    }
+    return service.invoke(method, data, ctx, codecCtx);
+  }
+
+  Iterable<String> serviceNames() => _table.keys;
+}
+
+class UebaMuxerCtx<Ctx, R> {
+  final Map<String, IBaboonUebaServiceCtx<Ctx, R>> _table = <String, IBaboonUebaServiceCtx<Ctx, R>>{};
+
+  UebaMuxerCtx([Iterable<IBaboonUebaServiceCtx<Ctx, R>> services = const []]) {
+    for (final s in services) {
+      register(s);
+    }
+  }
+
+  void register(IBaboonUebaServiceCtx<Ctx, R> service) {
+    if (_table.containsKey(service.serviceName)) {
+      throw BaboonWiringException(BaboonWiringError.duplicateService(service.serviceName));
+    }
+    _table[service.serviceName] = service;
+  }
+
+  R invoke(BaboonMethodId method, Uint8List data, Ctx ctx, BaboonCodecContext codecCtx) {
+    final service = _table[method.serviceId];
+    if (service == null) {
+      throw BaboonWiringException(BaboonWiringError.noMatchingService(method));
+    }
+    return service.invoke(method, data, ctx, codecCtx);
+  }
+
+  Iterable<String> serviceNames() => _table.keys;
+}
+
 // --- Either for Service Results ---
 
 sealed class BaboonEither<L, R> {

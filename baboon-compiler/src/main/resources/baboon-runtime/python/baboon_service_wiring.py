@@ -174,3 +174,84 @@ class UebaMuxer(Generic[R]):
 
     def service_names(self) -> list:
         return list(self._table.keys())
+
+
+# --- Context-carrying service variants ---
+#
+# Emitted only when a `service.context` mode (`abstract` or `type`) is active.
+# The abstract/concrete service context `Ctx` is supplied per-invocation
+# (alongside the codec context) rather than baked into the generated wrapper,
+# so callers thread a fresh context through each dispatch. The context-free
+# `IBaboon*Service` / `*Muxer` types above are left untouched so
+# `--py-service-context-mode none` output (and the service-acceptance matrix)
+# stays byte-identical.
+
+Ctx = TypeVar("Ctx")
+
+
+@runtime_checkable
+class IBaboonJsonServiceCtx(Protocol[Ctx, R]):
+    service_name: str
+
+    def invoke(self, method: BaboonMethodId, data: str, ctx: Ctx, codec_ctx) -> R: ...
+
+
+@runtime_checkable
+class IBaboonUebaServiceCtx(Protocol[Ctx, R]):
+    service_name: str
+
+    def invoke(self, method: BaboonMethodId, data: bytes, ctx: Ctx, codec_ctx) -> R: ...
+
+
+class JsonMuxerCtx(Generic[Ctx, R]):
+    """Cross-domain JSON dispatcher (context-carrying). Routes
+    `(method, data, ctx, codec_ctx)` to a registered service whose
+    `service_name` matches `method.service_name`. Strict fail-fast on duplicate
+    registration or unknown service.
+    """
+
+    def __init__(self, *services: "IBaboonJsonServiceCtx[Ctx, R]") -> None:
+        self._table: Dict[str, "IBaboonJsonServiceCtx[Ctx, R]"] = {}
+        for s in services:
+            self.register(s)
+
+    def register(self, service: "IBaboonJsonServiceCtx[Ctx, R]") -> None:
+        if service.service_name in self._table:
+            raise BaboonWiringException(DuplicateService(service.service_name))
+        self._table[service.service_name] = service
+
+    def invoke(self, method: BaboonMethodId, data: str, ctx: Ctx, codec_ctx) -> R:
+        service = self._table.get(method.service_name)
+        if service is None:
+            raise BaboonWiringException(NoMatchingService(method))
+        return service.invoke(method, data, ctx, codec_ctx)
+
+    def service_names(self) -> list:
+        return list(self._table.keys())
+
+
+class UebaMuxerCtx(Generic[Ctx, R]):
+    """Cross-domain UEBA dispatcher (context-carrying). Routes
+    `(method, data, ctx, codec_ctx)` to a registered service whose
+    `service_name` matches `method.service_name`. Strict fail-fast on duplicate
+    registration or unknown service.
+    """
+
+    def __init__(self, *services: "IBaboonUebaServiceCtx[Ctx, R]") -> None:
+        self._table: Dict[str, "IBaboonUebaServiceCtx[Ctx, R]"] = {}
+        for s in services:
+            self.register(s)
+
+    def register(self, service: "IBaboonUebaServiceCtx[Ctx, R]") -> None:
+        if service.service_name in self._table:
+            raise BaboonWiringException(DuplicateService(service.service_name))
+        self._table[service.service_name] = service
+
+    def invoke(self, method: BaboonMethodId, data: bytes, ctx: Ctx, codec_ctx) -> R:
+        service = self._table.get(method.service_name)
+        if service is None:
+            raise BaboonWiringException(NoMatchingService(method))
+        return service.invoke(method, data, ctx, codec_ctx)
+
+    def service_names(self) -> list:
+        return list(self._table.keys())

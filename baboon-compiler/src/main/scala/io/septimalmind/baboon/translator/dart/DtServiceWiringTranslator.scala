@@ -11,6 +11,15 @@ trait DtServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[DtValue]]
   def translateClient(defn: DomainMember.User): Option[TextTree[DtValue]]
   def translateServiceRt(domain: Domain): Option[TextTree[DtValue]]
+
+  /** Generic clause (`<Ctx>`) appended to the service-interface class name when
+    * an `abstract` service-context mode is active; empty otherwise (incl. `none`
+    * and concrete `type` mode). */
+  def serviceInterfaceTypeParam: String
+
+  /** Leading service-context method parameter declaration (e.g. `Ctx ctx, `)
+    * spliced before each interface method's `arg`; empty in `none` mode. */
+  def serviceMethodCtxParam: String
 }
 
 object DtServiceWiringTranslator {
@@ -63,7 +72,7 @@ object DtServiceWiringTranslator {
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     // wire is a Dart dynamic (json-decoded), encode returns a Dart dynamic.
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[DtValue]): TextTree[DtValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.instance.decode(ctx, $wire)"
+      case u: TypeId.User => q"${jsonCodecName(u)}.instance.decode($codecCtxRef, $wire)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit                                             => q"$wire as bool"
@@ -84,7 +93,7 @@ object DtServiceWiringTranslator {
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[DtValue]): TextTree[DtValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode(ctx, $value)"
+      case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode($codecCtxRef, $value)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit                                             => q"$value"
@@ -105,7 +114,7 @@ object DtServiceWiringTranslator {
     }
 
     private def uebaDecodeExpr(id: TypeId, reader: TextTree[DtValue]): TextTree[DtValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.decode(ctx, $reader)"
+      case u: TypeId.User => q"${uebaCodecName(u)}.instance.decode($codecCtxRef, $reader)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$reader.readBool()"
@@ -131,7 +140,7 @@ object DtServiceWiringTranslator {
     }
 
     private def uebaEncodeStmt(id: TypeId, writer: TextTree[DtValue], value: TextTree[DtValue]): TextTree[DtValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode(ctx, $writer, $value);"
+      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode($codecCtxRef, $writer, $value);"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$writer.writeBool($value);"
@@ -247,10 +256,10 @@ object DtServiceWiringTranslator {
                   case None => q"return;"
                 }
                 Some(
-                  q"""Future<$retType> ${m.name.name}($inTypeRef arg, [$baboonCodecContext ctx = $baboonCodecContext.defaultCtx]) async {
+                  q"""Future<$retType> ${m.name.name}($ctxParamDecl$inTypeRef arg, [$baboonCodecContext $codecCtxName = $baboonCodecContext.defaultCtx]) async {
                      |  final writer = $baboonBinTools.createWriter();
                      |  $encodeIn
-                     |  final resp = await _transportUeba('$svcName', '${m.name.name}', writer.toBytes());
+                     |  final resp = await _transportUeba($ctxArgPass'$svcName', '${m.name.name}', writer.toBytes());
                      |  ${decodeOut.shift(2).trim}
                      |}""".stripMargin
                 )
@@ -266,9 +275,9 @@ object DtServiceWiringTranslator {
                   case None => q"return;"
                 }
                 Some(
-                  q"""Future<$retType> $jsonMethodName($inTypeRef arg, [$baboonCodecContext ctx = $baboonCodecContext.defaultCtx]) async {
+                  q"""Future<$retType> $jsonMethodName($ctxParamDecl$inTypeRef arg, [$baboonCodecContext $codecCtxName = $baboonCodecContext.defaultCtx]) async {
                      |  final encoded = $dtJsonEncode($encodeIn);
-                     |  final resp = await _transportJson('$svcName', '${m.name.name}', encoded);
+                     |  final resp = await _transportJson($ctxArgPass'$svcName', '${m.name.name}', encoded);
                      |  ${decodeOut.shift(2).trim}
                      |}""".stripMargin
                 )
@@ -279,9 +288,19 @@ object DtServiceWiringTranslator {
 
           if (clientMethods.isEmpty) return None
 
+          // The abstract service context is forwarded as the leading argument of
+          // the transport callback, so its function-type gains a matching leading
+          // parameter. In `none`/concrete mode this is empty and the transport
+          // signature is unchanged (byte-identical for `none`).
+          val transportCtxParam: String = resolvedCtx match {
+            case ResolvedServiceContext.NoContext               => ""
+            case ResolvedServiceContext.AbstractContext(tn, _)  => s"$tn, "
+            case ResolvedServiceContext.ConcreteContext(tn, _)  => s"$tn, "
+          }
+
           val transportFields = List(
-            if (hasUeba) Some(q"final Future<$dtUint8List> Function(String service, String method, $dtUint8List data) _transportUeba;") else None,
-            if (hasJson) Some(q"final Future<String> Function(String service, String method, String data) _transportJson;") else None,
+            if (hasUeba) Some(q"final Future<$dtUint8List> Function(${transportCtxParam}String service, String method, $dtUint8List data) _transportUeba;") else None,
+            if (hasJson) Some(q"final Future<String> Function(${transportCtxParam}String service, String method, String data) _transportJson;") else None,
           ).flatten
 
           val ctorParams = List(
@@ -290,7 +309,7 @@ object DtServiceWiringTranslator {
           ).flatten
 
           Some(
-            q"""class ${svcName}Client {
+            q"""class ${svcName}Client$ctxTypeParamDecl {
                |  ${transportFields.joinN().shift(2).trim}
                |
                |  ${svcName}Client(${ctorParams.join(", ")});
@@ -313,6 +332,28 @@ object DtServiceWiringTranslator {
       case ResolvedServiceContext.AbstractContext(_, pn) => s"$pn, "
       case ResolvedServiceContext.ConcreteContext(_, pn) => s"$pn, "
     }
+
+    // Only `abstract` mode introduces a generic type parameter on the generated
+    // service interface / client / wrapper. `type` (concrete) mode pins the
+    // context to a concrete type, and `none` has no context — both empty here.
+    private def ctxTypeName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+      case _                                             => None
+    }
+    private def ctxTypeParamDecl: String = ctxTypeName.fold("")(tn => s"<$tn>")
+
+    override def serviceInterfaceTypeParam: String = ctxTypeParamDecl
+    override def serviceMethodCtxParam: String     = ctxParamDecl
+
+    // Codec-context parameter name. When a service context is active its
+    // parameter name (default `ctx`) collides with the codec-context parameter
+    // (historically also `ctx`), so the codec context is renamed away. In `none`
+    // mode the name stays `ctx`, keeping that output byte-identical.
+    private def codecCtxName: String = resolvedCtx match {
+      case ResolvedServiceContext.NoContext => "ctx"
+      case _                                => if (ctxArgPass.startsWith("codecCtx")) "baboonCodecCtx" else "codecCtx"
+    }
+    private def codecCtxRef: TextTree[DtValue] = TextTree.text[DtValue](codecCtxName)
 
     private def renderFq(tree: TextTree[DtValue]): String = tree.mapRender {
       case t: DtValue.DtType     => if (t.predef) trans.escapeDartKeyword(t.name) else (t.pkg.parts :+ trans.escapeDartKeyword(t.name)).mkString(".")
@@ -380,11 +421,11 @@ object DtServiceWiringTranslator {
              |},""".stripMargin
       }.join("\n")
 
-      q"""static String invokeJson(
+      q"""static String invokeJson$ctxTypeParamDecl(
          |  $baboonMethodId method,
          |  String data,
-         |  $svcName impl,
-         |  $ctxParamDecl$baboonCodecContext ctx) {
+         |  $svcName$ctxTypeParamDecl impl,
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
          |  final handlers = <String, String Function()>{
          |    ${cases.shift(4).trim}
          |  };
@@ -425,11 +466,11 @@ object DtServiceWiringTranslator {
              |},""".stripMargin
       }.join("\n")
 
-      q"""static $dtUint8List invokeUeba(
+      q"""static $dtUint8List invokeUeba$ctxTypeParamDecl(
          |  $baboonMethodId method,
          |  $dtUint8List data,
-         |  $svcName impl,
-         |  $ctxParamDecl$baboonCodecContext ctx) {
+         |  $svcName$ctxTypeParamDecl impl,
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
          |  final handlers = <String, $dtUint8List Function()>{
          |    ${cases.shift(4).trim}
          |  };
@@ -536,27 +577,38 @@ object DtServiceWiringTranslator {
     ): TextTree[DtValue] = {
       val svcName     = service.id.name.name
       val wireType    = if (isJson) q"String"        else q"$dtUint8List"
-      val ifaceType   = if (isJson) baboonJsonServiceIface else baboonUebaServiceIface
       val invokerFn   = if (isJson) "invokeJson"     else "invokeUeba"
       val wrapperName = s"$svcName${if (isJson) "JsonService" else "UebaService"}"
 
-      // Constructor and forwarded args: every extra dependency consumed by the
-      // underlying ${Svc}Wiring.invoke<Json|Ueba> static method (rt in errors
-      // mode, plus any service-context parameter) is baked at construction time
-      // so the runtime IBaboon*Service contract stays uniform across modes.
+      // The service context (when active) is supplied PER-INVOKE rather than
+      // baked into the constructor, so the wrapper implements the
+      // context-carrying IBaboon*ServiceCtx<Ctx, R> contract; `rt` (errors mode)
+      // remains a per-construction field. In `none` mode the wrapper is
+      // unchanged: it implements the context-free IBaboon*Service<R> and takes
+      // `invoke(method, data, ctx)` — keeping that output byte-identical.
+      val svcCtxTypeName: Option[String] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(tn, _)  => Some(tn)
+        case ResolvedServiceContext.ConcreteContext(tn, _)  => Some(tn)
+      }
+      val svcCtxArgName: Option[String] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
+        case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+      }
+
+      val implementsClause: TextTree[DtValue] = svcCtxTypeName match {
+        case None     => q"${if (isJson) baboonJsonServiceIface else baboonUebaServiceIface}<$retType>"
+        case Some(tn) => q"${if (isJson) baboonJsonServiceCtxIface else baboonUebaServiceCtxIface}<$tn, $retType>"
+      }
+
+      // `rt` (errors mode) is a per-construction dependency, so it stays a field;
+      // the service context is now a per-invoke argument.
       val rtField: Option[(String, TextTree[DtValue])] =
         if (resolved.noErrors) None else Some(("rt", q"IBaboonServiceRt"))
 
-      val svcCtxField: Option[(String, TextTree[DtValue])] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"$tn"))
-        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"$tn"))
-      }
-
-      val extraCtorParams: List[(String, TextTree[DtValue])] = List(rtField, svcCtxField).flatten
-
-      val implField: TextTree[DtValue]  = q"final $svcName _impl;"
-      val extraFields: List[TextTree[DtValue]] = extraCtorParams.map {
+      val implField: TextTree[DtValue]  = q"final $svcName$ctxTypeParamDecl _impl;"
+      val extraFields: List[TextTree[DtValue]] = rtField.toList.map {
         case (name, tpe) => q"final $tpe _$name;"
       }
 
@@ -564,25 +616,33 @@ object DtServiceWiringTranslator {
       // fields final without an extra body, so the wrapper stays const-friendly
       // and the analyzer doesn't warn about unused setters.
       val ctorImplParam: TextTree[DtValue] = q"this._impl"
-      val ctorExtraParams: List[TextTree[DtValue]] = extraCtorParams.map {
+      val ctorExtraParams: List[TextTree[DtValue]] = rtField.toList.map {
         case (name, _) => q"this._$name"
       }
       val ctorParamList: TextTree[DtValue] =
         (ctorImplParam :: ctorExtraParams).join(", ")
 
-      // Underlying static-method call: positional args match the existing
-      // ${Svc}Wiring.invoke<Json|Ueba>(method, data, impl, [rt], [svcCtx], ctx)
+      // Underlying static-method call: positional args match the
+      // ${Svc}Wiring.invoke<Json|Ueba>(method, data, impl, [rt], [svcCtx], codecCtx)
       // signature emitted by generateNoErrors*Method / generateErrors*Method.
+      // The service context (`ctx`) and codec context (`codecCtx`) are the
+      // per-invoke parameters in context-active mode; in `none` mode the single
+      // `ctx` is the codec context.
       val invokerArgs: List[TextTree[DtValue]] = {
         val base    = List[TextTree[DtValue]](q"method", q"data", q"_impl")
         val withRt  = rtField.fold(base)(_ => base :+ q"_rt")
-        val withSvc = svcCtxField.fold(withRt)(f => withRt :+ q"_${f._1}")
-        withSvc :+ q"ctx"
+        val withSvc = svcCtxArgName.fold(withRt)(pn => withRt :+ TextTree.text[DtValue](pn))
+        withSvc :+ codecCtxRef
       }
 
       val allFields = (implField :: extraFields).join("\n")
 
-      q"""class $wrapperName implements $ifaceType<$retType> {
+      val invokeSig: TextTree[DtValue] = svcCtxTypeName match {
+        case None     => q"$retType invoke($baboonMethodId method, $wireType data, $baboonCodecContext ctx)"
+        case Some(tn) => q"$retType invoke($baboonMethodId method, $wireType data, $tn ${svcCtxArgName.get}, $baboonCodecContext $codecCtxName)"
+      }
+
+      q"""class $wrapperName$ctxTypeParamDecl implements $implementsClause {
          |  @override
          |  String get serviceName => '$svcName';
          |
@@ -591,8 +651,8 @@ object DtServiceWiringTranslator {
          |  $wrapperName($ctorParamList);
          |
          |  @override
-         |  $retType invoke($baboonMethodId method, $wireType data, $baboonCodecContext ctx) {
-         |    return ${svcName}Wiring.$invokerFn(${invokerArgs.join(", ")});
+         |  ${invokeSig.trim} {
+         |    return ${svcName}Wiring.$invokerFn${if (svcCtxTypeName.isDefined) ctxTypeParamDecl else ""}(${invokerArgs.join(", ")});
          |  }
          |}""".stripMargin
     }
@@ -683,12 +743,12 @@ object DtServiceWiringTranslator {
              |},""".stripMargin
       }.join("\n")
 
-      q"""static $wiringRetType invokeJson(
+      q"""static $wiringRetType invokeJson$ctxTypeParamDecl(
          |  $baboonMethodId method,
          |  String data,
-         |  $svcName impl,
+         |  $svcName$ctxTypeParamDecl impl,
          |  IBaboonServiceRt rt,
-         |  $ctxParamDecl$baboonCodecContext ctx) {
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
          |  final handlers = <String, $wiringRetType Function()>{
          |    ${cases.shift(4).trim}
          |  };
@@ -783,12 +843,12 @@ object DtServiceWiringTranslator {
              |},""".stripMargin
       }.join("\n")
 
-      q"""static $wiringRetType invokeUeba(
+      q"""static $wiringRetType invokeUeba$ctxTypeParamDecl(
          |  $baboonMethodId method,
          |  $dtUint8List data,
-         |  $svcName impl,
+         |  $svcName$ctxTypeParamDecl impl,
          |  IBaboonServiceRt rt,
-         |  $ctxParamDecl$baboonCodecContext ctx) {
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
          |  final handlers = <String, $wiringRetType Function()>{
          |    ${cases.shift(4).trim}
          |  };

@@ -556,18 +556,25 @@ object DtDefnTranslator {
       name: DtType,
     ): DefnRepr = {
       val service = defn.defn.asInstanceOf[Typedef.Service]
+      // When a service-context mode (`abstract`/`type`) is active the interface
+      // gains a leading context parameter on every method and, for `abstract`
+      // mode, a `<Ctx>` generic clause on the class. In `none` mode both are
+      // empty, keeping the interface byte-identical. The decision is owned by
+      // the wiring translator (which holds the resolved `target` context).
+      val ctxMethodParam = wiringTranslator.serviceMethodCtxParam
+      val ctxTypeParam   = wiringTranslator.serviceInterfaceTypeParam
       val methods = service.methods.map {
         m =>
           val in      = trans.asDtRef(m.sig, domain, evo)
           val out     = m.out.map(trans.asDtRef(_, domain, evo))
           val retStr  = out.map(o => q"$o").getOrElse(q"void")
-          val methodEx = q"$retStr ${m.name.name}($in arg);"
+          val methodEx = q"$retStr ${m.name.name}($ctxMethodParam$in arg);"
           prependDocs(m.docs, methodEx)
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
 
       val serviceTree =
-        q"""abstract class ${name.asName} {
+        q"""abstract class ${name.asName}$ctxTypeParam {
            |  ${body.shift(2).trim}
            |}""".stripMargin
 

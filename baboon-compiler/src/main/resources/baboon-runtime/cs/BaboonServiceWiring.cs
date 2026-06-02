@@ -147,4 +147,94 @@ namespace Baboon.Runtime.Shared
             return _table.Keys;
         }
     }
+
+    // Context-carrying variants, emitted when a service.context mode
+    // (`abstract` or `type`) is active. The service context `Ctx` is supplied
+    // per `Invoke` (alongside the codec context) instead of being baked into
+    // the wrapper at construction time. The context-free interfaces above are
+    // left untouched so `--service-context-mode none` output (and the
+    // service-acceptance matrix) is byte-identical.
+    public interface IBaboonJsonServiceCtx<Ctx, out R>
+    {
+        string ServiceName { get; }
+        R Invoke(BaboonMethodId method, string data, Ctx ctx, BaboonCodecContext codecCtx);
+    }
+
+    public interface IBaboonUebaServiceCtx<Ctx, out R>
+    {
+        string ServiceName { get; }
+        R Invoke(BaboonMethodId method, byte[] data, Ctx ctx, BaboonCodecContext codecCtx);
+    }
+
+    public sealed class JsonMuxerCtx<Ctx, R>
+    {
+        private readonly Dictionary<string, IBaboonJsonServiceCtx<Ctx, R>> _table = new Dictionary<string, IBaboonJsonServiceCtx<Ctx, R>>();
+
+        public JsonMuxerCtx(params IBaboonJsonServiceCtx<Ctx, R>[] services)
+        {
+            foreach (var s in services)
+            {
+                Register(s);
+            }
+        }
+
+        public void Register(IBaboonJsonServiceCtx<Ctx, R> service)
+        {
+            if (_table.ContainsKey(service.ServiceName))
+            {
+                throw new BaboonWiringException(new BaboonWiringError.DuplicateService(service.ServiceName));
+            }
+            _table[service.ServiceName] = service;
+        }
+
+        public R Invoke(BaboonMethodId method, string data, Ctx ctx, BaboonCodecContext codecCtx)
+        {
+            if (!_table.TryGetValue(method.ServiceName, out var service))
+            {
+                throw new BaboonWiringException(new BaboonWiringError.NoMatchingService(method));
+            }
+            return service.Invoke(method, data, ctx, codecCtx);
+        }
+
+        public IReadOnlyCollection<string> ServiceNames()
+        {
+            return _table.Keys;
+        }
+    }
+
+    public sealed class UebaMuxerCtx<Ctx, R>
+    {
+        private readonly Dictionary<string, IBaboonUebaServiceCtx<Ctx, R>> _table = new Dictionary<string, IBaboonUebaServiceCtx<Ctx, R>>();
+
+        public UebaMuxerCtx(params IBaboonUebaServiceCtx<Ctx, R>[] services)
+        {
+            foreach (var s in services)
+            {
+                Register(s);
+            }
+        }
+
+        public void Register(IBaboonUebaServiceCtx<Ctx, R> service)
+        {
+            if (_table.ContainsKey(service.ServiceName))
+            {
+                throw new BaboonWiringException(new BaboonWiringError.DuplicateService(service.ServiceName));
+            }
+            _table[service.ServiceName] = service;
+        }
+
+        public R Invoke(BaboonMethodId method, byte[] data, Ctx ctx, BaboonCodecContext codecCtx)
+        {
+            if (!_table.TryGetValue(method.ServiceName, out var service))
+            {
+                throw new BaboonWiringException(new BaboonWiringError.NoMatchingService(method));
+            }
+            return service.Invoke(method, data, ctx, codecCtx);
+        }
+
+        public IReadOnlyCollection<string> ServiceNames()
+        {
+            return _table.Keys;
+        }
+    }
 }

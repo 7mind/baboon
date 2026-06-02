@@ -100,7 +100,7 @@ object KtServiceWiringTranslator {
 
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[KtValue]): TextTree[KtValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.decode(ctx, $wire)"
+      case u: TypeId.User => q"${jsonCodecName(u)}.decode($codecCtxRef, $wire)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit => q"$wire.jsonPrimitive.boolean"
@@ -130,7 +130,7 @@ object KtServiceWiringTranslator {
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[KtValue]): TextTree[KtValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.encode(ctx, $value)"
+      case u: TypeId.User => q"${jsonCodecName(u)}.encode($codecCtxRef, $value)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.uid => q"$jsonPrimitive($value.toString())"
@@ -158,7 +158,7 @@ object KtServiceWiringTranslator {
     }
 
     private def uebaDecodeExpr(id: TypeId, br: TextTree[KtValue]): TextTree[KtValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.decode(ctx, $br)"
+      case u: TypeId.User => q"${uebaCodecName(u)}.instance.decode($codecCtxRef, $br)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit => q"$br.readBoolean()"
@@ -188,7 +188,7 @@ object KtServiceWiringTranslator {
     }
 
     private def uebaEncodeStmt(id: TypeId, bw: TextTree[KtValue], value: TextTree[KtValue]): TextTree[KtValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode(ctx, $bw, $value)"
+      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode($codecCtxRef, $bw, $value)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit => q"$bw.writeBoolean($value)"
@@ -311,6 +311,47 @@ object KtServiceWiringTranslator {
       case ResolvedServiceContext.ConcreteContext(_, pn) => s"$pn, "
     }
 
+    // Only `abstract` mode introduces a generic type parameter; `type`
+    // (concrete) mode pins the context to a concrete type, and `none` has no
+    // context at all. These are non-empty only for AbstractContext.
+    private def ctxTypeName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+      case _                                             => None
+    }
+    private def ctxTypeParamDecl: String = ctxTypeName.fold("")(tn => s"<$tn>")
+
+    // Service-context type/param names regardless of abstract vs concrete; None for `none`.
+    private def svcCtxTypeName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext               => None
+      case ResolvedServiceContext.AbstractContext(tn, _)  => Some(tn)
+      case ResolvedServiceContext.ConcreteContext(tn, _)  => Some(tn)
+    }
+    private def svcCtxArgName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext               => None
+      case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
+      case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+    }
+
+    // The codec-context parameter is always present in wiring/client/wrapper
+    // signatures; when a service context is active its parameter name (default
+    // `ctx`) collides with the codec context (also historically `ctx`), so the
+    // codec context is renamed away. In `none` mode the name stays `ctx`,
+    // keeping that output byte-identical.
+    private def codecCtxName: String = resolvedCtx match {
+      case ResolvedServiceContext.NoContext => "ctx"
+      case _                                => if (ctxArgPass.startsWith("codecCtx")) "baboonCodecCtx" else "codecCtx"
+    }
+    private def codecCtxRef: TextTree[KtValue] = TextTree.text[KtValue](codecCtxName)
+
+    // Client-side service-context param/arg: present for both abstract and
+    // concrete modes (the client method takes a leading service context and
+    // forwards it to the transport callback). Empty for `none`.
+    private def clientCtxParamDecl: String = (svcCtxArgName, svcCtxTypeName) match {
+      case (Some(pn), Some(tn)) => s"$pn: $tn, "
+      case _                    => ""
+    }
+    private def clientCtxArgPass: String = svcCtxArgName.fold("")(pn => s"$pn, ")
+
     private def genericParam: String = {
       val params = Seq(
         resolved.hkt.map(h => s"${h.name}${h.signature}"),
@@ -320,6 +361,24 @@ object KtServiceWiringTranslator {
         },
       ).flatten
       if (params.nonEmpty) params.mkString("<", ", ", ">") else ""
+    }
+
+    // Kotlin requires the type-parameter clause to precede the function name
+    // (`fun <Ctx> invokeJson(`), unlike classes where it follows. The old code
+    // emitted it after the name (`fun invokeJson<…>(`) which is invalid Kotlin
+    // for the context generic. The repositioning is gated on context being
+    // active so that `none`-mode output (where the only possible generic is the
+    // service-result HKT) stays byte-identical: prefix form for context-active,
+    // legacy suffix form otherwise.
+    //  - funGenericPrefix: rendered before the function name
+    //  - funGenericSuffix: rendered after the function name
+    private def funGenericPrefix: String = ctxTypeName match {
+      case Some(_) => val g = genericParam; if (g.isEmpty) "" else s"$g "
+      case None    => ""
+    }
+    private def funGenericSuffix: String = ctxTypeName match {
+      case Some(_) => ""
+      case None    => genericParam
     }
 
     private def svcTypeArg: String = {
@@ -397,11 +456,11 @@ object KtServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""fun invokeJson$genericParam(
+      q"""fun ${funGenericPrefix}invokeJson${funGenericSuffix}(
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
-         |  ${ctxParamDecl}ctx: $baboonCodecContext): String {
+         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): String {
          |  return when (method.methodName) {
          |    ${cases.shift(4).trim}
          |    else ->
@@ -439,11 +498,11 @@ object KtServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""fun invokeUeba$genericParam(
+      q"""fun ${funGenericPrefix}invokeUeba${funGenericSuffix}(
          |  method: $baboonMethodId,
          |  data: ByteArray,
          |  impl: $svcName$svcTypeArg,
-         |  ${ctxParamDecl}ctx: $baboonCodecContext): ByteArray {
+         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): ByteArray {
          |  return when (method.methodName) {
          |    ${cases.shift(4).trim}
          |    else ->
@@ -511,9 +570,17 @@ object KtServiceWiringTranslator {
     ): TextTree[KtValue] = {
       val svcName       = service.id.name.name
       val wireType: TextTree[KtValue] = if (isJson) q"String" else q"ByteArray"
-      val ifaceType     = if (isJson) ibaboonJsonService else ibaboonUebaService
       val wrapperName   = s"$svcName${if (isJson) "JsonService" else "UebaService"}"
       val invokerName   = if (isJson) "invokeJson" else "invokeUeba"
+
+      // The implemented runtime contract follows the context mode: `none` keeps
+      // the historical context-free IBaboon*Service; `abstract`/`type` use the
+      // context-carrying IBaboon*ServiceCtx so the service context is supplied
+      // per `invoke`, not baked into the constructor.
+      val implementsClause: TextTree[KtValue] = svcCtxTypeName match {
+        case None     => q"${if (isJson) ibaboonJsonService else ibaboonUebaService}<$retType>"
+        case Some(tn) => q"${if (isJson) ibaboonJsonServiceCtx else ibaboonUebaServiceCtx}<$tn, $retType>"
+      }
 
       // Constructor-baked dependencies, in the order the wiring function expects them.
       val implType: TextTree[KtValue] = q"$svcName$svcTypeArg"
@@ -527,33 +594,35 @@ object KtServiceWiringTranslator {
         }
       }
 
-      val svcCtxField: Option[(String, TextTree[KtValue])] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"$tn"))
-        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"$tn"))
-      }
-
-      val extraCtorParams: List[(String, TextTree[KtValue])] = List(rtField, svcCtxField).flatten
-
+      // `rt` (errors mode) stays a per-construction dependency; the service
+      // context is now a per-invoke argument when context is active, so it is
+      // no longer a constructor field.
       val ctorParamList: TextTree[KtValue] = {
         val all = q"private val impl: $implType" ::
-          extraCtorParams.map { case (n, t) => q"private val $n: $t" }
+          rtField.toList.map { case (n, t) => q"private val $n: $t" }
         all.join(",\n")
       }
 
+      // The wrapper's `invoke` signature: in context-active mode it carries the
+      // service context (`ctx: Ctx`) per-invoke ahead of the codec context.
+      val invokeCtxParamDecl: String = svcCtxTypeName match {
+        case None     => ""
+        case Some(tn) => svcCtxArgName.fold("")(pn => s"$pn: $tn, ")
+      }
+
       val invokerArgs: List[TextTree[KtValue]] = {
-        val base                       = List(q"method", q"data", q"impl")
-        val withRt                     = rtField.fold(base)(_ => base :+ q"rt")
-        val withSvcCtx                 = svcCtxField.fold(withRt)(f => withRt :+ q"${f._1}")
-        withSvcCtx :+ q"ctx"
+        val base: List[TextTree[KtValue]] = List(q"method", q"data", q"impl")
+        val withRt     = rtField.fold(base)(_ => base :+ q"rt")
+        val withSvcCtx = svcCtxArgName.fold(withRt)(pn => withRt :+ TextTree.text[KtValue](pn))
+        withSvcCtx :+ codecCtxRef
       }
 
       q"""class $wrapperName$genericParam(
          |  ${ctorParamList.shift(2).trim}
-         |) : $ifaceType<$retType> {
+         |) : $implementsClause {
          |  override val serviceName: String = "$svcName"
          |
-         |  override fun invoke(method: $baboonMethodId, data: $wireType, ctx: $baboonCodecContext): $retType {
+         |  override fun invoke(method: $baboonMethodId, data: $wireType, $invokeCtxParamDecl$codecCtxName: $baboonCodecContext): $retType {
          |    return ${svcName}Wiring.$invokerName(${invokerArgs.join(", ")})
          |  }
          |}""".stripMargin
@@ -654,12 +723,12 @@ object KtServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""fun invokeJson$genericParam(
+      q"""fun ${funGenericPrefix}invokeJson${funGenericSuffix}(
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
          |  rt: $iBaboonServiceRtFq$rtTypeArg,
-         |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType {
+         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): $wiringRetType {
          |  return when (method.methodName) {
          |    ${cases.shift(4).trim}
          |    else ->
@@ -753,12 +822,12 @@ object KtServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""fun invokeUeba$genericParam(
+      q"""fun ${funGenericPrefix}invokeUeba${funGenericSuffix}(
          |  method: $baboonMethodId,
          |  data: ByteArray,
          |  impl: $svcName$svcTypeArg,
          |  rt: $iBaboonServiceRtFq$rtTypeArg,
-         |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType {
+         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): $wiringRetType {
          |  return when (method.methodName) {
          |    ${cases.shift(4).trim}
          |    else ->
@@ -792,10 +861,10 @@ object KtServiceWiringTranslator {
                   case None => q"return Unit as $retType"
                 }
                 Some(
-                  q"""suspend fun ${m.name.name}(arg: $inTypeRef, ctx: $baboonCodecContext = $baboonCodecContext.Default): $retType {
+                  q"""suspend fun ${m.name.name}(${clientCtxParamDecl}arg: $inTypeRef, $codecCtxName: $baboonCodecContext = $baboonCodecContext.Default): $retType {
                      |  ${mkWriterSetup("writer").shift(2).trim}
                      |  $encodeIn
-                     |  val resp = transportUeba("$svcName", "${m.name.name}", ${mkWriterGetBytes("writer")})
+                     |  val resp = transportUeba($clientCtxArgPass"$svcName", "${m.name.name}", ${mkWriterGetBytes("writer")})
                      |  ${decodeOut.shift(2).trim}
                      |}""".stripMargin
                 )
@@ -810,9 +879,9 @@ object KtServiceWiringTranslator {
                   case None => q"return Unit as $retType"
                 }
                 Some(
-                  q"""suspend fun ${m.name.name}Json(arg: $inTypeRef, ctx: $baboonCodecContext = $baboonCodecContext.Default): $retType {
+                  q"""suspend fun ${m.name.name}Json(${clientCtxParamDecl}arg: $inTypeRef, $codecCtxName: $baboonCodecContext = $baboonCodecContext.Default): $retType {
                      |  val encoded = $encodeIn.toString()
-                     |  val resp = transportJson("$svcName", "${m.name.name}", encoded)
+                     |  val resp = transportJson($clientCtxArgPass"$svcName", "${m.name.name}", encoded)
                      |  ${decodeOut.shift(2).trim}
                      |}""".stripMargin
                 )
@@ -823,14 +892,19 @@ object KtServiceWiringTranslator {
 
           if (clientMethods.isEmpty) return None
 
+          // In context-active mode the abstract context is forwarded as the
+          // leading argument of the transport callback, so the lambda type
+          // gains a leading `Ctx` parameter.
+          val transportLambdaCtx: String = clientCtxParamDecl
+
           val transportFields = List(
-            if (hasUeba) Some(q"private val transportUeba: suspend (service: String, method: String, data: ByteArray) -> ByteArray") else None,
-            if (hasJson) Some(q"private val transportJson: suspend (service: String, method: String, data: String) -> String") else None,
+            if (hasUeba) Some(q"private val transportUeba: suspend (${transportLambdaCtx}service: String, method: String, data: ByteArray) -> ByteArray") else None,
+            if (hasJson) Some(q"private val transportJson: suspend (${transportLambdaCtx}service: String, method: String, data: String) -> String") else None,
           ).flatten
 
           val ctorParams = List(
-            if (hasUeba) Some(q"transportUeba: suspend (service: String, method: String, data: ByteArray) -> ByteArray") else None,
-            if (hasJson) Some(q"transportJson: suspend (service: String, method: String, data: String) -> String") else None,
+            if (hasUeba) Some(q"transportUeba: suspend (${transportLambdaCtx}service: String, method: String, data: ByteArray) -> ByteArray") else None,
+            if (hasJson) Some(q"transportJson: suspend (${transportLambdaCtx}service: String, method: String, data: String) -> String") else None,
           ).flatten
 
           val ctorAssigns = List(
@@ -839,7 +913,7 @@ object KtServiceWiringTranslator {
           ).flatten
 
           Some(
-            q"""class ${svcName}Client(
+            q"""class ${svcName}Client$ctxTypeParamDecl(
                |  ${ctorParams.join(",\n").shift(2).trim}
                |) {
                |  ${transportFields.joinN().shift(2).trim}

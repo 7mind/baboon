@@ -1,0 +1,17 @@
+model MixedCase.Pkg
+
+version "1.0.0"
+
+pragma typescript.service.context = "abstract"
+
+root service AdminService {
+  def shutdown (
+    data in {
+      reason: str
+    }
+
+    data out {
+      ok: bit
+    }
+  )
+}

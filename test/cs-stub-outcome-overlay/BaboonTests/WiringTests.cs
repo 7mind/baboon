@@ -16,14 +16,14 @@ namespace ConversionsTest
 
     public class MockI1Outcome : Testpkg.Pkg0.II1
     {
-        public Outcome<Testpkg.Pkg0.I1.TestCall.Out> testCall(
+        public Outcome<Testpkg.Pkg0.I1.TestCall.Out> TestCall(
             Testpkg.Pkg0.I1.TestCall.In arg)
         {
             return new Outcome<Testpkg.Pkg0.I1.TestCall.Out>.Success(
                 new Testpkg.Pkg0.I1.TestCall.Out(42));
         }
 
-        public Outcome<Testpkg.Pkg0.T7_Empty> testCall2(
+        public Outcome<Testpkg.Pkg0.T7_Empty> TestCall2(
             Testpkg.Pkg0.T7_Empty arg)
         {
             return new Outcome<Testpkg.Pkg0.T7_Empty>.Success(
@@ -33,14 +33,14 @@ namespace ConversionsTest
 
     public class FailingI1Outcome : Testpkg.Pkg0.II1
     {
-        public Outcome<Testpkg.Pkg0.I1.TestCall.Out> testCall(
+        public Outcome<Testpkg.Pkg0.I1.TestCall.Out> TestCall(
             Testpkg.Pkg0.I1.TestCall.In arg)
         {
             return new Outcome<Testpkg.Pkg0.I1.TestCall.Out>.Failure(
                 new Testpkg.Pkg0.I1.TestCall.Err("domain error"));
         }
 
-        public Outcome<Testpkg.Pkg0.T7_Empty> testCall2(
+        public Outcome<Testpkg.Pkg0.T7_Empty> TestCall2(
             Testpkg.Pkg0.T7_Empty arg)
         {
             return new Outcome<Testpkg.Pkg0.T7_Empty>.Failure(
@@ -50,13 +50,13 @@ namespace ConversionsTest
 
     public class ThrowingI1Outcome : Testpkg.Pkg0.II1
     {
-        public Outcome<Testpkg.Pkg0.I1.TestCall.Out> testCall(
+        public Outcome<Testpkg.Pkg0.I1.TestCall.Out> TestCall(
             Testpkg.Pkg0.I1.TestCall.In arg)
         {
             throw new InvalidOperationException("service error");
         }
 
-        public Outcome<Testpkg.Pkg0.T7_Empty> testCall2(
+        public Outcome<Testpkg.Pkg0.T7_Empty> TestCall2(
             Testpkg.Pkg0.T7_Empty arg)
         {
             throw new InvalidOperationException("service error");
@@ -65,7 +65,7 @@ namespace ConversionsTest
 
     public class MockI2Outcome : Testpkg.Pkg0.II2
     {
-        public Testpkg.Pkg0.I2.NoErrCall.Out noErrCall(Testpkg.Pkg0.I2.NoErrCall.In arg)
+        public Testpkg.Pkg0.I2.NoErrCall.Out NoErrCall(Testpkg.Pkg0.I2.NoErrCall.In arg)
         {
             return new Testpkg.Pkg0.I2.NoErrCall.Out("result_" + arg.Value);
         }

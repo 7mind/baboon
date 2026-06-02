@@ -149,6 +149,8 @@ object PyTypes {
   val pyProtocol  = PyType(pyTypingModule, "Protocol")
   val pyCallable  = PyType(pyTypingModule, "Callable")
   val pyAwaitable = PyType(pyTypingModule, "Awaitable")
+  val pyGeneric   = PyType(pyTypingModule, "Generic")
+  val pyTypeVar   = PyType(pyTypingModule, "TypeVar")
 
   // json
   val pyJsonDumps = PyType(pyJson, "dumps")
@@ -191,4 +193,9 @@ object PyTypes {
   val ibaboonUebaService: PyType              = PyType(pyBaboonServiceWiringModule, "IBaboonUebaService")
   val baboonJsonMuxer: PyType                 = PyType(pyBaboonServiceWiringModule, "JsonMuxer")
   val baboonUebaMuxer: PyType                 = PyType(pyBaboonServiceWiringModule, "UebaMuxer")
+  // Context-carrying variants (abstract/concrete service-context modes only).
+  val ibaboonJsonServiceCtx: PyType           = PyType(pyBaboonServiceWiringModule, "IBaboonJsonServiceCtx")
+  val ibaboonUebaServiceCtx: PyType           = PyType(pyBaboonServiceWiringModule, "IBaboonUebaServiceCtx")
+  val baboonJsonMuxerCtx: PyType              = PyType(pyBaboonServiceWiringModule, "JsonMuxerCtx")
+  val baboonUebaMuxerCtx: PyType              = PyType(pyBaboonServiceWiringModule, "UebaMuxerCtx")
 }

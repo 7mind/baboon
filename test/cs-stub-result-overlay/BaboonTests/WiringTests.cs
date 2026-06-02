@@ -16,14 +16,14 @@ namespace ConversionsTest
 
     public class MockI1Result : Testpkg.Pkg0.II1
     {
-        public Result<Testpkg.Pkg0.I1.TestCall.Out, Testpkg.Pkg0.I1.TestCall.Err> testCall(
+        public Result<Testpkg.Pkg0.I1.TestCall.Out, Testpkg.Pkg0.I1.TestCall.Err> TestCall(
             Testpkg.Pkg0.I1.TestCall.In arg)
         {
             return new Result<Testpkg.Pkg0.I1.TestCall.Out, Testpkg.Pkg0.I1.TestCall.Err>.Success(
                 new Testpkg.Pkg0.I1.TestCall.Out(42));
         }
 
-        public Result<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty> testCall2(
+        public Result<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty> TestCall2(
             Testpkg.Pkg0.T7_Empty arg)
         {
             return new Result<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty>.Success(
@@ -33,14 +33,14 @@ namespace ConversionsTest
 
     public class FailingI1Result : Testpkg.Pkg0.II1
     {
-        public Result<Testpkg.Pkg0.I1.TestCall.Out, Testpkg.Pkg0.I1.TestCall.Err> testCall(
+        public Result<Testpkg.Pkg0.I1.TestCall.Out, Testpkg.Pkg0.I1.TestCall.Err> TestCall(
             Testpkg.Pkg0.I1.TestCall.In arg)
         {
             return new Result<Testpkg.Pkg0.I1.TestCall.Out, Testpkg.Pkg0.I1.TestCall.Err>.Failure(
                 new Testpkg.Pkg0.I1.TestCall.Err("domain error"));
         }
 
-        public Result<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty> testCall2(
+        public Result<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty> TestCall2(
             Testpkg.Pkg0.T7_Empty arg)
         {
             return new Result<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty>.Failure(
@@ -50,13 +50,13 @@ namespace ConversionsTest
 
     public class ThrowingI1Result : Testpkg.Pkg0.II1
     {
-        public Result<Testpkg.Pkg0.I1.TestCall.Out, Testpkg.Pkg0.I1.TestCall.Err> testCall(
+        public Result<Testpkg.Pkg0.I1.TestCall.Out, Testpkg.Pkg0.I1.TestCall.Err> TestCall(
             Testpkg.Pkg0.I1.TestCall.In arg)
         {
             throw new InvalidOperationException("service error");
         }
 
-        public Result<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty> testCall2(
+        public Result<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty> TestCall2(
             Testpkg.Pkg0.T7_Empty arg)
         {
             throw new InvalidOperationException("service error");
@@ -65,7 +65,7 @@ namespace ConversionsTest
 
     public class MockI2Result : Testpkg.Pkg0.II2
     {
-        public Testpkg.Pkg0.I2.NoErrCall.Out noErrCall(Testpkg.Pkg0.I2.NoErrCall.In arg)
+        public Testpkg.Pkg0.I2.NoErrCall.Out NoErrCall(Testpkg.Pkg0.I2.NoErrCall.In arg)
         {
             return new Testpkg.Pkg0.I2.NoErrCall.Out("result_" + arg.Value);
         }

@@ -15,7 +15,7 @@ public class PetStoreImpl : Petstore.Api.IPetStore
         _nextId = 1;
     }
 
-    public Petstore.Api.PetStore.AddPet.Out addPet(Petstore.Api.PetStore.AddPet.In arg)
+    public Petstore.Api.PetStore.AddPet.Out AddPet(Petstore.Api.PetStore.AddPet.In arg)
     {
         long id = _nextId++;
         Petstore.Api.Pet pet = new Petstore.Api.Pet(id, arg.Name, arg.Status, arg.Tag);
@@ -23,7 +23,7 @@ public class PetStoreImpl : Petstore.Api.IPetStore
         return new Petstore.Api.PetStore.AddPet.Out(pet);
     }
 
-    public Petstore.Api.PetStore.GetPet.Out getPet(Petstore.Api.PetStore.GetPet.In arg)
+    public Petstore.Api.PetStore.GetPet.Out GetPet(Petstore.Api.PetStore.GetPet.In arg)
     {
         if (!_pets.TryGetValue(arg.Id, out Petstore.Api.Pet? pet))
         {
@@ -32,13 +32,13 @@ public class PetStoreImpl : Petstore.Api.IPetStore
         return new Petstore.Api.PetStore.GetPet.Out(pet);
     }
 
-    public Petstore.Api.PetStore.ListPets.Out listPets(Petstore.Api.PetStore.ListPets.In arg)
+    public Petstore.Api.PetStore.ListPets.Out ListPets(Petstore.Api.PetStore.ListPets.In arg)
     {
         List<Petstore.Api.Pet> sorted = _pets.Values.OrderBy(p => p.Id).ToList();
         return new Petstore.Api.PetStore.ListPets.Out(sorted);
     }
 
-    public Petstore.Api.PetStore.DeletePet.Out deletePet(Petstore.Api.PetStore.DeletePet.In arg)
+    public Petstore.Api.PetStore.DeletePet.Out DeletePet(Petstore.Api.PetStore.DeletePet.In arg)
     {
         bool existed = _pets.Remove(arg.Id);
         return new Petstore.Api.PetStore.DeletePet.Out(existed);

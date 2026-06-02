@@ -73,19 +73,19 @@ object PyServiceWiringTranslator {
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     // Python JSON codecs take/return `str` (raw JSON). For builtins, use json.loads/json.dumps.
     private def jsonDecodeExpr(id: TypeId, data: TextTree[PyValue]): TextTree[PyValue] = id match {
-      case u: TypeId.User          => q"${jsonCodecType(u)}.instance().decode(ctx, $data)"
+      case u: TypeId.User          => q"${jsonCodecType(u)}.instance().decode($codecCtxRef, $data)"
       case _: TypeId.BuiltinScalar => q"$pyJsonLoads($data)"
       case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[PyValue]): TextTree[PyValue] = id match {
-      case u: TypeId.User          => q"${jsonCodecType(u)}.instance().encode(ctx, $value)"
+      case u: TypeId.User          => q"${jsonCodecType(u)}.instance().encode($codecCtxRef, $value)"
       case _: TypeId.BuiltinScalar => q"$pyJsonDumps($value)"
       case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaDecodeExpr(id: TypeId, reader: TextTree[PyValue]): TextTree[PyValue] = id match {
-      case u: TypeId.User => q"${uebaCodecType(u)}.instance().decode(ctx, $reader)"
+      case u: TypeId.User => q"${uebaCodecType(u)}.instance().decode($codecCtxRef, $reader)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$reader.read_bool()"
@@ -111,7 +111,7 @@ object PyServiceWiringTranslator {
     }
 
     private def uebaEncodeStmt(id: TypeId, writer: TextTree[PyValue], value: TextTree[PyValue]): TextTree[PyValue] = id match {
-      case u: TypeId.User => q"${uebaCodecType(u)}.instance().encode(ctx, $writer, $value)"
+      case u: TypeId.User => q"${uebaCodecType(u)}.instance().encode($codecCtxRef, $writer, $value)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$writer.write_bool($value)"
@@ -205,7 +205,9 @@ object PyServiceWiringTranslator {
           val methods =
             if (resolved.noErrors) generateNoErrorsWiring(service)
             else generateErrorsWiring(service)
-          Some(methods)
+          // Abstract mode references `Ctx` in the wiring fns/wrappers; declare
+          // the module-level TypeVar so those references bind. Empty otherwise.
+          Some((ctxTypeVarDecl.toSeq :+ methods).joinNN())
         case _ => None
       }
     }
@@ -253,11 +255,11 @@ object PyServiceWiringTranslator {
                 }
                 Some(
                   q"""${asyncPrefix}def ${m.name.name}(self, ${ctxParamDecl}arg: $inType) -> $retAnnot:
-                     |    ctx = self.ctx
+                     |    $codecCtxBind = self.ctx
                      |    output_stream = $pyBytesIO()
                      |    writer = $baboonLEDataOutputStream(output_stream)
                      |    $encStmt
-                     |    resp = ${awaitPrefix}self.transport_ueba("$svcName", "${m.name.name}", output_stream.getvalue())
+                     |    resp = ${awaitPrefix}self.transport_ueba($transportCtxArg"$svcName", "${m.name.name}", output_stream.getvalue())
                      |    ${decodeOut.shift(4).trim}
                      |""".stripMargin
                 )
@@ -273,9 +275,9 @@ object PyServiceWiringTranslator {
                 }
                 Some(
                   q"""${asyncPrefix}def ${m.name.name}_json(self, ${ctxParamDecl}arg: $inType) -> $retAnnot:
-                     |    ctx = self.ctx
+                     |    $codecCtxBind = self.ctx
                      |    encoded = $encExpr
-                     |    resp = ${awaitPrefix}self.transport_json("$svcName", "${m.name.name}", encoded)
+                     |    resp = ${awaitPrefix}self.transport_json($transportCtxArg"$svcName", "${m.name.name}", encoded)
                      |    ${decodeOut.shift(4).trim}
                      |""".stripMargin
                 )
@@ -289,9 +291,19 @@ object PyServiceWiringTranslator {
           val uebaRet: TextTree[PyValue] = if (isAsync) q"$pyAwaitable[bytes]" else q"bytes"
           val jsonRet: TextTree[PyValue] = if (isAsync) q"$pyAwaitable[str]" else q"str"
 
+          // When a service context is active the transport callback gains a
+          // leading context parameter (`(ctx, service, method, data) -> data`),
+          // and the client forwards the per-call service context to it. In
+          // `none` mode the transport keeps its historical 3-arg shape.
+          val transportCtxTypePrefix: TextTree[PyValue] = resolvedCtx match {
+            case ResolvedServiceContext.NoContext              => q""
+            case ResolvedServiceContext.AbstractContext(tn, _) => q"$tn, "
+            case ResolvedServiceContext.ConcreteContext(tn, _) => q"$tn, "
+          }
+
           val ctorParams: List[TextTree[PyValue]] = {
-            val ueba = if (hasUeba) List[TextTree[PyValue]](q"transport_ueba: $pyCallable[[str, str, bytes], $uebaRet]") else Nil
-            val json = if (hasJson) List[TextTree[PyValue]](q"transport_json: $pyCallable[[str, str, str], $jsonRet]") else Nil
+            val ueba = if (hasUeba) List[TextTree[PyValue]](q"transport_ueba: $pyCallable[[${transportCtxTypePrefix}str, str, bytes], $uebaRet]") else Nil
+            val json = if (hasJson) List[TextTree[PyValue]](q"transport_json: $pyCallable[[${transportCtxTypePrefix}str, str, str], $jsonRet]") else Nil
             ueba ++ json :+ q"ctx: $baboonCodecContext"
           }
 
@@ -302,7 +314,7 @@ object PyServiceWiringTranslator {
           }
 
           val clientTree =
-            q"""class ${svcName}Client:
+            q"""class ${svcName}Client${clientGenericBaseClause}:
                |    \"\"\"RPC client for $svcName. Holds user-supplied transport callbacks
                |    `(service, method, data) -> data` and a $baboonCodecContext, and exposes one
                |    method per endpoint (UEBA: bare name / `bytes`; JSON: `_json` suffix / `str`).
@@ -313,7 +325,9 @@ object PyServiceWiringTranslator {
                |    ${clientMethods.joinNN().shift(4).trim}
                |""".stripMargin
 
-          Some(clientTree)
+          // Abstract mode: the client class is `Generic[Ctx]`; declare the
+          // module-level TypeVar so `Ctx` binds. Empty otherwise (byte-identical).
+          Some((ctxTypeVarDecl.toSeq :+ clientTree).joinNN())
         case _ => None
       }
     }
@@ -329,6 +343,58 @@ object PyServiceWiringTranslator {
       case ResolvedServiceContext.AbstractContext(_, pn) => s"$pn, "
       case ResolvedServiceContext.ConcreteContext(_, pn) => s"$pn, "
     }
+
+    // Only `abstract` mode introduces a generic type parameter (`Ctx`); `type`
+    // (concrete) mode pins the context to a concrete type and `none` has no
+    // context at all. The abstract type name is non-empty only for
+    // AbstractContext.
+    private def abstractCtxTypeName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+      case _                                             => None
+    }
+
+    // Module-level `Ctx = TypeVar("Ctx")` declaration emitted in every module
+    // that references the abstract context type (interface, client, wiring).
+    // Empty for concrete/none so output stays byte-identical.
+    private def ctxTypeVarDecl: Option[TextTree[PyValue]] =
+      abstractCtxTypeName.map(tn => q"""$tn = $pyTypeVar("$tn")""")
+
+    // The codec context parameter is always present in wiring/client/wrapper
+    // signatures; when a service context is active its parameter name (default
+    // `ctx`) would collide with the codec context (historically also `ctx`), so
+    // the codec context is renamed to `codec_ctx`. In `none` mode the name stays
+    // `ctx`, keeping that output byte-identical.
+    private def codecCtxName: String = resolvedCtx match {
+      case ResolvedServiceContext.NoContext              => "ctx"
+      case ResolvedServiceContext.AbstractContext(_, pn) => if (pn == "codec_ctx") "baboon_codec_ctx" else "codec_ctx"
+      case ResolvedServiceContext.ConcreteContext(_, pn) => if (pn == "codec_ctx") "baboon_codec_ctx" else "codec_ctx"
+    }
+    private def codecCtxRef: TextTree[PyValue] = TextTree.text[PyValue](codecCtxName)
+
+    // Renders a reference to the service interface type, parameterised with the
+    // abstract context (`Service[Ctx]`) when abstract mode is active; otherwise
+    // the bare type (concrete/none), so those outputs are unchanged.
+    private def svcTypeRef(svcType: PyType): TextTree[PyValue] =
+      abstractCtxTypeName.fold(q"$svcType") {
+        tn => q"$svcType[$tn]"
+      }
+
+    // Client `${Svc}Client` base clause: `(Generic[Ctx])` for abstract mode,
+    // empty for concrete/none so those outputs are unchanged.
+    private def clientGenericBaseClause: TextTree[PyValue] =
+      abstractCtxTypeName.fold[TextTree[PyValue]](q"") {
+        tn => q"($pyGeneric[$tn])"
+      }
+
+    // Inside the client method body the codec context (`self.ctx`) is rebound to
+    // a local matching the codec helpers' expectation: `ctx` in `none` mode
+    // (byte-identical), `codec_ctx` when a service context is active (so it no
+    // longer collides with the service-context param).
+    private def codecCtxBind: String = codecCtxName
+
+    // Leading transport argument forwarding the per-call service context; empty
+    // in `none` mode so the historical 3-arg transport call is unchanged.
+    private def transportCtxArg: String = ctxArgPass
 
     /** Emits the cross-domain Muxer-entry wrapper classes for a service.
       *
@@ -362,75 +428,117 @@ object PyServiceWiringTranslator {
       val wireType    = if (isJson) "str" else "bytes"
       val retAnnot: TextTree[PyValue] = if (resolved.noErrors) q"$wireType" else q""
 
-      // Extra constructor parameters: `rt` (errors mode only) and any
-      // service-context. Mirror the order used by the underlying invoker:
-      // (impl, [rt,] [svc_ctx,]).
+      // `rt` (errors mode) is a per-construction dependency, so it stays a
+      // constructor field. The service context, when present, is now supplied
+      // PER-INVOKE (not baked into the constructor) — mirroring the
+      // context-carrying `IBaboon*ServiceCtx` runtime contract.
       val rtParam: Option[(String, TextTree[PyValue])] =
         if (resolved.noErrors) None else Some(("rt", q"$ibaboonServiceRtType"))
-      val svcCtxParam: Option[(String, TextTree[PyValue], String)] = resolvedCtx match {
+
+      // The per-invoke service-context parameter (default `ctx`); only present
+      // when a service context is active. In `none` mode `ctx` denotes the
+      // codec context (historical contract) — there is no separate svc ctx.
+      val svcCtxParam: Option[String] = resolvedCtx match {
         case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"$tn", pn))
-        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"$tn", pn))
+        case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
+        case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
       }
 
       val ctorParams: List[TextTree[PyValue]] = {
-        val base = List[TextTree[PyValue]](q"impl: $svcType")
-        val withRt = rtParam match {
+        val base = List[TextTree[PyValue]](q"impl: ${svcTypeRef(svcType)}")
+        rtParam match {
           case Some((n, tpe)) => base :+ q"$n: $tpe"
           case None           => base
-        }
-        svcCtxParam match {
-          case Some((n, tpe, _)) => withRt :+ q"$n: $tpe"
-          case None              => withRt
         }
       }
       val ctorAssigns: List[TextTree[PyValue]] = {
         val base = List[TextTree[PyValue]](q"self.impl = impl")
-        val withRt = rtParam match {
+        rtParam match {
           case Some((n, _)) => base :+ q"self.$n = $n"
           case None         => base
-        }
-        svcCtxParam match {
-          case Some((n, _, _)) => withRt :+ q"self.$n = $n"
-          case None            => withRt
         }
       }
 
       // Forwarded args to the underlying invoker:
-      // (method, data, self.impl, [self.rt,] [self.svc_ctx,] ctx)
+      //   none:     (method, data, self.impl, [self.rt,] ctx)
+      //   ctx-mode: (method, data, self.impl, [self.rt,] <svc_ctx>, codec_ctx)
       val invokerArgs: List[TextTree[PyValue]] = {
         val base = List[TextTree[PyValue]](q"method", q"data", q"self.impl")
         val withRt = rtParam match {
           case Some((n, _)) => base :+ q"self.$n"
           case None         => base
         }
-        val withSvcCtx = svcCtxParam match {
-          case Some((n, _, _)) => withRt :+ q"self.$n"
-          case None            => withRt
+        svcCtxParam match {
+          case Some(pn) => withRt :+ TextTree.text[PyValue](pn) :+ codecCtxRef
+          case None     => withRt :+ q"ctx"
         }
-        withSvcCtx :+ q"ctx"
       }
 
-      // The wrapper carries no explicit Protocol inheritance — structural
-      // typing via the `IBaboonJsonService` / `IBaboonUebaService` Protocols
-      // suffices. We still reference the Protocol in a phantom annotation to
-      // trigger the import (purely for code-navigability; type-checkers honour
-      // the structural match regardless).
-      val ifaceRef: PyType = if (isJson) ibaboonJsonService else ibaboonUebaService
+      // The implemented runtime contract follows the context mode: `none` keeps
+      // the historical context-free IBaboon*Service (structural, no explicit
+      // inheritance); `abstract`/`type` subclass the context-carrying
+      // IBaboon*ServiceCtx so the service context is supplied per `invoke`.
+      val ifaceRef: PyType    = if (isJson) ibaboonJsonService else ibaboonUebaService
+      val ifaceRefCtx: PyType = if (isJson) ibaboonJsonServiceCtx else ibaboonUebaServiceCtx
+
+      // R type argument for the context-carrying interface base. noErrors mode
+      // returns `str`/`bytes` (or `Awaitable[...]` when async); errors mode
+      // returns the configured result container — use `$pyAny` there.
+      val rArg: TextTree[PyValue] =
+        if (!resolved.noErrors) q"$pyAny"
+        else if (isAsync) q"$pyAwaitable[$wireType]"
+        else q"$wireType"
+
+      // Class bases: context-free wrappers stay structural (no base). Context
+      // wrappers subclass the `*Ctx` interface; abstract mode also adds
+      // `Generic[Ctx]`.
+      val classBaseClause: TextTree[PyValue] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext =>
+          q""
+        case ResolvedServiceContext.AbstractContext(tn, _) =>
+          q"($ifaceRefCtx[$tn, $rArg], $pyGeneric[$tn])"
+        case ResolvedServiceContext.ConcreteContext(tn, _) =>
+          q"($ifaceRefCtx[$tn, $rArg])"
+      }
+
+      // Per-invoke signature: `none` keeps `(method, data, ctx)` where `ctx` is
+      // the codec context; ctx-mode is `(method, data, <svc_ctx>, codec_ctx)`.
+      val invokeParams: TextTree[PyValue] = svcCtxParam match {
+        case Some(pn) =>
+          val svcCtxAnnot: TextTree[PyValue] = resolvedCtx match {
+            case ResolvedServiceContext.AbstractContext(tn, _) => q"$tn"
+            case ResolvedServiceContext.ConcreteContext(tn, _) => q"$tn"
+            case ResolvedServiceContext.NoContext              => q"$pyAny"
+          }
+          q"method: $baboonMethodId, data: $wireType, $pn: $svcCtxAnnot, $codecCtxName: $baboonCodecContext"
+        case None =>
+          q"method: $baboonMethodId, data: $wireType, ctx: $baboonCodecContext"
+      }
 
       val invokeReturnArrow: TextTree[PyValue] =
         if (resolved.noErrors) q" -> $retAnnot" else q""
 
-      q"""class $wrapperName:
-         |    \"\"\"Adapter from $svcType to ${if (isJson) "IBaboonJsonService" else "IBaboonUebaService"} for use with the cross-domain
-         |    ${if (isJson) "JsonMuxer" else "UebaMuxer"}. Structurally satisfies $ifaceRef.
+      val docIface = if (svcCtxParam.isDefined) {
+        if (isJson) "IBaboonJsonServiceCtx" else "IBaboonUebaServiceCtx"
+      } else {
+        if (isJson) "IBaboonJsonService" else "IBaboonUebaService"
+      }
+      // In `none` mode keep the historical docstring verbatim (byte-identical);
+      // ctx-mode uses the explicit-subclass wording.
+      val docTail: TextTree[PyValue] =
+        if (svcCtxParam.isEmpty) q"${if (isJson) "JsonMuxer" else "UebaMuxer"}. Structurally satisfies $ifaceRef."
+        else q"${if (isJson) "JsonMuxer" else "UebaMuxer"}. Subclasses ${if (svcCtxParam.isDefined) ifaceRefCtx else ifaceRef}."
+
+      q"""class $wrapperName$classBaseClause:
+         |    \"\"\"Adapter from $svcType to $docIface for use with the cross-domain
+         |    $docTail
          |    \"\"\"
          |    service_name: str = "$svcName"
          |
          |    def __init__(self, ${ctorParams.join(", ")}) -> None:
          |        ${ctorAssigns.join("\n").shift(8).trim}
          |
-         |    ${asyncPrefix}def invoke(self, method: $baboonMethodId, data: $wireType, ctx: $baboonCodecContext)$invokeReturnArrow:
+         |    ${asyncPrefix}def invoke(self, $invokeParams)$invokeReturnArrow:
          |        return ${awaitPrefix}$invokerFn(${invokerArgs.join(", ")})
          |""".stripMargin
     }
@@ -482,7 +590,7 @@ object PyServiceWiringTranslator {
              |    ${encodeAndReturn.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: $svcType, ${ctxParamDecl}ctx: $baboonCodecContext) -> str:
+      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: ${svcTypeRef(svcType)}, ${ctxParamDecl}$codecCtxName: $baboonCodecContext) -> str:
          |    ${cases.shift(4).trim}
          |    raise $baboonWiringException($baboonNoMatchingMethod(method))
          |""".stripMargin
@@ -518,7 +626,7 @@ object PyServiceWiringTranslator {
              |    ${encodeAndReturn.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: $svcType, ${ctxParamDecl}ctx: $baboonCodecContext) -> bytes:
+      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: ${svcTypeRef(svcType)}, ${ctxParamDecl}$codecCtxName: $baboonCodecContext) -> bytes:
          |    ${cases.shift(4).trim}
          |    raise $baboonWiringException($baboonNoMatchingMethod(method))
          |""".stripMargin
@@ -682,7 +790,7 @@ object PyServiceWiringTranslator {
              |    ${callAndEncodeStep.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: $svcType, rt: $ibaboonServiceRtType, ${ctxParamDecl}ctx: $baboonCodecContext):
+      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: ${svcTypeRef(svcType)}, rt: $ibaboonServiceRtType, ${ctxParamDecl}$codecCtxName: $baboonCodecContext):
          |    ${cases.shift(4).trim}
          |    return rt.fail($baboonNoMatchingMethod(method))
          |""".stripMargin
@@ -779,7 +887,7 @@ object PyServiceWiringTranslator {
              |    ${callAndEncodeStep.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: $svcType, rt: $ibaboonServiceRtType, ${ctxParamDecl}ctx: $baboonCodecContext):
+      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: ${svcTypeRef(svcType)}, rt: $ibaboonServiceRtType, ${ctxParamDecl}$codecCtxName: $baboonCodecContext):
          |    ${cases.shift(4).trim}
          |    return rt.fail($baboonNoMatchingMethod(method))
          |""".stripMargin

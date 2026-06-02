@@ -70,6 +70,45 @@ object SwServiceWiringTranslator {
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "swift", target.language.serviceContext, target.language.pragmas)
 
+    // When a service context is active its parameter name (default `ctx`) would
+    // collide with the codec-context parameter (historically also `ctx`), so the
+    // codec-context parameter is renamed away. In `none` mode the name stays
+    // `ctx`, keeping that output byte-identical. The encode/decode expr helpers
+    // reference this name, so renaming it here flows through every codec call.
+    private val codecCtxName: String = resolvedCtx match {
+      case ResolvedServiceContext.NoContext => "ctx"
+      case _                                => if (svcCtxParamName.contains("codecCtx")) "baboonCodecCtx" else "codecCtx"
+    }
+    private def codecCtxRef: TextTree[SwValue] = TextTree.text[SwValue](codecCtxName)
+
+    // Abstract mode pins the context to a protocol `associatedtype Ctx`, so the
+    // static wiring funcs and the wrapper classes are generic over the concrete
+    // `Impl: <Svc>` and reference the context type as `Impl.Ctx`. Concrete and
+    // `none` modes use no generic.
+    private val ctxIsAbstract: Boolean = resolvedCtx match {
+      case _: ResolvedServiceContext.AbstractContext => true
+      case _                                         => false
+    }
+
+    // `<Impl: <Svc>>` clause for the static wiring funcs in abstract mode.
+    private def implGenericDecl(service: Typedef.Service): String =
+      if (ctxIsAbstract) s"<Impl: ${renderFq(serviceImplType(service))}>" else ""
+
+    // Type used for the `impl` parameter of the static wiring funcs and the
+    // wrapper's stored `impl`. Abstract: the generic `Impl`; concrete/none: the
+    // protocol type itself.
+    private def implParamType(service: Typedef.Service): TextTree[SwValue] =
+      if (ctxIsAbstract) q"${SwValue.SwTypeName("Impl")}" else serviceImplType(service)
+
+    // The leading service-context parameter for the static wiring funcs. In
+    // abstract mode the type is `Impl.Ctx` (the associated type of the generic
+    // impl); concrete mode names the concrete type. `none` contributes nothing.
+    private def ctxWiringParamDecl: String = resolvedCtx match {
+      case ResolvedServiceContext.NoContext               => ""
+      case ResolvedServiceContext.AbstractContext(_, pn)  => s"_ $pn: Impl.Ctx, "
+      case ResolvedServiceContext.ConcreteContext(tn, pn) => s"_ $pn: $tn, "
+    }
+
     private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
       codecs.exists {
         c =>
@@ -105,7 +144,7 @@ object SwServiceWiringTranslator {
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     // Swift wiring JSON: wire is Any (from JSONSerialization.jsonObject), encode returns Any.
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[SwValue]): TextTree[SwValue] = id match {
-      case u: TypeId.User => q"try ${jsonCodecName(u)}.instance.decode(ctx, $wire)"
+      case u: TypeId.User => q"try ${jsonCodecName(u)}.instance.decode($codecCtxRef, $wire)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$wire as! Bool"
@@ -131,7 +170,7 @@ object SwServiceWiringTranslator {
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[SwValue]): TextTree[SwValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode(ctx, $value)"
+      case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode($codecCtxRef, $value)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit                                             => q"$value"
@@ -153,7 +192,7 @@ object SwServiceWiringTranslator {
     }
 
     private def uebaDecodeExpr(id: TypeId, reader: TextTree[SwValue]): TextTree[SwValue] = id match {
-      case u: TypeId.User => q"try ${uebaCodecName(u)}.instance.decode(ctx, $reader)"
+      case u: TypeId.User => q"try ${uebaCodecName(u)}.instance.decode($codecCtxRef, $reader)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$reader.readBool()"
@@ -179,7 +218,7 @@ object SwServiceWiringTranslator {
     }
 
     private def uebaEncodeStmt(id: TypeId, writer: TextTree[SwValue], value: TextTree[SwValue]): TextTree[SwValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode(ctx, $writer, $value)"
+      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode($codecCtxRef, $writer, $value)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$writer.writeBool($value)"
@@ -281,6 +320,20 @@ object SwServiceWiringTranslator {
           val hasJson = hasActiveJsonCodecs(service)
           if (!hasUeba && !hasJson) return None
 
+          // The client carries the service context as a free generic `<Ctx>`
+          // (abstract) or the concrete type (`type` mode), forwards it as the
+          // leading transport-callback argument, and renames its codec-context
+          // parameter to avoid the clash. `none` mode contributes nothing, so
+          // that output is byte-identical.
+          val clientCtxTypeStr: String = resolvedCtx match {
+            case ResolvedServiceContext.ConcreteContext(tn, _) => tn
+            case _                                             => "Ctx"
+          }
+          val clientClassGenericDecl: String = if (ctxIsAbstract) "<Ctx>" else ""
+          val clientCtxParamDecl: String     = svcCtxParamName.fold("")(pn => s"$pn: $clientCtxTypeStr, ")
+          val clientCtxArg: String           = svcCtxParamName.fold("")(pn => s"$pn, ")
+          val ctxFuncPrefix: String          = svcCtxParamName.fold("")(_ => s"$clientCtxTypeStr, ")
+
           val clientMethods: Seq[TextTree[SwValue]] = service.methods.flatMap {
             m =>
               val inRef   = trans.asSwRef(m.sig, domain, evo)
@@ -298,10 +351,10 @@ object SwServiceWiringTranslator {
                     q"return"
                 }
                 Some(
-                  q"""public func ${m.name.name}(arg: $inRef, ctx: $baboonCodecContext = $baboonCodecContext.defaultCtx) $clientEffects$retDecl {
+                  q"""public func ${m.name.name}(${clientCtxParamDecl}arg: $inRef, $codecCtxName: $baboonCodecContext = $baboonCodecContext.defaultCtx) $clientEffects$retDecl {
                      |    let writer = $baboonBinTools.createWriter()
                      |    $encodeIn
-                     |    let resp = $transportCallPrefix self.transportUeba("$svcName", "${m.name.name}", writer.toData())
+                     |    let resp = $transportCallPrefix self.transportUeba(${clientCtxArg}"$svcName", "${m.name.name}", writer.toData())
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -318,11 +371,11 @@ object SwServiceWiringTranslator {
                     q"return"
                 }
                 Some(
-                  q"""public func ${m.name.name}Json(arg: $inRef, ctx: $baboonCodecContext = $baboonCodecContext.defaultCtx) $clientEffects$retDecl {
+                  q"""public func ${m.name.name}Json(${clientCtxParamDecl}arg: $inRef, $codecCtxName: $baboonCodecContext = $baboonCodecContext.defaultCtx) $clientEffects$retDecl {
                      |    let encoded = $encodeIn
                      |    let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
                      |    let encodedStr = String(data: jsonData, encoding: .utf8)!
-                     |    let resp = $transportCallPrefix self.transportJson("$svcName", "${m.name.name}", encodedStr)
+                     |    let resp = $transportCallPrefix self.transportJson(${clientCtxArg}"$svcName", "${m.name.name}", encodedStr)
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -333,8 +386,8 @@ object SwServiceWiringTranslator {
 
           if (clientMethods.isEmpty) return None
 
-          val uebaTransportType = q"(String, String, Data) $transportTypeEffects-> Data"
-          val jsonTransportType = q"(String, String, String) $transportTypeEffects-> String"
+          val uebaTransportType = q"($ctxFuncPrefix String, String, Data) $transportTypeEffects-> Data"
+          val jsonTransportType = q"($ctxFuncPrefix String, String, String) $transportTypeEffects-> String"
 
           val transportFields = List(
             if (hasUeba) Some(q"private let transportUeba: $uebaTransportType") else None,
@@ -352,7 +405,7 @@ object SwServiceWiringTranslator {
           ).flatten
 
           Some(
-            q"""public class ${svcName}Client {
+            q"""public class ${svcName}Client$clientClassGenericDecl {
                |    ${transportFields.join("\n").shift(4).trim}
                |
                |    public init(${ctorParams.join(", ")}) {
@@ -377,17 +430,17 @@ object SwServiceWiringTranslator {
     private def serviceImplType(service: Typedef.Service): TextTree[SwValue] =
       q"${trans.toSwTypeRefKeepForeigns(service.id, domain, evo)}"
 
-    private def ctxParamDecl: String = resolvedCtx match {
-      case ResolvedServiceContext.NoContext               => ""
-      case ResolvedServiceContext.AbstractContext(tn, pn) => s"_ $pn: $tn, "
-      case ResolvedServiceContext.ConcreteContext(tn, pn) => s"_ $pn: $tn, "
+    private def svcCtxParamName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext               => None
+      case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
+      case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
     }
 
-    private def ctxArgPass: String = resolvedCtx match {
-      case ResolvedServiceContext.NoContext              => ""
-      case ResolvedServiceContext.AbstractContext(_, pn) => s"$pn, "
-      case ResolvedServiceContext.ConcreteContext(_, pn) => s"$pn, "
-    }
+    // Leading labeled context argument forwarded to `impl.<method>(...)`. The
+    // service context is a SEPARATE leading argument, so it must precede `arg:`
+    // and carry its own label, e.g. `impl.test(ctx: ctx, arg: decoded)`. `none`
+    // mode contributes nothing, keeping the call `impl.test(arg: decoded)`.
+    private def ctxImplCallArg: String = svcCtxParamName.fold("")(pn => s"$pn: $pn, ")
 
     private def renderFq(tree: TextTree[SwValue]): String = tree.mapRender {
       case t: SwType             => if (t.predef) trans.escapeSwiftKeyword(t.name) else t.name
@@ -423,7 +476,8 @@ object SwServiceWiringTranslator {
     }
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[SwValue] = {
-      val implType = serviceImplType(service)
+      val implType   = implParamType(service)
+      val genericDecl = implGenericDecl(service)
       val cases = service.methods.map {
         m =>
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
@@ -439,8 +493,8 @@ object SwServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"let result = ${implCallPrefix}impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
-            case None    => q"${implCallPrefix}impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+            case Some(_) => q"let result = ${implCallPrefix}impl.${m.name.name}(${ctxImplCallArg}arg: decoded)"
+            case None    => q"${implCallPrefix}impl.${m.name.name}(${ctxImplCallArg}arg: decoded)"
           }
 
           q""""${m.name.name}": {
@@ -451,11 +505,11 @@ object SwServiceWiringTranslator {
              |},""".stripMargin
       }.join("\n")
 
-      q"""public static func invokeJson(
+      q"""public static func invokeJson$genericDecl(
          |    _ method: $baboonMethodId,
          |    _ data: String,
          |    _ impl: $implType,
-         |    ${ctxParamDecl}_ ctx: $baboonCodecContext
+         |    ${ctxWiringParamDecl}_ $codecCtxName: $baboonCodecContext
          |) $dispatcherEffects-> String {
          |    let handlers: [String: () $closureEffects-> String] = [
          |        ${cases.shift(8).trim}
@@ -468,7 +522,8 @@ object SwServiceWiringTranslator {
     }
 
     private def generateNoErrorsUebaMethod(service: Typedef.Service): TextTree[SwValue] = {
-      val implType = serviceImplType(service)
+      val implType   = implParamType(service)
+      val genericDecl = implGenericDecl(service)
       val cases = service.methods.map {
         m =>
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"reader")
@@ -484,8 +539,8 @@ object SwServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"let result = ${implCallPrefix}impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
-            case None    => q"${implCallPrefix}impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+            case Some(_) => q"let result = ${implCallPrefix}impl.${m.name.name}(${ctxImplCallArg}arg: decoded)"
+            case None    => q"${implCallPrefix}impl.${m.name.name}(${ctxImplCallArg}arg: decoded)"
           }
 
           q""""${m.name.name}": {
@@ -496,11 +551,11 @@ object SwServiceWiringTranslator {
              |},""".stripMargin
       }.join("\n")
 
-      q"""public static func invokeUeba(
+      q"""public static func invokeUeba$genericDecl(
          |    _ method: $baboonMethodId,
          |    _ data: Data,
          |    _ impl: $implType,
-         |    ${ctxParamDecl}_ ctx: $baboonCodecContext
+         |    ${ctxWiringParamDecl}_ $codecCtxName: $baboonCodecContext
          |) $dispatcherEffects-> Data {
          |    let handlers: [String: () $closureEffects-> Data] = [
          |        ${cases.shift(8).trim}
@@ -576,7 +631,8 @@ object SwServiceWiringTranslator {
     }
 
     private def generateErrorsJsonMethod(service: Typedef.Service): TextTree[SwValue] = {
-      val implType      = serviceImplType(service)
+      val implType      = implParamType(service)
+      val genericDecl   = implGenericDecl(service)
       val wiringRetType = ct(bweFq, "String")
 
       val cases = service.methods.map {
@@ -595,12 +651,12 @@ object SwServiceWiringTranslator {
       val dispatcherEffects0 = if (isAsync) q" async throws" else q""
       val handlerInvoke      = if (isAsync) q"return try await handler()" else q"return handler()"
 
-      q"""public static func invokeJson(
+      q"""public static func invokeJson$genericDecl(
          |    _ method: $baboonMethodId,
          |    _ data: String,
          |    _ impl: $implType,
          |    _ rt: IBaboonServiceRt,
-         |    ${ctxParamDecl}_ ctx: $baboonCodecContext
+         |    ${ctxWiringParamDecl}_ $codecCtxName: $baboonCodecContext
          |)$dispatcherEffects0 -> $wiringRetType {
          |    let handlers: [String: $handlerType] = [
          |        ${cases.shift(8).trim}
@@ -639,7 +695,7 @@ object SwServiceWiringTranslator {
 
           val callBody = if (hasErrType) {
             q"""do {
-               |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    let callResult = impl.${m.name.name}(${ctxImplCallArg}arg: v)
                |    return rt.leftMap(
                |        callResult, { err in $baboonWiringError.callFailed(method, err) })
                |} catch {
@@ -647,7 +703,7 @@ object SwServiceWiringTranslator {
                |}""".stripMargin
           } else {
             q"""do {
-               |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
+               |    return rt.pure(impl.${m.name.name}(${ctxImplCallArg}arg: v))
                |} catch {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
                |}""".stripMargin
@@ -669,7 +725,7 @@ object SwServiceWiringTranslator {
         case None =>
           val callBody = if (hasErrType) {
             q"""do {
-               |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    let callResult = impl.${m.name.name}(${ctxImplCallArg}arg: v)
                |    return rt.leftMap(
                |        callResult, { err in $baboonWiringError.callFailed(method, err) })
                |} catch {
@@ -677,7 +733,7 @@ object SwServiceWiringTranslator {
                |}""".stripMargin
           } else {
             q"""do {
-               |    impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    impl.${m.name.name}(${ctxImplCallArg}arg: v)
                |    return rt.pure("null")
                |} catch {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
@@ -729,7 +785,7 @@ object SwServiceWiringTranslator {
           val callStep = if (hasErrType) {
             q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
                |do {
-               |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    let callResult = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    output = rt.leftMap(
                |        callResult, { err in $baboonWiringError.callFailed(method, err) })
                |} catch {
@@ -738,7 +794,7 @@ object SwServiceWiringTranslator {
           } else {
             q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
                |do {
-               |    let callResultValue = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    let callResultValue = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    output = rt.pure(callResultValue)
                |} catch {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
@@ -759,7 +815,7 @@ object SwServiceWiringTranslator {
         case None =>
           if (hasErrType) {
             q"""do {
-               |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    let callResult = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    let mapped = rt.leftMap(
                |        callResult, { err in $baboonWiringError.callFailed(method, err) })
                |    return rt.flatMap(mapped) { v in rt.pure("null") }
@@ -768,7 +824,7 @@ object SwServiceWiringTranslator {
                |}""".stripMargin
           } else {
             q"""do {
-               |    try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    return rt.pure("null")
                |} catch {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
@@ -783,7 +839,8 @@ object SwServiceWiringTranslator {
     }
 
     private def generateErrorsUebaMethod(service: Typedef.Service): TextTree[SwValue] = {
-      val implType      = serviceImplType(service)
+      val implType      = implParamType(service)
+      val genericDecl   = implGenericDecl(service)
       val wiringRetType = ct(bweFq, "Data")
 
       val cases = service.methods.map {
@@ -798,12 +855,12 @@ object SwServiceWiringTranslator {
       val dispatcherEffects0 = if (isAsync) q" async throws" else q""
       val handlerInvoke      = if (isAsync) q"return try await handler()" else q"return handler()"
 
-      q"""public static func invokeUeba(
+      q"""public static func invokeUeba$genericDecl(
          |    _ method: $baboonMethodId,
          |    _ data: Data,
          |    _ impl: $implType,
          |    _ rt: IBaboonServiceRt,
-         |    ${ctxParamDecl}_ ctx: $baboonCodecContext
+         |    ${ctxWiringParamDecl}_ $codecCtxName: $baboonCodecContext
          |)$dispatcherEffects0 -> $wiringRetType {
          |    let handlers: [String: $handlerType] = [
          |        ${cases.shift(8).trim}
@@ -838,7 +895,7 @@ object SwServiceWiringTranslator {
 
           val callBody = if (hasErrType) {
             q"""do {
-               |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    let callResult = impl.${m.name.name}(${ctxImplCallArg}arg: v)
                |    return rt.leftMap(
                |        callResult, { err in $baboonWiringError.callFailed(method, err) })
                |} catch {
@@ -846,7 +903,7 @@ object SwServiceWiringTranslator {
                |}""".stripMargin
           } else {
             q"""do {
-               |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
+               |    return rt.pure(impl.${m.name.name}(${ctxImplCallArg}arg: v))
                |} catch {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
                |}""".stripMargin
@@ -868,7 +925,7 @@ object SwServiceWiringTranslator {
         case None =>
           val callBody = if (hasErrType) {
             q"""do {
-               |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    let callResult = impl.${m.name.name}(${ctxImplCallArg}arg: v)
                |    return rt.leftMap(
                |        callResult, { err in $baboonWiringError.callFailed(method, err) })
                |} catch {
@@ -876,7 +933,7 @@ object SwServiceWiringTranslator {
                |}""".stripMargin
           } else {
             q"""do {
-               |    impl.${m.name.name}(arg: ${ctxArgPass}v)
+               |    impl.${m.name.name}(${ctxImplCallArg}arg: v)
                |    return rt.pure(Data())
                |} catch {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
@@ -920,7 +977,7 @@ object SwServiceWiringTranslator {
           val callStep = if (hasErrType) {
             q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
                |do {
-               |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    let callResult = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    output = rt.leftMap(
                |        callResult, { err in $baboonWiringError.callFailed(method, err) })
                |} catch {
@@ -929,7 +986,7 @@ object SwServiceWiringTranslator {
           } else {
             q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
                |do {
-               |    let callResultValue = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    let callResultValue = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    output = rt.pure(callResultValue)
                |} catch {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
@@ -950,7 +1007,7 @@ object SwServiceWiringTranslator {
         case None =>
           if (hasErrType) {
             q"""do {
-               |    let callResult = try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    let callResult = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    let mapped = rt.leftMap(
                |        callResult, { err in $baboonWiringError.callFailed(method, err) })
                |    return rt.flatMap(mapped) { v in rt.pure(Data()) }
@@ -959,7 +1016,7 @@ object SwServiceWiringTranslator {
                |}""".stripMargin
           } else {
             q"""do {
-               |    try await impl.${m.name.name}(arg: ${ctxArgPass}decoded)
+               |    try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    return rt.pure(Data())
                |} catch {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
@@ -1009,71 +1066,85 @@ object SwServiceWiringTranslator {
       retType: TextTree[SwValue],
     ): TextTree[SwValue] = {
       val svcName     = service.id.name.name
-      val implType    = serviceImplType(service)
       val wrapperName = s"$svcName${if (isJson) "JsonService" else "UebaService"}"
       val wireType    = if (isJson) q"String" else q"Data"
       val invokerCall = if (isJson) q"${SwValue.SwTypeName(s"${svcName}Wiring")}.invokeJson" else q"${SwValue.SwTypeName(s"${svcName}Wiring")}.invokeUeba"
-      val ifaceType   = if (isJson) ibaboonJsonService else ibaboonUebaService
 
-      // Extra deps consumed by <Svc>Wiring.invoke{Json,Ueba}_X: rt in errors
-      // mode and any service-context parameter. Baked at construction time so
-      // the runtime IBaboon*Service contract stays uniform across modes.
+      // `rt` (errors mode) is a per-construction dependency and stays a field;
+      // the service context (when active) is supplied per `invoke`.
       val rtField: Option[(String, TextTree[SwValue])] =
         if (resolved.noErrors) None else Some(("rt", q"IBaboonServiceRt"))
 
-      val svcCtxField: Option[(String, TextTree[SwValue])] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"${SwValue.SwTypeName(tn)}"))
-        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"${SwValue.SwTypeName(tn)}"))
-      }
-
-      val extraFields: List[(String, TextTree[SwValue])] = List(rtField, svcCtxField).flatten
-
-      val implFieldDecl: TextTree[SwValue] = q"private let impl: $implType"
-      val extraFieldDecls: List[TextTree[SwValue]] = extraFields.map {
-        case (name, tpe) => q"private let $name: $tpe"
-      }
-
-      val ctorParamList: TextTree[SwValue] = {
-        val all = q"_ impl: $implType" :: extraFields.map { case (n, t) => q"$n: $t" }
-        all.join(", ")
-      }
-
-      val ctorAssigns: List[TextTree[SwValue]] =
-        q"self.impl = impl" :: extraFields.map { case (n, _) => q"self.$n = $n" }
-
-      // Build the call to the underlying static wiring function. Argument order matches
-      // generateNoErrors{Json,Ueba}Method / generateErrors{Json,Ueba}Method.
-      val callArgs: List[TextTree[SwValue]] = {
-        val base   = List[TextTree[SwValue]](q"method", q"data", q"self.impl")
-        val withRt = rtField.fold(base)(_ => base :+ q"self.rt")
-        val withSvcCtx = svcCtxField.fold(withRt)(f => withRt :+ q"self.${f._1}")
-        withSvcCtx :+ q"ctx"
-      }
-
-      // Sync: forward directly to the dispatcher (errors mode is non-throwing,
-      // so no `try`). Async: return a deferred thunk that awaits the (now
-      // `async throws`) dispatcher when the caller invokes it — true for both
-      // noErrors and errors modes, since both dispatchers are `async throws`.
-      val callExpr: TextTree[SwValue] =
+      // Sync: forward directly (errors mode is non-throwing → no `try`). Async:
+      // return a deferred thunk awaiting the `async throws` dispatcher.
+      def callExprOf(callArgs: List[TextTree[SwValue]]): TextTree[SwValue] =
         if (isAsync) q"{ try await $invokerCall(${callArgs.join(", ")}) }"
         else if (resolved.noErrors) q"try $invokerCall(${callArgs.join(", ")})"
         else q"$invokerCall(${callArgs.join(", ")})"
 
-      q"""public class $wrapperName: $ifaceType {
-         |    public typealias R = $retType
-         |    public let serviceName: String = "$svcName"
-         |    $implFieldDecl
-         |    ${extraFieldDecls.join("\n").shift(4).trim}
-         |
-         |    public init($ctorParamList) {
-         |        ${ctorAssigns.join("\n").shift(8).trim}
-         |    }
-         |
-         |    public func invoke(_ method: $baboonMethodId, _ data: $wireType, _ ctx: $baboonCodecContext) throws -> R {
-         |        return $callExpr
-         |    }
-         |}""".stripMargin
+      svcCtxParamName match {
+        case None =>
+          // `none` mode: the historical context-free wrapper, conforming to
+          // IBaboon*Service; `rt` baked at construction. Emitted byte-identical.
+          val implType        = serviceImplType(service)
+          val ifaceType       = if (isJson) ibaboonJsonService else ibaboonUebaService
+          val extraFieldDecls = rtField.toList.map { case (n, t) => q"private let $n: $t" }
+          val ctorParamList   = (q"_ impl: $implType" :: rtField.toList.map { case (n, t) => q"$n: $t" }).join(", ")
+          val ctorAssigns     = q"self.impl = impl" :: rtField.toList.map { case (n, _) => q"self.$n = $n" }
+          val callArgs = {
+            val base = List[TextTree[SwValue]](q"method", q"data", q"self.impl")
+            rtField.fold(base)(_ => base :+ q"self.rt") :+ q"ctx"
+          }
+          q"""public class $wrapperName: $ifaceType {
+             |    public typealias R = $retType
+             |    public let serviceName: String = "$svcName"
+             |    private let impl: $implType
+             |    ${extraFieldDecls.join("\n").shift(4).trim}
+             |
+             |    public init($ctorParamList) {
+             |        ${ctorAssigns.join("\n").shift(8).trim}
+             |    }
+             |
+             |    public func invoke(_ method: $baboonMethodId, _ data: $wireType, _ ctx: $baboonCodecContext) throws -> R {
+             |        return ${callExprOf(callArgs)}
+             |    }
+             |}""".stripMargin
+
+        case Some(pn) =>
+          // context-active: generic over `Impl: <Svc>` (abstract) or existential
+          // (concrete), conforming to the context-carrying IBaboon*ServiceCtx so
+          // the service context arrives per `invoke` rather than baked into init.
+          val genericDecl = implGenericDecl(service)
+          val implType    = implParamType(service)
+          val ifaceCtx    = if (isJson) ibaboonJsonServiceCtx else ibaboonUebaServiceCtx
+          val ctxTypeStr  = resolvedCtx match {
+            case ResolvedServiceContext.ConcreteContext(tn, _) => tn
+            case _                                             => "Impl.Ctx"
+          }
+          val extraFieldDecls = rtField.toList.map { case (n, t) => q"private let $n: $t" }
+          val ctorParamList   = (q"_ impl: $implType" :: rtField.toList.map { case (n, t) => q"$n: $t" }).join(", ")
+          val ctorAssigns     = q"self.impl = impl" :: rtField.toList.map { case (n, _) => q"self.$n = $n" }
+          // free-fn arg order: method, data, impl, [rt,] <svcCtx>, codecCtx
+          val callArgs = {
+            val base = List[TextTree[SwValue]](q"method", q"data", q"self.impl")
+            (rtField.fold(base)(_ => base :+ q"self.rt") :+ TextTree.text[SwValue](pn)) :+ codecCtxRef
+          }
+          q"""public class $wrapperName$genericDecl: $ifaceCtx {
+             |    public typealias Ctx = $ctxTypeStr
+             |    public typealias R = $retType
+             |    public let serviceName: String = "$svcName"
+             |    private let impl: $implType
+             |    ${extraFieldDecls.join("\n").shift(4).trim}
+             |
+             |    public init($ctorParamList) {
+             |        ${ctorAssigns.join("\n").shift(8).trim}
+             |    }
+             |
+             |    public func invoke(_ method: $baboonMethodId, _ data: $wireType, _ $pn: $ctxTypeStr, _ $codecCtxName: $baboonCodecContext) throws -> R {
+             |        return ${callExprOf(callArgs)}
+             |    }
+             |}""".stripMargin
+      }
     }
   }
 }

@@ -743,6 +743,68 @@ export class UebaMuxer<R = Promise<Uint8Array>> {
     }
 }
 
+// Context-carrying variants, emitted when a service.context mode (`abstract`
+// or `type`) is active. The abstract/concrete service context `Ctx` is
+// supplied per-invocation (alongside the codec context) rather than baked into
+// the wrapper, so callers thread a fresh context through each dispatch. The
+// context-free interfaces above are left untouched so `--service-context-mode
+// none` output (and the service-acceptance matrix) is byte-identical.
+export interface IBaboonJsonServiceCtx<Ctx, R = Promise<string>> {
+    readonly serviceName: string;
+    invoke(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): R;
+}
+
+export interface IBaboonUebaServiceCtx<Ctx, R = Promise<Uint8Array>> {
+    readonly serviceName: string;
+    invoke(method: BaboonMethodId, data: Uint8Array, ctx: Ctx, codecCtx: BaboonCodecContext): R;
+}
+
+export class JsonMuxerCtx<Ctx, R = Promise<string>> {
+    private readonly table = new Map<string, IBaboonJsonServiceCtx<Ctx, R>>();
+    constructor(...services: IBaboonJsonServiceCtx<Ctx, R>[]) {
+        for (const s of services) this.register(s);
+    }
+    register(service: IBaboonJsonServiceCtx<Ctx, R>): void {
+        if (this.table.has(service.serviceName)) {
+            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
+        }
+        this.table.set(service.serviceName, service);
+    }
+    invoke(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): R {
+        const service = this.table.get(method.serviceName);
+        if (service === undefined) {
+            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
+        }
+        return service.invoke(method, data, ctx, codecCtx);
+    }
+    serviceNames(): readonly string[] {
+        return Array.from(this.table.keys());
+    }
+}
+
+export class UebaMuxerCtx<Ctx, R = Promise<Uint8Array>> {
+    private readonly table = new Map<string, IBaboonUebaServiceCtx<Ctx, R>>();
+    constructor(...services: IBaboonUebaServiceCtx<Ctx, R>[]) {
+        for (const s of services) this.register(s);
+    }
+    register(service: IBaboonUebaServiceCtx<Ctx, R>): void {
+        if (this.table.has(service.serviceName)) {
+            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
+        }
+        this.table.set(service.serviceName, service);
+    }
+    invoke(method: BaboonMethodId, data: Uint8Array, ctx: Ctx, codecCtx: BaboonCodecContext): R {
+        const service = this.table.get(method.serviceName);
+        if (service === undefined) {
+            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
+        }
+        return service.invoke(method, data, ctx, codecCtx);
+    }
+    serviceNames(): readonly string[] {
+        return Array.from(this.table.keys());
+    }
+}
+
 export type BaboonEither<L, R> =
     | { readonly tag: 'Left'; readonly value: L }
     | { readonly tag: 'Right'; readonly value: R };
