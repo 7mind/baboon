@@ -80,28 +80,28 @@ public static class PetStoreServer
         JToken wire = JToken.Parse(data);
         switch (method)
         {
-            case "AddPet":
+            case "addPet":
             {
                 Petstore.Api.PetStore.AddPet.In decoded = Petstore.Api.PetStore.AddPet.In_JsonCodec.Instance.Decode(ctx, wire);
                 Petstore.Api.PetStore.AddPet.Out result = impl.AddPet(decoded);
                 JToken encoded = Petstore.Api.PetStore.AddPet.Out_JsonCodec.Instance.Encode(ctx, result);
                 return encoded.ToString(Formatting.None);
             }
-            case "GetPet":
+            case "getPet":
             {
                 Petstore.Api.PetStore.GetPet.In decoded = Petstore.Api.PetStore.GetPet.In_JsonCodec.Instance.Decode(ctx, wire);
                 Petstore.Api.PetStore.GetPet.Out result = impl.GetPet(decoded);
                 JToken encoded = Petstore.Api.PetStore.GetPet.Out_JsonCodec.Instance.Encode(ctx, result);
                 return encoded.ToString(Formatting.None);
             }
-            case "ListPets":
+            case "listPets":
             {
                 Petstore.Api.PetStore.ListPets.In decoded = Petstore.Api.PetStore.ListPets.In_JsonCodec.Instance.Decode(ctx, wire);
                 Petstore.Api.PetStore.ListPets.Out result = impl.ListPets(decoded);
                 JToken encoded = Petstore.Api.PetStore.ListPets.Out_JsonCodec.Instance.Encode(ctx, result);
                 return encoded.ToString(Formatting.None);
             }
-            case "DeletePet":
+            case "deletePet":
             {
                 Petstore.Api.PetStore.DeletePet.In decoded = Petstore.Api.PetStore.DeletePet.In_JsonCodec.Instance.Decode(ctx, wire);
                 Petstore.Api.PetStore.DeletePet.Out result = impl.DeletePet(decoded);

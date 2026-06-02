@@ -89,8 +89,32 @@ classes (`{Mock,Failing,Throwing}I1{Either,Result,Outcome}`, `MockI2{…}`) stil
 lowercase `testCall`/`testCall2`/`noErrCall` → `CS0535 does not implement interface
 member`. Fix: renamed the 7 method DEFINITIONS per file to PascalCase (lowercase
 `BaboonMethodId("I1","testCall")` wire strings preserved; test-method names untouched).
-Targeted `mdl :test-cs-wiring-{either,result,outcome}` all green post-fix. Full gate
-re-run (run 3) in progress.
+Targeted `mdl :test-cs-wiring-{either,result,outcome}` all green post-fix.
+
+**Gate run 3 (parallel) — `test-kotlin-kmp-regular` OOM aborted the run.** The Kotlin
+compiler hit `java.lang.OutOfMemoryError: GC overhead limit exceeded` in `compileKotlin`
+under the parallel matrix (the documented CLAUDE.md flake — Kotlin daemon JVM heap, not
+system RAM; 125 GB free). mdl fail-fast then KILLED the in-flight `test-service-acceptance`
+and ~25 other actions before they reported. All 42 service/wiring steps that DID complete
+were green. Re-ran serially (`mdl --seq`) to clear the OOM and get a real
+service-acceptance verdict; `test-kotlin-kmp-regular` then passed in 55.9s (vs 5m55s OOM)
+— confirms flake, not regression.
+
+**Gate run 4 (serial) — `test-service-acceptance` FAILED 153/162: the entire C# SERVER /
+JSON row (9 cells) returns HTTP 500; UEBA fine; all 8 other servers green both codecs.**
+Root cause: a real regression in the hand-written harness `test/services/cs/ServiceTest/
+PetStoreServer.cs`. The build-phase #4 PascalCase pass over-applied — it correctly
+capitalized the `impl.AddPet(...)` C# method CALLS, but ALSO capitalized the `switch`
+`case "AddPet"`/`"GetPet"`/`"ListPets"`/`"DeletePet"` labels. Those labels are matched
+against the WIRE method name extracted from the URL path (`POST /PetStore/addPet` →
+`"addPet"`, lowercase). So every JSON request fell through to `default: throw
+ArgumentException` → 500. UEBA was unaffected because it dispatches via
+`PetStoreWiring.InvokeUeba(new BaboonMethodId("PetStore", "addPet"), …)` against the
+generated wiring, which correctly matches lowercase wire strings. Fix: reverted the 4
+`case` labels to lowercase wire names (`addPet`/`getPet`/`listPets`/`deletePet`); kept the
+`impl.*` calls PascalCase. Confirms the locked invariant "C#-only PascalCase method names,
+wire strings kept lowercase" — the wire-string dispatch switch is NOT a method name.
+Re-running `mdl :test-service-acceptance` to confirm 162/162.
 
 ---
 
