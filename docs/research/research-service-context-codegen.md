@@ -47,6 +47,23 @@ scala, rust, kotlin, java, dart. No residual duplicate-`ctx` clash anywhere; gen
 placement correct (kotlin `fun <Ctx> invokeJson`, java `<Ctx> R invokeJson`, rust single
 `<Rt: …, Ctx>` clause, dart static `invokeJson<Ctx>`); wrappers per-invoke + generic.
 
+**UPDATE 2026-06-02 — these 5 are now STANDALONE-COMPILE-VERIFIED too (all 9 done).**
+Harness: `debug/20260602-2330-abstract-verify.sh` + `…-abstract-compile.sh`. Generated
+abstract-context output for the petstore service model (model-level
+`pragma <lang>.service.context = "abstract"` for all 5) into copies of the
+`test/services/{rs,dt,jv,kt,sc}` projects, stripped the hand-written apps, and compiled
+ONLY the generated library + runtime with each real toolchain:
+- **rust** — `cargo build` clean (`mod generated` pulls all 28 gen .rs incl. abstract wiring).
+- **dart** — `dart analyze lib/generated` → "No issues found!" (15 files).
+- **java** — `mvn compile` clean, 0 errors, 125 `.class` from 79 sources.
+- **kotlin** — `gradle compileKotlin` → BUILD SUCCESSFUL (27 .kt → 166 classes).
+- **scala** — `sbt compile` → compiled 24 sources, [success] (208 classes).
+Confirmed abstract generics in output: scala `invokeJson[Ctx]`, dart `abstract class
+PetStore<Ctx>`, java `IBaboon{Json,Ueba}ServiceCtx<Ctx,R>`, kotlin `fun <Ctx> invokeJson`,
+rust generic client. No unbound-`Ctx`, no duplicate-param, no `codecCtx` clash in any of
+the 5. Closes the original brief's "check the other 7 languages" — abstract mode now
+compile-verified for ALL 9 (TS/C#/Python/Swift earlier; scala/rust/kotlin/java/dart here).
+
 **NoContext (`--service-context-mode none`) regression — VERIFIED CLEAN for all 9.**
 Pristine HEAD built via `nix build .#baboon` vs the my-changes build; per-file diff over
 all 9 langs: for ts/scala/rust/kotlin/dart/swift/python the ONLY differing file is the
