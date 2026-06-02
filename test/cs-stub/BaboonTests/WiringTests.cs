@@ -10,12 +10,12 @@ namespace ConversionsTest
 {
     public class MockI1 : Testpkg.Pkg0.II1
     {
-        public Testpkg.Pkg0.I1.TestCall.Out testCall(Testpkg.Pkg0.I1.TestCall.In arg)
+        public Testpkg.Pkg0.I1.TestCall.Out TestCall(Testpkg.Pkg0.I1.TestCall.In arg)
         {
             return new Testpkg.Pkg0.I1.TestCall.Out(42);
         }
 
-        public Testpkg.Pkg0.T7_Empty testCall2(Testpkg.Pkg0.T7_Empty arg)
+        public Testpkg.Pkg0.T7_Empty TestCall2(Testpkg.Pkg0.T7_Empty arg)
         {
             return new Testpkg.Pkg0.T7_Empty();
         }
@@ -23,12 +23,12 @@ namespace ConversionsTest
 
     public class ThrowingI1 : Testpkg.Pkg0.II1
     {
-        public Testpkg.Pkg0.I1.TestCall.Out testCall(Testpkg.Pkg0.I1.TestCall.In arg)
+        public Testpkg.Pkg0.I1.TestCall.Out TestCall(Testpkg.Pkg0.I1.TestCall.In arg)
         {
             throw new InvalidOperationException("service error");
         }
 
-        public Testpkg.Pkg0.T7_Empty testCall2(Testpkg.Pkg0.T7_Empty arg)
+        public Testpkg.Pkg0.T7_Empty TestCall2(Testpkg.Pkg0.T7_Empty arg)
         {
             throw new InvalidOperationException("service error");
         }
@@ -36,7 +36,7 @@ namespace ConversionsTest
 
     public class MockI2 : Testpkg.Pkg0.II2
     {
-        public Testpkg.Pkg0.I2.NoErrCall.Out noErrCall(Testpkg.Pkg0.I2.NoErrCall.In arg)
+        public Testpkg.Pkg0.I2.NoErrCall.Out NoErrCall(Testpkg.Pkg0.I2.NoErrCall.In arg)
         {
             return new Testpkg.Pkg0.I2.NoErrCall.Out("result_" + arg.Value);
         }

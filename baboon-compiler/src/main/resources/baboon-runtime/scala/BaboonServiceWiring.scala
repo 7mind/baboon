@@ -77,4 +77,65 @@ package baboon.runtime.shared {
     def serviceNames: Seq[String] = table.keys.toVector
   }
 
+  // --- Context-carrying service muxers ---
+  //
+  // Emitted when a service.context mode (`abstract` or `type`) is active. The
+  // abstract/concrete service context `Ctx` is supplied per-invocation
+  // (alongside the codec context) rather than baked into the wrapper, so
+  // callers thread a fresh context through each dispatch. The context-free
+  // interfaces above are left untouched so `--service-context-mode none`
+  // output (and the service-acceptance matrix) is byte-identical.
+
+  trait IBaboonJsonServiceCtx[Ctx, R] {
+    def serviceName: String
+    def invoke(method: BaboonMethodId, data: String, ctx: Ctx, codecCtx: BaboonCodecContext): R
+  }
+
+  trait IBaboonUebaServiceCtx[Ctx, R] {
+    def serviceName: String
+    def invoke(method: BaboonMethodId, data: Array[Byte], ctx: Ctx, codecCtx: BaboonCodecContext): R
+  }
+
+  final class JsonMuxerCtx[Ctx, R](services: IBaboonJsonServiceCtx[Ctx, R]*) {
+    private val table = scala.collection.mutable.LinkedHashMap.empty[String, IBaboonJsonServiceCtx[Ctx, R]]
+    services.foreach(register)
+
+    def register(service: IBaboonJsonServiceCtx[Ctx, R]): Unit = {
+      if (table.contains(service.serviceName)) {
+        throw new BaboonWiringException(BaboonWiringError.DuplicateService(service.serviceName))
+      }
+      table.update(service.serviceName, service)
+    }
+
+    def invoke(method: BaboonMethodId, data: String, ctx: Ctx, codecCtx: BaboonCodecContext): R = {
+      table.get(method.serviceName) match {
+        case Some(service) => service.invoke(method, data, ctx, codecCtx)
+        case None          => throw new BaboonWiringException(BaboonWiringError.NoMatchingService(method))
+      }
+    }
+
+    def serviceNames: Seq[String] = table.keys.toVector
+  }
+
+  final class UebaMuxerCtx[Ctx, R](services: IBaboonUebaServiceCtx[Ctx, R]*) {
+    private val table = scala.collection.mutable.LinkedHashMap.empty[String, IBaboonUebaServiceCtx[Ctx, R]]
+    services.foreach(register)
+
+    def register(service: IBaboonUebaServiceCtx[Ctx, R]): Unit = {
+      if (table.contains(service.serviceName)) {
+        throw new BaboonWiringException(BaboonWiringError.DuplicateService(service.serviceName))
+      }
+      table.update(service.serviceName, service)
+    }
+
+    def invoke(method: BaboonMethodId, data: Array[Byte], ctx: Ctx, codecCtx: BaboonCodecContext): R = {
+      table.get(method.serviceName) match {
+        case Some(service) => service.invoke(method, data, ctx, codecCtx)
+        case None          => throw new BaboonWiringException(BaboonWiringError.NoMatchingService(method))
+      }
+    }
+
+    def serviceNames: Seq[String] = table.keys.toVector
+  }
+
 }

@@ -129,6 +129,8 @@ object KtTypes {
   val baboonWiringException: KtType = KtType(baboonRuntimePkg, "BaboonWiringException")
   val ibaboonJsonService: KtType    = KtType(baboonRuntimePkg, "IBaboonJsonService")
   val ibaboonUebaService: KtType    = KtType(baboonRuntimePkg, "IBaboonUebaService")
+  val ibaboonJsonServiceCtx: KtType = KtType(baboonRuntimePkg, "IBaboonJsonServiceCtx")
+  val ibaboonUebaServiceCtx: KtType = KtType(baboonRuntimePkg, "IBaboonUebaServiceCtx")
 
   // baboon conversions
   val baboonAbstractConversion: KtType  = KtType(baboonRuntimePkg, "AbstractConversion")

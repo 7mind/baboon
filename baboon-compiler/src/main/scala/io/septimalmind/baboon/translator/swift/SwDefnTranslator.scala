@@ -2,7 +2,7 @@ package io.septimalmind.baboon.translator.swift
 
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.ServiceResultResolver
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.swift.SwValue.SwType
 import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
@@ -873,6 +873,29 @@ object SwDefnTranslator {
 
       val resolved = ServiceResultResolver.resolve(domain, "swift", target.language.serviceResult, target.language.pragmas)
 
+      // Service context (none / abstract / type). When active, each protocol
+      // method carries a leading `ctx:` parameter. Swift protocol methods cannot
+      // declare a free generic, so abstract mode pins the context to an
+      // `associatedtype Ctx` on the protocol (referenced as the bare `Ctx` in the
+      // method signature); concrete (`type`) mode uses the concrete type name
+      // directly and needs no associated type. `none` mode emits no ctx param and
+      // no associated type, so the protocol stays byte-identical.
+      val resolvedCtx = ServiceContextResolver.resolve(domain, "swift", target.language.serviceContext, target.language.pragmas)
+
+      val ctxAssocType: Option[TextTree[SwValue]] = resolvedCtx match {
+        case ResolvedServiceContext.AbstractContext(tn, _) => Some(q"associatedtype ${SwValue.SwTypeName(tn)}")
+        case _                                             => None
+      }
+
+      // Leading `ctx:` parameter for each protocol method. Abstract mode refers
+      // to the protocol's associated type by name; concrete mode names the
+      // concrete context type. `none` mode contributes nothing.
+      val ctxMethodParam: String = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => ""
+        case ResolvedServiceContext.AbstractContext(tn, pn) => s"$pn: $tn, "
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => s"$pn: $tn, "
+      }
+
       // Render a Swift type ref to its keyword-escaped, fully-qualified string,
       // matching SwBaboonTranslator.renderTree (each dotted path segment escaped
       // independently). Used to build the result-container return type in errors
@@ -909,10 +932,12 @@ object SwDefnTranslator {
             } else {
               out.map(o => q" -> $o").getOrElse(q"")
             }
-          val methodEx = q"func ${m.name.name}(arg: $in)$effectsKw$retStr"
+          val methodEx = q"func ${m.name.name}(${ctxMethodParam}arg: $in)$effectsKw$retStr"
           prependDocs(m.docs, methodEx)
       }
-      val body = if (methods.nonEmpty) methods.joinN() else q""
+      // The associated type (abstract mode only) precedes the method requirements.
+      val members = ctxAssocType.toList ++ methods
+      val body    = if (members.nonEmpty) members.joinN() else q""
 
       val serviceTree =
         q"""public protocol ${name.asDeclName} {

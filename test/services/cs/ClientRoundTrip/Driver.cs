@@ -12,7 +12,7 @@ public sealed class Impl : IPetStore
     private readonly Dictionary<long, Pet> _pets = new();
     private long _next = 1;
 
-    public PetStore.AddPet.Out addPet(PetStore.AddPet.In a)
+    public PetStore.AddPet.Out AddPet(PetStore.AddPet.In a)
     {
         long id = _next++;
         Pet pet = new Pet(id, a.Name, a.Status, a.Tag);
@@ -20,12 +20,12 @@ public sealed class Impl : IPetStore
         return new PetStore.AddPet.Out(pet);
     }
 
-    public PetStore.GetPet.Out getPet(PetStore.GetPet.In a) => new PetStore.GetPet.Out(_pets[a.Id]);
+    public PetStore.GetPet.Out GetPet(PetStore.GetPet.In a) => new PetStore.GetPet.Out(_pets[a.Id]);
 
-    public PetStore.ListPets.Out listPets(PetStore.ListPets.In a) =>
+    public PetStore.ListPets.Out ListPets(PetStore.ListPets.In a) =>
         new PetStore.ListPets.Out(_pets.Values.OrderBy(p => p.Id).ToList());
 
-    public PetStore.DeletePet.Out deletePet(PetStore.DeletePet.In a) =>
+    public PetStore.DeletePet.Out DeletePet(PetStore.DeletePet.In a) =>
         new PetStore.DeletePet.Out(_pets.Remove(a.Id));
 }
 
@@ -61,19 +61,19 @@ public static class Driver
         Impl impl = new Impl();
         PetStoreClient client = NewClient(impl, ctx);
 
-        PetStore.AddPet.Out addOut = client.addPet(new PetStore.AddPet.In("Buddy", PetStatus.Available, "dog"), ctx);
-        Assert(addOut.Pet.Name == "Buddy", $"UEBA addPet name: {addOut.Pet.Name}");
+        PetStore.AddPet.Out addOut = client.AddPet(new PetStore.AddPet.In("Buddy", PetStatus.Available, "dog"), ctx);
+        Assert(addOut.Pet.Name == "Buddy", $"UEBA AddPet name: {addOut.Pet.Name}");
         long id = addOut.Pet.Id;
 
-        PetStore.GetPet.Out getOut = client.getPet(new PetStore.GetPet.In(id), ctx);
-        Assert(getOut.Pet.Status == PetStatus.Available, "UEBA getPet status");
-        Assert(getOut.Pet.Tag == "dog", $"UEBA getPet tag: {getOut.Pet.Tag}");
+        PetStore.GetPet.Out getOut = client.GetPet(new PetStore.GetPet.In(id), ctx);
+        Assert(getOut.Pet.Status == PetStatus.Available, "UEBA GetPet status");
+        Assert(getOut.Pet.Tag == "dog", $"UEBA GetPet tag: {getOut.Pet.Tag}");
 
-        PetStore.ListPets.Out listOut = client.listPets(new PetStore.ListPets.In(), ctx);
-        Assert(listOut.Pets.Count == 1, $"UEBA listPets count: {listOut.Pets.Count}");
+        PetStore.ListPets.Out listOut = client.ListPets(new PetStore.ListPets.In(), ctx);
+        Assert(listOut.Pets.Count == 1, $"UEBA ListPets count: {listOut.Pets.Count}");
 
-        PetStore.DeletePet.Out delOut = client.deletePet(new PetStore.DeletePet.In(id), ctx);
-        Assert(delOut.Deleted, "UEBA deletePet");
+        PetStore.DeletePet.Out delOut = client.DeletePet(new PetStore.DeletePet.In(id), ctx);
+        Assert(delOut.Deleted, "UEBA DeletePet");
 
         Console.WriteLine("UEBA round-trip OK");
     }
@@ -83,18 +83,18 @@ public static class Driver
         Impl impl = new Impl();
         PetStoreClient client = NewClient(impl, ctx);
 
-        PetStore.AddPet.Out addOut = client.addPetJson(new PetStore.AddPet.In("Whiskers", PetStatus.Pending, "cat"), ctx);
-        Assert(addOut.Pet.Name == "Whiskers", $"JSON addPet name: {addOut.Pet.Name}");
+        PetStore.AddPet.Out addOut = client.AddPetJson(new PetStore.AddPet.In("Whiskers", PetStatus.Pending, "cat"), ctx);
+        Assert(addOut.Pet.Name == "Whiskers", $"JSON AddPet name: {addOut.Pet.Name}");
         long id = addOut.Pet.Id;
 
-        PetStore.GetPet.Out getOut = client.getPetJson(new PetStore.GetPet.In(id), ctx);
-        Assert(getOut.Pet.Status == PetStatus.Pending, "JSON getPet status");
+        PetStore.GetPet.Out getOut = client.GetPetJson(new PetStore.GetPet.In(id), ctx);
+        Assert(getOut.Pet.Status == PetStatus.Pending, "JSON GetPet status");
 
-        PetStore.ListPets.Out listOut = client.listPetsJson(new PetStore.ListPets.In(), ctx);
-        Assert(listOut.Pets.Count == 1, $"JSON listPets count: {listOut.Pets.Count}");
+        PetStore.ListPets.Out listOut = client.ListPetsJson(new PetStore.ListPets.In(), ctx);
+        Assert(listOut.Pets.Count == 1, $"JSON ListPets count: {listOut.Pets.Count}");
 
-        PetStore.DeletePet.Out delOut = client.deletePetJson(new PetStore.DeletePet.In(id), ctx);
-        Assert(delOut.Deleted, "JSON deletePet");
+        PetStore.DeletePet.Out delOut = client.DeletePetJson(new PetStore.DeletePet.In(id), ctx);
+        Assert(delOut.Deleted, "JSON DeletePet");
 
         Console.WriteLine("JSON round-trip OK");
     }

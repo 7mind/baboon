@@ -56,6 +56,9 @@ object SwTypes {
   val baboonWiringException: SwType = SwType(baboonRuntimePkg, "BaboonWiringException")
   val ibaboonJsonService: SwType    = SwType(baboonRuntimePkg, "IBaboonJsonService")
   val ibaboonUebaService: SwType    = SwType(baboonRuntimePkg, "IBaboonUebaService")
+  // Context-carrying service protocols (emitted for abstract/`type` service-context modes).
+  val ibaboonJsonServiceCtx: SwType = SwType(baboonRuntimePkg, "IBaboonJsonServiceCtx")
+  val ibaboonUebaServiceCtx: SwType = SwType(baboonRuntimePkg, "IBaboonUebaServiceCtx")
   val anyJsonService: SwType        = SwType(baboonRuntimePkg, "AnyJsonService")
   val anyUebaService: SwType        = SwType(baboonRuntimePkg, "AnyUebaService")
 

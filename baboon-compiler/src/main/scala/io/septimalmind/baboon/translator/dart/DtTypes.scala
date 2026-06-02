@@ -89,6 +89,11 @@ object DtTypes {
   val baboonUebaServiceIface: DtType = DtType(baboonRuntimePkg, "IBaboonUebaService")
   val baboonJsonMuxer: DtType        = DtType(baboonRuntimePkg, "JsonMuxer")
   val baboonUebaMuxer: DtType        = DtType(baboonRuntimePkg, "UebaMuxer")
+  // Context-carrying Muxer entry-point interfaces — emitted only when a
+  // service.context mode (`abstract`/`type`) is active. The per-service wrapper
+  // class implements one of these (service context supplied per-invoke).
+  val baboonJsonServiceCtxIface: DtType = DtType(baboonRuntimePkg, "IBaboonJsonServiceCtx")
+  val baboonUebaServiceCtxIface: DtType = DtType(baboonRuntimePkg, "IBaboonUebaServiceCtx")
 
   // baboon conversions
   val baboonAbstractConversion: DtType  = DtType(baboonRuntimePkg, "AbstractConversion")

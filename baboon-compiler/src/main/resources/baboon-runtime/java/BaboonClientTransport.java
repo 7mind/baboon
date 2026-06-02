@@ -40,4 +40,30 @@ public final class BaboonClientTransport {
     public interface UebaAsync {
         CompletableFuture<byte[]> apply(String service, String method, byte[] data);
     }
+
+    // Context-carrying transport variants, used by the generated client when a
+    // service.context mode (`abstract` / `type`) is active. The service context
+    // {@code Ctx} is forwarded as the leading argument so the host transport can
+    // attach it to the outgoing request. The context-free variants above are
+    // left untouched so `--service-context-mode none` clients are byte-identical.
+
+    @FunctionalInterface
+    public interface JsonSyncCtx<Ctx> {
+        String apply(Ctx ctx, String service, String method, String data) throws Exception;
+    }
+
+    @FunctionalInterface
+    public interface UebaSyncCtx<Ctx> {
+        byte[] apply(Ctx ctx, String service, String method, byte[] data) throws Exception;
+    }
+
+    @FunctionalInterface
+    public interface JsonAsyncCtx<Ctx> {
+        CompletableFuture<String> apply(Ctx ctx, String service, String method, String data);
+    }
+
+    @FunctionalInterface
+    public interface UebaAsyncCtx<Ctx> {
+        CompletableFuture<byte[]> apply(Ctx ctx, String service, String method, byte[] data);
+    }
 }

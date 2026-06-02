@@ -481,7 +481,7 @@ object CSDefnTranslator {
                   if (syncRet == "void") "System.Threading.Tasks.Task"
                   else s"System.Threading.Tasks.Task<$syncRet>"
                 } else syncRet
-              val methodEx = q"""public $retStr ${m.name.name}($ctxParam${trans.asCsRef(m.sig, domain, evo)} arg);"""
+              val methodEx = q"""public $retStr ${m.name.name.capitalize}($ctxParam${trans.asCsRef(m.sig, domain, evo)} arg);"""
               prependDocs(m.docs, methodEx)
           }.join("\n")
 

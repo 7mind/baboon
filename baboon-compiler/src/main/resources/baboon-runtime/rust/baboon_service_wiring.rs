@@ -137,3 +137,101 @@ impl<R> UebaMuxer<R> {
 impl<R> Default for UebaMuxer<R> {
     fn default() -> Self { Self::new() }
 }
+
+// --- Context-carrying service muxers ---
+//
+// Emitted alongside the context-free muxers above when a service-context mode
+// (`abstract` or `type`) is active. The service context `Ctx` is supplied
+// PER-INVOKE (next to the codec context) rather than baked into the wrapper at
+// construction time, so a single registered service can be dispatched with a
+// different context on each call. The context-free traits/muxers above are
+// left untouched so `--service-context-mode none` output (and the
+// service-acceptance matrix) stays byte-identical.
+
+pub trait IBaboonJsonServiceCtx<Ctx, R> {
+    fn service_name(&self) -> &str;
+    fn invoke(&self, method: &BaboonMethodId, data: &str, ctx: Ctx, codec_ctx: &BaboonCodecContext) -> R;
+}
+
+pub trait IBaboonUebaServiceCtx<Ctx, R> {
+    fn service_name(&self) -> &str;
+    fn invoke(&self, method: &BaboonMethodId, data: &[u8], ctx: Ctx, codec_ctx: &BaboonCodecContext) -> R;
+}
+
+pub struct JsonMuxerCtx<Ctx, R> {
+    table: std::collections::BTreeMap<String, Box<dyn IBaboonJsonServiceCtx<Ctx, R>>>,
+}
+
+impl<Ctx, R> JsonMuxerCtx<Ctx, R> {
+    pub fn new() -> Self {
+        Self { table: std::collections::BTreeMap::new() }
+    }
+
+    pub fn register(&mut self, service: Box<dyn IBaboonJsonServiceCtx<Ctx, R>>) -> Result<(), BaboonWiringError> {
+        let name = service.service_name().to_string();
+        if self.table.contains_key(&name) {
+            return Err(BaboonWiringError::DuplicateService(name));
+        }
+        self.table.insert(name, service);
+        Ok(())
+    }
+
+    pub fn with(mut self, service: Box<dyn IBaboonJsonServiceCtx<Ctx, R>>) -> Result<Self, BaboonWiringError> {
+        self.register(service)?;
+        Ok(self)
+    }
+
+    pub fn invoke(&self, method: &BaboonMethodId, data: &str, ctx: Ctx, codec_ctx: &BaboonCodecContext) -> Result<R, BaboonWiringError> {
+        match self.table.get(&method.service_name) {
+            Some(svc) => Ok(svc.invoke(method, data, ctx, codec_ctx)),
+            None => Err(BaboonWiringError::NoMatchingService(method.clone())),
+        }
+    }
+
+    pub fn service_names(&self) -> Vec<String> {
+        self.table.keys().cloned().collect()
+    }
+}
+
+impl<Ctx, R> Default for JsonMuxerCtx<Ctx, R> {
+    fn default() -> Self { Self::new() }
+}
+
+pub struct UebaMuxerCtx<Ctx, R> {
+    table: std::collections::BTreeMap<String, Box<dyn IBaboonUebaServiceCtx<Ctx, R>>>,
+}
+
+impl<Ctx, R> UebaMuxerCtx<Ctx, R> {
+    pub fn new() -> Self {
+        Self { table: std::collections::BTreeMap::new() }
+    }
+
+    pub fn register(&mut self, service: Box<dyn IBaboonUebaServiceCtx<Ctx, R>>) -> Result<(), BaboonWiringError> {
+        let name = service.service_name().to_string();
+        if self.table.contains_key(&name) {
+            return Err(BaboonWiringError::DuplicateService(name));
+        }
+        self.table.insert(name, service);
+        Ok(())
+    }
+
+    pub fn with(mut self, service: Box<dyn IBaboonUebaServiceCtx<Ctx, R>>) -> Result<Self, BaboonWiringError> {
+        self.register(service)?;
+        Ok(self)
+    }
+
+    pub fn invoke(&self, method: &BaboonMethodId, data: &[u8], ctx: Ctx, codec_ctx: &BaboonCodecContext) -> Result<R, BaboonWiringError> {
+        match self.table.get(&method.service_name) {
+            Some(svc) => Ok(svc.invoke(method, data, ctx, codec_ctx)),
+            None => Err(BaboonWiringError::NoMatchingService(method.clone())),
+        }
+    }
+
+    pub fn service_names(&self) -> Vec<String> {
+        self.table.keys().cloned().collect()
+    }
+}
+
+impl<Ctx, R> Default for UebaMuxerCtx<Ctx, R> {
+    fn default() -> Self { Self::new() }
+}

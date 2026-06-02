@@ -83,7 +83,7 @@ object ScServiceWiringTranslator {
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     // Decode returns a `Either[List[Throwable], T]`-like expression via fold-on-throw.
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[ScValue]): TextTree[ScValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.instance.decode(ctx, $wire).fold(throw _, identity)"
+      case u: TypeId.User => q"${jsonCodecName(u)}.instance.decode($codecCtxRef, $wire).fold(throw _, identity)"
       case b: TypeId.BuiltinScalar =>
         val decoder = b match {
           case TypeId.Builtins.bit   => q"$circeDecodeBoolean"
@@ -110,7 +110,7 @@ object ScServiceWiringTranslator {
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[ScValue]): TextTree[ScValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode(ctx, $value)"
+      case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode($codecCtxRef, $value)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.uid   => q"$circeJson.fromString($value.toString())"
@@ -136,7 +136,7 @@ object ScServiceWiringTranslator {
     }
 
     private def uebaDecodeExpr(id: TypeId, br: TextTree[ScValue]): TextTree[ScValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.decode(ctx, $br).fold(throw _, identity)"
+      case u: TypeId.User => q"${uebaCodecName(u)}.instance.decode($codecCtxRef, $br).fold(throw _, identity)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit                       => q"$br.readBoolean()"
@@ -161,7 +161,7 @@ object ScServiceWiringTranslator {
     }
 
     private def uebaEncodeStmt(id: TypeId, bw: TextTree[ScValue], value: TextTree[ScValue]): TextTree[ScValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode(ctx, $bw, $value)"
+      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode($codecCtxRef, $bw, $value)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit                       => q"$bw.writeBoolean($value)"
@@ -288,9 +288,11 @@ object ScServiceWiringTranslator {
               val outFq     = outRefOpt.map(renderFq).getOrElse("Unit")
               val retType   = if (resolved.noErrors) outFq else ct(bweFq, outFq)
 
-              // The client does not take the abstract service-context param: that
-              // is a server-side concern (it is forwarded to the service impl).
-              // The client only threads the codec ctx (a class field).
+              // The client takes the abstract service-context param as a leading
+              // method argument and forwards it as the leading argument of the
+              // transport callback, so a caller can attach it to the outgoing
+              // request. The codec ctx is a class field (renamed when a service
+              // context is active to avoid the parameter-name collision).
               val uebaMethod = if (hasUeba) {
                 val encodeIn = uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"bw", q"arg")
                 val body = m.out match {
@@ -301,7 +303,7 @@ object ScServiceWiringTranslator {
                          |val bw = new $binaryOutput(oms)
                          |$encodeIn
                          |bw.flush()
-                         |val resp = transportUeba("$svcName", "${m.name.name}", oms.toByteArray)
+                         |val resp = transportUeba($ctxArgPass"$svcName", "${m.name.name}", oms.toByteArray)
                          |val br = new $binaryInput(new java.io.ByteArrayInputStream(resp))
                          |$decodeOut""".stripMargin
                     } else {
@@ -309,7 +311,7 @@ object ScServiceWiringTranslator {
                          |val bw = new $binaryOutput(oms)
                          |$encodeIn
                          |bw.flush()
-                         |val resp = transportUeba("$svcName", "${m.name.name}", oms.toByteArray)
+                         |val resp = transportUeba($ctxArgPass"$svcName", "${m.name.name}", oms.toByteArray)
                          |try {
                          |  val br = new $binaryInput(new java.io.ByteArrayInputStream(resp))
                          |  rt.pure[$bweFq, $outFq]($decodeOut)
@@ -324,19 +326,19 @@ object ScServiceWiringTranslator {
                          |val bw = new $binaryOutput(oms)
                          |$encodeIn
                          |bw.flush()
-                         |val _ = transportUeba("$svcName", "${m.name.name}", oms.toByteArray)
+                         |val _ = transportUeba($ctxArgPass"$svcName", "${m.name.name}", oms.toByteArray)
                          |()""".stripMargin
                     } else {
                       q"""val oms = new $byteArrayOutputStream()
                          |val bw = new $binaryOutput(oms)
                          |$encodeIn
                          |bw.flush()
-                         |val _ = transportUeba("$svcName", "${m.name.name}", oms.toByteArray)
+                         |val _ = transportUeba($ctxArgPass"$svcName", "${m.name.name}", oms.toByteArray)
                          |rt.pure[$bweFq, Unit](())""".stripMargin
                     }
                 }
                 Some(
-                  q"""def ${m.name.name}(arg: ${trans.asScRef(m.sig, domain, evo)}): $retType = {
+                  q"""def ${m.name.name}(${ctxParamDecl}arg: ${trans.asScRef(m.sig, domain, evo)}): $retType = {
                      |  ${body.shift(2).trim}
                      |}""".stripMargin
                 )
@@ -349,12 +351,12 @@ object ScServiceWiringTranslator {
                     val decodeOut = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"wire")
                     if (resolved.noErrors) {
                       q"""val encoded = $encodeIn.noSpaces
-                         |val resp = transportJson("$svcName", "${m.name.name}", encoded)
+                         |val resp = transportJson($ctxArgPass"$svcName", "${m.name.name}", encoded)
                          |val wire = io.circe.parser.parse(resp).fold(throw _, identity)
                          |$decodeOut""".stripMargin
                     } else {
                       q"""val encoded = $encodeIn.noSpaces
-                         |val resp = transportJson("$svcName", "${m.name.name}", encoded)
+                         |val resp = transportJson($ctxArgPass"$svcName", "${m.name.name}", encoded)
                          |try {
                          |  val wire = io.circe.parser.parse(resp).fold(throw _, identity)
                          |  rt.pure[$bweFq, $outFq]($decodeOut)
@@ -366,16 +368,16 @@ object ScServiceWiringTranslator {
                   case None =>
                     if (resolved.noErrors) {
                       q"""val encoded = $encodeIn.noSpaces
-                         |val _ = transportJson("$svcName", "${m.name.name}", encoded)
+                         |val _ = transportJson($ctxArgPass"$svcName", "${m.name.name}", encoded)
                          |()""".stripMargin
                     } else {
                       q"""val encoded = $encodeIn.noSpaces
-                         |val _ = transportJson("$svcName", "${m.name.name}", encoded)
+                         |val _ = transportJson($ctxArgPass"$svcName", "${m.name.name}", encoded)
                          |rt.pure[$bweFq, Unit](())""".stripMargin
                     }
                 }
                 Some(
-                  q"""def ${m.name.name}Json(arg: ${trans.asScRef(m.sig, domain, evo)}): $retType = {
+                  q"""def ${m.name.name}Json(${ctxParamDecl}arg: ${trans.asScRef(m.sig, domain, evo)}): $retType = {
                      |  ${body.shift(2).trim}
                      |}""".stripMargin
                 )
@@ -390,8 +392,8 @@ object ScServiceWiringTranslator {
           // result runtime (errors mode only). All are vals so methods can use
           // them. The codec ctx is a defaulted val field.
           val transportFields = List(
-            if (hasUeba) Some(q"transportUeba: (String, String, Array[Byte]) => Array[Byte]") else None,
-            if (hasJson) Some(q"transportJson: (String, String, String) => String") else None,
+            if (hasUeba) Some(q"transportUeba: (${ctxFuncTypePrefix}String, String, Array[Byte]) => Array[Byte]") else None,
+            if (hasJson) Some(q"transportJson: (${ctxFuncTypePrefix}String, String, String) => String") else None,
           ).flatten
 
           val rtField: Option[TextTree[ScValue]] =
@@ -400,11 +402,22 @@ object ScServiceWiringTranslator {
 
           val ctorParams = (transportFields ++ rtField.toList).map(t => q"val $t")
 
-          val ctxField = q"val ctx: $baboonCodecContext = $baboonCodecContext.Default"
+          val ctxField = q"val $codecCtxName: $baboonCodecContext = $baboonCodecContext.Default"
 
-          // The client is generic over the user's HKT only (the abstract
-          // service-context type param is server-side and unused here).
-          val clientTypeParam = resolved.hkt.map(h => s"[${h.name}${h.signature}]").getOrElse("")
+          // The client is generic over the user's HKT and, when a service
+          // context is active in `abstract` mode, over the abstract context
+          // type. The leading service-context method argument is forwarded to
+          // the transport callback.
+          val clientTypeParam = {
+            val params = Seq(
+              resolved.hkt.map(h => s"${h.name}${h.signature}"),
+              resolvedCtx match {
+                case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+                case _                                             => None
+              },
+            ).flatten
+            if (params.nonEmpty) params.mkString("[", ", ", "]") else ""
+          }
 
           Some(
             q"""class ${svcName}Client$clientTypeParam(
@@ -456,6 +469,33 @@ object ScServiceWiringTranslator {
       case None    => ""
     }
 
+    // The service-context type name (`abstract` introduces a generic param,
+    // `type` pins a concrete type) and its parameter name. When a service
+    // context is active its parameter name (default `ctx`) would collide with
+    // the codec context (also historically `ctx`), so the codec context is
+    // renamed away. In `none` mode it stays `ctx`, keeping that output
+    // byte-identical.
+    private def svcCtxTypeName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext               => None
+      case ResolvedServiceContext.AbstractContext(tn, _)  => Some(tn)
+      case ResolvedServiceContext.ConcreteContext(tn, _)  => Some(tn)
+    }
+    private def svcCtxArgName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext               => None
+      case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
+      case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+    }
+    private def codecCtxName: String = resolvedCtx match {
+      case ResolvedServiceContext.NoContext => "ctx"
+      case _                                => if (svcCtxArgName.contains("codecCtx")) "baboonCodecCtx" else "codecCtx"
+    }
+    private def codecCtxRef: TextTree[ScValue] = TextTree.text[ScValue](codecCtxName)
+
+    // Type-args prefix for the client transport callbacks: the service context
+    // is forwarded as the leading argument of the transport callback so a
+    // caller can attach it to the outgoing request. Empty in `none` mode.
+    private def ctxFuncTypePrefix: String = svcCtxTypeName.fold("")(t => s"$t, ")
+
     // Root-anchor every cross-package reference. Without `_root_.` a leading package segment
     // (e.g. `petstore` in `petstore.api.petstore.addpet.Out`) binds to a NESTED sub-package of
     // the enclosing `package petstore.api`, producing "object api is not a member of package
@@ -502,7 +542,6 @@ object ScServiceWiringTranslator {
       val wrapperName = s"$svcName${if (isJson) "JsonService" else "UebaService"}"
       val wireType    = if (isJson) "String" else "Array[Byte]"
       val invokerFn   = if (isJson) "invokeJson" else "invokeUeba"
-      val ifaceType   = if (isJson) ibaboonJsonService else ibaboonUebaService
 
       // Underlying invoker's return shape (R).
       val retType: String = {
@@ -513,37 +552,41 @@ object ScServiceWiringTranslator {
       // Class type parameters: same as the wiring method's genericParam.
       val classTypeParams: String = genericParam
 
+      // The implemented runtime contract follows the context mode: `none` keeps
+      // the historical context-free IBaboon*Service; `abstract`/`type` use the
+      // context-carrying IBaboon*ServiceCtx so the service context is supplied
+      // per `invoke`, not baked into the constructor. `rt` (errors mode) is a
+      // per-construction dependency and stays a field.
+      val implementsClause: TextTree[ScValue] = svcCtxTypeName match {
+        case None     => q"${if (isJson) ibaboonJsonService else ibaboonUebaService}[$retType]"
+        case Some(tn) => q"${if (isJson) ibaboonJsonServiceCtx else ibaboonUebaServiceCtx}[$tn, $retType]"
+      }
+
       // Constructor params, in the same order as the underlying invoker
-      // (impl, [rt,] [svcCtx]); ctx is per-call and stays on `invoke`.
+      // (impl, [rt]); the service ctx and codec ctx are per-call on `invoke`.
       val rtField: Option[(String, String)] =
         if (resolved.noErrors) None
         else Some(("rt", s"$iBaboonServiceRtFq$rtTypeArg"))
 
-      val svcCtxField: Option[(String, String)] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, tn))
-        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, tn))
-      }
-
       val implField: (String, String) = ("impl", s"$svcName$svcTypeArg")
 
       val ctorFields: List[(String, String)] =
-        List(Some(implField), rtField, svcCtxField).flatten
+        List(Some(implField), rtField).flatten
 
       val ctorParamList: String =
         ctorFields.map { case (n, t) => s"$n: $t" }.mkString(", ")
 
       // Forwarded arg list for the underlying invoker call.
       val callArgs: String = {
-        val base = List("method", "data", "impl")
-        val withRt = rtField.fold(base)(_ => base :+ "rt")
-        val withSvcCtx = svcCtxField.fold(withRt)(f => withRt :+ f._1)
-        (withSvcCtx :+ "ctx").mkString(", ")
+        val base       = List("method", "data", "impl")
+        val withRt     = rtField.fold(base)(_ => base :+ "rt")
+        val withSvcCtx = svcCtxArgName.fold(withRt)(n => withRt :+ n)
+        (withSvcCtx :+ codecCtxName).mkString(", ")
       }
 
-      q"""class $wrapperName$classTypeParams($ctorParamList) extends $ifaceType[$retType] {
+      q"""class $wrapperName$classTypeParams($ctorParamList) extends $implementsClause {
          |  val serviceName: String = "$svcName"
-         |  def invoke(method: $baboonMethodId, data: $wireType, ctx: $baboonCodecContext): $retType =
+         |  def invoke(method: $baboonMethodId, data: $wireType, ${ctxParamDecl}$codecCtxName: $baboonCodecContext): $retType =
          |    ${svcName}Wiring.$invokerFn($callArgs)
          |}""".stripMargin
     }
@@ -605,7 +648,7 @@ object ScServiceWiringTranslator {
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
-         |  ${ctxParamDecl}ctx: $baboonCodecContext): String = {
+         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): String = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
          |    case _ =>
@@ -649,7 +692,7 @@ object ScServiceWiringTranslator {
          |  method: $baboonMethodId,
          |  data: Array[Byte],
          |  impl: $svcName$svcTypeArg,
-         |  ${ctxParamDecl}ctx: $baboonCodecContext): Array[Byte] = {
+         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): Array[Byte] = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
          |    case _ =>
@@ -789,7 +832,7 @@ object ScServiceWiringTranslator {
          |  data: String,
          |  impl: $svcName$svcTypeArg,
          |  rt: $iBaboonServiceRtFq$rtTypeArg,
-         |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType = {
+         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): $wiringRetType = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
          |    case _ =>
@@ -896,7 +939,7 @@ object ScServiceWiringTranslator {
          |  data: Array[Byte],
          |  impl: $svcName$svcTypeArg,
          |  rt: $iBaboonServiceRtFq$rtTypeArg,
-         |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType = {
+         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): $wiringRetType = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
          |    case _ =>

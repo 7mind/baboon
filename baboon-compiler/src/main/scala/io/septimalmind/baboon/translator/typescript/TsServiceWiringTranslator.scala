@@ -141,7 +141,7 @@ object TsServiceWiringTranslator {
       case u: TypeId.User =>
         val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsUEBACodecGenerator => c }.get.codecName(tsType)
-        q"$codec.instance.decode(ctx, $reader)"
+        q"$codec.instance.decode($codecCtxRef, $reader)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$tsBinTools.readBool($reader)"
@@ -180,7 +180,7 @@ object TsServiceWiringTranslator {
       case u: TypeId.User =>
         val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsUEBACodecGenerator => c }.get.codecName(tsType)
-        q"$codec.instance.encode(ctx, $value, $writer);"
+        q"$codec.instance.encode($codecCtxRef, $value, $writer);"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$tsBinTools.writeBool($writer, $value);"
@@ -316,7 +316,7 @@ object TsServiceWiringTranslator {
                   }
                   q"""public async ${m.name.name}Json(${ctxParamDecl}arg: $inType): Promise<$retType> {
                      |    const encoded = JSON.stringify($encodeInExpr);
-                     |    const resp = await this.transportJson("${svcType.name}", "${m.name.name}", encoded);
+                     |    const resp = await this.transportJson(${ctxArgPass}"${svcType.name}", "${m.name.name}", encoded);
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
               }
@@ -329,10 +329,10 @@ object TsServiceWiringTranslator {
                       q"return $decExpr;"
                     case None => q"return undefined as unknown as $retType;"
                   }
-                  q"""public async ${m.name.name}(${ctxParamDecl}arg: $inType, ctx: $tsBaboonCodecContext = $tsBaboonCodecContext.Default): Promise<$retType> {
+                  q"""public async ${m.name.name}(${ctxParamDecl}arg: $inType, $codecCtxName: $tsBaboonCodecContext = $tsBaboonCodecContext.Default): Promise<$retType> {
                      |    const writer = new $tsBaboonBinWriter();
                      |    ${uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"writer", q"arg")};
-                     |    const resp = await this.transportUeba("${svcType.name}", "${m.name.name}", writer.toBytes());
+                     |    const resp = await this.transportUeba(${ctxArgPass}"${svcType.name}", "${m.name.name}", writer.toBytes());
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
               }
@@ -343,13 +343,13 @@ object TsServiceWiringTranslator {
           if (clientMethods.isEmpty) return None
 
           val transportFields = List(
-            binCodec.map(_ => q"private readonly transportUeba: (service: string, method: string, data: Uint8Array) => Promise<Uint8Array>"),
-            jsonCodec.map(_ => q"private readonly transportJson: (service: string, method: string, data: string) => Promise<string>"),
+            binCodec.map(_ => q"private readonly transportUeba: (${ctxParamDecl}service: string, method: string, data: Uint8Array) => Promise<Uint8Array>"),
+            jsonCodec.map(_ => q"private readonly transportJson: (${ctxParamDecl}service: string, method: string, data: string) => Promise<string>"),
           ).flatten
 
           val ctorParams = List(
-            binCodec.map(_ => q"transportUeba: (service: string, method: string, data: Uint8Array) => Promise<Uint8Array>"),
-            jsonCodec.map(_ => q"transportJson: (service: string, method: string, data: string) => Promise<string>"),
+            binCodec.map(_ => q"transportUeba: (${ctxParamDecl}service: string, method: string, data: Uint8Array) => Promise<Uint8Array>"),
+            jsonCodec.map(_ => q"transportJson: (${ctxParamDecl}service: string, method: string, data: string) => Promise<string>"),
           ).flatten
 
           val ctorAssigns = List(
@@ -358,7 +358,7 @@ object TsServiceWiringTranslator {
           ).flatten
 
           val clientTree =
-            q"""export class ${typeTranslator.serviceClientName(svcType.name)} {
+            q"""export class ${typeTranslator.serviceClientName(svcType.name)}$ctxTypeParamDecl {
                |    ${transportFields.joinN().shift(4).trim}
                |
                |    constructor(${ctorParams.join(", ")}) {
@@ -409,7 +409,7 @@ object TsServiceWiringTranslator {
       val implFields = services.map {
         s =>
           val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
-          q"${s.id.name.name}: ${typeTranslator.serviceInterfaceRef(svcType)}"
+          q"${s.id.name.name}: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg"
       }
 
       val uebaFn = if (binCodecActive) {
@@ -425,10 +425,10 @@ object TsServiceWiringTranslator {
                 )
                 if (resolved.noErrors) {
                   q"""case "${s.id.name.name}":
-                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}ctx);""".stripMargin
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}$codecCtxName);""".stripMargin
                 } else {
                   q"""case "${s.id.name.name}":
-                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}ctx);""".stripMargin
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}$codecCtxName);""".stripMargin
                 }
             }
         }
@@ -441,12 +441,12 @@ object TsServiceWiringTranslator {
         val rtParam: TextTree[TsValue] = if (resolved.noErrors) q"" else q"rt: $ibaboonServiceRt, "
 
         Some(
-          q"""export ${asyncPrefix}function dispatchUeba(
+          q"""export ${asyncPrefix}function dispatchUeba$ctxTypeParamDecl(
              |    serviceName: string,
              |    methodName: string,
              |    data: Uint8Array,
              |    impls: {${implFields.join("; ")}},
-             |    $rtParam${ctxParamDecl}ctx: $tsBaboonCodecContext
+             |    $rtParam${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
              |): $retTypeUeba {
              |    switch (serviceName) {
              |        ${cases.joinN().shift(8).trim}
@@ -470,10 +470,10 @@ object TsServiceWiringTranslator {
                 )
                 if (resolved.noErrors) {
                   q"""case "${s.id.name.name}":
-                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}ctx);""".stripMargin
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}$codecCtxName);""".stripMargin
                 } else {
                   q"""case "${s.id.name.name}":
-                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}ctx);""".stripMargin
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}$codecCtxName);""".stripMargin
                 }
             }
         }
@@ -481,12 +481,12 @@ object TsServiceWiringTranslator {
         val rtParam: TextTree[TsValue] = if (resolved.noErrors) q"" else q"rt: $ibaboonServiceRt, "
 
         Some(
-          q"""export ${asyncPrefix}function dispatchJson(
+          q"""export ${asyncPrefix}function dispatchJson$ctxTypeParamDecl(
              |    serviceName: string,
              |    methodName: string,
              |    data: string,
              |    impls: {${implFields.join("; ")}},
-             |    $rtParam${ctxParamDecl}ctx: $tsBaboonCodecContext
+             |    $rtParam${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
              |): $retTypeJson {
              |    switch (serviceName) {
              |        ${cases.joinN().shift(8).trim}
@@ -551,6 +551,27 @@ object TsServiceWiringTranslator {
       case ResolvedServiceContext.ConcreteContext(_, pn) => s"$pn, "
     }
 
+    // Only `abstract` mode introduces a generic type parameter; `type`
+    // (concrete) mode pins the context to a concrete type, and `none` has no
+    // context at all. These are non-empty only for AbstractContext.
+    private def ctxTypeName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+      case _                                             => None
+    }
+    private def ctxTypeParamDecl: String              = ctxTypeName.fold("")(tn => s"<$tn>")
+    private def ctxTypeArg: TextTree[TsValue]         = ctxTypeName.fold(TextTree.text[TsValue](""))(tn => q"<$tn>")
+
+    // The codec context parameter is always present in wiring/client/wrapper
+    // signatures; when a service context is active its parameter name (default
+    // `ctx`) would collide with the codec context (also historically `ctx`), so
+    // the codec context is renamed away. In `none` mode the name stays `ctx`,
+    // keeping that output byte-identical.
+    private def codecCtxName: String = resolvedCtx match {
+      case ResolvedServiceContext.NoContext => "ctx"
+      case _                                => if (ctxArgPass.startsWith("codecCtx")) "baboonCodecCtx" else "codecCtx"
+    }
+    private def codecCtxRef: TextTree[TsValue] = TextTree.text[TsValue](codecCtxName)
+
     private val isAsync: Boolean = target.language.asyncServices
 
     private val asyncPrefix: String = if (isAsync) "async " else ""
@@ -589,50 +610,60 @@ object TsServiceWiringTranslator {
     ): TextTree[TsValue] = {
       val wireType   = if (isJson) q"string"     else q"Uint8Array"
       val invokerFn  = typeTranslator.serviceInvokeName(svcType.name, isJson)
-      val ifaceType  = if (isJson) ibaboonJsonService else ibaboonUebaService
       val wrapperName: String = typeTranslator.serviceWrapperName(svcType.name, isJson)
 
-      // Constructor and forwarded-args: every extra dependency consumed by
-      // invoke<Json|Ueba>_X (`rt` in errors mode, and any service-context
-      // parameter) is baked at construction time so the runtime
-      // IBaboon*Service contract stays uniform across modes.
+      val svcCtxTypeName: Option[String] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(tn, _)  => Some(tn)
+        case ResolvedServiceContext.ConcreteContext(tn, _)  => Some(tn)
+      }
+      val svcCtxArgName: Option[String] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
+        case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+      }
+
+      // The implemented runtime contract follows the context mode: `none` keeps
+      // the historical context-free IBaboon*Service; `abstract`/`type` use the
+      // context-carrying IBaboon*ServiceCtx so the service context is supplied
+      // per `invoke`, not baked into the constructor.
+      val implementsClause: TextTree[TsValue] = svcCtxTypeName match {
+        case None     => q"${if (isJson) ibaboonJsonService else ibaboonUebaService}<$retType>"
+        case Some(tn) => q"${if (isJson) ibaboonJsonServiceCtx else ibaboonUebaServiceCtx}<$tn, $retType>"
+      }
+
+      // `rt` (errors mode) is a per-construction dependency, so it stays a field;
+      // the service context is now a per-invoke argument.
       val rtField: Option[(String, TextTree[TsValue])] =
         if (resolved.noErrors) None else Some(("rt", q"$ibaboonServiceRt"))
 
-      val svcCtxField: Option[(String, TextTree[TsValue])] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"$tn"))
-        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"$tn"))
-      }
-
-      val extraCtorParams: List[(String, TextTree[TsValue])] = List(rtField, svcCtxField).flatten
-      val extraFieldDecls: List[TextTree[TsValue]] = extraCtorParams.map {
+      val extraFieldDecls: List[TextTree[TsValue]] = rtField.toList.map {
         case (name, tpe) => q"private readonly $name: $tpe;"
       }
       val ctorParamList: TextTree[TsValue] = {
-        val all = q"impl: ${typeTranslator.serviceInterfaceRef(svcType)}" :: extraCtorParams.map { case (n, t) => q"$n: $t" }
+        val all = q"impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg" :: rtField.toList.map { case (n, t) => q"$n: $t" }
         all.join(", ")
       }
       val ctorAssigns: List[TextTree[TsValue]] =
-        q"this.impl = impl;" :: extraCtorParams.map { case (n, _) => q"this.$n = $n;" }
+        q"this.impl = impl;" :: rtField.toList.map { case (n, _) => q"this.$n = $n;" }
 
       val invokerArgs: List[TextTree[TsValue]] = {
-        val base = List(q"method", q"data", q"this.impl")
-        val withRt = rtField.fold(base)(_ => base :+ q"this.rt")
-        val withSvcCtx = svcCtxField.fold(withRt)(f => withRt :+ q"this.${f._1}")
-        withSvcCtx :+ q"ctx"
+        val base: List[TextTree[TsValue]] = List(q"method", q"data", q"this.impl")
+        val withRt     = rtField.fold(base)(_ => base :+ q"this.rt")
+        val withSvcCtx = svcCtxArgName.fold(withRt)(n => withRt :+ TextTree.text[TsValue](n))
+        withSvcCtx :+ codecCtxRef
       }
 
-      q"""export class $wrapperName implements $ifaceType<$retType> {
+      q"""export class $wrapperName$ctxTypeParamDecl implements $implementsClause {
          |    readonly serviceName = "${svcType.name}";
-         |    private readonly impl: ${typeTranslator.serviceInterfaceRef(svcType)};
+         |    private readonly impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg;
          |    ${extraFieldDecls.join("\n").shift(4).trim}
          |
          |    constructor($ctorParamList) {
          |        ${ctorAssigns.join("\n").shift(8).trim}
          |    }
          |
-         |    invoke(method: $baboonMethodId, data: $wireType, ctx: $tsBaboonCodecContext): $retType {
+         |    invoke(method: $baboonMethodId, data: $wireType, ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext): $retType {
          |        return $invokerFn(${invokerArgs.join(", ")});
          |    }
          |}""".stripMargin
@@ -686,11 +717,11 @@ object TsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = true)}(
+      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = true)}$ctxTypeParamDecl(
          |    method: $baboonMethodId,
          |    data: string,
-         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)},
-         |    ${ctxParamDecl}ctx: $tsBaboonCodecContext
+         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg,
+         |    ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
          |): $noErrorsJsonRetType {
          |    switch (method.methodName) {
          |        ${cases.shift(8).trim}
@@ -727,11 +758,11 @@ object TsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = false)}(
+      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = false)}$ctxTypeParamDecl(
          |    method: $baboonMethodId,
          |    data: Uint8Array,
-         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)},
-         |    ${ctxParamDecl}ctx: $tsBaboonCodecContext
+         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg,
+         |    ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
          |): $noErrorsUebaRetType {
          |    switch (method.methodName) {
          |        ${cases.shift(8).trim}
@@ -951,12 +982,12 @@ object TsServiceWiringTranslator {
           generateErrorsMethodBody(m, WireKind.Json, "string")
       }.join("\n")
 
-      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = true)}(
+      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = true)}$ctxTypeParamDecl(
          |    method: $baboonMethodId,
          |    data: string,
-         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)},
+         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg,
          |    rt: $ibaboonServiceRt,
-         |    ${ctxParamDecl}ctx: $tsBaboonCodecContext
+         |    ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
          |): $errorsJsonRetType {
          |    switch (method.methodName) {
          |        ${cases.shift(8).trim}
@@ -975,12 +1006,12 @@ object TsServiceWiringTranslator {
           generateErrorsMethodBody(m, WireKind.Ueba, "Uint8Array")
       }.join("\n")
 
-      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = false)}(
+      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = false)}$ctxTypeParamDecl(
          |    method: $baboonMethodId,
          |    data: Uint8Array,
-         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)},
+         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg,
          |    rt: $ibaboonServiceRt,
-         |    ${ctxParamDecl}ctx: $tsBaboonCodecContext
+         |    ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
          |): $errorsUebaRetType {
          |    switch (method.methodName) {
          |        ${cases.shift(8).trim}

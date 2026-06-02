@@ -73,7 +73,7 @@ object JvServiceWiringTranslator {
 
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[JvValue]): TextTree[JvValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.INSTANCE.decode(ctx, $wire)"
+      case u: TypeId.User => q"${jsonCodecName(u)}.INSTANCE.decode($codecCtxName, $wire)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit   => q"$wire.booleanValue()"
@@ -99,7 +99,7 @@ object JvServiceWiringTranslator {
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[JvValue]): TextTree[JvValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.INSTANCE.encode(ctx, $value)"
+      case u: TypeId.User => q"${jsonCodecName(u)}.INSTANCE.encode($codecCtxName, $value)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.uid   => q"new $textNode($value.toString())"
@@ -125,7 +125,7 @@ object JvServiceWiringTranslator {
     }
 
     private def uebaDecodeExpr(id: TypeId, br: TextTree[JvValue]): TextTree[JvValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.INSTANCE.decode(ctx, $br)"
+      case u: TypeId.User => q"${uebaCodecName(u)}.INSTANCE.decode($codecCtxName, $br)"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit                       => q"$br.readByte() != 0"
@@ -150,7 +150,7 @@ object JvServiceWiringTranslator {
     }
 
     private def uebaEncodeStmt(id: TypeId, bw: TextTree[JvValue], value: TextTree[JvValue]): TextTree[JvValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.INSTANCE.encode(ctx, $bw, $value);"
+      case u: TypeId.User => q"${uebaCodecName(u)}.INSTANCE.encode($codecCtxName, $bw, $value);"
       case b: TypeId.BuiltinScalar =>
         b match {
           case TypeId.Builtins.bit                       => q"$bw.writeByte($value ? 1 : 0);"
@@ -255,22 +255,27 @@ object JvServiceWiringTranslator {
 
           if (clientMethods.isEmpty) return None
 
+          // Codec-context field/param name: renamed away from `ctx` only when a
+          // service context occupies that slot (the codec exprs reference
+          // `codecCtxName`); `none`/`concrete` keep `ctx`, byte-identical.
+          val codecCtxParam = codecCtxName
+
           val fields = List(
             if (hasUeba) Some(uebaTransportFieldDecl) else None,
             if (hasJson) Some(jsonTransportFieldDecl) else None,
-            Some(q"private final $baboonCodecContext ctx;"),
+            Some(q"private final $baboonCodecContext $codecCtxParam;"),
           ).flatten
 
           val ctorParams = List(
             if (hasUeba) Some(uebaTransportParam("transportUeba")) else None,
             if (hasJson) Some(jsonTransportParam("transportJson")) else None,
-            Some(q"$baboonCodecContext ctx"),
+            Some(q"$baboonCodecContext $codecCtxParam"),
           ).flatten
 
           val ctorAssigns = List(
             if (hasUeba) Some(q"this.transportUeba = transportUeba;") else None,
             if (hasJson) Some(q"this.transportJson = transportJson;") else None,
-            Some(q"this.ctx = ctx;"),
+            Some(q"this.$codecCtxParam = $codecCtxParam;"),
           ).flatten
 
           // Convenience constructor defaulting ctx to BaboonCodecContext.Default.
@@ -290,7 +295,7 @@ object JvServiceWiringTranslator {
                |}""".stripMargin
 
           Some(
-            q"""public final class ${svcName}Client {
+            q"""public final class ${svcName}Client$ctxClassTypeParam {
                |  ${fields.join("\n").shift(2).trim}
                |
                |  public ${svcName}Client(${ctorParams.join(", ")}) {
@@ -306,8 +311,18 @@ object JvServiceWiringTranslator {
       }
     }
 
-    private def uebaTransportType: TextTree[JvValue]   = if (isAsync) q"$baboonClientTransportUebaAsync" else q"$baboonClientTransportUebaSync"
-    private def jsonTransportType: TextTree[JvValue]    = if (isAsync) q"$baboonClientTransportJsonAsync" else q"$baboonClientTransportJsonSync"
+    // When a service context is active (abstract OR concrete) the transport
+    // callbacks carry a leading service-context argument (forwarded by the
+    // client) and use the Ctx-generic functional interfaces; the
+    // service-context type is bound as their `<…>` type-arg. In `none` mode the
+    // historical context-free transports are emitted byte-for-byte.
+    private def ctxTransportTypeArg: String = svcCtxTypeName.fold("")(tn => s"<$tn>")
+    private def uebaTransportType: TextTree[JvValue] =
+      if (ctxOrConcreteActive) (if (isAsync) q"$baboonClientTransportUebaAsyncCtx$ctxTransportTypeArg" else q"$baboonClientTransportUebaSyncCtx$ctxTransportTypeArg")
+      else if (isAsync) q"$baboonClientTransportUebaAsync" else q"$baboonClientTransportUebaSync"
+    private def jsonTransportType: TextTree[JvValue] =
+      if (ctxOrConcreteActive) (if (isAsync) q"$baboonClientTransportJsonAsyncCtx$ctxTransportTypeArg" else q"$baboonClientTransportJsonSyncCtx$ctxTransportTypeArg")
+      else if (isAsync) q"$baboonClientTransportJsonAsync" else q"$baboonClientTransportJsonSync"
     private def uebaTransportFieldDecl: TextTree[JvValue] = q"private final $uebaTransportType transportUeba;"
     private def jsonTransportFieldDecl: TextTree[JvValue] = q"private final $jsonTransportType transportJson;"
     private def uebaTransportParam(name: String): TextTree[JvValue] = q"$uebaTransportType $name"
@@ -355,9 +370,9 @@ object JvServiceWiringTranslator {
                |}""".stripMargin
           case None => q"return null;"
         }
-        q"""public $retType $methodName($inRef arg) {
+        q"""public $retType $methodName($ctxParamDecl$inRef arg) {
            |  ${encodeBlock.shift(2).trim}
-           |  return transportUeba.apply("$svcName", "$methodName", payload).thenApply(resp -> {
+           |  return transportUeba.apply(${ctxArgPass}"$svcName", "$methodName", payload).thenApply(resp -> {
            |    ${decodeBody.shift(4).trim}
            |  });
            |}""".stripMargin
@@ -370,9 +385,9 @@ object JvServiceWiringTranslator {
                |return $decodeExpr;""".stripMargin
           case None => q""
         }
-        q"""public $retType $methodName($inRef arg) throws Exception {
+        q"""public $retType $methodName($ctxParamDecl$inRef arg) throws Exception {
            |  ${encodeBlock.shift(2).trim}
-           |  byte[] resp = transportUeba.apply("$svcName", "$methodName", payload);
+           |  byte[] resp = transportUeba.apply(${ctxArgPass}"$svcName", "$methodName", payload);
            |  ${decodeBody.shift(2).trim}
            |}""".stripMargin
       }
@@ -403,9 +418,9 @@ object JvServiceWiringTranslator {
                |}""".stripMargin
           case None => q"return null;"
         }
-        q"""public $retType $methodName($inRef arg) {
+        q"""public $retType $methodName($ctxParamDecl$inRef arg) {
            |  $encodeBlock
-           |  return transportJson.apply("$svcName", "$routeName", payload).thenApply(resp -> {
+           |  return transportJson.apply(${ctxArgPass}"$svcName", "$routeName", payload).thenApply(resp -> {
            |    ${decodeBody.shift(4).trim}
            |  });
            |}""".stripMargin
@@ -418,9 +433,9 @@ object JvServiceWiringTranslator {
                |return $decodeExpr;""".stripMargin
           case None => q""
         }
-        q"""public $retType $methodName($inRef arg) throws Exception {
+        q"""public $retType $methodName($ctxParamDecl$inRef arg) throws Exception {
            |  $encodeBlock
-           |  String resp = transportJson.apply("$svcName", "$routeName", payload);
+           |  String resp = transportJson.apply(${ctxArgPass}"$svcName", "$routeName", payload);
            |  ${decodeBody.shift(2).trim}
            |}""".stripMargin
       }
@@ -436,6 +451,34 @@ object JvServiceWiringTranslator {
       case ResolvedServiceContext.NoContext              => ""
       case ResolvedServiceContext.AbstractContext(_, pn) => s"$pn, "
       case ResolvedServiceContext.ConcreteContext(_, pn) => s"$pn, "
+    }
+
+    // The service-context type name (`abstract` introduces a generic param,
+    // `type` pins a concrete type) and its parameter name. The codec context is
+    // renamed away from the service-context parameter name (default `ctx`) to
+    // avoid the duplicate-parameter collision; in `none` mode it stays `ctx`,
+    // keeping that output byte-identical.
+    private def svcCtxTypeName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext               => None
+      case ResolvedServiceContext.AbstractContext(tn, _)  => Some(tn)
+      case ResolvedServiceContext.ConcreteContext(tn, _)  => Some(tn)
+    }
+    private def svcCtxArgName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext               => None
+      case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
+      case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+    }
+    // The codec-context parameter name. Renamed only when a service context is
+    // present (it occupies the default `ctx` slot); `none` mode keeps `ctx`.
+    private def codecCtxName: String = resolvedCtx match {
+      case ResolvedServiceContext.NoContext => "ctx"
+      case _                                => if (svcCtxArgName.contains("codecCtx")) "baboonCodecCtx" else "codecCtx"
+    }
+    // Only the abstract service-context generic, as a `<Ctx>` clause; empty for
+    // none/concrete. Used to make the client class generic.
+    private def ctxClassTypeParam: String = resolvedCtx match {
+      case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
+      case _                                             => ""
     }
 
     private def genericParam: String = {
@@ -464,6 +507,27 @@ object JvServiceWiringTranslator {
       case Some(h) => s"<${h.name}>"
       case None    => ""
     }
+
+    private def ctxActive: Boolean = resolvedCtx match {
+      case ResolvedServiceContext.AbstractContext(_, _) => true
+      case _                                            => false
+    }
+    // True for both `abstract` and `type` (concrete) service-context modes — any
+    // mode where the service context must be threaded per-invoke (`none` is
+    // false, keeping its output byte-identical).
+    private def ctxOrConcreteActive: Boolean = resolvedCtx match {
+      case ResolvedServiceContext.NoContext => false
+      case _                                => true
+    }
+
+    // Generic clause placed BEFORE the return type of the static `invoke*`
+    // method. When the abstract service context is active, the full declaration
+    // (HKT signature + `Ctx`) belongs here. When it is NOT active the historical
+    // output is preserved byte-for-byte: the leading clause stays `svcTypeArg`
+    // (just the HKT name) and the declaration form continues to appear after the
+    // method name via [[staticGenericAfterName]].
+    private def staticGenericDecl: String   = if (ctxActive) genericParam else svcTypeArg
+    private def staticGenericAfterName: String = if (ctxActive) "" else genericParam
 
     private def renderFq(tree: TextTree[JvValue]): String = tree.mapRender {
       case t: JvValue.JvType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
@@ -527,11 +591,11 @@ object JvServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""public static $svcTypeArg String invokeJson$genericParam(
+      q"""public static $staticGenericDecl String invokeJson$staticGenericAfterName(
          |  $baboonMethodId method,
          |  String data,
          |  $svcName$svcTypeArg impl,
-         |  $ctxParamDecl$baboonCodecContext ctx) throws Exception {
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName) throws Exception {
          |  return switch (method.methodName()) {
          |    ${cases.shift(4).trim}
          |    default ->
@@ -572,11 +636,11 @@ object JvServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""public static $svcTypeArg byte[] invokeUeba$genericParam(
+      q"""public static $staticGenericDecl byte[] invokeUeba$staticGenericAfterName(
          |  $baboonMethodId method,
          |  byte[] data,
          |  $svcName$svcTypeArg impl,
-         |  $ctxParamDecl$baboonCodecContext ctx) throws Exception {
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName) throws Exception {
          |  return switch (method.methodName()) {
          |    ${cases.shift(4).trim}
          |    default ->
@@ -701,12 +765,12 @@ object JvServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""public static $svcTypeArg $wiringRetType invokeJson$genericParam(
+      q"""public static $staticGenericDecl $wiringRetType invokeJson$staticGenericAfterName(
          |  $baboonMethodId method,
          |  String data,
          |  $svcName$svcTypeArg impl,
          |  IBaboonServiceRt$rtTypeArg rt,
-         |  $ctxParamDecl$baboonCodecContext ctx) {
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
          |  return switch (method.methodName()) {
          |    ${cases.shift(4).trim}
          |    default -> rt.fail(new $baboonWiringError.NoMatchingMethod(method));
@@ -801,12 +865,12 @@ object JvServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""public static $svcTypeArg $wiringRetType invokeUeba$genericParam(
+      q"""public static $staticGenericDecl $wiringRetType invokeUeba$staticGenericAfterName(
          |  $baboonMethodId method,
          |  byte[] data,
          |  $svcName$svcTypeArg impl,
          |  IBaboonServiceRt$rtTypeArg rt,
-         |  $ctxParamDecl$baboonCodecContext ctx) {
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
          |  return switch (method.methodName()) {
          |    ${cases.shift(4).trim}
          |    default -> rt.fail(new $baboonWiringError.NoMatchingMethod(method));
@@ -853,7 +917,13 @@ object JvServiceWiringTranslator {
       val svcName     = service.id.name.name
       val wireType    = if (isJson) "String" else "byte[]"
       val invokerFn   = if (isJson) "invokeJson" else "invokeUeba"
-      val ifaceType   = if (isJson) iBaboonJsonService else iBaboonUebaService
+      // When a service context is active the wrapper implements the
+      // context-carrying contract and receives the service context PER-INVOKE
+      // (not via the constructor). In `none` mode the historical context-free
+      // contract is used, byte-for-byte.
+      val ifaceType   =
+        if (ctxOrConcreteActive) (if (isJson) iBaboonJsonServiceCtx else iBaboonUebaServiceCtx)
+        else (if (isJson) iBaboonJsonService else iBaboonUebaService)
       val wrapperName = if (isJson) "JsonService" else "UebaService"
 
       // Type parameters for the wrapper class. Mirrors `genericParam` from
@@ -904,13 +974,9 @@ object JvServiceWiringTranslator {
           Some(("rt", s"IBaboonServiceRt$rtTypeArgLocal"))
         } else None
 
-      val svcCtxField: Option[(String, String)] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, tn))
-        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, tn))
-      }
-
-      val extras: List[(String, String)] = List(rtField, svcCtxField).flatten
+      // The service context is no longer baked at construction time — it is
+      // supplied per `invoke`. `rt` (errors mode) remains a constructor field.
+      val extras: List[(String, String)] = List(rtField).flatten
 
       val implFieldDecl: TextTree[JvValue] = q"private final $svcName$svcImplTypeArg impl;"
       val extraFieldDecls: Seq[TextTree[JvValue]] = extras.map { case (n, t) => q"private final $t $n;" }
@@ -925,12 +991,14 @@ object JvServiceWiringTranslator {
         all.join("\n")
       }
 
-      // Forward args to the static invoker: (method, data, impl, [rt,] [svcCtx,] ctx)
+      // Forward args to the static invoker: (method, data, impl, [rt,] [svcCtx,] codecCtx).
+      // The service context (when active) and the codec context are now both
+      // `invoke` parameters rather than constructor fields.
       val invokerArgs: String = {
-        val base = List("method", "data", "this.impl")
-        val withRt = rtField.fold(base)(_ => base :+ "this.rt")
-        val withSvcCtx = svcCtxField.fold(withRt)(f => withRt :+ s"this.${f._1}")
-        (withSvcCtx :+ "ctx").mkString(", ")
+        val base       = List("method", "data", "this.impl")
+        val withRt     = rtField.fold(base)(_ => base :+ "this.rt")
+        val withSvcCtx = svcCtxArgName.fold(withRt)(pn => withRt :+ pn)
+        (withSvcCtx :+ codecCtxName).mkString(", ")
       }
 
       // The invoke method on noErrors-mode static methods declares `throws
@@ -938,9 +1006,24 @@ object JvServiceWiringTranslator {
       // does not throw.
       val throwsClause = if (isErrorsMode) "" else " throws Exception"
 
+      // The implemented contract's type args: context-carrying contract is
+      // `<SvcCtx, R>` (abstract or concrete); the context-free contract is `<R>`.
+      val ifaceTypeArgs: String = svcCtxTypeName match {
+        case Some(tn) => s"<$tn, $rType>"
+        case None     => s"<$rType>"
+      }
+
+      // The `invoke` parameter list: the service context (when active) leads,
+      // followed by the codec context (renamed away from `ctx` when it would
+      // collide). In `none` mode this is `(method, data, ctx)`, unchanged.
+      val invokeCtxParam: String = svcCtxTypeName match {
+        case Some(tn) => s"$tn ${svcCtxArgName.get}, "
+        case None     => ""
+      }
+
       // The wrapper is a nested class inside ${Svc}Wiring; call the enclosing
       // class's static method directly. Type inference picks F/C from impl.
-      q"""public static final class $wrapperName$classTypeParams implements ${ifaceType}<$rType> {
+      q"""public static final class $wrapperName$classTypeParams implements ${ifaceType}$ifaceTypeArgs {
          |  ${allFieldDecls.shift(2).trim}
          |
          |  public $wrapperName($ctorParams) {
@@ -953,7 +1036,7 @@ object JvServiceWiringTranslator {
          |  }
          |
          |  @Override
-         |  public $rType invoke($baboonMethodId method, $wireType data, $baboonCodecContext ctx)$throwsClause {
+         |  public $rType invoke($baboonMethodId method, $wireType data, $invokeCtxParam$baboonCodecContext $codecCtxName)$throwsClause {
          |    return $invokerFn($invokerArgs);
          |  }
          |}""".stripMargin

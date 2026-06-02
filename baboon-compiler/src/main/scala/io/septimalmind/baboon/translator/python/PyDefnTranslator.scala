@@ -440,16 +440,24 @@ object PyDefnTranslator {
             if (serviceDocstring.isEmpty) None else Some(q"$serviceDocstring")
           val serviceBody = serviceDocTree.toList ++ (if (methods.isEmpty) List(q"pass") else methods)
           val allMethods = serviceBody.joinN()
-          val classBases = resolvedCtx match {
+          // Abstract mode: the service interface is `Generic[Ctx]`. `Generic`
+          // and `TypeVar` must be imported (reference them as PyTypes so the
+          // import pass emits `from typing import Generic, TypeVar`) and the
+          // `Ctx = TypeVar("Ctx")` declaration emitted at module scope so the
+          // `Generic[Ctx]` base binds. Concrete/none keep the bare `ABC` base
+          // and emit nothing extra (byte-identical).
+          val (classBases, ctxTypeVarDecl): (TextTree[PyValue], Option[TextTree[PyValue]]) = resolvedCtx match {
             case ResolvedServiceContext.AbstractContext(tn, _) =>
-              q"$pyABC, Generic[$tn]"
+              (q"$pyABC, $pyGeneric[$tn]", Some(q"""$tn = $pyTypeVar("$tn")"""))
             case _ =>
-              q"$pyABC"
+              (q"$pyABC", None)
           }
-          PyDefnRepr(
+          val serviceClass =
             q"""|class ${service.id.name.name.capitalize}($classBases):
                 |    ${allMethods.shift(4).trim}
-                |""".stripMargin,
+                |""".stripMargin
+          PyDefnRepr(
+            (ctxTypeVarDecl.toSeq :+ serviceClass).joinNN(),
             List.empty,
           )
         case f: Typedef.Foreign => makeForeignKeyCodecRepr(f)

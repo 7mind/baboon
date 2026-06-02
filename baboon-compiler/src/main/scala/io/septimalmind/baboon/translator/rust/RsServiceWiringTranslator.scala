@@ -130,6 +130,19 @@ object RsServiceWiringTranslator {
           val hasUeba = hasActiveUebaCodecs(service)
           if (!hasJson && !hasUeba) return None
 
+          // When a service context is active, the codec-context struct field is
+          // renamed away from the default `ctx` so the per-method service-ctx
+          // parameter (also `ctx` by default) does not collide. In `none` mode
+          // the field keeps its historical name `ctx`, so output is unchanged.
+          val clientCodecField: String = svcCtxArgName match {
+            case None     => "ctx"
+            case Some(pn) => if (pn == "codec_ctx") "baboon_codec_ctx" else "codec_ctx"
+          }
+          // The service ctx forwarded as the leading transport-callback arg
+          // (the transport `Fn` type gains a matching leading parameter). Empty
+          // in `none` mode, so the transport call site is byte-identical.
+          val transportCtxArg: String = svcCtxArgName.fold("")(pn => s"$pn, ")
+
           val clientMethods = service.methods.flatMap {
             m =>
               val inFq  = inTypeFq(m)
@@ -139,14 +152,14 @@ object RsServiceWiringTranslator {
                 val decodeResult = m.out match {
                   case Some(_) =>
                     q"""let mut cursor = std::io::Cursor::new(resp);
-                       |Ok($baboonBinDecode::decode_ueba(&self.ctx, &mut cursor)?)""".stripMargin
+                       |Ok($baboonBinDecode::decode_ueba(&self.$clientCodecField, &mut cursor)?)""".stripMargin
                   case None => q"Ok(())"
                 }
                 Some(
                   q"""pub ${asyncKw}fn ${toSnakeCase(m.name.name)}(&self, ${ctxParamDecl}arg: $inFq) -> Result<$outFq, Box<dyn std::error::Error>> {
                      |    let mut buf = Vec::new();
-                     |    $baboonBinEncode::encode_ueba(&arg, &self.ctx, &mut buf)?;
-                     |    let resp = (self.transport_ueba)("$svcName", "${m.name.name}", &buf)$awaitSuffix?;
+                     |    $baboonBinEncode::encode_ueba(&arg, &self.$clientCodecField, &mut buf)?;
+                     |    let resp = (self.transport_ueba)(${transportCtxArg}"$svcName", "${m.name.name}", &buf)$awaitSuffix?;
                      |    ${decodeResult.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -162,7 +175,7 @@ object RsServiceWiringTranslator {
                 Some(
                   q"""pub ${asyncKw}fn ${toSnakeCase(m.name.name)}_json(&self, ${ctxParamDecl}arg: $inFq) -> Result<$outFq, Box<dyn std::error::Error>> {
                      |    let encoded = serde_json::to_string(&arg)?;
-                     |    let resp = (self.transport_json)("$svcName", "${m.name.name}", &encoded)$awaitSuffix?;
+                     |    let resp = (self.transport_json)(${transportCtxArg}"$svcName", "${m.name.name}", &encoded)$awaitSuffix?;
                      |    ${decodeResult.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -180,13 +193,19 @@ object RsServiceWiringTranslator {
           val ctorParams   = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
           val ctorAssigns  = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
 
+          // Leading service-ctx type on the transport closures. The abstract
+          // service ctx is forwarded as the first transport-callback argument
+          // so a caller can attach it to the outgoing request. Empty in `none`
+          // mode, so the transport `Fn` signatures are byte-identical.
+          val transportCtxType: String = ctxFuncTypePrefix
+
           if (hasUeba) {
             if (isAsync) {
               typeParams += "TU"
-              whereClauses += s"TU: Fn(&str, &str, &[u8]) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
+              whereClauses += s"TU: Fn(${transportCtxType}&str, &str, &[u8]) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
             } else {
               typeParams += "TU"
-              whereClauses += "TU: Fn(&str, &str, &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>>"
+              whereClauses += s"TU: Fn(${transportCtxType}&str, &str, &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>>"
             }
             fields += q"transport_ueba: TU,"
             ctorParams += q"transport_ueba: TU"
@@ -195,19 +214,31 @@ object RsServiceWiringTranslator {
           if (hasJson) {
             if (isAsync) {
               typeParams += "TJ"
-              whereClauses += s"TJ: Fn(&str, &str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
+              whereClauses += s"TJ: Fn(${transportCtxType}&str, &str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
             } else {
               typeParams += "TJ"
-              whereClauses += "TJ: Fn(&str, &str, &str) -> Result<String, Box<dyn std::error::Error>>"
+              whereClauses += s"TJ: Fn(${transportCtxType}&str, &str, &str) -> Result<String, Box<dyn std::error::Error>>"
             }
             fields += q"transport_json: TJ,"
             ctorParams += q"transport_json: TJ"
             ctorAssigns += q"transport_json,"
           }
           if (hasUeba) {
-            fields += q"ctx: $baboonCodecContext,"
-            ctorParams += q"ctx: $baboonCodecContext"
-            ctorAssigns += q"ctx,"
+            fields += q"$clientCodecField: $baboonCodecContext,"
+            ctorParams += q"$clientCodecField: $baboonCodecContext"
+            ctorAssigns += q"$clientCodecField,"
+          }
+          // The abstract service ctx is a struct/impl generic so the transport
+          // `Fn(Ctx, …)` bound and the per-method `ctx: Ctx` param resolve.
+          // Concrete (`type`) mode pins a concrete type, so no generic is added.
+          // `Ctx` is used only in bounds/params (never in a field), so a
+          // variance-neutral `PhantomData<fn() -> Ctx>` marker is added to
+          // satisfy Rust's E0392 (unused type parameter) — it stays Send+Sync
+          // and Clone regardless of `Ctx`.
+          absCtxTypeParam.foreach { tp =>
+            typeParams += tp
+            fields += q"_ctx_marker: std::marker::PhantomData<fn() -> $tp>,"
+            ctorAssigns += q"_ctx_marker: std::marker::PhantomData,"
           }
 
           val typeParamStr = typeParams.mkString(", ")
@@ -252,6 +283,52 @@ object RsServiceWiringTranslator {
     private def genericParam: String = resolvedCtx match {
       case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
       case _                                             => ""
+    }
+
+    // The service-context type name (`abstract` introduces a generic param,
+    // `type` pins a concrete type) and its parameter name. The codec-context
+    // param is renamed away from the service-context parameter name (default
+    // `ctx`) to avoid the duplicate-parameter collision; in `none` mode it
+    // stays `ctx`, keeping that output byte-identical.
+    private def svcCtxTypeName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext              => None
+      case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+      case ResolvedServiceContext.ConcreteContext(tn, _) => Some(tn)
+    }
+    private def svcCtxArgName: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext              => None
+      case ResolvedServiceContext.AbstractContext(_, pn) => Some(pn)
+      case ResolvedServiceContext.ConcreteContext(_, pn) => Some(pn)
+    }
+    // The codec-context parameter name. In `none` mode it keeps the historical
+    // names (`_ctx` in the JSON fns where it is unused, `ctx` in the UEBA fns
+    // where it is consumed) so that output stays byte-identical. When a service
+    // context is active, the codec ctx is renamed to `codec_ctx` to dodge the
+    // collision with the abstract/concrete service-ctx param (default `ctx`); a
+    // leading `_` is kept for the JSON fns (still unused there) to suppress the
+    // unused-variable warning. If the service-ctx param is itself named
+    // `codec_ctx`, fall back to `baboon_codec_ctx`.
+    private def codecCtxName(isJson: Boolean): String = resolvedCtx match {
+      case ResolvedServiceContext.NoContext => if (isJson) "_ctx" else "ctx"
+      case _ =>
+        val base = if (svcCtxArgName.contains("codec_ctx")) "baboon_codec_ctx" else "codec_ctx"
+        if (isJson) s"_$base" else base
+    }
+    // Type-args prefix for the transport closures: the service context is
+    // forwarded to the transport callback (`Fn(Ctx, &str, &str, …)`) so a
+    // caller can attach it to the outgoing request.
+    private def ctxFuncTypePrefix: String = svcCtxTypeName.fold("")(t => s"$t, ")
+
+    // Single combined generic clause for the errors-mode free fns. The
+    // abstract service ctx must share ONE `<...>` clause with `Rt` — Rust
+    // rejects two adjacent generic clauses (`<Rt: …><Ctx>`). In `none` mode
+    // there is no abstract ctx, so this collapses to `<Rt: …>` unchanged.
+    // Kept as a TextTree (not a String) so the `IBaboonServiceRt` node still
+    // renders via its short name + auto-collected `use` import, matching the
+    // prior `<Rt: $ibaboonServiceRt>` splice byte-for-byte.
+    private def errorsFnGenericClause: TextTree[RsValue] = resolvedCtx match {
+      case ResolvedServiceContext.AbstractContext(tn, _) => q"<Rt: $ibaboonServiceRt, $tn>"
+      case _                                             => q"<Rt: $ibaboonServiceRt>"
     }
 
     private val isAsync: Boolean    = target.language.asyncServices
@@ -326,8 +403,15 @@ object RsServiceWiringTranslator {
       val wireTypeStr = if (spec.isJson) "&str" else "&[u8]"
       val invokerFn   = if (spec.isJson) s"invoke_json_${toSnakeCase(spec.svcName)}"
                         else s"invoke_ueba_${toSnakeCase(spec.svcName)}"
-      val ifaceType   = if (spec.isJson) ibaboonJsonService else ibaboonUebaService
       val retTypeStr  = wrapperRetType(spec.isJson)
+
+      // `none` mode keeps the historical context-free trait (`IBaboon*Service`),
+      // baking any dependency at construction; the service context (when active)
+      // is supplied PER-INVOKE through the context-carrying `IBaboon*ServiceCtx`.
+      val ctxActive: Boolean = svcCtxTypeName.isDefined
+      val ifaceType: RsValue.RsType =
+        if (ctxActive) { if (spec.isJson) ibaboonJsonServiceCtx else ibaboonUebaServiceCtx }
+        else { if (spec.isJson) ibaboonJsonService else ibaboonUebaService }
 
       // The service trait the impl must satisfy. `genericParam` produces
       // `<SvcCtx>` only when ResolvedServiceContext is AbstractContext.
@@ -340,6 +424,13 @@ object RsServiceWiringTranslator {
         "Impl" :: rt ++ ctx
       }
       val typeParamDecl: String = typeParamNames.mkString("<", ", ", ">")
+
+      // The trait reference: context-free `IBaboon*Service<R>`, or
+      // context-carrying `IBaboon*ServiceCtx<Ctx, R>` (the service-ctx type is
+      // the abstract generic or the concrete pinned type).
+      val ifaceRef: TextTree[RsValue] =
+        if (ctxActive) q"$ifaceType<${svcCtxTypeName.get}, $retTypeStr>"
+        else q"$ifaceType<$retTypeStr>"
 
       // ---- where clauses (as TextTree fragments so symbols flow correctly) ----
       val sendSync   = if (isAsync) " + Send + Sync + 'static" else " + 'static"
@@ -356,34 +447,51 @@ object RsServiceWiringTranslator {
       val whereBlock: TextTree[RsValue] = whereLines.map(l => q"    $l,").join("\n")
 
       // ---- struct fields and ctor ----
+      // Context-free: the service ctx is baked as a field. Context-active: the
+      // ctx arrives per-invoke, so it is NOT stored; an abstract `Ctx` generic
+      // is then unused in fields, so a variance-neutral PhantomData marker is
+      // added to satisfy Rust's E0392 (it stays Send+Sync+Clone regardless).
       val rtFieldOpt: Option[TextTree[RsValue]] =
         if (resolved.noErrors) None else Some(q"rt: Rt,")
-      val ctxFieldOpt: Option[TextTree[RsValue]] = svcCtxField.map {
+      val storedCtxField: Option[(String, String)] = if (ctxActive) None else svcCtxField
+      val ctxFieldOpt: Option[TextTree[RsValue]] = storedCtxField.map {
         case (pn, tn) => q"$pn: $tn,"
       }
+      val markerFieldOpt: Option[TextTree[RsValue]] =
+        if (ctxActive) absCtxTypeParam.map(p => q"_ctx_marker: std::marker::PhantomData<fn() -> $p>,")
+        else None
       val fieldsBlock: TextTree[RsValue] =
-        (q"impl_: Impl," :: rtFieldOpt.toList ++ ctxFieldOpt.toList).join("\n")
+        (q"impl_: Impl," :: rtFieldOpt.toList ++ ctxFieldOpt.toList ++ markerFieldOpt.toList).join("\n")
 
       val rtCtorParamOpt: Option[TextTree[RsValue]] =
         if (resolved.noErrors) None else Some(q"rt: Rt")
-      val ctxCtorParamOpt: Option[TextTree[RsValue]] = svcCtxField.map {
+      val ctxCtorParamOpt: Option[TextTree[RsValue]] = storedCtxField.map {
         case (pn, tn) => q"$pn: $tn"
       }
       val ctorParams: TextTree[RsValue] =
         (q"impl_: Impl" :: rtCtorParamOpt.toList ++ ctxCtorParamOpt.toList).join(", ")
 
       val rtCtorAssignOpt: Option[String]  = if (resolved.noErrors) None else Some("rt,")
-      val ctxCtorAssignOpt: Option[String] = svcCtxField.map { case (pn, _) => s"$pn," }
-      val ctorAssignsList: List[String]    = "impl_," :: rtCtorAssignOpt.toList ++ ctxCtorAssignOpt.toList
+      val ctxCtorAssignOpt: Option[String] = storedCtxField.map { case (pn, _) => s"$pn," }
+      val markerCtorAssignOpt: Option[String] =
+        if (ctxActive && absCtxTypeParam.isDefined) Some("_ctx_marker: std::marker::PhantomData,") else None
+      val ctorAssignsList: List[String]    = "impl_," :: rtCtorAssignOpt.toList ++ ctxCtorAssignOpt.toList ++ markerCtorAssignOpt.toList
       val ctorAssigns: String              = ctorAssignsList.mkString(" ")
 
-      // ---- body for invoke() ----
+      // ---- invoke() signature + body ----
+      // Context-active adds a per-invoke `ctx: <SvcCtx>` param and renames the
+      // codec ctx to `codec_ctx`. Context-free keeps the historical signature
+      // (`invoke(&self, method, data, ctx: &BaboonCodecContext)`), byte-identical.
+      val codecCtxParam: String = if (ctxActive) "codec_ctx" else "ctx"
+      val invokeCtxParamDecl: String = svcCtxTypeName.fold("")(tn => s"ctx: $tn, ")
+
       val body: TextTree[RsValue] = if (isAsync) {
         // Async path: clone everything the future captures into owned
         // bindings, then return a `Pin<Box<Future + Send>>`. Requires
         // Impl/Rt/SvcCtx: Clone + Send + Sync + 'static.
         val cloneRt   = if (resolved.noErrors) "" else "let rt_clone = self.rt.clone();\n"
-        val cloneCtx  = svcCtxField.fold("")(f => s"let svc_ctx_clone = self.${f._1}.clone();\n")
+        val cloneStoredCtx = storedCtxField.fold("")(f => s"let svc_ctx_clone = self.${f._1}.clone();\n")
+        val cloneInvokeCtx = if (ctxActive) "let svc_ctx_clone = ctx.clone();\n" else ""
         val dataOwn   = if (spec.isJson) "let data_owned: String = data.to_string();"
                         else "let data_owned: Vec<u8> = data.to_vec();"
         val dataRef   = if (spec.isJson) "data_owned.as_str()" else "data_owned.as_slice()"
@@ -391,14 +499,14 @@ object RsServiceWiringTranslator {
         val futArgs: List[String] = {
           val base    = List("&method_owned", dataRef, "&impl_clone")
           val withRt  = if (resolved.noErrors) base else base :+ "&rt_clone"
-          val withCtx = svcCtxField.fold(withRt)(_ => withRt :+ "svc_ctx_clone")
+          val withCtx = if (ctxActive || storedCtxField.isDefined) withRt :+ "svc_ctx_clone" else withRt
           withCtx :+ "&codec_ctx"
         }
         val futArgsStr = futArgs.mkString(", ")
         q"""let method_owned = method.clone();
            |let impl_clone = self.impl_.clone();
-           |$cloneRt$cloneCtx$dataOwn
-           |let codec_ctx = ctx.clone();
+           |$cloneRt$cloneStoredCtx$cloneInvokeCtx$dataOwn
+           |let codec_ctx = $codecCtxParam.clone();
            |Box::pin(async move {
            |    $invokerFn($futArgsStr).await
            |})""".stripMargin
@@ -406,8 +514,10 @@ object RsServiceWiringTranslator {
         val syncArgs: List[String] = {
           val base    = List("method", "data", "&self.impl_")
           val withRt  = if (resolved.noErrors) base else base :+ "&self.rt"
-          val withCtx = svcCtxField.fold(withRt)(f => withRt :+ s"self.${f._1}.clone()")
-          withCtx :+ "ctx"
+          val withCtx =
+            if (ctxActive) withRt :+ "ctx"
+            else storedCtxField.fold(withRt)(f => withRt :+ s"self.${f._1}.clone()")
+          withCtx :+ codecCtxParam
         }
         q"$invokerFn(${syncArgs.mkString(", ")})"
       }
@@ -428,12 +538,12 @@ object RsServiceWiringTranslator {
          |    }
          |}
          |
-         |impl$typeParamDecl $ifaceType<$retTypeStr> for $wrapperName$typeParamDecl
+         |impl$typeParamDecl $ifaceRef for $wrapperName$typeParamDecl
          |where
          |${whereBlock.shift(0).trim}
          |{
          |    fn service_name(&self) -> &str { "${spec.svcName}" }
-         |    fn invoke(&self, method: &$baboonMethodId, data: $wireTypeStr, ctx: &$baboonCodecContext) -> $retTypeStr {
+         |    fn invoke(&self, method: &$baboonMethodId, data: $wireTypeStr, ${invokeCtxParamDecl}$codecCtxParam: &$baboonCodecContext) -> $retTypeStr {
          |        ${body.shift(8).trim}
          |    }
          |}""".stripMargin
@@ -500,7 +610,7 @@ object RsServiceWiringTranslator {
          |    method: &$baboonMethodId,
          |    data: &str,
          |    ${implParam(svcType)},
-         |    ${ctxParamDecl}_ctx: &$baboonCodecContext,
+         |    ${ctxParamDecl}${codecCtxName(isJson = true)}: &$baboonCodecContext,
          |) -> Result<String, $baboonWiringError> {
          |    match method.method_name.as_str() {
          |        ${cases.shift(8).trim}
@@ -518,7 +628,7 @@ object RsServiceWiringTranslator {
             case Some(_) =>
               q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
                  |let mut out_buf = Vec::new();
-                 |$baboonBinEncode::encode_ueba(&result, ctx, &mut out_buf).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))?;
+                 |$baboonBinEncode::encode_ueba(&result, ${codecCtxName(isJson = false)}, &mut out_buf).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))?;
                  |Ok(out_buf)""".stripMargin
             case None =>
               q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
@@ -527,7 +637,7 @@ object RsServiceWiringTranslator {
 
           q""""${m.name.name}" => {
              |    let mut cursor = std::io::Cursor::new(data);
-             |    let decoded: $inFq = $baboonBinDecode::decode_ueba(ctx, &mut cursor).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), e))?;
+             |    let decoded: $inFq = $baboonBinDecode::decode_ueba(${codecCtxName(isJson = false)}, &mut cursor).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), e))?;
              |    ${encodeAndReturn.shift(4).trim}
              |}""".stripMargin
       }.join("\n")
@@ -536,7 +646,7 @@ object RsServiceWiringTranslator {
          |    method: &$baboonMethodId,
          |    data: &[u8],
          |    ${implParam(svcType)},
-         |    ctx: &$baboonCodecContext,
+         |    ${ctxParamDecl}${codecCtxName(isJson = false)}: &$baboonCodecContext,
          |) -> Result<Vec<u8>, $baboonWiringError> {
          |    match method.method_name.as_str() {
          |        ${cases.shift(8).trim}
@@ -665,12 +775,12 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub ${asyncKw}fn invoke_json_${toSnakeCase(svcName)}<Rt: $ibaboonServiceRt>$genericParam(
+      q"""pub ${asyncKw}fn invoke_json_${toSnakeCase(svcName)}$errorsFnGenericClause(
          |    method: &$baboonMethodId,
          |    data: &str,
          |    ${implParam(svcType)},
          |    rt: &Rt,
-         |    ${ctxParamDecl}_ctx: &$baboonCodecContext,
+         |    ${ctxParamDecl}${codecCtxName(isJson = true)}: &$baboonCodecContext,
          |) -> $wiringRetType {
          |    match method.method_name.as_str() {
          |        ${cases.shift(8).trim}
@@ -690,7 +800,7 @@ object RsServiceWiringTranslator {
           val decodeStep =
             q"""let input: ${ct(bweFq, inFq)} = {
                |    let mut cursor = std::io::Cursor::new(data);
-               |    match $baboonBinDecode::decode_ueba(ctx, &mut cursor) {
+               |    match $baboonBinDecode::decode_ueba(${codecCtxName(isJson = false)}, &mut cursor) {
                |        Ok(v) => rt.pure$pureHint(v),
                |        Err(e) => rt.fail($bweFq::DecoderFailed(method.clone(), e)),
                |    }
@@ -727,7 +837,7 @@ object RsServiceWiringTranslator {
                  |});
                  |rt.flat_map$flatMapHint(output, |v| {
                  |    let mut out_buf = Vec::new();
-                 |    match $baboonBinEncode::encode_ueba(&v, ctx, &mut out_buf) {
+                 |    match $baboonBinEncode::encode_ueba(&v, ${codecCtxName(isJson = false)}, &mut out_buf) {
                  |        Ok(()) => rt.pure$pureHint(out_buf),
                  |        Err(e) => rt.fail($bweFq::EncoderFailed(method.clone(), Box::new(e))),
                  |    }
@@ -767,12 +877,12 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub ${asyncKw}fn invoke_ueba_${toSnakeCase(svcName)}<Rt: $ibaboonServiceRt>$genericParam(
+      q"""pub ${asyncKw}fn invoke_ueba_${toSnakeCase(svcName)}$errorsFnGenericClause(
          |    method: &$baboonMethodId,
          |    data: &[u8],
          |    ${implParam(svcType)},
          |    rt: &Rt,
-         |    ctx: &$baboonCodecContext,
+         |    ${ctxParamDecl}${codecCtxName(isJson = false)}: &$baboonCodecContext,
          |) -> $wiringRetType {
          |    match method.method_name.as_str() {
          |        ${cases.shift(8).trim}
