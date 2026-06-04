@@ -10,10 +10,12 @@
  *     unconditionally on failure. No conditional guards around assertions.
  *
  * K1 validity tier (T7 §5.3 — structural-equality tier for Scala):
- *   - At tools/list each returned inputSchema is parsed through io.circe.parser.parse.
- *     A parse error throws immediately, proving the schema is well-formed Circe JSON.
- *     The parsed Json is then checked for structural equality against the reference
- *     inputSchema produced by the McpInputSchemaEmitter (same T5 emitter, same domain).
+ *   - At tools/list each returned inputSchema is:
+ *     (a) parsed through io.circe.parser.parse — proves well-formed Circe JSON;
+ *     (b) compared against the T7 §2.3 REFERENCE value embedded as a literal in this
+ *         test, via key-by-key recursive structural equality. `required` arrays are
+ *         compared as sets (§5.4). This is NOT a self-round-trip — it asserts the
+ *         emitter output matches an INDEPENDENT authoritative reference.
  *     Catches Circe codec-rendering divergence without a per-language JSON Schema
  *     validator (no AJV/NJsonSchema available in JVM-Scala).
  *
@@ -22,9 +24,14 @@
  *     for McpTools_nonexistent the assertions below would fail.
  *   - §4.2 (malformed decode → Channel-B isError=true): if isError were false the
  *     test would fail.
- *   - K1 structural equality: the parsed inputSchema is compared to the reference;
- *     any rendering divergence fails the test.
- *   - DELIBERATE-NEGATIVE-CONTROL (documented, not left active):
+ *   - K1 structural equality (schema structure): the parsed inputSchema for each tool
+ *     is compared against an independent reference; any rendering divergence fails.
+ *   - K1 negative control (schema STRUCTURE): a deliberately wrong reference for
+ *     McpTools_ping (extra field `"WRONG": true`) makes the structural comparison
+ *     fail, proving the K1 gate is not vacuous. This is documented and verified via
+ *     the `verifyNegativeControlFails` helper; after the test the correct reference
+ *     is used and the test passes.
+ *   - DELIBERATE-NEGATIVE-CONTROL (tool-name, documented, not left active):
  *     Replacing `assert(toolName(4) == "McpTools_ping")` with
  *     `assert(toolName(4) == "McpTools_WRONG")` makes the test fail, proving the
  *     position-4 name assertion is live.
@@ -226,31 +233,288 @@ class McpTests extends AnyFlatSpec with Matchers {
     }
   }
 
-  it should "parse each inputSchema as well-formed Circe JSON (K1 structural-equality tier)" in {
-    // K1: each inputSchema carried in the tool entry is a io.circe.Json value
-    // (already parsed at class-load time in McpToolsMcpServer). Here we
-    // round-trip it through noSpaces + parse to assert it survives serialisation
-    // intact — catches rendering divergence without a full JSON Schema validator.
+  // ---------------------------------------------------------------------------
+  // T7 §2.3 canonical reference inputSchemas (authoritative values).
+  // Source: docs/research/mcp-roundtrip-scenario.md §2.3 and
+  //         McpInputSchemaEmissionTest.scala (T5 golden).
+  // Parsed once at object initialisation; a parse failure indicates a defect in
+  // this test file (not in the generator under test).
+  // ---------------------------------------------------------------------------
+
+  private def parseRef(toolName: String, json: String): Json =
+    circeParseJson(json).fold(
+      err => throw new AssertionError(s"BUG in test: embedded reference JSON for '$toolName' did not parse: $err"),
+      identity,
+    )
+
+  private val refPing: Json = parseRef("McpTools_ping",
+    """{
+      |  "$schema": "https://json-schema.org/draft/2020-12/schema",
+      |  "type": "object",
+      |  "properties": {
+      |    "seqno": { "type": "integer", "format": "int32" },
+      |    "label": { "type": "string" }
+      |  },
+      |  "required": ["seqno", "label"]
+      |}""".stripMargin)
+
+  private val refListCollections: Json = parseRef("McpTools_listCollections",
+    """{
+      |  "$schema": "https://json-schema.org/draft/2020-12/schema",
+      |  "type": "object",
+      |  "properties": {
+      |    "tags":      { "type": "array", "items": { "type": "string" } },
+      |    "uniqueIds": { "type": "array", "items": { "type": "integer", "format": "int64" }, "uniqueItems": true },
+      |    "labels":    { "type": "object", "additionalProperties": { "type": "string" } },
+      |    "byColor":   {
+      |      "type": "array",
+      |      "items": {
+      |        "type": "object",
+      |        "required": ["key", "value"],
+      |        "properties": {
+      |          "key":   { "$ref": "#/$defs/mcp_stub_Color" },
+      |          "value": { "type": "string" }
+      |        }
+      |      }
+      |    }
+      |  },
+      |  "required": ["tags", "uniqueIds", "labels", "byColor"],
+      |  "$defs": {
+      |    "mcp_stub_Color": {
+      |      "type": "string",
+      |      "enum": ["Red", "Green", "Blue"]
+      |    }
+      |  }
+      |}""".stripMargin)
+
+  private val refSubmitComposite: Json = parseRef("McpTools_submitComposite",
+    """{
+      |  "$schema": "https://json-schema.org/draft/2020-12/schema",
+      |  "type": "object",
+      |  "properties": {
+      |    "nested":     { "$ref": "#/$defs/mcp_stub_Nested" },
+      |    "maybePoint": { "oneOf": [{ "$ref": "#/$defs/mcp_stub_Point" }, { "type": "null" }] },
+      |    "color":      { "$ref": "#/$defs/mcp_stub_Color" },
+      |    "fancy":      { "type": "string" }
+      |  },
+      |  "required": ["nested", "color", "fancy"],
+      |  "$defs": {
+      |    "mcp_stub_Color": {
+      |      "type": "string",
+      |      "enum": ["Red", "Green", "Blue"]
+      |    },
+      |    "mcp_stub_Nested": {
+      |      "type": "object",
+      |      "properties": {
+      |        "point": { "$ref": "#/$defs/mcp_stub_Point" },
+      |        "color": { "$ref": "#/$defs/mcp_stub_Color" },
+      |        "label": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+      |      },
+      |      "required": ["point", "color"]
+      |    },
+      |    "mcp_stub_Point": {
+      |      "type": "object",
+      |      "properties": {
+      |        "x": { "type": "integer", "format": "int32" },
+      |        "y": { "type": "integer", "format": "int32" }
+      |      },
+      |      "required": ["x", "y"]
+      |    }
+      |  }
+      |}""".stripMargin)
+
+  private val refProcessShape: Json = parseRef("McpTools_processShape",
+    """{
+      |  "$schema": "https://json-schema.org/draft/2020-12/schema",
+      |  "type": "object",
+      |  "properties": {
+      |    "shape": { "$ref": "#/$defs/mcp_stub_Shape" },
+      |    "tree":  { "$ref": "#/$defs/mcp_stub_Tree" }
+      |  },
+      |  "required": ["shape", "tree"],
+      |  "$defs": {
+      |    "mcp_stub_Shape": {
+      |      "oneOf": [
+      |        { "$ref": "#/$defs/mcp_stub_Shape_Circle" },
+      |        { "$ref": "#/$defs/mcp_stub_Shape_Rect" }
+      |      ]
+      |    },
+      |    "mcp_stub_Shape_Circle": {
+      |      "type": "object",
+      |      "properties": {
+      |        "radius": { "type": "number", "format": "double" }
+      |      },
+      |      "required": ["radius"]
+      |    },
+      |    "mcp_stub_Shape_Rect": {
+      |      "type": "object",
+      |      "properties": {
+      |        "w": { "type": "number", "format": "double" },
+      |        "h": { "type": "number", "format": "double" }
+      |      },
+      |      "required": ["w", "h"]
+      |    },
+      |    "mcp_stub_Tree": {
+      |      "type": "object",
+      |      "properties": {
+      |        "value":    { "type": "integer", "format": "int32" },
+      |        "left":     { "oneOf": [{ "$ref": "#/$defs/mcp_stub_Tree" }, { "type": "null" }] },
+      |        "children": { "type": "array", "items": { "$ref": "#/$defs/mcp_stub_Tree" } }
+      |      },
+      |      "required": ["value", "children"]
+      |    }
+      |  }
+      |}""".stripMargin)
+
+  private val refPagePoints: Json = parseRef("McpTools_pagePoints",
+    """{
+      |  "$schema": "https://json-schema.org/draft/2020-12/schema",
+      |  "type": "object",
+      |  "properties": {
+      |    "page": { "$ref": "#/$defs/mcp_stub_PointPage" }
+      |  },
+      |  "required": ["page"],
+      |  "$defs": {
+      |    "mcp_stub_Point": {
+      |      "type": "object",
+      |      "properties": {
+      |        "x": { "type": "integer", "format": "int32" },
+      |        "y": { "type": "integer", "format": "int32" }
+      |      },
+      |      "required": ["x", "y"]
+      |    },
+      |    "mcp_stub_PointPage": {
+      |      "type": "object",
+      |      "properties": {
+      |        "items": { "type": "array", "items": { "$ref": "#/$defs/mcp_stub_Point" } },
+      |        "total": { "type": "integer", "format": "int32", "minimum": 0 }
+      |      },
+      |      "required": ["items", "total"]
+      |    }
+      |  }
+      |}""".stripMargin)
+
+  // ---------------------------------------------------------------------------
+  // K1 structural-equality helpers (T7 §5.4).
+  // Circe `Json` object equality is key-order-insensitive (backed by a Map).
+  // `required` arrays may appear in any order at the wire level; we normalise
+  // by sorting both sides before comparing.
+  // ---------------------------------------------------------------------------
+
+  /** Recursively normalise a `Json` value so that every array named `"required"`
+    * (anywhere in the JSON tree) is sorted lexicographically. This makes the
+    * structural comparison order-insensitive for `required` per T7 §5.4.
+    */
+  private def normaliseRequired(j: Json): Json =
+    j.asObject match {
+      case None => j.asArray match {
+        case None    => j
+        case Some(a) => Json.fromValues(a.map(normaliseRequired))
+      }
+      case Some(obj) =>
+        // Circe JsonObject.toIterable yields (String, Json) pairs in insertion order.
+        val normalised: List[(String, Json)] = obj.toIterable.map {
+          case (k, v) =>
+            if (k == "required")
+              k -> v.asArray.map(arr => Json.fromValues(arr.sortBy(_.asString.getOrElse(v.noSpaces)))).getOrElse(normaliseRequired(v))
+            else
+              k -> normaliseRequired(v)
+        }.toList
+        Json.obj(normalised*)
+    }
+
+  /** Assert that the inputSchema returned by the server is structurally equal to
+    * the given T7 §2.3 reference. Both sides are:
+    *   (a) Circe `Json` values — so key ordering is irrelevant for objects;
+    *   (b) normalised via `normaliseRequired` — so `required` array order is
+    *       irrelevant (T7 §5.4).
+    */
+  // nowarn: assert() returns Assertion but this helper returns Unit — the
+  // discarded Assertion is intentional (helper wraps assertion for clarity).
+  @scala.annotation.nowarn("cat=w-flag-value-discard")
+  private def assertSchemaEqualsReference(toolName: String, actual: Json, reference: Json): Unit = {
+    val normActual = normaliseRequired(actual)
+    val normRef    = normaliseRequired(reference)
+    assert(
+      normActual == normRef,
+      s"""K1 structural equality FAILED for tool '$toolName'.
+         |
+         |Actual (normalised):
+         |${normActual.spaces2}
+         |
+         |Expected reference (normalised):
+         |${normRef.spaces2}
+         |""".stripMargin,
+    )
+  }
+
+  it should "parse each inputSchema as well-formed Circe JSON — part (a): well-formedness" in {
+    // K1 part (a): each inputSchema carried in the tool entry is serialised and
+    // re-parsed. A parse error throws immediately, proving the schema is
+    // well-formed Circe JSON. This keeps the codec-divergence coverage even if
+    // the reference comparison (part b) passes.
     val (tools, _) = initAndList()
     for (t <- tools) {
-      val schema = t.hcursor.downField("inputSchema").as[Json].getOrElse(fail("inputSchema missing"))
+      val schema     = t.hcursor.downField("inputSchema").as[Json].getOrElse(fail("inputSchema missing"))
       val serialised = schema.noSpaces
       val reparsed   = circeParseJson(serialised)
-      assert(reparsed.isRight, s"K1: inputSchema does not round-trip through Circe. Error: ${reparsed.left.toOption}. Serialised: $serialised")
-      // Structural equality: reparsed must equal the original.
-      val reparsedJson = reparsed.toOption.get
-      assert(reparsedJson == schema, s"K1: inputSchema round-trip changed structure.\nBefore: $serialised\nAfter: ${reparsedJson.noSpaces}")
+      assert(
+        reparsed.isRight,
+        s"K1(a): inputSchema does not survive Circe serialise+parse. Error: ${reparsed.left.toOption}. Serialised: $serialised",
+      )
     }
   }
 
-  it should "have structurally equal inputSchemas (K1 negative control — at least 5 schemas present)" in {
+  it should "match T7 §2.3 reference for each tool — part (b): structural equality (K1)" in {
+    // K1 part (b): each returned inputSchema is compared against the
+    // INDEPENDENT T7 §2.3 reference value embedded in this test (NOT a
+    // self-round-trip). The references come from
+    // docs/research/mcp-roundtrip-scenario.md §2.3 / McpInputSchemaEmissionTest.
+    // Circe Json object equality is key-order-insensitive; `required` arrays are
+    // normalised to sorted order before comparison (T7 §5.4).
     val (tools, _) = initAndList()
-    // K1 negative control: ensure we actually check all 5 schemas (not vacuously green).
-    assert(tools.size == 5, s"K1 negative control: expected 5 tools, got ${tools.size}")
-    // Verify the ping schema has both seqno and label required (negative control for required).
-    val pingSchema = tools(4).hcursor.downField("inputSchema").as[Json].getOrElse(fail("ping inputSchema missing"))
-    val required   = pingSchema.hcursor.downField("required").as[List[String]].getOrElse(fail("ping schema required missing"))
-    required should contain allOf ("seqno", "label")
+
+    def inputSchema(i: Int): Json =
+      tools(i).hcursor.downField("inputSchema").as[Json].getOrElse(fail(s"tools[$i].inputSchema missing"))
+
+    assertSchemaEqualsReference("McpTools_listCollections", inputSchema(0), refListCollections)
+    assertSchemaEqualsReference("McpTools_submitComposite", inputSchema(1), refSubmitComposite)
+    assertSchemaEqualsReference("McpTools_processShape",    inputSchema(2), refProcessShape)
+    assertSchemaEqualsReference("McpTools_pagePoints",      inputSchema(3), refPagePoints)
+    assertSchemaEqualsReference("McpTools_ping",            inputSchema(4), refPing)
+  }
+
+  it should "fail K1 structural equality when given a deliberately wrong reference (negative control)" in {
+    // NEGATIVE CONTROL for K1 schema-structure gate (T7 §5.3):
+    // A reference with an extra field ("WRONG": true) must NOT match the actual
+    // ping schema. This proves `assertSchemaEqualsReference` is not vacuously true
+    // and that the structural-equality gate can detect any schema alteration.
+    //
+    // The wrongRef has an extra top-level key "WRONG" that the emitter never
+    // produces. assertSchemaEqualsReference must throw for this wrong reference.
+    val wrongRef: Json = parseRef("wrong_ref",
+      """{
+        |  "$schema": "https://json-schema.org/draft/2020-12/schema",
+        |  "type": "object",
+        |  "properties": {
+        |    "seqno": { "type": "integer", "format": "int32" },
+        |    "label": { "type": "string" }
+        |  },
+        |  "required": ["seqno", "label"],
+        |  "WRONG": true
+        |}""".stripMargin)
+
+    val (tools, _) = initAndList()
+    val pingSchema  = tools(4).hcursor.downField("inputSchema").as[Json].getOrElse(fail("tools[4].inputSchema missing"))
+
+    // The negative control: assertSchemaEqualsReference MUST throw (fail) for the wrong reference.
+    val threw = try {
+      assertSchemaEqualsReference("McpTools_ping (negative-control)", pingSchema, wrongRef)
+      false // no exception → control failed to fire
+    } catch {
+      case _: org.scalatest.exceptions.TestFailedException => true // expected: assertion fired
+    }
+    assert(threw, "K1 negative control FAILED: assertSchemaEqualsReference accepted a wrong reference (extra 'WRONG' key), proving the gate is vacuous")
   }
 
   // ---------------------------------------------------------------------------
