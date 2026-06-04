@@ -2719,6 +2719,7 @@ dep action.test-scala-mcp
 dep action.test-rust-mcp
 dep action.test-kotlin-mcp
 dep action.test-java-mcp
+dep action.test-dart-mcp
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
@@ -2924,6 +2925,72 @@ $BABOON_BIN \
 
 pushd "$TEST_DIR/jv-client"
 mvn -q compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-dart-mcp
+
+Generate code for the Dart MCP round-trip overlay test (T16).
+Uses the mcp-stub-ok model + `--dt-generate-mcp-server=true` (no-errors mode) and
+overlays `test/dart-stub-mcp-overlay/` on top of a dt-stub copy.
+Applies the runtime-file relocation post-codegen step (mv runtime files into
+packages/baboon_runtime/lib/) matching the Dart regular-adt harness.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-dart-mcp"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/dt-stub"
+
+rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
+  ./test/dt-stub/ "$TEST_DIR/dt-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --lock-file=./target/baboon-dart-mcp.lock \
+  :dart \
+  --output "$TEST_DIR/dt-stub/lib" \
+  --dt-write-evolution-dict=true \
+  --dt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --dt-generate-mcp-server=true
+
+# Move Dart runtime files into the baboon_runtime package (same as regular-adt)
+mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_mcp_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+
+# Apply MCP overlay (test file + updated pubspec with collection dep)
+rsync -a ./test/dart-stub-mcp-overlay/ "$TEST_DIR/dt-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-dart-mcp
+
+Run the Dart MCP round-trip overlay tests (T16).
+Validates initialize/tools-list/tools-call + error paths; runs K1 structural-equality
+validation on every returned inputSchema (each inputSchema is parsed via dart:convert
+`jsonDecode` and compared structurally to the T7 §2.3 reference value).
+
+```bash
+TEST_DIR="${action.test-gen-dart-mcp.test_dir}"
+pushd "$TEST_DIR/dt-stub"
+dart pub get
+# Analyze only the generated lib and MCP test directory (runtime/ tests reference
+# the full model which is not generated in the MCP-only pass).
+dart analyze --fatal-warnings lib/ test/mcp/
+dart test test/mcp/mcp_tests.dart
 popd
 
 ret success:bool=true
