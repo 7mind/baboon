@@ -9,23 +9,22 @@
 //     throw unconditionally on failure. No debug-only assertions are used.
 //
 // Jackson/kotlinx-serialization JSON Schema validation tier (K1 — T14 tier):
-//   - Each returned inputSchema is round-tripped through kotlinx-serialization
-//     Json.parseToJsonElement. If the schema were malformed JSON the parse would
-//     throw, proving it is well-formed.
-//   - Structural equality to the T7 reference: we compare the serialized
-//     tool.name strings and schema `$schema` fields, and validate conforming
-//     instances to exercise the constraint logic.
+//   Part (a) — well-formedness: each returned inputSchema round-trips through
+//     kotlinx-serialization Json.parseToJsonElement without throwing, proving it
+//     is well-formed JSON.
+//   Part (b) — structural equality: each returned inputSchema is asserted
+//     STRUCTURALLY EQUAL to the corresponding T7 §2.3 reference value (key-by-key
+//     recursive comparison). `required` arrays are compared as SETS per §5.4.
+//     `$defs` keys are compared by lookup, not by key order.
 //
 // Negative controls (T7 §5.2):
 //   - §4.1 (unknown tool → -32602): if the server returned success for
 //     McpTools_nonexistent the assertions below would fail.
 //   - §4.2 (malformed decode → Channel-B isError=true): if isError were false
 //     this test would fail.
-//   - Structural-equality negative control: replacing "McpTools_ping" with
-//     "McpTools_WRONG" in the position-4 assertion makes the test fail.
-//   - Required-field negative control: sending `seqno` only (missing `label`)
-//     does NOT trigger Channel-B for ping (only missing seqno does); the test
-//     below explicitly triggers missing seqno.
+//   - Schema structural-equality negative control (sec2_k1_negativeControl):
+//     a deliberately-wrong reference must make the comparator return false;
+//     the test FAILS if the comparator erroneously returns true.
 //
 // Channel-B trigger (§4.2): send `McpTools_ping` with missing required field
 //   `seqno`. The generated `ping.In_JsonCodec.decode` accesses
@@ -40,6 +39,8 @@ import baboon.runtime.shared.JsonRpcRequest
 import baboon.runtime.shared.JsonRpcResponse
 import baboon.runtime.shared.McpSession
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -60,10 +61,163 @@ import mcp.stub.mcptools.processshape.Out as ProcessShapeOut
 import mcp.stub.mcptools.pagepoints.Out as PagePointsOut
 import mcp.stub.mcptools.ping.Out as PingOut
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+
+// ---------------------------------------------------------------------------
+// T7 §2.3 reference inputSchema values (authoritative: McpInputSchemaEmitter
+// golden test McpInputSchemaEmissionTest.scala + mcp-roundtrip-scenario.md).
+// Dollar signs in JSON keys ($schema, $defs, $ref) are escaped as \$ in
+// Kotlin string literals to prevent string-interpolation treatment.
+// ---------------------------------------------------------------------------
+
+// Tool 1: McpTools_listCollections — list/set/map[str]/map[enum-key]
+private val REF_LIST_COLLECTIONS = Json.parseToJsonElement(
+    "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+    "\"type\":\"object\"," +
+    "\"properties\":{" +
+      "\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}," +
+      "\"uniqueIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"format\":\"int64\"},\"uniqueItems\":true}," +
+      "\"labels\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}," +
+      "\"byColor\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"key\",\"value\"]," +
+        "\"properties\":{\"key\":{\"\$ref\":\"#/\$defs/mcp_stub_Color\"},\"value\":{\"type\":\"string\"}}}}" +
+    "}," +
+    "\"required\":[\"tags\",\"uniqueIds\",\"labels\",\"byColor\"]," +
+    "\"\$defs\":{\"mcp_stub_Color\":{\"type\":\"string\",\"enum\":[\"Red\",\"Green\",\"Blue\"]}}" +
+    "}"
+)
+
+// Tool 2: McpTools_submitComposite — nested DTO + opt[DTO] + enum + foreign-string
+private val REF_SUBMIT_COMPOSITE = Json.parseToJsonElement(
+    "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+    "\"type\":\"object\"," +
+    "\"properties\":{" +
+      "\"nested\":{\"\$ref\":\"#/\$defs/mcp_stub_Nested\"}," +
+      "\"maybePoint\":{\"oneOf\":[{\"\$ref\":\"#/\$defs/mcp_stub_Point\"},{\"type\":\"null\"}]}," +
+      "\"color\":{\"\$ref\":\"#/\$defs/mcp_stub_Color\"}," +
+      "\"fancy\":{\"type\":\"string\"}" +
+    "}," +
+    "\"required\":[\"nested\",\"color\",\"fancy\"]," +
+    "\"\$defs\":{" +
+      "\"mcp_stub_Color\":{\"type\":\"string\",\"enum\":[\"Red\",\"Green\",\"Blue\"]}," +
+      "\"mcp_stub_Nested\":{\"type\":\"object\",\"properties\":{" +
+        "\"point\":{\"\$ref\":\"#/\$defs/mcp_stub_Point\"}," +
+        "\"color\":{\"\$ref\":\"#/\$defs/mcp_stub_Color\"}," +
+        "\"label\":{\"oneOf\":[{\"type\":\"string\"},{\"type\":\"null\"}]}" +
+      "},\"required\":[\"point\",\"color\"]}," +
+      "\"mcp_stub_Point\":{\"type\":\"object\",\"properties\":{" +
+        "\"x\":{\"type\":\"integer\",\"format\":\"int32\"}," +
+        "\"y\":{\"type\":\"integer\",\"format\":\"int32\"}" +
+      "},\"required\":[\"x\",\"y\"]}" +
+    "}" +
+    "}"
+)
+
+// Tool 3: McpTools_processShape — ADT oneOf + recursive Tree
+private val REF_PROCESS_SHAPE = Json.parseToJsonElement(
+    "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+    "\"type\":\"object\"," +
+    "\"properties\":{" +
+      "\"shape\":{\"\$ref\":\"#/\$defs/mcp_stub_Shape\"}," +
+      "\"tree\":{\"\$ref\":\"#/\$defs/mcp_stub_Tree\"}" +
+    "}," +
+    "\"required\":[\"shape\",\"tree\"]," +
+    "\"\$defs\":{" +
+      "\"mcp_stub_Shape\":{\"oneOf\":[{\"\$ref\":\"#/\$defs/mcp_stub_Shape_Circle\"},{\"\$ref\":\"#/\$defs/mcp_stub_Shape_Rect\"}]}," +
+      "\"mcp_stub_Tree\":{\"type\":\"object\",\"properties\":{" +
+        "\"value\":{\"type\":\"integer\",\"format\":\"int32\"}," +
+        "\"left\":{\"oneOf\":[{\"\$ref\":\"#/\$defs/mcp_stub_Tree\"},{\"type\":\"null\"}]}," +
+        "\"children\":{\"type\":\"array\",\"items\":{\"\$ref\":\"#/\$defs/mcp_stub_Tree\"}}" +
+      "},\"required\":[\"value\",\"children\"]}," +
+      "\"mcp_stub_Shape_Circle\":{\"type\":\"object\",\"properties\":{" +
+        "\"radius\":{\"type\":\"number\",\"format\":\"double\"}" +
+      "},\"required\":[\"radius\"]}," +
+      "\"mcp_stub_Shape_Rect\":{\"type\":\"object\",\"properties\":{" +
+        "\"w\":{\"type\":\"number\",\"format\":\"double\"}," +
+        "\"h\":{\"type\":\"number\",\"format\":\"double\"}" +
+      "},\"required\":[\"w\",\"h\"]}" +
+    "}" +
+    "}"
+)
+
+// Tool 4: McpTools_pagePoints — template-instantiation alias PointPage = Page[Point]
+private val REF_PAGE_POINTS = Json.parseToJsonElement(
+    "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+    "\"type\":\"object\"," +
+    "\"properties\":{" +
+      "\"page\":{\"\$ref\":\"#/\$defs/mcp_stub_PointPage\"}" +
+    "}," +
+    "\"required\":[\"page\"]," +
+    "\"\$defs\":{" +
+      "\"mcp_stub_Point\":{\"type\":\"object\",\"properties\":{" +
+        "\"x\":{\"type\":\"integer\",\"format\":\"int32\"}," +
+        "\"y\":{\"type\":\"integer\",\"format\":\"int32\"}" +
+      "},\"required\":[\"x\",\"y\"]}," +
+      "\"mcp_stub_PointPage\":{\"type\":\"object\",\"properties\":{" +
+        "\"items\":{\"type\":\"array\",\"items\":{\"\$ref\":\"#/\$defs/mcp_stub_Point\"}}," +
+        "\"total\":{\"type\":\"integer\",\"format\":\"int32\",\"minimum\":0}" +
+      "},\"required\":[\"items\",\"total\"]}" +
+    "}" +
+    "}"
+)
+
+// Tool 5: McpTools_ping — scalar-only, no $defs
+private val REF_PING = Json.parseToJsonElement(
+    "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+    "\"type\":\"object\"," +
+    "\"properties\":{" +
+      "\"seqno\":{\"type\":\"integer\",\"format\":\"int32\"}," +
+      "\"label\":{\"type\":\"string\"}" +
+    "}," +
+    "\"required\":[\"seqno\",\"label\"]" +
+    "}"
+)
+
+// ---------------------------------------------------------------------------
+// Structural equality helper (T7 §5.4):
+//   - JsonObject: compare by key lookup (key-order-insensitive).
+//   - JsonArray for key "required": compare as a set (order-insensitive).
+//   - All other JsonArrays: compare element-by-element (ordered).
+//   - JsonPrimitive / JsonNull: standard equality.
+// The `inRequiredKey` flag propagates only one level down (the array value
+// of the "required" key is treated as a set; its elements are primitives and
+// not subject to further special handling).
+// ---------------------------------------------------------------------------
+private fun schemasStructurallyEqual(actual: JsonElement, expected: JsonElement): Boolean =
+    schemasStructurallyEqualImpl(actual, expected, inRequiredKey = false)
+
+private fun schemasStructurallyEqualImpl(
+    actual: JsonElement,
+    expected: JsonElement,
+    inRequiredKey: Boolean,
+): Boolean {
+    if (inRequiredKey) {
+        // Both must be arrays; compare as sets of primitive strings.
+        if (actual !is JsonArray || expected !is JsonArray) return false
+        val aSet = actual.map { it.toString() }.toSet()
+        val eSet = expected.map { it.toString() }.toSet()
+        return aSet == eSet
+    }
+    return when {
+        actual is JsonObject && expected is JsonObject -> {
+            if (actual.size != expected.size) return false
+            expected.entries.all { (key, expVal) ->
+                val actVal = actual[key] ?: return false
+                schemasStructurallyEqualImpl(actVal, expVal, inRequiredKey = key == "required")
+            }
+        }
+        actual is JsonArray && expected is JsonArray -> {
+            if (actual.size != expected.size) return false
+            actual.zip(expected).all { (a, e) ->
+                schemasStructurallyEqualImpl(a, e, inRequiredKey = false)
+            }
+        }
+        else -> actual == expected
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Stub McpTools service: every method returns ok=true (T7 §3 convention).
@@ -205,7 +359,7 @@ class McpTests {
     }
 
     // ---------------------------------------------------------------------------
-    // §2 — tools/list + inputSchema validation (K1 tier — Jackson JSON round-trip)
+    // §2 — tools/list + inputSchema validation (K1 tier)
     // ---------------------------------------------------------------------------
 
     @Test
@@ -249,51 +403,84 @@ class McpTests {
 
     @Test
     fun sec2_k1_allInputSchemas_areWellFormedJson_viaKotlinxSerialization() {
-        // K1 structural-equality check: each inputSchema must parse as well-formed
-        // JSON through kotlinx-serialization Json.parseToJsonElement. A malformed
-        // schema would cause a SerializationException here.
+        // K1 part (a) — well-formedness gate: each inputSchema must parse through
+        // kotlinx-serialization Json.parseToJsonElement without throwing.
+        // A malformed schema would cause a SerializationException here.
         val (tools, _) = initAndList()
         for (t in tools) {
             val schemaJson = t["inputSchema"]!!.toString()
             // Must not throw — proves the schema is well-formed JSON.
             val reparsed = Json.parseToJsonElement(schemaJson)
             assertNotNull(reparsed, "Tool ${t["name"]}: schema must not be null after re-parse")
-            // Structural equality: re-serialized must equal original.
-            assertEquals(
-                schemaJson,
-                reparsed.toString(),
-                "Tool ${t["name"]}: structural equality to T7 reference (round-trip identity)",
+        }
+    }
+
+    @Test
+    fun sec2_k1_allFiveTools_structuralEqualityToT7Reference() {
+        // K1 part (b) — structural equality to T7 §2.3 reference.
+        // Each returned inputSchema is parsed via kotlinx-serialization
+        // (codec-divergence coverage) and compared key-by-key recursively
+        // to the embedded T7 reference JsonElement.
+        // "required" arrays are compared as SETS per T7 §5.4.
+        // "$defs" keys are compared by lookup (key-order-insensitive via JsonObject).
+        val (tools, _) = initAndList()
+
+        val references = listOf(
+            REF_LIST_COLLECTIONS,  // tools[0] = McpTools_listCollections
+            REF_SUBMIT_COMPOSITE,  // tools[1] = McpTools_submitComposite
+            REF_PROCESS_SHAPE,     // tools[2] = McpTools_processShape
+            REF_PAGE_POINTS,       // tools[3] = McpTools_pagePoints
+            REF_PING,              // tools[4] = McpTools_ping
+        )
+
+        for (i in 0..4) {
+            val toolName = tools[i]["name"]!!.jsonPrimitive.content
+            // Re-parse through kotlinx-serialization to exercise codec round-trip.
+            val actual = Json.parseToJsonElement(tools[i]["inputSchema"]!!.toString())
+            val expected = references[i]
+            assertTrue(
+                schemasStructurallyEqual(actual, expected),
+                "Tool $toolName (index $i): inputSchema is not structurally equal to T7 §2.3 reference.\n" +
+                "  actual:   ${tools[i]["inputSchema"]}\n" +
+                "  expected: $expected",
             )
         }
     }
 
     @Test
-    fun sec2_k1_tool4_ping_structuralEqualityToT7Reference() {
-        // K1 structural equality check: the inputSchema for McpTools_ping must match
-        // the expected T7 reference schema structure. If the emitter were to produce a
-        // different field order or type, this assertion would fail.
-        val (tools, _) = initAndList()
-        val pingSchema = tools[4]["inputSchema"]!!.jsonObject
-
-        // $schema must be Draft 2020-12
-        assertEquals(
-            "https://json-schema.org/draft/2020-12/schema",
-            pingSchema["\$schema"]!!.jsonPrimitive.content,
+    fun sec2_k1_negativeControl_wrongReferenceDetectedByComparator() {
+        // NEGATIVE CONTROL (T7 §5.2 / schema structure):
+        // Asserts that the structural comparator DETECTS a wrong reference.
+        // If schemasStructurallyEqual erroneously returns true for an incorrect
+        // schema, this test FAILS — proving the comparator is live.
+        //
+        // Wrong reference: ping schema with an extra top-level field "extra":"bad".
+        val wrongRef = Json.parseToJsonElement(
+            "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+            "\"type\":\"object\"," +
+            "\"properties\":{" +
+              "\"seqno\":{\"type\":\"integer\",\"format\":\"int32\"}," +
+              "\"label\":{\"type\":\"string\"}" +
+            "}," +
+            "\"required\":[\"seqno\",\"label\"]," +
+            "\"extra\":\"bad\"" +
+            "}"
         )
-        // type must be "object"
-        assertEquals("object", pingSchema["type"]!!.jsonPrimitive.content)
-        // properties must contain seqno and label
-        val props = pingSchema["properties"]!!.jsonObject
-        assertNotNull(props["seqno"], "ping schema must have 'seqno' property")
-        assertNotNull(props["label"], "ping schema must have 'label' property")
-        // required must contain both
-        val required = pingSchema["required"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
-        assertTrue(required.contains("seqno"), "seqno must be required")
-        assertTrue(required.contains("label"), "label must be required")
-        // seqno must be integer/int32
-        assertEquals("integer", props["seqno"]!!.jsonObject["type"]!!.jsonPrimitive.content)
-        // label must be string
-        assertEquals("string", props["label"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        val (tools, _) = initAndList()
+        val actualPing = Json.parseToJsonElement(tools[4]["inputSchema"]!!.toString())
+
+        // The comparator MUST return false for the wrong reference.
+        assertFalse(
+            schemasStructurallyEqual(actualPing, wrongRef),
+            "NEGATIVE CONTROL FAILED: schemasStructurallyEqual returned true for a deliberately-wrong " +
+            "reference (extra field 'extra'). The comparator is not functioning correctly.",
+        )
+
+        // And MUST return true for the correct reference.
+        assertTrue(
+            schemasStructurallyEqual(actualPing, REF_PING),
+            "Positive case failed after negative control: ping schema must equal REF_PING.",
+        )
     }
 
     // ---------------------------------------------------------------------------
