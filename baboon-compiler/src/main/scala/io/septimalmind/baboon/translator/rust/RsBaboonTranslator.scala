@@ -31,6 +31,26 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       runtime    <- sharedRuntime()
       fixture    <- sharedFixture()
       testHelper <- sharedTestHelper()
+      // Generate MCP sources early so that the per-service and runtime files
+      // are included in the module-declaration pass (generateModFiles /
+      // generateLibRs). Without this, `baboon_mcp_server.rs` and the
+      // per-service `*_mcp_server.rs` files are absent from `lib.rs` and the
+      // enclosing `mod.rs`, causing `cargo build` to ignore them.
+      mcpSrcs    <- if (target.language.generateMcpServer) mcpHook.generateMcpServer(family) else F.pure(Sources(Map.empty))
+
+      // Convert MCP OutputFile entries to RsDefnTranslator.Output so they
+      // flow through generateModFiles/generateLibRs. They are verbatim
+      // (doNotModify = true) — the content is already rendered text.
+      mcpOutputs = mcpSrcs.files.toList.map {
+        case (path, of) =>
+          RsDefnTranslator.Output(
+            path,
+            TextTree.verbatim(of.content),
+            RsValue.RsCrateId(izumi.fundamentals.collections.nonempty.NEList("crate")),
+            of.product,
+            doNotModify = true,
+          )
+      }
 
       // Detect type/namespace conflicts: `foo.rs` conflicts with directory `foo/`
       // In Rust you can't have both — merge the type content into `foo/mod.rs`
@@ -47,9 +67,9 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       conflictPaths = conflicting.map(_.path).toSet
       normal        = translated.filterNot(o => conflictPaths.contains(o.path))
 
-      allModFiles <- generateModFiles(translated, conflicting)
+      allModFiles <- generateModFiles(translated ++ mcpOutputs.filter(!_.isModFile), conflicting)
       modFiles     = allModFiles.filterNot(_.path == "mod.rs")
-      allEmitted   = normal ++ runtime ++ fixture ++ testHelper ++ modFiles
+      allEmitted   = normal ++ runtime ++ fixture ++ testHelper ++ modFiles ++ mcpOutputs
       libFile      = generateLibRs(allEmitted)
       rootMod      = generateRootMod(allEmitted)
       cargoToml    = generateCargoToml(family)
@@ -58,10 +78,9 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
       }
-      unique  <- F.fromEither(rendered.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))))
-      mcpSrcs <- if (target.language.generateMcpServer) mcpHook.generateMcpServer(family) else F.pure(Sources(Map.empty))
+      unique <- F.fromEither(rendered.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))))
     } yield {
-      Sources(unique ++ mcpSrcs.files)
+      Sources(unique)
     }
   }
 

@@ -1,0 +1,200 @@
+package io.septimalmind.baboon.tests
+
+import distage.plugins.PluginBase
+import io.septimalmind.baboon.*
+import io.septimalmind.baboon.CompilerTarget.RsTarget
+import io.septimalmind.baboon.parser.model.FSPath
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
+import io.septimalmind.baboon.translator.BaboonAbstractTranslator
+import io.septimalmind.baboon.typer.model.BaboonFamily
+import izumi.distage.plugins.PluginConfig
+import izumi.distage.testkit.model.TestConfig
+import izumi.functional.bio.Error2
+import izumi.functional.bio.unsafe.UnsafeInstances
+import izumi.fundamentals.collections.nonempty.{NEList, NEString}
+import izumi.fundamentals.platform.files.IzFiles
+import izumi.fundamentals.platform.resources.IzResources
+import izumi.reflect.TagKK
+
+/** T13 codegen-shape test for the Rust MCP server generator.
+  *
+  * Drives the real `translate` path with `--rust-generate-mcp-server=true`, so the
+  * T6 dispatch seam invokes [[io.septimalmind.baboon.translator.rust.RsMcpServerGenerator]],
+  * and asserts the emitted Rust MCP server shape for the locked K6 stub model
+  * (`mcp-stub-ok`): the additive runtime file, the per-service dispatch struct,
+  * the transport-abstract `handle` (delegated via BaboonMcpServerBase, no baked-in I/O),
+  * the tool registry with the 5 `McpTools_*` tool names in declaration order, and the
+  * inputSchema wired from the T5 emitter.
+  *
+  * Mirrors `TypeScriptMcpServerEmissionTest` (T8) and `CSharpMcpServerEmissionTest` (T10),
+  * adapted for Rust snake_case conventions with `serde_json::json!` schema literals.
+  */
+final class RustMcpServerEmissionTest extends RustMcpServerEmissionTestBase[Either]
+
+abstract class RustMcpServerEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] extends BaboonTest[F] {
+
+  private def rsTarget(mcp: Boolean): RsTarget = RsTarget(
+    id = "Rust",
+    output = OutputOptions(
+      safeToRemoveExtensions = Set.empty,
+      runtime                = RuntimeGenOpt.With,
+      generateConversions    = true,
+      output                 = FSPath.parse(NEString.unsafeFrom("./target/baboon-scalatests-rs-mcp/")),
+      fixturesOutput         = None,
+      testsOutput            = None,
+    ),
+    generic = GenericOptions(
+      codecTestIterations = 0
+    ),
+    language = RsOptions(
+      writeEvolutionDict          = false,
+      wrappedAdtBranchCodecs      = false,
+      generateJsonCodecs          = true,
+      generateUebaCodecs          = true,
+      generateJsonCodecsByDefault = true,
+      generateUebaCodecsByDefault = true,
+      serviceResult               = ServiceResultConfig.rustDefault,
+      serviceContext              = ServiceContextConfig.default,
+      pragmas                     = Map.empty,
+      generateDomainFacade        = false,
+      asyncServices               = false,
+      cratePrefix                 = "crate",
+      reexportMode                = "selective",
+      edition                     = "2021",
+      generateMcpServer           = mcp,
+    ),
+  )
+
+  private def moduleFor(target: RsTarget): distage.Module = {
+    val baseModule =
+      new BaboonModuleJvm[Either](
+        CompilerOptions(
+          debug                    = false,
+          individualInputs         = Set.empty,
+          directoryInputs          = Set(FSPath.parse(NEString.unsafeFrom("./baboon-compiler/src/test/resources/baboon/mcp-stub-ok"))),
+          metaWriteEvolutionJsonTo = None,
+          lockFile                 = Some(FSPath.parse(NEString.unsafeFrom("./target/baboon.lock"))),
+          emitOnly                 = None,
+          targets                  = Seq(target),
+        ),
+        UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither,
+      )
+    baseModule overriddenBy new BaboonJvmRsModule[Either](target)
+  }
+
+  override protected def config: TestConfig = super.config.copy(
+    pluginConfig = PluginConfig.const(moduleFor(rsTarget(mcp = true)).morph[PluginBase]),
+    activation   = super.config.activation + BaboonModeAxis.Compiler,
+  )
+
+  private def loadStubFamily(loader: BaboonLoader[F]): F[NEList[BaboonIssue], BaboonFamily] = {
+    val root = IzResources
+      .getPath("baboon/mcp-stub-ok")
+      .getOrElse(throw new AssertionError("mcp-stub-ok fixture not found"))
+      .asInstanceOf[IzResources.LoadablePathReference]
+      .path
+    val baboons =
+      if (root.toFile.isDirectory)
+        IzFiles.walk(root.toFile).toList.filter(p => p.toFile.isFile && p.toFile.getName.endsWith(".baboon"))
+      else List(root)
+    loader.load(baboons)
+  }
+
+  private val expectedToolNames = List(
+    "McpTools_listCollections",
+    "McpTools_submitComposite",
+    "McpTools_processShape",
+    "McpTools_pagePoints",
+    "McpTools_ping",
+  )
+
+  "Rust MCP server generator (mcp-stub-ok fixture)" should {
+
+    "emit a per-service MCP server + runtime with the contract shape when --rust-generate-mcp-server=true" in {
+      (loader: BaboonLoader[F], translator: BaboonAbstractTranslator[F]) =>
+        for {
+          family <- loadStubFamily(loader)
+          srcs   <- translator.translate(family)
+        } yield {
+          val files = srcs.files
+
+          // The additive static runtime resource is emitted.
+          assert(
+            files.keys.exists(_.endsWith("baboon_mcp_server.rs")),
+            s"baboon_mcp_server.rs not emitted; files=${files.keys}",
+          )
+
+          // Exactly one per-service MCP server file (single service McpTools).
+          val serverPaths = files.keys.filter(_.endsWith("_mcp_server.rs")).filterNot(_.endsWith("baboon_mcp_server.rs")).toList
+          assert(serverPaths.size == 1, s"expected one *_mcp_server.rs, got: $serverPaths")
+          val server = files(serverPaths.head).content
+
+          // Struct is generic over Ctx and delegates to BaboonMcpServerBase.
+          assert(
+            server.contains("pub struct McpToolsMcpServer<Ctx: Clone>"),
+            s"missing generic server struct:\n$server",
+          )
+          // It implements the dispatch contract through the base helper — NO I/O loop.
+          assert(
+            server.contains("fn handle("),
+            s"missing handle fn:\n$server",
+          )
+          assert(
+            server.contains("self.base.handle_request("),
+            s"missing BaboonMcpServerBase delegation:\n$server",
+          )
+          val lower = server.toLowerCase
+          assert(
+            !lower.contains("loop {") && !lower.contains("stdin") && !lower.contains("tcplistener"),
+            s"generated server must not bake in an I/O loop:\n$server",
+          )
+
+          // serverInfo carries name + version.
+          assert(
+            server.contains("""name: "McpTools""""),
+            s"missing server name:\n$server",
+          )
+          assert(
+            server.contains("""version: "1.0.0""""),
+            s"missing server version:\n$server",
+          )
+
+          // Tool registry: all 5 tool names present, in declaration order, mapped to method_name.
+          expectedToolNames.foreach(n =>
+            assert(server.contains(s"""name: "$n""""), s"tool name $n missing:\n$server"),
+          )
+          val nameOrder = expectedToolNames.map(n => server.indexOf(s"""name: "$n""""))
+          assert(
+            nameOrder == nameOrder.sorted && nameOrder.forall(_ >= 0),
+            s"tool names not in declaration order: $nameOrder",
+          )
+          // Tool entries contain BaboonMethodId with verbatim lowercase wire names.
+          assert(
+            server.contains("""method_name: "ping".to_string()"""),
+            s"ping method_name missing:\n$server",
+          )
+
+          // inputSchema wired from the T5 emitter: self-contained Draft 2020-12 schemas
+          // with the local $defs closure. Probe emitter-specific fragments.
+          assert(
+            server.contains("https://json-schema.org/draft/2020-12/schema"),
+            s"inputSchema $$schema dialect missing:\n$server",
+          )
+          assert(
+            server.contains("#/$defs/mcp_stub_Tree"),
+            s"recursive Tree local ref (T5 emitter) missing — inputSchema not wired:\n$server",
+          )
+          assert(
+            server.contains(""""enum":["Red","Green","Blue"]"""),
+            s"Color enum schema (T5 emitter) missing:\n$server",
+          )
+          // Schema is carried as a serde_json::json! macro literal, not computed at runtime.
+          assert(
+            server.contains("serde_json::json!("),
+            s"inputSchema must be embedded as serde_json::json! literal:\n$server",
+          )
+        }
+    }
+  }
+}

@@ -1698,6 +1698,61 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-rust-mcp
+
+Generate code for the Rust MCP round-trip overlay test (T13).
+Uses the mcp-stub-ok model + `--rs-generate-mcp-server=true` (Result errors mode) and
+overlays `test/rust-stub-mcp-overlay/` on top of a rs-stub copy.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-rust-mcp"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/rs-stub"
+mkdir -p "$TEST_DIR/rs-stub"
+
+# Copy only the Cargo.toml (package name = baboon-rs-stub) from rs-stub;
+# the generated source tree from mcp-stub-ok will be written into src/.
+cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --lock-file=./target/baboon-rust-mcp.lock \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type=Result \
+  '--service-result-pattern=<$success, $error>' \
+  --rs-generate-mcp-server=true
+
+rsync -a ./test/rust-stub-mcp-overlay/ "$TEST_DIR/rs-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-rust-mcp
+
+Run the Rust MCP round-trip overlay tests (T13).
+Validates initialize/tools-list/tools-call + error paths; runs serde_json
+validation on every returned inputSchema (K1 structural equality check).
+
+```bash
+TEST_DIR="${action.test-gen-rust-mcp.test_dir}"
+pushd "$TEST_DIR/rs-stub"
+RUSTFLAGS="-D warnings" cargo test --test mcp_tests
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-rs-wiring-either
 
 Generate code for Rust wiring tests with built-in Result container.
@@ -2553,6 +2608,7 @@ dep action.test-ts-wiring-outcome
 dep action.test-ts-mcp
 dep action.test-cs-mcp
 dep action.test-scala-mcp
+dep action.test-rust-mcp
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
