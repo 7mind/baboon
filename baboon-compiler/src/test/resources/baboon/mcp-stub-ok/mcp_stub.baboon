@@ -1,0 +1,143 @@
+// MCP test stub model.
+//
+// Purpose: fixture for the MCP inputSchema emitter (T5). Every construct in
+// the locked type inventory (decisions ledger item K6) must appear in at least
+// one service method's request DTO so the emitter is exercised on all of them.
+//
+// Constructs exercised:
+//   - foreign type (FFancyStr — opaque string mapping in all 9 language targets)
+//   - enum (Color)
+//   - DTO with nested DTO field (Point, Nested)
+//   - ADT with multiple branches (Shape — Circle and Rect branches)
+//   - recursive DTO (Tree — left:opt[Tree], children:lst[Tree])
+//   - type alias / template instantiation (PointPage = Page[Point])
+//   - collection list (lst[str], lst[Tree])
+//   - collection set (set[i64])
+//   - collection map with enum key (map[Color,str]) — string key (map[str,str])
+//   - option field (opt[Point], opt[Tree])
+//   - service with methods whose inline `data in` blocks span the inventory
+
+model mcp.stub
+
+version "1.0.0"
+
+// ── Foreign type ─────────────────────────────────────────────────────────────
+// Exercises: foreign type with per-language string mappings (no rt= override).
+foreign FFancyStr {
+  cs         = "System.String"
+  scala      = "java.lang.String"
+  kotlin     = "java.lang.String"
+  java       = "java.lang.String"
+  py         = "builtins.str"
+  rust       = "std::string::String"
+  typescript = "string"
+  dart       = "dart.core.String"
+  swift      = "Swift.String"
+}
+
+// ── Enum ─────────────────────────────────────────────────────────────────────
+// Exercises: enum type; also used as a map key below (legal: enum is a
+// single-primitive-equivalent key type).
+enum Color { Red  Green  Blue }
+
+// ── Plain DTOs ────────────────────────────────────────────────────────────────
+// Exercises: DTO definition; used as nested field in Nested.
+data Point { x: i32  y: i32 }
+
+// Exercises: nested DTO field (point: Point), enum field (color: Color),
+// optional scalar field (label: opt[str]).
+data Nested {
+  point: Point
+  color: Color
+  label: opt[str]
+}
+
+// ── Recursive DTO ─────────────────────────────────────────────────────────────
+// Exercises: recursive / self-referential DTO — left is opt[Tree] (nullable
+// self-ref), children is lst[Tree] (list of self-refs).
+data Tree {
+  value:    i32
+  left:     opt[Tree]
+  children: lst[Tree]
+}
+
+// ── ADT ───────────────────────────────────────────────────────────────────────
+// Exercises: ADT with multiple inline data branches (sealed/branching type).
+adt Shape {
+  data Circle { radius: f64 }
+  data Rect   { w: f64  h: f64 }
+}
+
+// ── Type alias / template instantiation ──────────────────────────────────────
+// Exercises: generic data template + alias instantiation (type alias).
+data Page[T] {
+  items: lst[T]
+  total: u32
+}
+
+root type PointPage = Page[Point]
+
+// ── Service ───────────────────────────────────────────────────────────────────
+// Each method's `data in` block is the primary vehicle for the type inventory.
+// The emitter must produce a self-contained inputSchema for EACH method.
+
+root service McpTools {
+
+  // Method 1: collections
+  // Exercises: list (lst[str]), set (set[i64]),
+  //            map with string key (map[str,str]),
+  //            map with enum key (map[Color,str]) — the legal non-string key form.
+  def listCollections (
+    data in {
+      tags:     lst[str]
+      uniqueIds: set[i64]
+      labels:   map[str, str]
+      byColor:  map[Color, str]
+    }
+    data out { ok: bit }
+  )
+
+  // Method 2: composite / nested
+  // Exercises: nested DTO field (nested: Nested which contains Point + Color),
+  //            option of DTO (maybePoint: opt[Point]),
+  //            enum field (color: Color),
+  //            foreign type field (fancy: FFancyStr).
+  def submitComposite (
+    data in {
+      nested:     Nested
+      maybePoint: opt[Point]
+      color:      Color
+      fancy:      FFancyStr
+    }
+    data out { ok: bit }
+  )
+
+  // Method 3: ADT + recursive type
+  // Exercises: ADT field (shape: Shape), recursive DTO field (tree: Tree).
+  def processShape (
+    data in {
+      shape: Shape
+      tree:  Tree
+    }
+    data out { ok: bit }
+  )
+
+  // Method 4: type alias (PointPage)
+  // Exercises: template-instantiation alias used directly in a request.
+  def pagePoints (
+    data in {
+      page: PointPage
+    }
+    data out { ok: bit }
+  )
+
+  // Method 5: empty / scalar-only baseline (for comparison)
+  // Exercises: all-scalar DTO (i32, str, bit) — the trivially standalone case.
+  def ping (
+    data in {
+      seqno: i32
+      label: str
+    }
+    data out { ok: bit }
+  )
+}
