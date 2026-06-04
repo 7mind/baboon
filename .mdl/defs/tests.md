@@ -2448,6 +2448,60 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-scala-mcp
+
+Generate code for the Scala MCP round-trip overlay test (T12).
+Uses the mcp-stub-ok model + `--scala-generate-mcp-server=true` (Either mode) and
+overlays `test/scala-stub-mcp-overlay/` on top of a scala-stub-mcp copy.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-scala-mcp"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/scala-stub-mcp"
+
+rsync -a --exclude='target' --exclude='project/target' \
+  ./test/scala-stub-mcp/ "$TEST_DIR/scala-stub-mcp/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --lock-file=./target/baboon-scala-mcp.lock \
+  :scala \
+  --output "$TEST_DIR/scala-stub-mcp/src/main/scala/generated-main" \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Either" \
+  "--service-result-pattern=[\$error, \$success]" \
+  --scala-generate-mcp-server=true
+
+rsync -a ./test/scala-stub-mcp-overlay/ "$TEST_DIR/scala-stub-mcp/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-scala-mcp
+
+Run the Scala MCP round-trip overlay tests (T12).
+Validates initialize/tools-list/tools-call + error paths; runs K1 structural-equality
+validation on every returned inputSchema (each inputSchema is a Circe Json value
+that must parse and round-trip identically — per-Circe structural equality).
+
+```bash
+TEST_DIR="${action.test-gen-scala-mcp.test_dir}"
+pushd "$TEST_DIR/scala-stub-mcp"
+sbt test
+popd
+
+ret success:bool=true
+```
+
 # action: test
 
 Run complete test suite (orchestrator action).
@@ -2498,6 +2552,7 @@ dep action.test-ts-wiring-result
 dep action.test-ts-wiring-outcome
 dep action.test-ts-mcp
 dep action.test-cs-mcp
+dep action.test-scala-mcp
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
