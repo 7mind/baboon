@@ -10,14 +10,18 @@
 ///
 /// K1 validity gate (T7 §5.3):
 ///   - At tools/list (a) each inputSchema parses as well-formed JSON through
-///     serde_json AND (b) structural equality to the T7 reference is asserted.
-///   - The serde_json::from_str check proves the schema is well-formed JSON.
+///     serde_json AND (b) structural equality to the embedded T7 §2.3 reference
+///     value is asserted per-tool via `serde_json::Value::==` (deep, key-order-
+///     insensitive for objects; arrays are compared element-wise).  `required`
+///     arrays are additionally compared as sets per §5.4.
 ///
 /// Negative controls (T7 §5.2):
 ///   - §4.1 (unknown tool → -32602 Channel-A error with no result).
 ///   - §4.2 (malformed decode → Channel-B isError=true): missing required `label`
 ///     causes serde_json decode failure → DecoderFailed → Left → isError=true.
 ///   - K1 enum negative control: "Purple" is not in ["Red","Green","Blue"].
+///   - K1 schema structural negative control: a reference with a wrong field
+///     must make the comparison FAIL — proving the equality gate is live.
 ///   - DELIBERATE-NEGATIVE-CONTROL: the name assertion at position [4] would fail
 ///     if changed to "McpTools_WRONG", proving it is live.
 
@@ -227,31 +231,281 @@ fn sec2_each_input_schema_has_draft2020_12_schema_uri() {
     }
 }
 
-/// K1 validity gate: each inputSchema parses as well-formed JSON AND is
-/// structurally equal to the T7 reference (from the T5 emitter).
+// ---------------------------------------------------------------------------
+// T7 §2.3 reference inputSchema values (authoritative: T5 McpInputSchemaEmitter).
+//
+// These literals match the schemas embedded in the generated mcp_tools_mcp_server.rs
+// by McpInputSchemaEmitter and cross-checked against the T7 §2.3 specification in
+// docs/research/mcp-roundtrip-scenario.md and the T5 golden test
+// McpInputSchemaEmissionTest.scala.
+//
+// Tool positions in the tools/list array (declaration order per K4 §2.3):
+//   [0] McpTools_listCollections
+//   [1] McpTools_submitComposite
+//   [2] McpTools_processShape
+//   [3] McpTools_pagePoints
+//   [4] McpTools_ping
+// ---------------------------------------------------------------------------
+
+fn ref_schema_list_collections() -> serde_json::Value {
+    // T7 §2.3 Tool 3: list / set / map[str] / map[enum-key]
+    // $defs closure: mcp_stub_Color
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "tags":      { "type": "array", "items": { "type": "string" } },
+            "uniqueIds": { "type": "array", "items": { "type": "integer", "format": "int64" }, "uniqueItems": true },
+            "labels":    { "type": "object", "additionalProperties": { "type": "string" } },
+            "byColor": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["key", "value"],
+                    "properties": {
+                        "key":   { "$ref": "#/$defs/mcp_stub_Color" },
+                        "value": { "type": "string" }
+                    }
+                }
+            }
+        },
+        "required": ["tags", "uniqueIds", "labels", "byColor"],
+        "$defs": {
+            "mcp_stub_Color": { "type": "string", "enum": ["Red", "Green", "Blue"] }
+        }
+    })
+}
+
+fn ref_schema_submit_composite() -> serde_json::Value {
+    // T7 §2.3 Tool 2: nested DTO + opt[DTO] + enum + foreign-string
+    // $defs closure: mcp_stub_Color, mcp_stub_Nested, mcp_stub_Point
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "nested":     { "$ref": "#/$defs/mcp_stub_Nested" },
+            "maybePoint": { "oneOf": [{ "$ref": "#/$defs/mcp_stub_Point" }, { "type": "null" }] },
+            "color":      { "$ref": "#/$defs/mcp_stub_Color" },
+            "fancy":      { "type": "string" }
+        },
+        "required": ["nested", "color", "fancy"],
+        "$defs": {
+            "mcp_stub_Color": { "type": "string", "enum": ["Red", "Green", "Blue"] },
+            "mcp_stub_Nested": {
+                "type": "object",
+                "properties": {
+                    "point": { "$ref": "#/$defs/mcp_stub_Point" },
+                    "color": { "$ref": "#/$defs/mcp_stub_Color" },
+                    "label": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+                },
+                "required": ["point", "color"]
+            },
+            "mcp_stub_Point": {
+                "type": "object",
+                "properties": {
+                    "x": { "type": "integer", "format": "int32" },
+                    "y": { "type": "integer", "format": "int32" }
+                },
+                "required": ["x", "y"]
+            }
+        }
+    })
+}
+
+fn ref_schema_process_shape() -> serde_json::Value {
+    // T7 §2.3 Tool 4: ADT oneOf + recursive Tree
+    // $defs closure: mcp_stub_Shape, mcp_stub_Tree, mcp_stub_Shape_Circle, mcp_stub_Shape_Rect
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "shape": { "$ref": "#/$defs/mcp_stub_Shape" },
+            "tree":  { "$ref": "#/$defs/mcp_stub_Tree" }
+        },
+        "required": ["shape", "tree"],
+        "$defs": {
+            "mcp_stub_Shape": {
+                "oneOf": [
+                    { "$ref": "#/$defs/mcp_stub_Shape_Circle" },
+                    { "$ref": "#/$defs/mcp_stub_Shape_Rect" }
+                ]
+            },
+            "mcp_stub_Tree": {
+                "type": "object",
+                "properties": {
+                    "value":    { "type": "integer", "format": "int32" },
+                    "left":     { "oneOf": [{ "$ref": "#/$defs/mcp_stub_Tree" }, { "type": "null" }] },
+                    "children": { "type": "array", "items": { "$ref": "#/$defs/mcp_stub_Tree" } }
+                },
+                "required": ["value", "children"]
+            },
+            "mcp_stub_Shape_Circle": {
+                "type": "object",
+                "properties": {
+                    "radius": { "type": "number", "format": "double" }
+                },
+                "required": ["radius"]
+            },
+            "mcp_stub_Shape_Rect": {
+                "type": "object",
+                "properties": {
+                    "w": { "type": "number", "format": "double" },
+                    "h": { "type": "number", "format": "double" }
+                },
+                "required": ["w", "h"]
+            }
+        }
+    })
+}
+
+fn ref_schema_page_points() -> serde_json::Value {
+    // T7 §2.3 Tool 5: template-instantiation alias PointPage = Page[Point]
+    // $defs closure: mcp_stub_Point, mcp_stub_PointPage
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "page": { "$ref": "#/$defs/mcp_stub_PointPage" }
+        },
+        "required": ["page"],
+        "$defs": {
+            "mcp_stub_Point": {
+                "type": "object",
+                "properties": {
+                    "x": { "type": "integer", "format": "int32" },
+                    "y": { "type": "integer", "format": "int32" }
+                },
+                "required": ["x", "y"]
+            },
+            "mcp_stub_PointPage": {
+                "type": "object",
+                "properties": {
+                    "items": { "type": "array", "items": { "$ref": "#/$defs/mcp_stub_Point" } },
+                    "total": { "type": "integer", "format": "int32", "minimum": 0 }
+                },
+                "required": ["items", "total"]
+            }
+        }
+    })
+}
+
+fn ref_schema_ping() -> serde_json::Value {
+    // T7 §2.3 Tool 1: scalar-only, no $defs
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "seqno": { "type": "integer", "format": "int32" },
+            "label": { "type": "string" }
+        },
+        "required": ["seqno", "label"]
+    })
+}
+
+/// Helper: compare the `required` array in a JSON schema as a set.
+/// Panics if the schema has no `required` array at the top level.
+fn required_set(schema: &serde_json::Value) -> std::collections::HashSet<String> {
+    schema["required"]
+        .as_array()
+        .unwrap_or_else(|| panic!("schema has no top-level required array"))
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect()
+}
+
+/// K1 validity gate (T7 §5.3): each inputSchema is
+///   (a) well-formed JSON (serde_json::from_str — proves codec-level validity), and
+///   (b) structurally equal to the embedded T7 §2.3 reference value for that tool
+///       (key-by-key recursive comparison via serde_json::Value::==, which is
+///       key-order-insensitive for objects).  `required` arrays are additionally
+///       compared as sets per §5.4.
 ///
-/// (a) serde_json::from_str proves the schema is well-formed JSON.
-/// (b) Structural equality: the JSON value from the server matches the value
-///     re-serialized by serde_json (round-trip through Value is idempotent for
-///     canonical JSON objects). The schemas are produced by the T5 emitter, so
-///     structural equality = same emitter output.
+/// The reference values are derived from the T5 McpInputSchemaEmitter and
+/// cross-checked against the T7 §2.3 specification in
+/// docs/research/mcp-roundtrip-scenario.md.
 #[test]
 fn sec2_k1_each_input_schema_is_well_formed_json_via_serde() {
     let resp = init_and_list();
     let tools = resp["result"]["tools"].as_array().unwrap();
+
+    // (a) Well-formedness: every schema must parse as valid JSON via serde_json.
     for t in tools {
         let schema_str = serde_json::to_string(&t["inputSchema"]).unwrap();
-        // (a) Must parse as well-formed JSON — serde_json::from_str throws on malformed.
-        let reparsed: serde_json::Value = serde_json::from_str(&schema_str)
+        let _: serde_json::Value = serde_json::from_str(&schema_str)
             .unwrap_or_else(|e| panic!("tool {} inputSchema is not well-formed JSON: {}", t["name"], e));
-        // (b) Structural equality: round-trip must be identical.
+    }
+
+    // (b) Structural equality against T7 §2.3 reference values (per-tool).
+    // serde_json::Value::== is deep and key-order-insensitive for objects.
+    let refs: Vec<serde_json::Value> = vec![
+        ref_schema_list_collections(),  // [0] McpTools_listCollections
+        ref_schema_submit_composite(),  // [1] McpTools_submitComposite
+        ref_schema_process_shape(),     // [2] McpTools_processShape
+        ref_schema_page_points(),       // [3] McpTools_pagePoints
+        ref_schema_ping(),              // [4] McpTools_ping
+    ];
+    let tool_names = ["McpTools_listCollections", "McpTools_submitComposite",
+                      "McpTools_processShape", "McpTools_pagePoints", "McpTools_ping"];
+
+    for (i, (t, reference)) in tools.iter().zip(refs.iter()).enumerate() {
         assert_eq!(
             &t["inputSchema"],
-            &reparsed,
-            "tool {} inputSchema structural equality failed",
-            t["name"]
+            reference,
+            "tool {} (position {}) inputSchema does not equal T7 §2.3 reference",
+            tool_names[i], i
+        );
+        // §5.4: additionally compare required as a set (guard against order-only divergence)
+        assert_eq!(
+            required_set(&t["inputSchema"]),
+            required_set(reference),
+            "tool {} (position {}) required set does not equal T7 §2.3 reference",
+            tool_names[i], i
         );
     }
+}
+
+/// K1 structural-equality negative control (T7 §5.2):
+/// A deliberately-wrong reference MUST make the assertion fail, proving the
+/// equality gate in sec2_k1_each_input_schema_is_well_formed_json_via_serde is live.
+///
+/// DELIBERATE-NEGATIVE-CONTROL: this test takes the ping schema (which has no $defs)
+/// and compares it against a reference that contains a spurious extra property
+/// "WRONG_EXTRA_KEY".  The assertion MUST be false.  If this assertion were vacuous
+/// (e.g., always-true), this test would fail — ensuring the gate is real.
+#[test]
+fn sec2_k1_structural_equality_gate_is_live_negative_control() {
+    let resp = init_and_list();
+    let tools = resp["result"]["tools"].as_array().unwrap();
+    // tool [4] is McpTools_ping — the simplest schema (no $defs).
+    let ping_schema = &tools[4]["inputSchema"];
+    assert_eq!(tools[4]["name"], "McpTools_ping");
+
+    // Correct reference — must PASS.
+    let correct_ref = ref_schema_ping();
+    assert_eq!(
+        ping_schema,
+        &correct_ref,
+        "ping inputSchema must equal the correct T7 reference"
+    );
+
+    // Wrong reference: same shape but with an extra spurious property.
+    // assert_eq! against this MUST fail — if it passes the gate is vacuous.
+    let wrong_ref = serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "seqno": { "type": "integer", "format": "int32" },
+            "label": { "type": "string" },
+            "WRONG_EXTRA_KEY": { "type": "string" }
+        },
+        "required": ["seqno", "label"]
+    });
+    assert_ne!(
+        ping_schema,
+        &wrong_ref,
+        "K1 NEGATIVE CONTROL: ping schema must NOT equal the wrong reference \
+         (gate is vacuous if this assertion fails)"
+    );
 }
 
 #[test]
