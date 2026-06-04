@@ -54,6 +54,7 @@ abstract class DocCommentSwiftEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonT
       pragmas                     = Map.empty,
       generateDomainFacade        = false,
       asyncServices               = false,
+      generateMcpServer           = false,
     ),
   )
 

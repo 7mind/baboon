@@ -65,6 +65,7 @@ abstract class M31BabK05KotlinEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonT
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
       generateDomainFacade        = false,
+      generateMcpServer           = false,
     ),
   )
 

@@ -7,7 +7,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyOpaqueModule, tsBaboonIdReprModule, tsBaboonRuntimeShared, tsCrossLangFixtureModule, tsFixtureShared}
 import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -24,6 +24,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   tsFileTools: TsFileTools,
   enquiries: BaboonEnquiries,
   typeTranslator: TsTypeTranslator,
+  mcpHook: McpServerGeneratorHook[F],
 ) extends BaboonAbstractTranslator[F] {
 
   type Out[T] = F[NEList[BaboonIssue], T]
@@ -46,9 +47,10 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
       }
-      unique <- F.fromEither(rendered.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))))
+      unique  <- F.fromEither(rendered.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))))
+      mcpSrcs <- if (target.language.generateMcpServer) mcpHook.generateMcpServer(family) else F.pure(Sources(Map.empty))
     } yield {
-      Sources(unique)
+      Sources(unique ++ mcpSrcs.files)
     }
   }
 

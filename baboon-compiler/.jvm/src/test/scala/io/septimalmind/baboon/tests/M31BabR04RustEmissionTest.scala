@@ -61,6 +61,7 @@ abstract class M31BabR04RustEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTes
       cratePrefix                 = "crate",
       reexportMode                = "selective",
       edition                     = "2021",
+      generateMcpServer           = false,
     ),
   )
 

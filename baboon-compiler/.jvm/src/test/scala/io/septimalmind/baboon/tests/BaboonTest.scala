@@ -63,6 +63,7 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
                 pragmas                                   = Map.empty,
       generateDomainFacade        = false,
       asyncServices               = false,
+      generateMcpServer           = false,
               ),
             )
           ),

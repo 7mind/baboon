@@ -58,6 +58,7 @@ abstract class TypeScriptServiceContextPragmaTestBase[F[+_, +_]: Error2: TagKK: 
       timestampsUtcMode           = "wrapper",
       timestampsOffsetMode        = "wrapper",
       enumLowercaseValues         = false,
+      generateMcpServer           = false,
     ),
   )
 

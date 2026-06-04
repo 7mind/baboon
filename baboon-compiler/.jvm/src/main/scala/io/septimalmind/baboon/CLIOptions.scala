@@ -88,6 +88,8 @@ case class CsCLIOptions(
   pragma: List[String],
   @HelpMessage("Generate async service signatures + RPC client methods returning Task (default: false)")
   csAsyncServices: Option[Boolean],
+  @HelpMessage("Generate an MCP server (default: false)")
+  csGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class ScCLIOptions(
@@ -131,6 +133,8 @@ case class ScCLIOptions(
   generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate an MCP server (default: false)")
+  scalaGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions
   with ScalaHktCLIOptions
 
@@ -171,6 +175,8 @@ case class PyCLIOptions(
   pragma: List[String],
   @HelpMessage("Generate async service signatures + RPC client methods using async def / awaitable coroutines (default: false)")
   pyAsyncServices: Option[Boolean],
+  @HelpMessage("Generate an MCP server (default: false)")
+  pyGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class RsCLIOptions(
@@ -214,6 +220,8 @@ case class RsCLIOptions(
   rsReexportMode: Option[String],
   @HelpMessage("Rust edition for generated Cargo.toml (default: 2024)")
   rsEdition: Option[String],
+  @HelpMessage("Generate an MCP server (default: false)")
+  rsGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class TsCLIOptions(
@@ -263,6 +271,8 @@ case class TsCLIOptions(
   tsTimestampsAsDates: Option[Boolean],
   @HelpMessage("Use lowercase string values for enums (default: false)")
   tsEnumLowercaseValues: Option[Boolean],
+  @HelpMessage("Generate an MCP server (default: false)")
+  tsGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class KtCLIOptions(
@@ -308,6 +318,8 @@ case class KtCLIOptions(
   pragma: List[String],
   @HelpMessage("Generate Kotlin Multiplatform compatible code (default: false)")
   ktMultiplatform: Option[Boolean],
+  @HelpMessage("Generate an MCP server (default: false)")
+  ktGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions
   with ScalaHktCLIOptions
 
@@ -348,6 +360,8 @@ case class JvCLIOptions(
   pragma: List[String],
   @HelpMessage("Generate async RPC client methods returning CompletableFuture (default: false)")
   jvAsyncServices: Option[Boolean],
+  @HelpMessage("Generate an MCP server (default: false)")
+  jvGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class DtCLIOptions(
@@ -383,6 +397,8 @@ case class DtCLIOptions(
   generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate an MCP server (default: false)")
+  dtGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class GqlCLIOptions(
@@ -471,6 +487,8 @@ case class SwCLIOptions(
   pragma: List[String],
   @HelpMessage("Generate async service signatures + RPC client methods using async/await (default: false)")
   swAsyncServices: Option[Boolean],
+  @HelpMessage("Generate an MCP server (default: false)")
+  swGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class CLIOptions(

@@ -16,6 +16,8 @@ import io.septimalmind.baboon.translator.java.*
 import io.septimalmind.baboon.translator.kotlin.*
 import io.septimalmind.baboon.translator.graphql.*
 import io.septimalmind.baboon.translator.openapi.*
+import io.septimalmind.baboon.translator.McpServerGeneratorHook
+import io.septimalmind.baboon.translator.McpServerGeneratorHook.McpServerGeneratorHookStub
 import io.septimalmind.baboon.translator.swift.*
 import io.septimalmind.baboon.translator.typescript.*
 import io.septimalmind.baboon.typer.*
@@ -94,6 +96,7 @@ class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 
     })
 
+  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
   make[CSBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   makeFactory[CSConversionTranslator.Factory[F]]
   make[CSTreeTools].from[CSTreeTools.CSTreeToolsImpl]
@@ -128,6 +131,7 @@ class BaboonCommonScModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[ScTypeTranslator]
   makeFactory[ScConversionTranslator.Factory[F]]
 
+  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
   make[ScBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[ScBaboonTranslator[F]]
@@ -156,6 +160,7 @@ class BaboonCommonPyModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[PyTypeTranslator]
   makeFactory[PyConversionTranslator.Factory[F]]
 
+  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
   make[PyBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[PyBaboonTranslator[F]]
@@ -184,6 +189,7 @@ class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[RsTypeTranslator]
   makeFactory[RsConversionTranslator.Factory[F]]
 
+  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
   make[RsBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[RsBaboonTranslator[F]]
@@ -211,6 +217,7 @@ class BaboonCommonTsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[TsTypeTranslator]
   makeFactory[TsConversionTranslator.Factory[F]]
 
+  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
   make[TsBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[TsBaboonTranslator[F]]
@@ -239,6 +246,7 @@ class BaboonCommonKtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[KtTypeTranslator]
   makeFactory[KtConversionTranslator.Factory[F]]
 
+  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
   make[KtBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[KtBaboonTranslator[F]]
@@ -266,6 +274,7 @@ class BaboonCommonJvModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[JvTypeTranslator]
   makeFactory[JvConversionTranslator.Factory[F]]
 
+  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
   make[JvBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[JvBaboonTranslator[F]]
@@ -293,6 +302,7 @@ class BaboonCommonDtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[DtTypeTranslator]
   makeFactory[DtConversionTranslator.Factory[F]]
 
+  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
   make[DtBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[DtBaboonTranslator[F]]
@@ -320,6 +330,7 @@ class BaboonCommonSwModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[SwTypeTranslator]
   makeFactory[SwConversionTranslator.Factory[F]]
 
+  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
   make[SwBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[SwBaboonTranslator[F]]

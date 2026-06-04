@@ -73,6 +73,7 @@ abstract class TypeScriptImportCaseTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
       timestampsUtcMode           = "wrapper",
       timestampsOffsetMode        = "wrapper",
       enumLowercaseValues         = false,
+      generateMcpServer           = false,
     ),
   )
 

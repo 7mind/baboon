@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.scl.ScTypes.*
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources, scl}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources, scl}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -21,6 +21,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   target: ScTarget,
   scTreeTools: ScTreeTools,
   scFiles: ScFileTools,
+  mcpHook: McpServerGeneratorHook[F],
 ) extends BaboonAbstractTranslator[F] {
 
   type Out[T] = F[NEList[BaboonIssue], T]
@@ -36,9 +37,10 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
       }
-      unique <- F.fromEither(rendered.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))))
+      unique  <- F.fromEither(rendered.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))))
+      mcpSrcs <- if (target.language.generateMcpServer) mcpHook.generateMcpServer(family) else F.pure(Sources(Map.empty))
     } yield {
-      Sources(unique)
+      Sources(unique ++ mcpSrcs.files)
     }
   }
 

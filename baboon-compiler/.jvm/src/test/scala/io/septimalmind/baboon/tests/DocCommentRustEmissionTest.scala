@@ -58,6 +58,7 @@ abstract class DocCommentRustEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
       cratePrefix                 = "crate",
       reexportMode                = "selective",
       edition                     = "2021",
+      generateMcpServer           = false,
     ),
   )
 

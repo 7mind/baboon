@@ -186,6 +186,7 @@ final case class PyOptions(
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
   asyncServices: Boolean,
+  generateMcpServer: Boolean,
 )
 
 final case class ScOptions(
@@ -200,6 +201,7 @@ final case class ScOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  generateMcpServer: Boolean,
 )
 
 final case class CSOptions(
@@ -221,6 +223,7 @@ final case class CSOptions(
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
   asyncServices: Boolean,
+  generateMcpServer: Boolean,
 )
 
 final case class RsOptions(
@@ -238,6 +241,7 @@ final case class RsOptions(
   cratePrefix: String,
   reexportMode: String,
   edition: String,
+  generateMcpServer: Boolean,
 )
 
 final case class TsOptions(
@@ -270,6 +274,7 @@ final case class TsOptions(
     * See `docs/drafts/20260428-1700-enum-wire-format-spec.md`.
     */
   enumLowercaseValues: Boolean,
+  generateMcpServer: Boolean,
 )
 
 final case class KtOptions(
@@ -285,6 +290,7 @@ final case class KtOptions(
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
   multiplatform: Boolean,
+  generateMcpServer: Boolean,
 )
 
 final case class JvOptions(
@@ -300,6 +306,7 @@ final case class JvOptions(
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
   asyncServices: Boolean,
+  generateMcpServer: Boolean,
 )
 
 final case class DtOptions(
@@ -313,6 +320,7 @@ final case class DtOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  generateMcpServer: Boolean,
 )
 
 final case class SwOptions(
@@ -327,6 +335,7 @@ final case class SwOptions(
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
   asyncServices: Boolean,
+  generateMcpServer: Boolean,
 )
 
 final case class GqlOptions(

@@ -51,6 +51,7 @@ abstract class IdentifierJavaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
       pragmas                     = Map.empty,
       generateDomainFacade        = false,
       asyncServices               = false,
+      generateMcpServer           = false,
     ),
   )
 

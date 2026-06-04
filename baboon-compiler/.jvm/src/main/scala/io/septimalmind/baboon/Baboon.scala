@@ -312,6 +312,7 @@ object Baboon {
                             serviceContext                            = mkServiceContext(opts),
                             pragmas                                   = parsePragmas(opts.pragma),
                             asyncServices                             = opts.csAsyncServices.getOrElse(false),
+                            generateMcpServer                         = opts.csGenerateMcpServer.getOrElse(false),
                           ),
                         )
                     }
@@ -338,6 +339,7 @@ object Baboon {
                             serviceResult               = mkServiceResult(opts, ServiceResultConfig.scalaDefault),
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
+                            generateMcpServer           = opts.scalaGenerateMcpServer.getOrElse(false),
                           ),
                         )
                     }
@@ -363,6 +365,7 @@ object Baboon {
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
                             asyncServices               = opts.pyAsyncServices.getOrElse(false),
+                            generateMcpServer           = opts.pyGenerateMcpServer.getOrElse(false),
                           ),
                         )
                     }
@@ -390,6 +393,7 @@ object Baboon {
                             cratePrefix                 = opts.rsCratePrefix.getOrElse("crate"),
                             reexportMode                = opts.rsReexportMode.getOrElse("selective"),
                             edition                     = opts.rsEdition.getOrElse("2024"),
+                            generateMcpServer           = opts.rsGenerateMcpServer.getOrElse(false),
                           ),
                         )
                     }
@@ -426,6 +430,7 @@ object Baboon {
                               else if (opts.tsTimestampsAsDates.getOrElse(false)) "date"
                               else "wrapper",
                             enumLowercaseValues = opts.tsEnumLowercaseValues.getOrElse(false),
+                            generateMcpServer   = opts.tsGenerateMcpServer.getOrElse(false),
                           ),
                         )
                     }
@@ -451,6 +456,7 @@ object Baboon {
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
                             multiplatform               = opts.ktMultiplatform.getOrElse(false),
+                            generateMcpServer           = opts.ktGenerateMcpServer.getOrElse(false),
                           ),
                         )
                     }
@@ -476,6 +482,7 @@ object Baboon {
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
                             asyncServices               = opts.jvAsyncServices.getOrElse(false),
+                            generateMcpServer           = opts.jvGenerateMcpServer.getOrElse(false),
                           ),
                         )
                     }
@@ -499,6 +506,7 @@ object Baboon {
                             serviceResult               = mkServiceResult(opts, ServiceResultConfig.dartDefault),
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
+                            generateMcpServer           = opts.dtGenerateMcpServer.getOrElse(false),
                           ),
                         )
                     }
@@ -523,6 +531,7 @@ object Baboon {
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
                             asyncServices               = opts.swAsyncServices.getOrElse(false),
+                            generateMcpServer           = opts.swGenerateMcpServer.getOrElse(false),
                           ),
                         )
                     }

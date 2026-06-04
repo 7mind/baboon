@@ -56,6 +56,7 @@ abstract class IdentifierTypeScriptEmissionTestBase[F[+_, +_]: Error2: TagKK: Ba
       timestampsUtcMode           = "wrapper",
       timestampsOffsetMode        = "wrapper",
       enumLowercaseValues         = false,
+      generateMcpServer           = false,
     ),
   )
 

@@ -443,6 +443,7 @@ object BaboonJS {
                 pragmas                                   = parsePragmas(opts.pragma),
                 generateDomainFacade                      = opts.generateDomainFacade.getOrElse(true),
                 asyncServices                             = opts.asyncServices.getOrElse(false),
+                generateMcpServer                         = false,
               ),
             )
           case "scala" =>
@@ -471,6 +472,7 @@ object BaboonJS {
                 serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
+                generateMcpServer           = false,
               ),
             )
           case "python" =>
@@ -492,6 +494,7 @@ object BaboonJS {
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 asyncServices               = opts.asyncServices.getOrElse(false),
+                generateMcpServer           = false,
               ),
             )
           case "rust" =>
@@ -515,6 +518,7 @@ object BaboonJS {
                 cratePrefix                 = "crate",
                 reexportMode                = "selective",
                 edition                     = "2024",
+                generateMcpServer           = false,
               ),
             )
           case "typescript" =>
@@ -541,6 +545,7 @@ object BaboonJS {
                 timestampsUtcMode           = "wrapper",
                 timestampsOffsetMode        = "wrapper",
                 enumLowercaseValues         = false,
+                generateMcpServer           = false,
               ),
             )
           case "kotlin" =>
@@ -562,6 +567,7 @@ object BaboonJS {
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 multiplatform               = opts.multiplatform.getOrElse(false),
+                generateMcpServer           = false,
               ),
             )
           case "java" =>
@@ -583,6 +589,7 @@ object BaboonJS {
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 asyncServices               = opts.asyncServices.getOrElse(false),
+                generateMcpServer           = false,
               ),
             )
           case "dart" =>
@@ -602,6 +609,7 @@ object BaboonJS {
                 serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
+                generateMcpServer           = false,
               ),
             )
           case "swift" =>
@@ -622,6 +630,7 @@ object BaboonJS {
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 asyncServices               = opts.asyncServices.getOrElse(false),
+                generateMcpServer           = false,
               ),
             )
           case "graphql" =>

@@ -61,6 +61,7 @@ abstract class IdentifierCSharpEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
       pragmas                                   = Map.empty,
       generateDomainFacade        = false,
       asyncServices               = false,
+      generateMcpServer           = false,
     ),
   )
 
