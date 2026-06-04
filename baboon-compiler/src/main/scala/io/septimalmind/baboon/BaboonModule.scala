@@ -294,7 +294,11 @@ class BaboonCommonJvModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[JvTypeTranslator]
   makeFactory[JvConversionTranslator.Factory[F]]
 
-  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
+  // The shared MCP inputSchema emitter (T5) reuses the OpenAPI scalar/any
+  // fragment logic via OasTypeTranslator; bind it here so the Java MCP generator
+  // (T15) can construct the emitter. OasTypeTranslator is stateless.
+  make[OasTypeTranslator]
+  make[McpServerGeneratorHook[F]].from[JvMcpServerGenerator[F]]
   make[JvBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[JvBaboonTranslator[F]]

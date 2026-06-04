@@ -1807,6 +1807,60 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-java-mcp
+
+Generate code for the Java MCP round-trip overlay test (T15).
+Uses the mcp-stub-ok model + `--jv-generate-mcp-server=true` (Either mode) and
+overlays `test/java-stub-mcp-overlay/` on top of a jv-stub copy.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-java-mcp"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/jv-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
+  ./test/jv-stub/ "$TEST_DIR/jv-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --lock-file=./target/baboon-java-mcp.lock \
+  :java \
+  --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
+  --jv-write-evolution-dict=true \
+  --jv-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="baboon.runtime.shared.BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --jv-generate-mcp-server=true
+
+rsync -a ./test/java-stub-mcp-overlay/ "$TEST_DIR/jv-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-java-mcp
+
+Run the Java MCP round-trip overlay tests (T15).
+Validates initialize/tools-list/tools-call + error paths; runs Jackson
+JSON round-trip validation on every returned inputSchema (K1 structural equality
+to T7 reference) and exercises negative controls.
+
+```bash
+TEST_DIR="${action.test-gen-java-mcp.test_dir}"
+pushd "$TEST_DIR/jv-stub"
+mvn clean test -Dtest=mcp.McpTests
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-rs-wiring-either
 
 Generate code for Rust wiring tests with built-in Result container.
@@ -2664,6 +2718,7 @@ dep action.test-cs-mcp
 dep action.test-scala-mcp
 dep action.test-rust-mcp
 dep action.test-kotlin-mcp
+dep action.test-java-mcp
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
