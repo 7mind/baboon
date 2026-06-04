@@ -96,7 +96,11 @@ class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 
     })
 
-  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
+  // The shared MCP inputSchema emitter (T5) reuses the OpenAPI scalar/any
+  // fragment logic via OasTypeTranslator; bind it here so the C# MCP generator
+  // (T10) can construct the emitter. OasTypeTranslator is stateless.
+  make[OasTypeTranslator]
+  make[McpServerGeneratorHook[F]].from[CsMcpServerGenerator[F]]
   make[CSBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   makeFactory[CSConversionTranslator.Factory[F]]
   make[CSTreeTools].from[CSTreeTools.CSTreeToolsImpl]
