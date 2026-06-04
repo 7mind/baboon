@@ -1643,6 +1643,61 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-cs-mcp
+
+Generate code for the C# MCP round-trip overlay test (T11).
+Uses the mcp-stub-ok model + `--cs-generate-mcp-server=true` (Either mode) and
+overlays `test/cs-stub-mcp-overlay/` on top of a cs-stub copy.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-mcp"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --lock-file=./target/baboon-cs-mcp.lock \
+  :cs \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Baboon.Runtime.Shared.Either" \
+  --service-result-pattern="<\$error, \$success>" \
+  --cs-generate-mcp-server=true
+
+rsync -a ./test/cs-stub-mcp-overlay/ "$TEST_DIR/cs-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-mcp
+
+Run the C# MCP round-trip overlay tests (T11).
+Validates initialize/tools-list/tools-call + error paths; runs NJsonSchema
+validation on every returned inputSchema (with `$defs` → `definitions`
+normalisation for NJsonSchema compatibility).
+
+```bash
+TEST_DIR="${action.test-gen-cs-mcp.test_dir}"
+pushd "$TEST_DIR/cs-stub"
+dotnet build -c Release McpTests/McpTests.csproj
+dotnet test -c Release McpTests/McpTests.csproj
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-rs-wiring-either
 
 Generate code for Rust wiring tests with built-in Result container.
@@ -2442,6 +2497,7 @@ dep action.test-ts-wiring-either
 dep action.test-ts-wiring-result
 dep action.test-ts-wiring-outcome
 dep action.test-ts-mcp
+dep action.test-cs-mcp
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
