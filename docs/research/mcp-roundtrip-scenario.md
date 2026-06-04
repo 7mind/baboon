@@ -733,5 +733,7 @@ Client                       Server (generated McpTools MCP handler)
   `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/McpInputSchemaEmissionTest.scala`
 - inputSchema validity coverage decision: `decisions:K1`
 - Goal: `goals:G1` (MCP server generators across all backends)
-- Per-language overlay tasks: T9 (TypeScript), T10 (Scala), T11 (C#), T12 (Python),
-  T13 (Rust), T14 (Kotlin), T15 (Java), T16 (Dart), T17 (Swift)
+- Per-language overlay tasks: T9 (TypeScript), T11 (C#), T12 (Scala), T13 (Rust),
+  T14 (Kotlin), T15 (Java), T16 (Dart), T17 (Swift), T18 (Python)
+  (T8 = reference TypeScript *generator* task; T10 = reference C# *generator* task —
+  neither is a per-language overlay task)
