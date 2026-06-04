@@ -1589,6 +1589,60 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-ts-mcp
+
+Generate code for the TypeScript MCP round-trip overlay test (T9).
+Uses the mcp-stub-ok model + `--ts-generate-mcp-server=true` and overlays
+`test/ts-stub-mcp-overlay/` on top of a ts-stub copy.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-mcp"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --lock-file=./target/baboon-ts-mcp.lock \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --ts-generate-mcp-server=true
+
+rsync -a ./test/ts-stub-mcp-overlay/ "$TEST_DIR/ts-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-ts-mcp
+
+Run the TypeScript MCP round-trip overlay tests (T9).
+Validates initialize/tools-list/tools-call + error paths; runs AJV Draft-2020-12
+validation on every returned inputSchema.
+
+```bash
+TEST_DIR="${action.test-gen-ts-mcp.test_dir}"
+pushd "$TEST_DIR/ts-stub"
+npm install
+npx vitest run src/mcp.test.ts
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-rs-wiring-either
 
 Generate code for Rust wiring tests with built-in Result container.
@@ -2387,6 +2441,7 @@ dep action.test-sc-wiring-hkt
 dep action.test-ts-wiring-either
 dep action.test-ts-wiring-result
 dep action.test-ts-wiring-outcome
+dep action.test-ts-mcp
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
