@@ -89,7 +89,10 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
       "org.jline" % "jline" % "3.26.3",
-      "io.7mind.izumi" %% "distage-testkit-scalatest" % izumiVersion % Test
+      "io.7mind.izumi" %% "distage-testkit-scalatest" % izumiVersion % Test,
+      // Real Draft 2020-12 JSON-Schema validator for the MCP inputSchema
+      // well-formedness gate (JVM test scope only — never shipped).
+      "com.networknt" % "json-schema-validator" % "1.5.9" % Test
     )
   )
   .jvmConfigure(_.enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin))
