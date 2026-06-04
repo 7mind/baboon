@@ -262,7 +262,11 @@ class BaboonCommonKtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[KtTypeTranslator]
   makeFactory[KtConversionTranslator.Factory[F]]
 
-  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
+  // The shared MCP inputSchema emitter (T5) reuses the OpenAPI scalar/any
+  // fragment logic via OasTypeTranslator; bind it here so the Kotlin MCP generator
+  // (T14) can construct the emitter. OasTypeTranslator is stateless.
+  make[OasTypeTranslator]
+  make[McpServerGeneratorHook[F]].from[KtMcpServerGenerator[F]]
   make[KtBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[KtBaboonTranslator[F]]

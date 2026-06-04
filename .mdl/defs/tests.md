@@ -1753,6 +1753,60 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-kotlin-mcp
+
+Generate code for the Kotlin MCP round-trip overlay test (T14).
+Uses the mcp-stub-ok model + `--kt-generate-mcp-server=true` (Either mode) and
+overlays `test/kotlin-stub-mcp-overlay/` on top of a kt-stub copy.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-kotlin-mcp"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/kt-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --exclude='.gradle' \
+  ./test/kt-stub/ "$TEST_DIR/kt-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --lock-file=./target/baboon-kotlin-mcp.lock \
+  :kotlin \
+  --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
+  --kt-write-evolution-dict=true \
+  --kt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Either" \
+  '--service-result-pattern=<$error, $success>' \
+  --kt-generate-mcp-server=true
+
+rsync -a ./test/kotlin-stub-mcp-overlay/ "$TEST_DIR/kt-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-kotlin-mcp
+
+Run the Kotlin MCP round-trip overlay tests (T14).
+Validates initialize/tools-list/tools-call + error paths; runs kotlinx-serialization
+JSON round-trip validation on every returned inputSchema (K1 structural equality
+to T7 reference) and exercises negative controls.
+
+```bash
+TEST_DIR="${action.test-gen-kotlin-mcp.test_dir}"
+pushd "$TEST_DIR/kt-stub"
+gradle --no-daemon clean test --tests "mcp.McpTests"
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-rs-wiring-either
 
 Generate code for Rust wiring tests with built-in Result container.
@@ -2609,6 +2663,7 @@ dep action.test-ts-mcp
 dep action.test-cs-mcp
 dep action.test-scala-mcp
 dep action.test-rust-mcp
+dep action.test-kotlin-mcp
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
