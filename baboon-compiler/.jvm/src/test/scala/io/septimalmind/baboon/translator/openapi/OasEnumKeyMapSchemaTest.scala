@@ -25,10 +25,12 @@ import org.scalatest.wordspec.AnyWordSpec
   *      plain string keys).
   *   3. `map[i32, str]` — non-string non-enum key → entry-array form (regression
   *      guard: the enum-key path must not fire for non-string/non-enum keys).
-  *   4. Foreign-rt-resolves-to-enum: when `resolveTypeRef` pre-resolves a foreign
-  *      type whose `rt` is an enum to the enum's `TypeRef.Scalar`, the resulting
-  *      ref IS in `enumKeys` → the same string-keyed-object form is produced.
-  *      This pins the `renderDto` pre-resolution invariant described in D10.
+  *   4. Foreign-rt-resolves-to-enum via Constructor arg-recursion: the production
+  *      renderDto:165 path resolves the WHOLE field TypeRef.Constructor(map,
+  *      [foreignKey, val]) via resolveTypeRef, which recurses through Constructor
+  *      args (OasTypeTranslator.scala:40-42). This case builds that exact
+  *      Constructor, calls resolveTypeRef on it, and asserts propertyNames — so
+  *      a break of the Constructor arg-recursion WILL fail this case.
   */
 class OasEnumKeyMapSchemaTest extends AnyWordSpec {
 
@@ -107,26 +109,57 @@ class OasEnumKeyMapSchemaTest extends AnyWordSpec {
       assert(!schema.contains(""""propertyNames""""), s"must NOT have propertyNames for i32 key; got: $schema")
     }
 
-    // Case 4: foreign-rt-resolves-to-enum: resolveTypeRef pre-resolves foreign → enum ---
+    // Case 4: foreign key inside a Constructor — exercises the Constructor arg-recursion branch ---
+    // The production path (renderDto:165) resolves the WHOLE field type
+    // TypeRef.Constructor(map, [foreignKey, val]) via resolveTypeRef.
+    // resolveTypeRef's Constructor branch (OasTypeTranslator.scala:40-42) recurses
+    // into each arg, converting foreignRef -> colorRef.
+    // If that Constructor arg-recursion were no-op'd, foreignId would NOT be in
+    // enumKeys, mapSchema would produce the entry-array form, and the propertyNames
+    // assertion below would fail — i.e. this case PINS the invariant.
 
-    "produce string-keyed-object schema when foreign type's rt resolves to an enum key (D10 renderDto pre-resolution invariant)" in {
+    "produce string-keyed-object schema when Constructor arg-recursion resolves a foreign key to an enum (D10 renderDto pre-resolution invariant)" in {
       // Simulate a foreign type `ForeignColor` whose rt = Color (an enum).
       val foreignId  = TypeId.User(testPkg, Owner.Toplevel, TypeName("ForeignColor"))
       val foreignRef = TypeRef.Scalar(foreignId)
+      val valRef     = TypeRef.Scalar(TypeId.Builtins.str)
 
       // The foreign resolution map: ForeignColor -> Color
       val foreignResolutions: Map[TypeId.User, Option[TypeRef]] =
         Map(foreignId -> Some(colorRef))
 
-      // renderDto calls resolveTypeRef on the field type before passing to typeRefSchema.
-      // Here we simulate that: resolve foreign -> enum.
-      val resolvedKey = tr.resolveTypeRef(foreignRef, foreignResolutions)
-      assert(resolvedKey == colorRef, s"expected resolveTypeRef to yield Color, got $resolvedKey")
+      // Build the WHOLE map field type as the production renderDto path does:
+      // TypeRef.Constructor(map, [foreignRef, valRef]).
+      val mapConstructor = TypeRef.Constructor(TypeId.Builtins.map, NEList(foreignRef, valRef))
 
-      // Now typeRefSchema with the resolved enum ref and the enumKeys set:
-      val schema = mapSchema(resolvedKey, TypeRef.Scalar(TypeId.Builtins.str))
-      assert(schema.contains(""""propertyNames""""), s"expected propertyNames after foreign->enum resolution; got: $schema")
-      assert(schema.contains(tr.schemaName(colorId)), s"expected Color schema name after resolution; got: $schema")
+      // resolveTypeRef on the Constructor hits the Constructor arg-recursion branch
+      // (OasTypeTranslator.scala:40-42): each arg is recursively resolved, so
+      // foreignRef -> colorRef.  A no-op on that branch would leave foreignId
+      // unresolved in the key position.
+      val resolvedConstructor = tr.resolveTypeRef(mapConstructor, foreignResolutions)
+
+      // Confirm the Constructor arg-recursion actually resolved the key arg.
+      resolvedConstructor match {
+        case TypeRef.Constructor(_, args) =>
+          assert(
+            args.head == colorRef,
+            s"expected Constructor arg-recursion to resolve foreignRef -> colorRef; got head=${args.head}"
+          )
+        case other =>
+          fail(s"expected a Constructor after resolveTypeRef; got $other")
+      }
+
+      // typeRefSchema on the resolved Constructor: the key is now colorRef, which IS
+      // in enumKeys, so the result must be the string-keyed-object form with propertyNames.
+      val schema = tr.typeRefSchema(resolvedConstructor, enumKeys)
+      assert(
+        schema.contains(""""propertyNames""""),
+        s"expected propertyNames after Constructor arg-recursion resolution; got: $schema"
+      )
+      assert(
+        schema.contains(tr.schemaName(colorId)),
+        s"expected Color schema name after resolution; got: $schema"
+      )
     }
   }
 }
