@@ -41,6 +41,8 @@ use baboon_rs_stub::mcp::stub::mcptools::submitcomposite::input::In as SubmitCom
 use baboon_rs_stub::mcp::stub::mcptools::submitcomposite::out::Out as SubmitCompositeOut;
 use baboon_rs_stub::mcp::stub::mcptools::processshape::input::In as ProcessShapeIn;
 use baboon_rs_stub::mcp::stub::mcptools::processshape::out::Out as ProcessShapeOut;
+use baboon_rs_stub::mcp::stub::mcptools::processtagged::input::In as ProcessTaggedIn;
+use baboon_rs_stub::mcp::stub::mcptools::processtagged::out::Out as ProcessTaggedOut;
 use baboon_rs_stub::mcp::stub::mcptools::pagepoints::input::In as PagePointsIn;
 use baboon_rs_stub::mcp::stub::mcptools::pagepoints::out::Out as PagePointsOut;
 use baboon_rs_stub::mcp::stub::mcptools::ping::input::In as PingIn;
@@ -61,6 +63,9 @@ impl McpTools for StubMcpTools {
     }
     fn process_shape(&self, _arg: ProcessShapeIn) -> ProcessShapeOut {
         ProcessShapeOut { ok: true }
+    }
+    fn process_tagged(&self, _arg: ProcessTaggedIn) -> ProcessTaggedOut {
+        ProcessTaggedOut { ok: true }
     }
     fn page_points(&self, _arg: PagePointsIn) -> PagePointsOut {
         PagePointsOut { ok: true }
@@ -191,21 +196,24 @@ fn init_and_list() -> serde_json::Value {
 }
 
 #[test]
-fn sec2_tools_list_exactly_five_tools_in_declaration_order() {
+fn sec2_tools_list_exactly_six_tools_in_declaration_order() {
     let resp = init_and_list();
     assert_eq!(resp["id"], serde_json::json!(2));
     assert!(resp["error"].is_null());
     let tools = resp["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 5, "MUST be exactly 5 tools");
+    assert_eq!(tools.len(), 6, "MUST be exactly 6 tools");
 
     // Exact position assertions (model declaration order, T7 §0).
+    // processTagged is declared between processShape and pagePoints (T26/D11),
+    // so it occupies index 3 and shifts pagePoints→4, ping→5.
     // DELIBERATE-NEGATIVE-CONTROL: changing "McpTools_ping" to "McpTools_WRONG"
-    // on the next line makes this test fail, proving position[4] check is live.
+    // on the next line makes this test fail, proving position[5] check is live.
     assert_eq!(tools[0]["name"], "McpTools_listCollections");
     assert_eq!(tools[1]["name"], "McpTools_submitComposite");
     assert_eq!(tools[2]["name"], "McpTools_processShape");
-    assert_eq!(tools[3]["name"], "McpTools_pagePoints");
-    assert_eq!(tools[4]["name"], "McpTools_ping");
+    assert_eq!(tools[3]["name"], "McpTools_processTagged");
+    assert_eq!(tools[4]["name"], "McpTools_pagePoints");
+    assert_eq!(tools[5]["name"], "McpTools_ping");
 
     // No "nextCursor" key (§2.2)
     assert!(resp["result"]["nextCursor"].is_null(), "nextCursor must not be present");
@@ -243,8 +251,9 @@ fn sec2_each_input_schema_has_draft2020_12_schema_uri() {
 //   [0] McpTools_listCollections
 //   [1] McpTools_submitComposite
 //   [2] McpTools_processShape
-//   [3] McpTools_pagePoints
-//   [4] McpTools_ping
+//   [3] McpTools_processTagged
+//   [4] McpTools_pagePoints
+//   [5] McpTools_ping
 // ---------------------------------------------------------------------------
 
 fn ref_schema_list_collections() -> serde_json::Value {
@@ -352,6 +361,45 @@ fn ref_schema_process_shape() -> serde_json::Value {
     })
 }
 
+fn ref_schema_process_tagged() -> serde_json::Value {
+    // T26/D11 Tool: contract-bearing ADT. `Tagged` is `is HasId`; the HasId
+    // contract carries `id: str`, merged into every branch DTO at typing time.
+    // Each branch $defs entry has `id` + own field, both required, NO allOf.
+    // Branch order in oneOf is declaration order: TagA then TagB.
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "tagged": { "$ref": "#/$defs/mcp_stub_Tagged" }
+        },
+        "required": ["tagged"],
+        "$defs": {
+            "mcp_stub_Tagged": {
+                "oneOf": [
+                    { "$ref": "#/$defs/mcp_stub_Tagged_TagA" },
+                    { "$ref": "#/$defs/mcp_stub_Tagged_TagB" }
+                ]
+            },
+            "mcp_stub_Tagged_TagA": {
+                "type": "object",
+                "properties": {
+                    "id":  { "type": "string" },
+                    "tag": { "type": "string" }
+                },
+                "required": ["id", "tag"]
+            },
+            "mcp_stub_Tagged_TagB": {
+                "type": "object",
+                "properties": {
+                    "id":     { "type": "string" },
+                    "weight": { "type": "integer", "format": "int32" }
+                },
+                "required": ["id", "weight"]
+            }
+        }
+    })
+}
+
 fn ref_schema_page_points() -> serde_json::Value {
     // T7 §2.3 Tool 5: template-instantiation alias PointPage = Page[Point]
     // $defs closure: mcp_stub_Point, mcp_stub_PointPage
@@ -435,11 +483,13 @@ fn sec2_k1_each_input_schema_is_well_formed_json_via_serde() {
         ref_schema_list_collections(),  // [0] McpTools_listCollections
         ref_schema_submit_composite(),  // [1] McpTools_submitComposite
         ref_schema_process_shape(),     // [2] McpTools_processShape
-        ref_schema_page_points(),       // [3] McpTools_pagePoints
-        ref_schema_ping(),              // [4] McpTools_ping
+        ref_schema_process_tagged(),    // [3] McpTools_processTagged
+        ref_schema_page_points(),       // [4] McpTools_pagePoints
+        ref_schema_ping(),              // [5] McpTools_ping
     ];
     let tool_names = ["McpTools_listCollections", "McpTools_submitComposite",
-                      "McpTools_processShape", "McpTools_pagePoints", "McpTools_ping"];
+                      "McpTools_processShape", "McpTools_processTagged",
+                      "McpTools_pagePoints", "McpTools_ping"];
 
     for (i, (t, reference)) in tools.iter().zip(refs.iter()).enumerate() {
         assert_eq!(
@@ -470,9 +520,9 @@ fn sec2_k1_each_input_schema_is_well_formed_json_via_serde() {
 fn sec2_k1_structural_equality_gate_is_live_negative_control() {
     let resp = init_and_list();
     let tools = resp["result"]["tools"].as_array().unwrap();
-    // tool [4] is McpTools_ping — the simplest schema (no $defs).
-    let ping_schema = &tools[4]["inputSchema"];
-    assert_eq!(tools[4]["name"], "McpTools_ping");
+    // tool [5] is McpTools_ping — the simplest schema (no $defs).
+    let ping_schema = &tools[5]["inputSchema"];
+    assert_eq!(tools[5]["name"], "McpTools_ping");
 
     // Correct reference — must PASS.
     let correct_ref = ref_schema_ping();
@@ -537,8 +587,8 @@ fn sec2_k1_tool4_ping_required_fields_present() {
     // Verify the ping inputSchema has required: ["seqno","label"].
     let resp = init_and_list();
     let tools = resp["result"]["tools"].as_array().unwrap();
-    let schema = &tools[4]["inputSchema"];
-    assert_eq!(tools[4]["name"], "McpTools_ping");
+    let schema = &tools[5]["inputSchema"];
+    assert_eq!(tools[5]["name"], "McpTools_ping");
     let required = schema["required"].as_array().unwrap();
     assert!(required.iter().any(|v| v == "seqno"), "seqno must be in required");
     assert!(required.iter().any(|v| v == "label"), "label must be in required");
@@ -604,6 +654,45 @@ fn sec3_submit_composite_returns_ok_true() {
 
     assert_eq!(resp["id"], serde_json::json!(4));
     assert!(resp["error"].is_null(), "Unexpected error on submitComposite call");
+
+    let content = resp["result"]["content"].as_array().unwrap();
+    assert_eq!(content.len(), 1);
+    assert_eq!(content[0]["type"], "text");
+
+    let payload: serde_json::Value = serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(payload["ok"], true, "ok must be true");
+
+    let is_error = &resp["result"]["isError"];
+    assert!(
+        is_error.is_null() || is_error == false,
+        "isError must be false or absent"
+    );
+}
+
+#[test]
+fn sec3_process_tagged_returns_ok_true() {
+    // T26/D11: processTagged dispatch with a Tagged TagA value.
+    // ADT wire format under --rs-wrapped-adt-branch-codecs=false is the
+    // branch-discriminated object {"TagA": {...}} (codec wraps the branch;
+    // the inputSchema oneOf is a separate structural view). Tagged carries no
+    // foreign type, so no FFancyStr codec registration is needed.
+    let server = make_server();
+    let mut session = McpSession::new();
+    initialize(&server, &mut session);
+
+    let resp = send(&server, &mut session, JsonRpcRequest {
+        id: Some(serde_json::json!(7)),
+        method: "tools/call".to_string(),
+        params: Some(serde_json::json!({
+            "name": "McpTools_processTagged",
+            "arguments": {
+                "tagged": { "TagA": { "id": "abc", "tag": "hello" } }
+            }
+        })),
+    });
+
+    assert_eq!(resp["id"], serde_json::json!(7));
+    assert!(resp["error"].is_null(), "Unexpected error on processTagged call");
 
     let content = resp["result"]["content"].as_array().unwrap();
     assert_eq!(content.len(), 1);

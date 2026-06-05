@@ -28,9 +28,9 @@
 //   - NJsonSchema conforming/non-conforming: live — see "enum negative control"
 //     and "required-field negative control" tests.
 //   - DELIBERATE-NEGATIVE-CONTROL (documented, not left active):
-//     Replacing `Assert.AreEqual("McpTools_ping", tools[4]["name"]!)` with
-//     `Assert.AreEqual("McpTools_WRONG", tools[4]["name"]!)` makes the test fail,
-//     proving the position-4 name assertion is live.
+//     Replacing `Assert.AreEqual("McpTools_ping", tools[5]["name"]!)` with
+//     `Assert.AreEqual("McpTools_WRONG", tools[5]["name"]!)` makes the test fail,
+//     proving the position-5 name assertion is live.
 //
 // Channel-B trigger (§4.2): send `McpTools_ping` with missing required field
 //   `seqno`. The generated `Ping.In_JsonCodec.Decode` accesses
@@ -81,6 +81,9 @@ namespace McpTest
 
         public McpTools.ProcessShape.Out ProcessShape(McpTools.ProcessShape.In arg)
             => new McpTools.ProcessShape.Out(true);
+
+        public McpTools.ProcessTagged.Out ProcessTagged(McpTools.ProcessTagged.In arg)
+            => new McpTools.ProcessTagged.Out(true);
 
         public McpTools.PagePoints.Out PagePoints(McpTools.PagePoints.In arg)
             => new McpTools.PagePoints.Out(true);
@@ -233,22 +236,25 @@ namespace McpTest
         }
 
         [Test]
-        public void Sec2_ToolsList_ExactlyFiveToolsInDeclarationOrder()
+        public void Sec2_ToolsList_ExactlySixToolsInDeclarationOrder()
         {
             var (tools, resp) = InitAndList();
 
             Assert.AreEqual(2, resp.Id!.Value<int>());
             Assert.IsNull(resp.Error);
-            Assert.AreEqual(5, tools.Count, "MUST be exactly 5 tools");
+            Assert.AreEqual(6, tools.Count, "MUST be exactly 6 tools");
 
             // Exact position assertions (model declaration order, T7 §0).
+            // processTagged is declared between processShape and pagePoints (T26/D11),
+            // so it occupies index 3 and shifts pagePoints→4, ping→5.
             // DELIBERATE-NEGATIVE-CONTROL: replacing "McpTools_ping" with "McpTools_WRONG"
-            // on the next line makes this test fail, proving position[4] check is live.
+            // on the next line makes this test fail, proving position[5] check is live.
             Assert.AreEqual("McpTools_listCollections", tools[0]["name"]!.Value<string>());
             Assert.AreEqual("McpTools_submitComposite",  tools[1]["name"]!.Value<string>());
             Assert.AreEqual("McpTools_processShape",     tools[2]["name"]!.Value<string>());
-            Assert.AreEqual("McpTools_pagePoints",       tools[3]["name"]!.Value<string>());
-            Assert.AreEqual("McpTools_ping",             tools[4]["name"]!.Value<string>());
+            Assert.AreEqual("McpTools_processTagged",    tools[3]["name"]!.Value<string>());
+            Assert.AreEqual("McpTools_pagePoints",       tools[4]["name"]!.Value<string>());
+            Assert.AreEqual("McpTools_ping",             tools[5]["name"]!.Value<string>());
 
             // No "nextCursor" key (§2.2)
             Assert.IsNull(((JObject)resp.Result!)["nextCursor"],
@@ -339,10 +345,30 @@ namespace McpTest
         }
 
         [Test]
-        public async Task Sec2_NJsonSchema_Tool3_PagePoints_ConformingInstance()
+        public async Task Sec2_NJsonSchema_Tool3_ProcessTagged_ConformingInstance()
         {
+            // T26/D11: contract-bearing ADT. The inputSchema for Tagged is a oneOf of
+            // flat branch objects (each branch carries the contract field `id` plus its
+            // own field). A conforming instance matches one branch's flat shape — this
+            // validates against the SCHEMA (the codec wire form is separate).
             var (tools, _) = InitAndList();
             var schemaJson = NormalizeForNJsonSchema(tools[3]["inputSchema"]!.ToString(Formatting.None));
+            var schema = await JsonSchema.FromJsonAsync(schemaJson);
+            // TagA branch: { id, tag }
+            var errorsA = schema.Validate("{\"tagged\":{\"id\":\"abc\",\"tag\":\"hello\"}}");
+            Assert.AreEqual(0, errorsA.Count,
+                $"McpTools_processTagged TagA conforming instance must be valid; errors: {FormatErrors(errorsA)}");
+            // TagB branch: { id, weight }
+            var errorsB = schema.Validate("{\"tagged\":{\"id\":\"def\",\"weight\":42}}");
+            Assert.AreEqual(0, errorsB.Count,
+                $"McpTools_processTagged TagB conforming instance must be valid; errors: {FormatErrors(errorsB)}");
+        }
+
+        [Test]
+        public async Task Sec2_NJsonSchema_Tool4_PagePoints_ConformingInstance()
+        {
+            var (tools, _) = InitAndList();
+            var schemaJson = NormalizeForNJsonSchema(tools[4]["inputSchema"]!.ToString(Formatting.None));
             var schema = await JsonSchema.FromJsonAsync(schemaJson);
             var errors = schema.Validate("{\"page\":{\"items\":[{\"x\":1,\"y\":2}],\"total\":1}}");
             Assert.AreEqual(0, errors.Count,
@@ -350,10 +376,10 @@ namespace McpTest
         }
 
         [Test]
-        public async Task Sec2_NJsonSchema_Tool4_Ping_ConformingInstance()
+        public async Task Sec2_NJsonSchema_Tool5_Ping_ConformingInstance()
         {
             var (tools, _) = InitAndList();
-            var schemaJson = NormalizeForNJsonSchema(tools[4]["inputSchema"]!.ToString(Formatting.None));
+            var schemaJson = NormalizeForNJsonSchema(tools[5]["inputSchema"]!.ToString(Formatting.None));
             var schema = await JsonSchema.FromJsonAsync(schemaJson);
             var errors = schema.Validate("{\"seqno\":7,\"label\":\"hi\"}");
             Assert.AreEqual(0, errors.Count,
@@ -361,11 +387,11 @@ namespace McpTest
         }
 
         [Test]
-        public async Task Sec2_NJsonSchema_Tool4_Ping_RequiredFieldNegativeControl_MissingLabelRejected()
+        public async Task Sec2_NJsonSchema_Tool5_Ping_RequiredFieldNegativeControl_MissingLabelRejected()
         {
             // NEGATIVE CONTROL: proves the required: ["seqno","label"] constraint is live.
             var (tools, _) = InitAndList();
-            var schemaJson = NormalizeForNJsonSchema(tools[4]["inputSchema"]!.ToString(Formatting.None));
+            var schemaJson = NormalizeForNJsonSchema(tools[5]["inputSchema"]!.ToString(Formatting.None));
             var schema = await JsonSchema.FromJsonAsync(schemaJson);
             var errors = schema.Validate("{\"seqno\":7}");  // missing required "label"
             Assert.Greater(errors.Count, 0, "Missing 'label' MUST be rejected");
@@ -418,6 +444,39 @@ namespace McpTest
 
             Assert.AreEqual(4, resp.Id!.Value<int>());
             Assert.IsNull(resp.Error, "Unexpected error on submitComposite call");
+
+            var result = (JObject)resp.Result!;
+            var content = (JArray)result["content"]!;
+            Assert.AreEqual(1, content.Count);
+            Assert.AreEqual("text", content[0]["type"]!.Value<string>());
+
+            var payload = JToken.Parse(content[0]["text"]!.Value<string>()!);
+            Assert.AreEqual(true, payload["ok"]!.Value<bool>(), "ok must be true");
+
+            var isError = result["isError"];
+            Assert.IsTrue(isError == null || isError.Value<bool>() == false,
+                "isError must be false or absent");
+        }
+
+        [Test]
+        public void Sec3_ProcessTagged_ReturnsOkTrue()
+        {
+            // T26/D11: processTagged dispatch with a Tagged TagA value.
+            // ADT wire format under --cs-wrapped-adt-branch-codecs=false is the
+            // branch-discriminated object {"TagA":{...}} (the codec wraps the branch;
+            // the inputSchema oneOf is a separate structural view). Tagged carries no
+            // foreign type, so no FFancyStr codec registration is needed.
+            var server = MakeServer();
+            var session = new McpSession();
+            InitializeSession(server, session);
+
+            var resp = Send(server, session, new JsonRpcRequest(
+                new JValue(7), "tools/call",
+                JToken.Parse("{\"name\":\"McpTools_processTagged\",\"arguments\":{\"tagged\":{\"TagA\":{\"id\":\"abc\",\"tag\":\"hello\"}}}}")
+            ), _codecCtx);
+
+            Assert.AreEqual(7, resp.Id!.Value<int>());
+            Assert.IsNull(resp.Error, "Unexpected error on processTagged call");
 
             var result = (JObject)resp.Result!;
             var content = (JArray)result["content"]!;

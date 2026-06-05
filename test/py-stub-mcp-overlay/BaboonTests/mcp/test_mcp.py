@@ -39,6 +39,7 @@ from BaboonDefinitions.Generated.mcp.stub.McpTools_Wiring import invoke_json_Mcp
 from BaboonDefinitions.Generated.mcp.stub.mcptools.listcollections.Out import Out as ListCollectionsOut
 from BaboonDefinitions.Generated.mcp.stub.mcptools.submitcomposite.Out import Out as SubmitCompositeOut
 from BaboonDefinitions.Generated.mcp.stub.mcptools.processshape.Out import Out as ProcessShapeOut
+from BaboonDefinitions.Generated.mcp.stub.mcptools.processtagged.Out import Out as ProcessTaggedOut
 from BaboonDefinitions.Generated.mcp.stub.mcptools.pagepoints.Out import Out as PagePointsOut
 from BaboonDefinitions.Generated.mcp.stub.mcptools.ping.Out import Out as PingOut
 
@@ -117,7 +118,32 @@ REF_PROCESS_SHAPE = json.loads(
     '}'
 )
 
-# Tool 4: McpTools_pagePoints — template-instantiation alias PointPage = Page[Point]
+# Tool 4: McpTools_processTagged — contract-bearing ADT (T26/D11). `Tagged` is
+# `is HasId`; the HasId contract carries `id: str`, merged into every branch DTO
+# at typing time. Each branch $defs entry has `id` + own field, both required,
+# NO allOf. Branch order in oneOf is declaration order: TagA then TagB.
+REF_PROCESS_TAGGED = json.loads(
+    '{"$schema":"https://json-schema.org/draft/2020-12/schema",'
+    '"type":"object",'
+    '"properties":{'
+    '"tagged":{"$ref":"#/$defs/mcp_stub_Tagged"}'
+    '},'
+    '"required":["tagged"],'
+    '"$defs":{'
+    '"mcp_stub_Tagged":{"oneOf":[{"$ref":"#/$defs/mcp_stub_Tagged_TagA"},{"$ref":"#/$defs/mcp_stub_Tagged_TagB"}]},'
+    '"mcp_stub_Tagged_TagA":{"type":"object","properties":{'
+    '"id":{"type":"string"},'
+    '"tag":{"type":"string"}'
+    '},"required":["id","tag"]},'
+    '"mcp_stub_Tagged_TagB":{"type":"object","properties":{'
+    '"id":{"type":"string"},'
+    '"weight":{"type":"integer","format":"int32"}'
+    '},"required":["id","weight"]}'
+    '}'
+    '}'
+)
+
+# Tool 5: McpTools_pagePoints — template-instantiation alias PointPage = Page[Point]
 REF_PAGE_POINTS = json.loads(
     '{"$schema":"https://json-schema.org/draft/2020-12/schema",'
     '"type":"object",'
@@ -138,7 +164,7 @@ REF_PAGE_POINTS = json.loads(
     '}'
 )
 
-# Tool 5: McpTools_ping — scalar-only, no $defs
+# Tool 6: McpTools_ping — scalar-only, no $defs
 REF_PING = json.loads(
     '{"$schema":"https://json-schema.org/draft/2020-12/schema",'
     '"type":"object",'
@@ -153,8 +179,9 @@ REFERENCES = [
     REF_LIST_COLLECTIONS,   # tools[0] = McpTools_listCollections
     REF_SUBMIT_COMPOSITE,   # tools[1] = McpTools_submitComposite
     REF_PROCESS_SHAPE,      # tools[2] = McpTools_processShape
-    REF_PAGE_POINTS,        # tools[3] = McpTools_pagePoints
-    REF_PING,               # tools[4] = McpTools_ping
+    REF_PROCESS_TAGGED,     # tools[3] = McpTools_processTagged
+    REF_PAGE_POINTS,        # tools[4] = McpTools_pagePoints
+    REF_PING,               # tools[5] = McpTools_ping
 ]
 
 # ---------------------------------------------------------------------------
@@ -207,6 +234,7 @@ class _StubMcpTools(McpTools):
     def listCollections(self, arg): return ListCollectionsOut(ok=True)
     def submitComposite(self, arg): return SubmitCompositeOut(ok=True)
     def processShape(self, arg): return ProcessShapeOut(ok=True)
+    def processTagged(self, arg): return ProcessTaggedOut(ok=True)
     def pagePoints(self, arg): return PagePointsOut(ok=True)
     def ping(self, arg): return PingOut(ok=True)
 
@@ -353,21 +381,24 @@ class Sec1InitializeTests(unittest.TestCase):
 
 class Sec2ToolsListTests(unittest.TestCase):
 
-    def test_exactly_five_tools_in_declaration_order(self):
+    def test_exactly_six_tools_in_declaration_order(self):
         tools, resp, *_ = _init_and_list()
 
         self.assertEqual(resp["id"], 2, "id must be 2")
         self.assertNotIn("error", resp)
-        self.assertEqual(len(tools), 5, "MUST be exactly 5 tools")
+        self.assertEqual(len(tools), 6, "MUST be exactly 6 tools")
 
         # Exact position assertions (model declaration order, T7 §0).
+        # processTagged is declared between processShape and pagePoints (T26/D11),
+        # so it occupies index 3 and shifts pagePoints→4, ping→5.
         # DELIBERATE-NEGATIVE-CONTROL: replacing "McpTools_ping" with "McpTools_WRONG"
-        # on the next line makes this test fail, proving position[4] check is live.
+        # on the next line makes this test fail, proving position[5] check is live.
         self.assertEqual(tools[0]["name"], "McpTools_listCollections")
         self.assertEqual(tools[1]["name"], "McpTools_submitComposite")
         self.assertEqual(tools[2]["name"], "McpTools_processShape")
-        self.assertEqual(tools[3]["name"], "McpTools_pagePoints")
-        self.assertEqual(tools[4]["name"], "McpTools_ping")
+        self.assertEqual(tools[3]["name"], "McpTools_processTagged")
+        self.assertEqual(tools[4]["name"], "McpTools_pagePoints")
+        self.assertEqual(tools[5]["name"], "McpTools_ping")
 
         # No "nextCursor" key (§2.2)
         self.assertNotIn("nextCursor", resp["result"], "nextCursor must not be present")
@@ -396,7 +427,7 @@ class Sec2ToolsListTests(unittest.TestCase):
             if reparsed is None:
                 raise AssertionError(f"Tool {t['name']}: schema must not be None after re-parse")
 
-    def test_k1_all_five_tools_structural_equality_to_t7_reference(self):
+    def test_k1_all_six_tools_structural_equality_to_t7_reference(self):
         # K1 part (b) — structural equality to T7 §2.3 reference.
         # Each returned inputSchema is re-parsed via json.dumps/loads (codec-divergence
         # coverage) and compared key-by-key recursively to the embedded T7 reference.
@@ -434,7 +465,7 @@ class Sec2ToolsListTests(unittest.TestCase):
             '"extra":"bad"}'
         )
         tools, *_ = _init_and_list()
-        actual_ping = json.loads(json.dumps(tools[4]["inputSchema"]))
+        actual_ping = json.loads(json.dumps(tools[5]["inputSchema"]))
 
         # The comparator MUST return False for the wrong reference.
         if schemas_structurally_equal(actual_ping, wrong_ref):
@@ -531,6 +562,44 @@ class Sec3ToolsCallSuccessTests(unittest.TestCase):
 
         self.assertEqual(resp["id"], 4)
         self.assertNotIn("error", resp, "Unexpected error on listCollections call")
+
+        result = resp["result"]
+        content = result["content"]
+        self.assertEqual(len(content), 1)
+        self.assertEqual(content[0]["type"], "text")
+
+        payload = json.loads(content[0]["text"])
+        self.assertEqual(payload["ok"], True, "ok must be true")
+
+        is_error = result.get("isError")
+        if is_error is not None and is_error is not False:
+            raise AssertionError(f"isError must be false or absent, got {is_error!r}")
+
+    def test_processTagged_returns_ok_true(self):
+        # T26/D11: processTagged dispatch with a Tagged TagA value.
+        # ADT wire format under --py-wrapped-adt-branch-codecs=false is the
+        # branch-discriminated object {"TagA": {...}} (the codec wraps the branch;
+        # the inputSchema oneOf is a separate structural view). Tagged carries no
+        # foreign type, so no FFancyStr codec registration is needed.
+        tools, resp_list, server, session, codec_ctx = _init_and_list()
+
+        resp = _send(
+            server,
+            session,
+            codec_ctx,
+            {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "tools/call",
+                "params": {
+                    "name": "McpTools_processTagged",
+                    "arguments": {"tagged": {"TagA": {"id": "abc", "tag": "hello"}}},
+                },
+            },
+        )
+
+        self.assertEqual(resp["id"], 7)
+        self.assertNotIn("error", resp, "Unexpected error on processTagged call")
 
         result = resp["result"]
         content = result["content"]

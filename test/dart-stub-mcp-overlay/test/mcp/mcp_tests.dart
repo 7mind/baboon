@@ -44,6 +44,8 @@ import '../../lib/mcp/stub/mcptools/submitcomposite/in.dart' as submitcomposite_
 import '../../lib/mcp/stub/mcptools/submitcomposite/out.dart' as submitcomposite_out;
 import '../../lib/mcp/stub/mcptools/processshape/in.dart' as processshape_in;
 import '../../lib/mcp/stub/mcptools/processshape/out.dart' as processshape_out;
+import '../../lib/mcp/stub/mcptools/processtagged/in.dart' as processtagged_in;
+import '../../lib/mcp/stub/mcptools/processtagged/out.dart' as processtagged_out;
 import '../../lib/mcp/stub/mcptools/pagepoints/in.dart' as pagepoints_in;
 import '../../lib/mcp/stub/mcptools/pagepoints/out.dart' as pagepoints_out;
 import '../../lib/mcp/stub/mcptools/ping/in.dart' as ping_in;
@@ -64,10 +66,16 @@ final _refSubmitComposite = jsonDecode(r'{"$schema":"https://json-schema.org/dra
 // Tool 3: McpTools_processShape — ADT oneOf + recursive Tree
 final _refProcessShape = jsonDecode(r'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"shape":{"$ref":"#/$defs/mcp_stub_Shape"},"tree":{"$ref":"#/$defs/mcp_stub_Tree"}},"required":["shape","tree"],"$defs":{"mcp_stub_Shape":{"oneOf":[{"$ref":"#/$defs/mcp_stub_Shape_Circle"},{"$ref":"#/$defs/mcp_stub_Shape_Rect"}]},"mcp_stub_Tree":{"type":"object","properties":{"value":{"type":"integer","format":"int32"},"left":{"oneOf":[{"$ref":"#/$defs/mcp_stub_Tree"},{"type":"null"}]},"children":{"type":"array","items":{"$ref":"#/$defs/mcp_stub_Tree"}}},"required":["value","children"]},"mcp_stub_Shape_Circle":{"type":"object","properties":{"radius":{"type":"number","format":"double"}},"required":["radius"]},"mcp_stub_Shape_Rect":{"type":"object","properties":{"w":{"type":"number","format":"double"},"h":{"type":"number","format":"double"}},"required":["w","h"]}}}') as Map<String, dynamic>;
 
-// Tool 4: McpTools_pagePoints — template-instantiation alias PointPage = Page[Point]
+// Tool 4: McpTools_processTagged — contract-bearing ADT (T26/D11). `Tagged` is
+// `is HasId`; the HasId contract carries `id: str`, merged into every branch DTO
+// at typing time. Each branch $defs entry has `id` + own field, both required,
+// NO allOf. Branch order in oneOf is declaration order: TagA then TagB.
+final _refProcessTagged = jsonDecode(r'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tagged":{"$ref":"#/$defs/mcp_stub_Tagged"}},"required":["tagged"],"$defs":{"mcp_stub_Tagged":{"oneOf":[{"$ref":"#/$defs/mcp_stub_Tagged_TagA"},{"$ref":"#/$defs/mcp_stub_Tagged_TagB"}]},"mcp_stub_Tagged_TagA":{"type":"object","properties":{"id":{"type":"string"},"tag":{"type":"string"}},"required":["id","tag"]},"mcp_stub_Tagged_TagB":{"type":"object","properties":{"id":{"type":"string"},"weight":{"type":"integer","format":"int32"}},"required":["id","weight"]}}}') as Map<String, dynamic>;
+
+// Tool 5: McpTools_pagePoints — template-instantiation alias PointPage = Page[Point]
 final _refPagePoints = jsonDecode(r'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"page":{"$ref":"#/$defs/mcp_stub_PointPage"}},"required":["page"],"$defs":{"mcp_stub_Point":{"type":"object","properties":{"x":{"type":"integer","format":"int32"},"y":{"type":"integer","format":"int32"}},"required":["x","y"]},"mcp_stub_PointPage":{"type":"object","properties":{"items":{"type":"array","items":{"$ref":"#/$defs/mcp_stub_Point"}},"total":{"type":"integer","format":"int32","minimum":0}},"required":["items","total"]}}}') as Map<String, dynamic>;
 
-// Tool 5: McpTools_ping — scalar-only, no $defs
+// Tool 6: McpTools_ping — scalar-only, no $defs
 final _refPing = jsonDecode(r'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"seqno":{"type":"integer","format":"int32"},"label":{"type":"string"}},"required":["seqno","label"]}') as Map<String, dynamic>;
 
 // ---------------------------------------------------------------------------
@@ -125,6 +133,9 @@ class _StubMcpTools implements McpTools {
   @override
   processshape_out.out processShape(processshape_in.in_ arg) =>
       processshape_out.out(ok: true);
+  @override
+  processtagged_out.out processTagged(processtagged_in.in_ arg) =>
+      processtagged_out.out(ok: true);
   @override
   pagepoints_out.out pagePoints(pagepoints_in.in_ arg) =>
       pagepoints_out.out(ok: true);
@@ -236,17 +247,20 @@ void main() {
           .toList();
     });
 
-    test('exactlyFiveToolsInDeclarationOrder', () {
-      expect(tools.length, equals(5), reason: 'MUST be exactly 5 tools');
+    test('exactlySixToolsInDeclarationOrder', () {
+      expect(tools.length, equals(6), reason: 'MUST be exactly 6 tools');
       // Exact position assertions (model declaration order, T7 §0).
+      // processTagged is declared between processShape and pagePoints (T26/D11),
+      // so it occupies index 3 and shifts pagePoints→4, ping→5.
       // DELIBERATE-NEGATIVE-CONTROL: replacing "McpTools_ping" with
       // "McpTools_WRONG" on the last expect line makes this test fail,
-      // proving position[4] check is live.
+      // proving position[5] check is live.
       expect(tools[0]['name'], equals('McpTools_listCollections'));
       expect(tools[1]['name'], equals('McpTools_submitComposite'));
       expect(tools[2]['name'], equals('McpTools_processShape'));
-      expect(tools[3]['name'], equals('McpTools_pagePoints'));
-      expect(tools[4]['name'], equals('McpTools_ping'));
+      expect(tools[3]['name'], equals('McpTools_processTagged'));
+      expect(tools[4]['name'], equals('McpTools_pagePoints'));
+      expect(tools[5]['name'], equals('McpTools_ping'));
       // No "nextCursor" key (§2.2)
       expect(toolsResult.containsKey('nextCursor'), isFalse,
           reason: 'nextCursor must not be present');
@@ -281,7 +295,7 @@ void main() {
       }
     });
 
-    test('k1_allFiveTools_structuralEqualityToT7Reference', () {
+    test('k1_allSixTools_structuralEqualityToT7Reference', () {
       // K1 part (b) — structural equality to T7 §2.3 reference.
       // Each inputSchema is re-encoded and re-decoded via dart:convert
       // (codec-divergence coverage) and compared key-by-key recursively.
@@ -290,10 +304,11 @@ void main() {
         _refListCollections, // tools[0] = McpTools_listCollections
         _refSubmitComposite, // tools[1] = McpTools_submitComposite
         _refProcessShape,    // tools[2] = McpTools_processShape
-        _refPagePoints,      // tools[3] = McpTools_pagePoints
-        _refPing,            // tools[4] = McpTools_ping
+        _refProcessTagged,   // tools[3] = McpTools_processTagged
+        _refPagePoints,      // tools[4] = McpTools_pagePoints
+        _refPing,            // tools[5] = McpTools_ping
       ];
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < 6; i++) {
         final toolName = tools[i]['name'] as String;
         // Re-encode and re-decode to exercise full dart:convert round-trip.
         final actualJson = jsonEncode(tools[i]['inputSchema']);
@@ -322,7 +337,7 @@ void main() {
           '"required":["seqno","label"],'
           '"extra":"bad"}') as Map<String, dynamic>;
 
-      final actualPingJson = jsonEncode(tools[4]['inputSchema']);
+      final actualPingJson = jsonEncode(tools[5]['inputSchema']);
       final actualPing = jsonDecode(actualPingJson) as Map<String, dynamic>;
 
       // The comparator MUST return false for the wrong reference.
@@ -366,6 +381,34 @@ void main() {
           jsonDecode(content[0]['text'] as String) as Map<String, dynamic>;
       expect(payload['ok'], equals(true), reason: 'ok must be true');
       // isError MUST be false or absent (K4 §2.4)
+      final isError = result['isError'];
+      expect(isError == null || isError == false, isTrue,
+          reason: 'isError must be false or absent');
+    });
+
+    test('processTagged_returnsOkTrue', () {
+      // T26/D11: processTagged dispatch with a Tagged TagA value.
+      // ADT wire format under --dt-wrapped-adt-branch-codecs=false is the
+      // branch-discriminated object {"TagA":{...}} (the codec wraps the branch;
+      // the inputSchema oneOf is a separate structural view). Tagged carries no
+      // foreign type, so no FFancyStr codec registration is needed.
+      final server = _makeServer(stub);
+      final session = McpSession();
+      _initSession(server, session, stub);
+
+      final resp = _send(server, session, stub, JsonRpcRequest(
+        7, 'tools/call',
+        jsonDecode('{"name":"McpTools_processTagged","arguments":{"tagged":{"TagA":{"id":"abc","tag":"hello"}}}}'),
+      ));
+
+      expect(resp.error, isNull, reason: 'Unexpected error on processTagged call');
+      final result = resp.result as Map<String, dynamic>;
+      final content = result['content'] as List;
+      expect(content.length, equals(1));
+      expect(content[0]['type'], equals('text'));
+      final payload =
+          jsonDecode(content[0]['text'] as String) as Map<String, dynamic>;
+      expect(payload['ok'], equals(true), reason: 'ok must be true');
       final isError = result['isError'];
       expect(isError == null || isError == false, isTrue,
           reason: 'isError must be false or absent');

@@ -150,7 +150,32 @@ public class McpTests {
         "}"
     );
 
-    // Tool 4: McpTools_pagePoints — template-instantiation alias PointPage = Page[Point]
+    // Tool 4: McpTools_processTagged — contract-bearing ADT (T26/D11). `Tagged` is
+    // `is HasId`; the HasId contract carries `id: str`, merged into every branch DTO
+    // at typing time. Each branch $defs entry has `id` + own field, both required,
+    // NO allOf. Branch order in oneOf is declaration order: TagA then TagB.
+    private static final JsonNode REF_PROCESS_TAGGED = ref(
+        "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+        "\"type\":\"object\"," +
+        "\"properties\":{" +
+          "\"tagged\":{\"$ref\":\"#/$defs/mcp_stub_Tagged\"}" +
+        "}," +
+        "\"required\":[\"tagged\"]," +
+        "\"$defs\":{" +
+          "\"mcp_stub_Tagged\":{\"oneOf\":[{\"$ref\":\"#/$defs/mcp_stub_Tagged_TagA\"},{\"$ref\":\"#/$defs/mcp_stub_Tagged_TagB\"}]}," +
+          "\"mcp_stub_Tagged_TagA\":{\"type\":\"object\",\"properties\":{" +
+            "\"id\":{\"type\":\"string\"}," +
+            "\"tag\":{\"type\":\"string\"}" +
+          "},\"required\":[\"id\",\"tag\"]}," +
+          "\"mcp_stub_Tagged_TagB\":{\"type\":\"object\",\"properties\":{" +
+            "\"id\":{\"type\":\"string\"}," +
+            "\"weight\":{\"type\":\"integer\",\"format\":\"int32\"}" +
+          "},\"required\":[\"id\",\"weight\"]}" +
+        "}" +
+        "}"
+    );
+
+    // Tool 5: McpTools_pagePoints — template-instantiation alias PointPage = Page[Point]
     private static final JsonNode REF_PAGE_POINTS = ref(
         "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
         "\"type\":\"object\"," +
@@ -171,7 +196,7 @@ public class McpTests {
         "}"
     );
 
-    // Tool 5: McpTools_ping — scalar-only, no $defs
+    // Tool 6: McpTools_ping — scalar-only, no $defs
     private static final JsonNode REF_PING = ref(
         "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
         "\"type\":\"object\"," +
@@ -242,6 +267,10 @@ public class McpTests {
         @Override
         public mcp.stub.mcptools.processshape.Out processShape(mcp.stub.mcptools.processshape.In arg) {
             return new mcp.stub.mcptools.processshape.Out(true);
+        }
+        @Override
+        public mcp.stub.mcptools.processtagged.Out processTagged(mcp.stub.mcptools.processtagged.In arg) {
+            return new mcp.stub.mcptools.processtagged.Out(true);
         }
         @Override
         public mcp.stub.mcptools.pagepoints.Out pagePoints(mcp.stub.mcptools.pagepoints.In arg) {
@@ -397,23 +426,26 @@ public class McpTests {
     // ---------------------------------------------------------------------------
 
     @Test
-    public void sec2_toolsList_exactlyFiveToolsInDeclarationOrder() throws Exception {
+    public void sec2_toolsList_exactlySixToolsInDeclarationOrder() throws Exception {
         var r = initAndList();
         var tools = r.tools();
         var resp = r.resp();
 
         assertEquals(2, resp.id.intValue(), "id must be 2");
         assertNull(resp.error);
-        assertEquals(5, tools.size(), "MUST be exactly 5 tools");
+        assertEquals(6, tools.size(), "MUST be exactly 6 tools");
 
         // Exact position assertions (model declaration order, T7 §0).
+        // processTagged is declared between processShape and pagePoints (T26/D11),
+        // so it occupies index 3 and shifts pagePoints→4, ping→5.
         // DELIBERATE-NEGATIVE-CONTROL: replacing "McpTools_ping" with "McpTools_WRONG"
-        // on the next line makes this test fail, proving position[4] check is live.
+        // on the next line makes this test fail, proving position[5] check is live.
         assertEquals("McpTools_listCollections", tools.get(0).get("name").textValue());
         assertEquals("McpTools_submitComposite", tools.get(1).get("name").textValue());
         assertEquals("McpTools_processShape",    tools.get(2).get("name").textValue());
-        assertEquals("McpTools_pagePoints",       tools.get(3).get("name").textValue());
-        assertEquals("McpTools_ping",             tools.get(4).get("name").textValue());
+        assertEquals("McpTools_processTagged",   tools.get(3).get("name").textValue());
+        assertEquals("McpTools_pagePoints",       tools.get(4).get("name").textValue());
+        assertEquals("McpTools_ping",             tools.get(5).get("name").textValue());
 
         // No "nextCursor" key (§2.2)
         assertNull(resp.result.get("nextCursor"), "nextCursor must not be present");
@@ -452,7 +484,7 @@ public class McpTests {
     }
 
     @Test
-    public void sec2_k1_allFiveTools_structuralEqualityToT7Reference() throws Exception {
+    public void sec2_k1_allSixTools_structuralEqualityToT7Reference() throws Exception {
         // K1 part (b) — structural equality to T7 §2.3 reference.
         // Each returned inputSchema is re-parsed via Jackson (codec-divergence
         // coverage) and compared key-by-key recursively to the embedded T7 reference.
@@ -465,11 +497,12 @@ public class McpTests {
             REF_LIST_COLLECTIONS,  // tools[0] = McpTools_listCollections
             REF_SUBMIT_COMPOSITE,  // tools[1] = McpTools_submitComposite
             REF_PROCESS_SHAPE,     // tools[2] = McpTools_processShape
-            REF_PAGE_POINTS,       // tools[3] = McpTools_pagePoints
-            REF_PING               // tools[4] = McpTools_ping
+            REF_PROCESS_TAGGED,    // tools[3] = McpTools_processTagged
+            REF_PAGE_POINTS,       // tools[4] = McpTools_pagePoints
+            REF_PING               // tools[5] = McpTools_ping
         );
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 6; i++) {
             String toolName = tools.get(i).get("name").textValue();
             // Re-parse through Jackson to exercise codec round-trip.
             JsonNode actual   = MAPPER.readTree(tools.get(i).get("inputSchema").toString());
@@ -503,7 +536,7 @@ public class McpTests {
             "}"
         );
         var r = initAndList();
-        JsonNode actualPing = MAPPER.readTree(r.tools().get(4).get("inputSchema").toString());
+        JsonNode actualPing = MAPPER.readTree(r.tools().get(5).get("inputSchema").toString());
 
         // The comparator MUST return false for the wrong reference.
         assertFalse(
@@ -570,6 +603,39 @@ public class McpTests {
 
         assertEquals(4, resp.id.intValue());
         assertNull(resp.error, "Unexpected error on listCollections call");
+
+        var result = resp.result;
+        var content = result.get("content");
+        assertEquals(1, content.size());
+        assertEquals("text", content.get(0).get("type").textValue());
+
+        var payload = MAPPER.readTree(content.get(0).get("text").textValue());
+        assertTrue(payload.get("ok").booleanValue(), "ok must be true");
+
+        var isError = result.get("isError");
+        assertTrue(isError == null || !isError.booleanValue(), "isError must be false or absent");
+    }
+
+    @Test
+    public void sec3_processTagged_returnsOkTrue() throws Exception {
+        // T26/D11: processTagged dispatch with a Tagged TagA value.
+        // ADT wire format under --jv-wrapped-adt-branch-codecs=false is the
+        // branch-discriminated object {"TagA":{...}} (the codec wraps the branch;
+        // the inputSchema oneOf is a separate structural view). Tagged carries no
+        // foreign type, so no FFancyStr codec registration is needed.
+        var server = makeServer();
+        var session = new McpSession();
+        initSession(server, session);
+
+        var resp = send(server, session,
+            new JsonRpcRequest(
+                MAPPER.readTree("7"),
+                "tools/call",
+                MAPPER.readTree("{\"name\":\"McpTools_processTagged\",\"arguments\":{\"tagged\":{\"TagA\":{\"id\":\"abc\",\"tag\":\"hello\"}}}}")
+            ));
+
+        assertEquals(7, resp.id.intValue());
+        assertNull(resp.error, "Unexpected error on processTagged call");
 
         var result = resp.result;
         var content = result.get("content");

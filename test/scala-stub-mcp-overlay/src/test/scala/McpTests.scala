@@ -71,6 +71,8 @@ class StubMcpTools extends mcp.stub.McpTools {
   def submitComposite(arg: mcp.stub.mcptools.submitcomposite.In): mcp.stub.mcptools.submitcomposite.Out =
     mcp.stub.mcptools.submitcomposite.Out(ok = true)
   def processShape(arg: ProcessShapeIn): ProcessShapeOut = ProcessShapeOut(ok = true)
+  def processTagged(arg: mcp.stub.mcptools.processtagged.In): mcp.stub.mcptools.processtagged.Out =
+    mcp.stub.mcptools.processtagged.Out(ok = true)
   def pagePoints(arg: PagePointsIn): PagePointsOut = PagePointsOut(ok = true)
   def ping(arg: PingIn): PingOut = PingOut(ok = true)
 }
@@ -197,23 +199,26 @@ class McpTests extends AnyFlatSpec with Matchers {
     (toolsArr, resp)
   }
 
-  "MCP §2: tools/list" should "return exactly 5 tools in declaration order (positions 0–4)" in {
+  "MCP §2: tools/list" should "return exactly 6 tools in declaration order (positions 0–5)" in {
     val (tools, resp) = initAndList()
 
     resp.id shouldBe Some(JsonRpcId.LongId(2L))
     resp.error shouldBe None
-    tools should have length 5
+    tools should have length 6
 
     def toolName(i: Int): String = tools(i).hcursor.downField("name").as[String].getOrElse(fail(s"tools[$i].name missing"))
 
     // Exact position assertions per §0 (model declaration order).
+    // processTagged is declared between processShape and pagePoints (T26/D11),
+    // so it occupies index 3 and shifts pagePoints→4, ping→5.
     // DELIBERATE-NEGATIVE-CONTROL: changing "McpTools_ping" → "McpTools_WRONG"
-    // on the next line makes this test fail, proving position[4] check is live.
+    // on the next line makes this test fail, proving position[5] check is live.
     toolName(0) shouldBe "McpTools_listCollections"
     toolName(1) shouldBe "McpTools_submitComposite"
     toolName(2) shouldBe "McpTools_processShape"
-    toolName(3) shouldBe "McpTools_pagePoints"
-    toolName(4) shouldBe "McpTools_ping"
+    toolName(3) shouldBe "McpTools_processTagged"
+    toolName(4) shouldBe "McpTools_pagePoints"
+    toolName(5) shouldBe "McpTools_ping"
 
     // No "nextCursor" key (§2.2)
     resp.result.flatMap(_.hcursor.downField("nextCursor").focus) shouldBe None
@@ -360,6 +365,46 @@ class McpTests extends AnyFlatSpec with Matchers {
       |  }
       |}""".stripMargin)
 
+  // processTagged: contract-bearing ADT (T26/D11). `Tagged` is `is HasId`;
+  // the HasId contract carries `id: str`, merged into every branch DTO at typing
+  // time (BaboonTranslator:289-306). Each branch $defs entry therefore already
+  // has `id` in properties + required, WITHOUT any allOf merge (H3 lock — see
+  // McpInputSchemaEmissionTest.scala "processTagged" case). Branch order in
+  // oneOf is declaration order: TagA then TagB.
+  private val refProcessTagged: Json = parseRef("McpTools_processTagged",
+    """{
+      |  "$schema": "https://json-schema.org/draft/2020-12/schema",
+      |  "type": "object",
+      |  "properties": {
+      |    "tagged": { "$ref": "#/$defs/mcp_stub_Tagged" }
+      |  },
+      |  "required": ["tagged"],
+      |  "$defs": {
+      |    "mcp_stub_Tagged": {
+      |      "oneOf": [
+      |        { "$ref": "#/$defs/mcp_stub_Tagged_TagA" },
+      |        { "$ref": "#/$defs/mcp_stub_Tagged_TagB" }
+      |      ]
+      |    },
+      |    "mcp_stub_Tagged_TagA": {
+      |      "type": "object",
+      |      "properties": {
+      |        "id":  { "type": "string" },
+      |        "tag": { "type": "string" }
+      |      },
+      |      "required": ["id", "tag"]
+      |    },
+      |    "mcp_stub_Tagged_TagB": {
+      |      "type": "object",
+      |      "properties": {
+      |        "id":     { "type": "string" },
+      |        "weight": { "type": "integer", "format": "int32" }
+      |      },
+      |      "required": ["id", "weight"]
+      |    }
+      |  }
+      |}""".stripMargin)
+
   private val refPagePoints: Json = parseRef("McpTools_pagePoints",
     """{
       |  "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -474,8 +519,9 @@ class McpTests extends AnyFlatSpec with Matchers {
     assertSchemaEqualsReference("McpTools_listCollections", inputSchema(0), refListCollections)
     assertSchemaEqualsReference("McpTools_submitComposite", inputSchema(1), refSubmitComposite)
     assertSchemaEqualsReference("McpTools_processShape",    inputSchema(2), refProcessShape)
-    assertSchemaEqualsReference("McpTools_pagePoints",      inputSchema(3), refPagePoints)
-    assertSchemaEqualsReference("McpTools_ping",            inputSchema(4), refPing)
+    assertSchemaEqualsReference("McpTools_processTagged",   inputSchema(3), refProcessTagged)
+    assertSchemaEqualsReference("McpTools_pagePoints",      inputSchema(4), refPagePoints)
+    assertSchemaEqualsReference("McpTools_ping",            inputSchema(5), refPing)
   }
 
   it should "fail K1 structural equality when given a deliberately wrong reference (negative control)" in {
@@ -499,7 +545,7 @@ class McpTests extends AnyFlatSpec with Matchers {
         |}""".stripMargin)
 
     val (tools, _) = initAndList()
-    val pingSchema  = tools(4).hcursor.downField("inputSchema").as[Json].getOrElse(fail("tools[4].inputSchema missing"))
+    val pingSchema  = tools(5).hcursor.downField("inputSchema").as[Json].getOrElse(fail("tools[5].inputSchema missing"))
 
     // The negative control: assertSchemaEqualsReference MUST throw (fail) for the wrong reference.
     val threw = try {
@@ -542,6 +588,44 @@ class McpTests extends AnyFlatSpec with Matchers {
     payload.hcursor.downField("ok").as[Boolean].getOrElse(fail("ok missing")) shouldBe true
 
     // isError MUST be false or absent (K4 §2.4 permits omission when false).
+    val isError = result.hcursor.downField("isError").as[Boolean].toOption
+    assert(isError.isEmpty || !isError.get, "isError must be false or absent")
+  }
+
+  it should "return ok=true and isError=false for McpTools_processTagged" in {
+    // T26/D11: processTagged dispatch with a Tagged TagA value (id + tag).
+    // Tagged carries no foreign type, so no FFancyStr codec registration is needed.
+    val server  = makeServer()
+    val session = new McpSession
+    initSession(server, session)
+
+    val resp = send(server, session, JsonRpcRequest(
+      id     = Some(JsonRpcId.LongId(7L)),
+      method = "tools/call",
+      params = Some(Json.obj(
+        "name"      -> Json.fromString("McpTools_processTagged"),
+        // ADT wire format under --sc-wrapped-adt-branch-codecs=false is the
+        // branch-discriminated object {"TagA": {...}} (ScJsonCodecGenerator
+        // wrapAdtBranchEncoder / decode headOption). The inputSchema oneOf is a
+        // SEPARATE structural view; the codec wire is the wrapped form.
+        "arguments" -> Json.obj(
+          "tagged" -> Json.obj("TagA" -> Json.obj("id" -> Json.fromString("abc"), "tag" -> Json.fromString("hello"))),
+        ),
+      )),
+    ))
+
+    resp.id shouldBe Some(JsonRpcId.LongId(7L))
+    resp.error shouldBe None
+
+    val result  = resp.result.getOrElse(fail("result must be present"))
+    val content = result.hcursor.downField("content").as[List[Json]].getOrElse(fail("content missing"))
+    content should have length 1
+    content.head.hcursor.downField("type").as[String].getOrElse(fail("content[0].type missing")) shouldBe "text"
+
+    val text    = content.head.hcursor.downField("text").as[String].getOrElse(fail("content[0].text missing"))
+    val payload = circeParseJson(text).getOrElse(fail(s"content[0].text is not valid JSON: $text"))
+    payload.hcursor.downField("ok").as[Boolean].getOrElse(fail("ok missing")) shouldBe true
+
     val isError = result.hcursor.downField("isError").as[Boolean].toOption
     assert(isError.isEmpty || !isError.get, "isError must be false or absent")
   }

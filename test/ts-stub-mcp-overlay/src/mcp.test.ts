@@ -66,6 +66,8 @@ import { In as SubmitCompositeIn } from "./baboondefinitions/generated/mcp/stub/
 import { Out as SubmitCompositeOut } from "./baboondefinitions/generated/mcp/stub/mcp-tools/submitcomposite/out";
 import { In as ProcessShapeIn } from "./baboondefinitions/generated/mcp/stub/mcp-tools/processshape/in";
 import { Out as ProcessShapeOut } from "./baboondefinitions/generated/mcp/stub/mcp-tools/processshape/out";
+import { In as ProcessTaggedIn } from "./baboondefinitions/generated/mcp/stub/mcp-tools/processtagged/in";
+import { Out as ProcessTaggedOut } from "./baboondefinitions/generated/mcp/stub/mcp-tools/processtagged/out";
 import { In as PagePointsIn } from "./baboondefinitions/generated/mcp/stub/mcp-tools/pagepoints/in";
 import { Out as PagePointsOut } from "./baboondefinitions/generated/mcp/stub/mcp-tools/pagepoints/out";
 
@@ -101,6 +103,9 @@ const stubMcpTools: McpTools = {
     },
     processShape(_arg: ProcessShapeIn): ProcessShapeOut {
         return new ProcessShapeOut(true);
+    },
+    processTagged(_arg: ProcessTaggedIn): ProcessTaggedOut {
+        return new ProcessTaggedOut(true);
     },
     pagePoints(_arg: PagePointsIn): PagePointsOut {
         return new PagePointsOut(true);
@@ -255,20 +260,23 @@ describe("MCP §2: tools/list and AJV inputSchema validation", () => {
     // Shared result — computed once for all tests in this describe block.
     const { tools, resp } = initAndList();
 
-    test("§2.2: exactly 5 tools in declaration order (positions 0–4)", () => {
+    test("§2.2: exactly 6 tools in declaration order (positions 0–5)", () => {
         expect(resp.id).toBe(2);
         expect(resp.error).toBeUndefined();
         expect(Array.isArray(tools)).toBe(true);
-        expect(tools).toHaveLength(5);
+        expect(tools).toHaveLength(6);
 
         // Exact position assertions per §0 (model declaration order).
+        // processTagged is declared between processShape and pagePoints (T26/D11),
+        // so it occupies index 3 and shifts pagePoints→4, ping→5.
         // DELIBERATE-NEGATIVE-CONTROL: changing "McpTools_ping" → "McpTools_WRONG"
-        // on the next line makes this test fail, proving position[4] check is live.
+        // on the next line makes this test fail, proving position[5] check is live.
         expect(tools[0].name).toBe("McpTools_listCollections");
         expect(tools[1].name).toBe("McpTools_submitComposite");
         expect(tools[2].name).toBe("McpTools_processShape");
-        expect(tools[3].name).toBe("McpTools_pagePoints");
-        expect(tools[4].name).toBe("McpTools_ping");
+        expect(tools[3].name).toBe("McpTools_processTagged");
+        expect(tools[4].name).toBe("McpTools_pagePoints");
+        expect(tools[5].name).toBe("McpTools_ping");
 
         // No "nextCursor" key (§2.2)
         expect((resp.result as Record<string, unknown>)["nextCursor"]).toBeUndefined();
@@ -342,21 +350,33 @@ describe("MCP §2: tools/list and AJV inputSchema validation", () => {
         expect(valid).toBe(true);
     });
 
-    test("§2.3 AJV tool[3] McpTools_pagePoints: conforming instance is valid", () => {
+    test("§2.3 AJV tool[3] McpTools_processTagged: conforming instances are valid", () => {
+        // T26/D11: contract-bearing ADT. The inputSchema for Tagged is a oneOf of
+        // flat branch objects (each branch carries the contract field `id` plus its
+        // own field). A conforming instance therefore matches one branch's flat
+        // shape — this validates against the SCHEMA (the codec wire form is separate).
         const validate = ajv.compile(tools[3].inputSchema as object);
+        // TagA branch: { id, tag }
+        expect(validate({ tagged: { id: "abc", tag: "hello" } })).toBe(true);
+        // TagB branch: { id, weight }
+        expect(validate({ tagged: { id: "def", weight: 42 } })).toBe(true);
+    });
+
+    test("§2.3 AJV tool[4] McpTools_pagePoints: conforming instance is valid", () => {
+        const validate = ajv.compile(tools[4].inputSchema as object);
         const valid = validate({ page: { items: [{ x: 1, y: 2 }], total: 1 } });
         expect(valid).toBe(true);
     });
 
-    test("§2.3 AJV tool[4] McpTools_ping: conforming instance is valid", () => {
-        const validate = ajv.compile(tools[4].inputSchema as object);
+    test("§2.3 AJV tool[5] McpTools_ping: conforming instance is valid", () => {
+        const validate = ajv.compile(tools[5].inputSchema as object);
         const valid = validate({ seqno: 7, label: "hi" });
         expect(valid).toBe(true);
     });
 
-    test("§2.3 AJV tool[4] McpTools_ping: required-field negative control — missing 'label' is rejected", () => {
+    test("§2.3 AJV tool[5] McpTools_ping: required-field negative control — missing 'label' is rejected", () => {
         // Negative control: proves the `required: ["seqno","label"]` constraint is live.
-        const validate = ajv.compile(tools[4].inputSchema as object);
+        const validate = ajv.compile(tools[5].inputSchema as object);
         const valid = validate({ seqno: 7 });   // missing required "label"
         expect(valid).toBe(false);  // MUST be rejected
     });
@@ -427,6 +447,37 @@ describe("MCP §3: tools/call success paths", () => {
         });
 
         expect(resp.id).toBe(4);
+        expect(resp.error).toBeUndefined();
+
+        const result = resp.result as {
+            content: Array<{ type: string; text: string }>;
+            isError?: boolean;
+        };
+        expect(result.content).toHaveLength(1);
+        expect(result.content[0].type).toBe("text");
+
+        const payload = JSON.parse(result.content[0].text) as { ok: boolean };
+        expect(payload.ok).toBe(true);
+
+        expect(result.isError === false || result.isError === undefined).toBe(true);
+    });
+
+    test("§3.3 McpTools_processTagged: content[0].text is '{\"ok\":true}', isError is false", () => {
+        // T26/D11: processTagged dispatch with a Tagged TagA value.
+        // ADT wire format under --ts-wrapped-adt-branch-codecs=false is the
+        // branch-discriminated object {"TagA":{...}} (the codec wraps the branch;
+        // the inputSchema oneOf is a separate structural view). Tagged carries no
+        // foreign type, so no FFancyStr codec registration is needed for it.
+        const resp = send(server, session, {
+            id: 7,
+            method: "tools/call",
+            params: {
+                name: "McpTools_processTagged",
+                arguments: { tagged: { TagA: { id: "abc", tag: "hello" } } },
+            },
+        });
+
+        expect(resp.id).toBe(7);
         expect(resp.error).toBeUndefined();
 
         const result = resp.result as {

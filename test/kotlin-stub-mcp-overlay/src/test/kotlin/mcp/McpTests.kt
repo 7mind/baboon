@@ -58,6 +58,7 @@ import mcp.stub.McpToolsWiring
 import mcp.stub.mcptools.listcollections.Out as ListCollectionsOut
 import mcp.stub.mcptools.submitcomposite.Out as SubmitCompositeOut
 import mcp.stub.mcptools.processshape.Out as ProcessShapeOut
+import mcp.stub.mcptools.processtagged.Out as ProcessTaggedOut
 import mcp.stub.mcptools.pagepoints.Out as PagePointsOut
 import mcp.stub.mcptools.ping.Out as PingOut
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -143,7 +144,32 @@ private val REF_PROCESS_SHAPE = Json.parseToJsonElement(
     "}"
 )
 
-// Tool 4: McpTools_pagePoints — template-instantiation alias PointPage = Page[Point]
+// Tool 4: McpTools_processTagged — contract-bearing ADT (T26/D11). `Tagged` is
+// `is HasId`; the HasId contract carries `id: str`, merged into every branch DTO
+// at typing time. Each branch $defs entry has `id` + own field, both required,
+// NO allOf. Branch order in oneOf is declaration order: TagA then TagB.
+private val REF_PROCESS_TAGGED = Json.parseToJsonElement(
+    "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+    "\"type\":\"object\"," +
+    "\"properties\":{" +
+      "\"tagged\":{\"\$ref\":\"#/\$defs/mcp_stub_Tagged\"}" +
+    "}," +
+    "\"required\":[\"tagged\"]," +
+    "\"\$defs\":{" +
+      "\"mcp_stub_Tagged\":{\"oneOf\":[{\"\$ref\":\"#/\$defs/mcp_stub_Tagged_TagA\"},{\"\$ref\":\"#/\$defs/mcp_stub_Tagged_TagB\"}]}," +
+      "\"mcp_stub_Tagged_TagA\":{\"type\":\"object\",\"properties\":{" +
+        "\"id\":{\"type\":\"string\"}," +
+        "\"tag\":{\"type\":\"string\"}" +
+      "},\"required\":[\"id\",\"tag\"]}," +
+      "\"mcp_stub_Tagged_TagB\":{\"type\":\"object\",\"properties\":{" +
+        "\"id\":{\"type\":\"string\"}," +
+        "\"weight\":{\"type\":\"integer\",\"format\":\"int32\"}" +
+      "},\"required\":[\"id\",\"weight\"]}" +
+    "}" +
+    "}"
+)
+
+// Tool 5: McpTools_pagePoints — template-instantiation alias PointPage = Page[Point]
 private val REF_PAGE_POINTS = Json.parseToJsonElement(
     "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
     "\"type\":\"object\"," +
@@ -164,7 +190,7 @@ private val REF_PAGE_POINTS = Json.parseToJsonElement(
     "}"
 )
 
-// Tool 5: McpTools_ping — scalar-only, no $defs
+// Tool 6: McpTools_ping — scalar-only, no $defs
 private val REF_PING = Json.parseToJsonElement(
     "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
     "\"type\":\"object\"," +
@@ -231,6 +257,8 @@ private class StubMcpTools : McpTools {
         SubmitCompositeOut(true)
     override fun processShape(arg: mcp.stub.mcptools.processshape.In): ProcessShapeOut =
         ProcessShapeOut(true)
+    override fun processTagged(arg: mcp.stub.mcptools.processtagged.In): ProcessTaggedOut =
+        ProcessTaggedOut(true)
     override fun pagePoints(arg: mcp.stub.mcptools.pagepoints.In): PagePointsOut =
         PagePointsOut(true)
     override fun ping(arg: mcp.stub.mcptools.ping.In): PingOut = PingOut(true)
@@ -363,21 +391,24 @@ class McpTests {
     // ---------------------------------------------------------------------------
 
     @Test
-    fun sec2_toolsList_exactlyFiveToolsInDeclarationOrder() {
+    fun sec2_toolsList_exactlySixToolsInDeclarationOrder() {
         val (tools, resp) = initAndList()
 
         assertEquals(2, resp.id!!.jsonPrimitive.int, "id must be 2")
         assertNull(resp.error)
-        assertEquals(5, tools.size, "MUST be exactly 5 tools")
+        assertEquals(6, tools.size, "MUST be exactly 6 tools")
 
         // Exact position assertions (model declaration order, T7 §0).
+        // processTagged is declared between processShape and pagePoints (T26/D11),
+        // so it occupies index 3 and shifts pagePoints→4, ping→5.
         // DELIBERATE-NEGATIVE-CONTROL: replacing "McpTools_ping" with "McpTools_WRONG"
-        // on the next line makes this test fail, proving position[4] check is live.
+        // on the next line makes this test fail, proving position[5] check is live.
         assertEquals("McpTools_listCollections", tools[0]["name"]!!.jsonPrimitive.content)
         assertEquals("McpTools_submitComposite", tools[1]["name"]!!.jsonPrimitive.content)
         assertEquals("McpTools_processShape", tools[2]["name"]!!.jsonPrimitive.content)
-        assertEquals("McpTools_pagePoints", tools[3]["name"]!!.jsonPrimitive.content)
-        assertEquals("McpTools_ping", tools[4]["name"]!!.jsonPrimitive.content)
+        assertEquals("McpTools_processTagged", tools[3]["name"]!!.jsonPrimitive.content)
+        assertEquals("McpTools_pagePoints", tools[4]["name"]!!.jsonPrimitive.content)
+        assertEquals("McpTools_ping", tools[5]["name"]!!.jsonPrimitive.content)
 
         // No "nextCursor" key (§2.2)
         assertNull(resp.result!!.jsonObject["nextCursor"], "nextCursor must not be present")
@@ -416,7 +447,7 @@ class McpTests {
     }
 
     @Test
-    fun sec2_k1_allFiveTools_structuralEqualityToT7Reference() {
+    fun sec2_k1_allSixTools_structuralEqualityToT7Reference() {
         // K1 part (b) — structural equality to T7 §2.3 reference.
         // Each returned inputSchema is parsed via kotlinx-serialization
         // (codec-divergence coverage) and compared key-by-key recursively
@@ -429,11 +460,12 @@ class McpTests {
             REF_LIST_COLLECTIONS,  // tools[0] = McpTools_listCollections
             REF_SUBMIT_COMPOSITE,  // tools[1] = McpTools_submitComposite
             REF_PROCESS_SHAPE,     // tools[2] = McpTools_processShape
-            REF_PAGE_POINTS,       // tools[3] = McpTools_pagePoints
-            REF_PING,              // tools[4] = McpTools_ping
+            REF_PROCESS_TAGGED,    // tools[3] = McpTools_processTagged
+            REF_PAGE_POINTS,       // tools[4] = McpTools_pagePoints
+            REF_PING,              // tools[5] = McpTools_ping
         )
 
-        for (i in 0..4) {
+        for (i in 0..5) {
             val toolName = tools[i]["name"]!!.jsonPrimitive.content
             // Re-parse through kotlinx-serialization to exercise codec round-trip.
             val actual = Json.parseToJsonElement(tools[i]["inputSchema"]!!.toString())
@@ -467,7 +499,7 @@ class McpTests {
             "}"
         )
         val (tools, _) = initAndList()
-        val actualPing = Json.parseToJsonElement(tools[4]["inputSchema"]!!.toString())
+        val actualPing = Json.parseToJsonElement(tools[5]["inputSchema"]!!.toString())
 
         // The comparator MUST return false for the wrong reference.
         assertFalse(
@@ -537,6 +569,40 @@ class McpTests {
 
         assertEquals(4, resp.id!!.jsonPrimitive.int)
         assertNull(resp.error, "Unexpected error on listCollections call")
+
+        val result = resp.result!!.jsonObject
+        val content = result["content"]!!.jsonArray
+        assertEquals(1, content.size)
+        assertEquals("text", content[0].jsonObject["type"]!!.jsonPrimitive.content)
+
+        val payload = Json.parseToJsonElement(content[0].jsonObject["text"]!!.jsonPrimitive.content).jsonObject
+        assertEquals(true, payload["ok"]!!.jsonPrimitive.boolean, "ok must be true")
+
+        val isError = result["isError"]
+        assertTrue(isError == null || isError == JsonPrimitive(false), "isError must be false or absent")
+    }
+
+    @Test
+    fun sec3_processTagged_returnsOkTrue() {
+        // T26/D11: processTagged dispatch with a Tagged TagA value.
+        // ADT wire format under --kt-wrapped-adt-branch-codecs=false is the
+        // branch-discriminated object {"TagA":{...}} (the codec wraps the branch;
+        // the inputSchema oneOf is a separate structural view). Tagged carries no
+        // foreign type, so no FFancyStr codec registration is needed.
+        val server = makeServer()
+        val session = McpSession()
+        initSession(server, session)
+
+        val resp = send(
+            server, session,
+            JsonRpcRequest(
+                JsonPrimitive(7), "tools/call",
+                Json.parseToJsonElement("""{"name":"McpTools_processTagged","arguments":{"tagged":{"TagA":{"id":"abc","tag":"hello"}}}}"""),
+            ),
+        )
+
+        assertEquals(7, resp.id!!.jsonPrimitive.int)
+        assertNull(resp.error, "Unexpected error on processTagged call")
 
         val result = resp.result!!.jsonObject
         val content = result["content"]!!.jsonArray

@@ -60,6 +60,12 @@ final class McpTests: XCTestCase {
 
     private let refProcessShape = ##"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"shape":{"$ref":"#/$defs/mcp_stub_Shape"},"tree":{"$ref":"#/$defs/mcp_stub_Tree"}},"required":["shape","tree"],"$defs":{"mcp_stub_Shape":{"oneOf":[{"$ref":"#/$defs/mcp_stub_Shape_Circle"},{"$ref":"#/$defs/mcp_stub_Shape_Rect"}]},"mcp_stub_Tree":{"type":"object","properties":{"value":{"type":"integer","format":"int32"},"left":{"oneOf":[{"$ref":"#/$defs/mcp_stub_Tree"},{"type":"null"}]},"children":{"type":"array","items":{"$ref":"#/$defs/mcp_stub_Tree"}}},"required":["value","children"]},"mcp_stub_Shape_Circle":{"type":"object","properties":{"radius":{"type":"number","format":"double"}},"required":["radius"]},"mcp_stub_Shape_Rect":{"type":"object","properties":{"w":{"type":"number","format":"double"},"h":{"type":"number","format":"double"}},"required":["w","h"]}}}"##
 
+    // Tool 4: McpTools_processTagged — contract-bearing ADT (T26/D11). `Tagged` is
+    // `is HasId`; the HasId contract carries `id: str`, merged into every branch DTO
+    // at typing time. Each branch $defs entry has `id` + own field, both required,
+    // NO allOf. Branch order in oneOf is declaration order: TagA then TagB.
+    private let refProcessTagged = ##"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tagged":{"$ref":"#/$defs/mcp_stub_Tagged"}},"required":["tagged"],"$defs":{"mcp_stub_Tagged":{"oneOf":[{"$ref":"#/$defs/mcp_stub_Tagged_TagA"},{"$ref":"#/$defs/mcp_stub_Tagged_TagB"}]},"mcp_stub_Tagged_TagA":{"type":"object","properties":{"id":{"type":"string"},"tag":{"type":"string"}},"required":["id","tag"]},"mcp_stub_Tagged_TagB":{"type":"object","properties":{"id":{"type":"string"},"weight":{"type":"integer","format":"int32"}},"required":["id","weight"]}}}"##
+
     private let refPagePoints = ##"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"page":{"$ref":"#/$defs/mcp_stub_PointPage"}},"required":["page"],"$defs":{"mcp_stub_Point":{"type":"object","properties":{"x":{"type":"integer","format":"int32"},"y":{"type":"integer","format":"int32"}},"required":["x","y"]},"mcp_stub_PointPage":{"type":"object","properties":{"items":{"type":"array","items":{"$ref":"#/$defs/mcp_stub_Point"}},"total":{"type":"integer","format":"int32","minimum":0}},"required":["items","total"]}}}"##
 
     private let refPing = #"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"seqno":{"type":"integer","format":"int32"},"label":{"type":"string"}},"required":["seqno","label"]}"#
@@ -133,6 +139,9 @@ final class McpTests: XCTestCase {
         func processShape(arg: mcptools.processshape.`in`) -> mcptools.processshape.out {
             return mcptools.processshape.out(ok: true)
         }
+        func processTagged(arg: mcptools.processtagged.`in`) -> mcptools.processtagged.out {
+            return mcptools.processtagged.out(ok: true)
+        }
         func pagePoints(arg: mcptools.pagepoints.`in`) -> mcptools.pagepoints.out {
             return mcptools.pagepoints.out(ok: true)
         }
@@ -168,10 +177,13 @@ final class McpTests: XCTestCase {
         return resp
     }
 
+    // processTagged is declared between processShape and pagePoints (T26/D11),
+    // so it occupies index 3 and shifts pagePoints→4, ping→5.
     private let expectedToolNames = [
         "McpTools_listCollections",
         "McpTools_submitComposite",
         "McpTools_processShape",
+        "McpTools_processTagged",
         "McpTools_pagePoints",
         "McpTools_ping",
     ]
@@ -233,9 +245,9 @@ final class McpTests: XCTestCase {
         return (result["tools"] as! [[String: Any]])
     }
 
-    func test_sec2_exactlyFiveToolsInDeclarationOrder() {
+    func test_sec2_exactlySixToolsInDeclarationOrder() {
         let tools = listedTools()
-        XCTAssertEqual(tools.count, 5, "MUST be exactly 5 tools")
+        XCTAssertEqual(tools.count, 6, "MUST be exactly 6 tools")
         for (i, name) in expectedToolNames.enumerated() {
             XCTAssertEqual(tools[i]["name"] as? String, name, "tool position \(i) must be \(name)")
         }
@@ -268,11 +280,11 @@ final class McpTests: XCTestCase {
         }
     }
 
-    func test_sec2_k1_allFiveTools_structuralEqualityToT7Reference() {
+    func test_sec2_k1_allSixTools_structuralEqualityToT7Reference() {
         // K1 part (b) — structural equality to T7 §2.3 reference literals.
         let tools = listedTools()
-        let refs = [refListCollections, refSubmitComposite, refProcessShape, refPagePoints, refPing]
-        for i in 0..<5 {
+        let refs = [refListCollections, refSubmitComposite, refProcessShape, refProcessTagged, refPagePoints, refPing]
+        for i in 0..<6 {
             let toolName = tools[i]["name"] as! String
             // Re-serialize and re-parse via JSONSerialization to exercise the
             // full codec round-trip (codec-rendering divergence coverage, K1 §3).
@@ -289,7 +301,7 @@ final class McpTests: XCTestCase {
         // NEGATIVE CONTROL (T7 §5.2): the comparator MUST DETECT a wrong reference.
         // Wrong reference: ping schema with an extra top-level field "extra":"bad".
         let tools = listedTools()
-        let pingSchema = tools[4]["inputSchema"] as! [String: Any]
+        let pingSchema = tools[5]["inputSchema"] as! [String: Any]
 
         let wrongRef = parseSchema(#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"seqno":{"type":"integer","format":"int32"},"label":{"type":"string"}},"required":["seqno","label"],"extra":"bad"}"#)
 
@@ -342,6 +354,31 @@ final class McpTests: XCTestCase {
         let result = resp.result as! [String: Any]
         let content = result["content"] as! [[String: Any]]
         XCTAssertEqual(content.count, 1)
+        let payload = parseAny(content[0]["text"] as! String) as! [String: Any]
+        XCTAssertEqual(payload["ok"] as? Bool, true, "ok must be true")
+        let isError = result["isError"]
+        XCTAssertTrue(isError == nil || (isError as? Bool) == false, "isError must be false or absent")
+    }
+
+    func test_sec3_processTagged_returnsOkTrue() {
+        // T26/D11: processTagged dispatch with a Tagged TagA value.
+        // ADT wire format under --sw-wrapped-adt-branch-codecs=false is the
+        // branch-discriminated object {"TagA":{...}} (the codec wraps the branch;
+        // the inputSchema oneOf is a separate structural view). Tagged carries no
+        // foreign type, so no FFancyStr codec registration is needed.
+        let stub = StubMcpTools()
+        let server = makeServer(stub)
+        let session = McpSession()
+        initSession(server, session, stub)
+
+        let resp = send(server, session, stub, JsonRpcRequest(7, "tools/call",
+            parseAny(#"{"name":"McpTools_processTagged","arguments":{"tagged":{"TagA":{"id":"abc","tag":"hello"}}}}"#)))
+
+        XCTAssertNil(resp.error, "Unexpected error on processTagged call")
+        let result = resp.result as! [String: Any]
+        let content = result["content"] as! [[String: Any]]
+        XCTAssertEqual(content.count, 1)
+        XCTAssertEqual(content[0]["type"] as? String, "text")
         let payload = parseAny(content[0]["text"] as! String) as! [String: Any]
         XCTAssertEqual(payload["ok"] as? Bool, true, "ok must be true")
         let isError = result["isError"]
