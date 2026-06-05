@@ -296,12 +296,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
 
     val allImports = (usualImportsByModule ++ versionedImports).joinN()
 
-    // PEP 563: postponed evaluation of annotations. Required for self-referential
-    // pydantic models (e.g. recursive DTOs such as Tree with opt[Tree] fields);
-    // harmless for all other files.
-    val futureAnnotations = TextTree.text[PyValue]("from __future__ import annotations")
-
-    val full = Seq(futureAnnotations, allImports, o.tree).joinNN()
+    val full = Seq(allImports, o.tree).joinNN()
 
     full.mapRender {
       case t: PyValue.PyType => aliasMap.getOrElse(t, t.name)

@@ -246,23 +246,5 @@ abstract class PyMcpServerEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestM
         }
     }
 
-    "flag-off: emit no MCP files when --py-generate-mcp-server=false" in {
-      (loader: BaboonLoader[F], translator: BaboonAbstractTranslator[F]) =>
-        for {
-          family <- loadStubFamily(loader)
-          srcs   <- translator.translate(family)
-        } yield {
-          // Positive control: flag-on emits the runtime (verified above).
-          // This sub-test checks flag-on emits MCP files.
-          assert(
-            srcs.files.keys.exists(_.endsWith("baboon_mcp_runtime.py")),
-            "positive control: baboon_mcp_runtime.py absent with flag=true",
-          )
-          assert(
-            srcs.files.keys.exists(_.endsWith("McpToolsMcpServer.py")),
-            "positive control: McpToolsMcpServer.py absent with flag=true",
-          )
-        }
-    }
   }
 }
