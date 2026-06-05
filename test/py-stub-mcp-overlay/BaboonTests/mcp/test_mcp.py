@@ -56,8 +56,8 @@ REF_LIST_COLLECTIONS = json.loads(
     '"tags":{"type":"array","items":{"type":"string"}},'
     '"uniqueIds":{"type":"array","items":{"type":"integer","format":"int64"},"uniqueItems":true},'
     '"labels":{"type":"object","additionalProperties":{"type":"string"}},'
-    '"byColor":{"type":"array","items":{"type":"object","required":["key","value"],'
-    '"properties":{"key":{"$ref":"#/$defs/mcp_stub_Color"},"value":{"type":"string"}}}}'
+    '"byColor":{"type":"object","additionalProperties":{"type":"string"},'
+    '"propertyNames":{"type":"string","enum":["Red","Green","Blue"]}}'
     '},'
     '"required":["tags","uniqueIds","labels","byColor"],'
     '"$defs":{"mcp_stub_Color":{"type":"string","enum":["Red","Green","Blue"]}}'
@@ -491,10 +491,24 @@ class Sec3ToolsCallSuccessTests(unittest.TestCase):
     def test_listCollections_returns_ok_true(self):
         tools, resp_list, server, session, codec_ctx = _init_and_list()
 
-        # Note: byColor is map[Color,str] with an enum key. The Python JSON codec
-        # encodes/decodes non-string-keyed maps as plain JSON objects with the enum
-        # value as the key string. Passing an empty dict {} avoids triggering the
-        # enum-key codec path (mirrors the Kotlin test's "byColor":{}).
+        # D6/T30: byColor is map[Color,str] with an enum key. The Python JSON codec
+        # stringifies the enum key to its wire-name (`value.value`) and decodes it
+        # back via the enum constructor, so a NON-EMPTY enum-keyed map round-trips as
+        # a string-keyed JSON object. (Previously this test passed an empty dict {} to
+        # dodge the missing Typedef.Enum key-codec arm — the BUG-throw fixed by T30.)
+        byColor = {"Green": "ok", "Red": "stop"}
+
+        # The non-empty instance must conform to the tool's inputSchema (the wire form
+        # the schema now declares): every key is one of the enum's wire values and
+        # every value is a string. (py-stub has no jsonschema dependency, so validate
+        # the byColor fragment of the reference schema structurally.)
+        by_color_schema = REF_LIST_COLLECTIONS["properties"]["byColor"]
+        self.assertEqual(by_color_schema["type"], "object")
+        allowed_keys = set(by_color_schema["propertyNames"]["enum"])
+        for k, v in byColor.items():
+            self.assertIn(k, allowed_keys, f"byColor key {k!r} must be an enum wire value")
+            self.assertIsInstance(v, str, "byColor value must be a string")
+
         resp = _send(
             server,
             session,
@@ -509,7 +523,7 @@ class Sec3ToolsCallSuccessTests(unittest.TestCase):
                         "tags": ["a", "b"],
                         "uniqueIds": [1, 2],
                         "labels": {"k": "v"},
-                        "byColor": {},
+                        "byColor": byColor,
                     },
                 },
             },

@@ -98,7 +98,7 @@ class OasTypeTranslator {
     * Returns a JSON string (without surrounding braces or commas) that can be
     * embedded as a property schema or array items schema.
     */
-  def typeRefSchema(ref: TypeRef): String = {
+  def typeRefSchema(ref: TypeRef, enumKeys: Set[TypeId.User] = Set.empty): String = {
     ref match {
       case TypeRef.Scalar(id: TypeId.BuiltinScalar) =>
         scalarSchemaJson(id)
@@ -108,19 +108,19 @@ class OasTypeTranslator {
 
       case TypeRef.Constructor(TypeId.Builtins.opt, args) =>
         // nullable via oneOf [schema, null] (OpenAPI 3.1 / JSON Schema 2020-12)
-        val inner = typeRefSchema(args.head)
+        val inner = typeRefSchema(args.head, enumKeys)
         s"""{"oneOf": [$inner, {"type": "null"}]}"""
 
       case TypeRef.Constructor(TypeId.Builtins.lst, args) =>
-        val items = typeRefSchema(args.head)
+        val items = typeRefSchema(args.head, enumKeys)
         s"""{"type": "array", "items": $items}"""
 
       case TypeRef.Constructor(TypeId.Builtins.set, args) =>
-        val items = typeRefSchema(args.head)
+        val items = typeRefSchema(args.head, enumKeys)
         s"""{"type": "array", "items": $items, "uniqueItems": true}"""
 
       case TypeRef.Constructor(TypeId.Builtins.map, args) =>
-        mapSchema(args.head, args.tail.head)
+        mapSchema(args.head, args.tail.head, enumKeys)
       case _: TypeRef.Any =>
         // OpenAPI / JSON Schema fragment for the locked `AnyOpaque` JSON envelope.
         // Documents the on-wire keys ($ak/$ad/$av/$at/$c) and the kind-byte range
@@ -136,19 +136,40 @@ class OasTypeTranslator {
   /** JSON Schema for a map type.
     *
     * String-keyed maps become `{"type": "object", "additionalProperties": ...}`.
-    * Non-string-keyed maps become arrays of `{key, value}` entry objects.
+    * ENUM-keyed maps also become string-keyed objects (D6/T30: every backend's
+    * JSON codec stringifies an enum map key to its wire-name and emits a
+    * string-keyed JSON object, so the schema must declare a string-keyed object
+    * — not an entry-array — to match the wire), with `propertyNames` constrained
+    * to the enum component. Other non-string-keyed maps become arrays of
+    * `{key, value}` entry objects.
     */
-  private def mapSchema(keyRef: TypeRef, valRef: TypeRef): String = {
-    val valSchema = typeRefSchema(valRef)
-    if (isStringKey(keyRef)) {
-      s"""{"type": "object", "additionalProperties": $valSchema}"""
-    } else {
-      val keySchema = typeRefSchema(keyRef)
-      val entrySchema =
-        s"""{"type": "object", "required": ["key", "value"], "properties": {"key": $keySchema, "value": $valSchema}}"""
-      s"""{"type": "array", "items": $entrySchema}"""
+  private def mapSchema(keyRef: TypeRef, valRef: TypeRef, enumKeys: Set[TypeId.User]): String = {
+    val valSchema = typeRefSchema(valRef, enumKeys)
+    keyRef match {
+      case TypeRef.Scalar(id: TypeId.User) if enumKeys.contains(id) =>
+        val propertyNames = s"""{"$$ref": "#/components/schemas/${escapeJson(schemaName(id))}"}"""
+        s"""{"type": "object", "additionalProperties": $valSchema, "propertyNames": $propertyNames}"""
+      case _ if isStringKey(keyRef) =>
+        s"""{"type": "object", "additionalProperties": $valSchema}"""
+      case _ =>
+        val keySchema = typeRefSchema(keyRef, enumKeys)
+        val entrySchema =
+          s"""{"type": "object", "required": ["key", "value"], "properties": {"key": $keySchema, "value": $valSchema}}"""
+        s"""{"type": "array", "items": $entrySchema}"""
     }
   }
+
+  /** The enum user-type ids of a domain — passed into `typeRefSchema` so enum
+    * map keys can be reconciled to the string-keyed-object wire form (D6/T30).
+    */
+  def enumKeysOf(domain: Domain): Set[TypeId.User] =
+    domain.defs.meta.nodes.values.collect {
+      case u: DomainMember.User =>
+        u.defn match {
+          case e: Typedef.Enum => Some(e.id)
+          case _               => None
+        }
+    }.flatten.toSet
 
   private def isStringKey(ref: TypeRef): Boolean = {
     ref match {

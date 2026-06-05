@@ -96,6 +96,7 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
     val pkg                = domain.id
     val ver                = domain.version
     val foreignResolutions = typeTranslator.foreignTypeResolution(domain)
+    val enumKeys           = typeTranslator.enumKeysOf(domain)
 
     val members = domain.defs.meta.nodes.values.collect {
       case u: DomainMember.User => u
@@ -108,7 +109,7 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
           case f: Typedef.Foreign if f.runtimeMapping.nonEmpty => None
           case f: Typedef.Foreign                              => Some(renderForeignSchema(f))
           case _ if m.ownedByAdt                               => None
-          case defn                                            => Some(renderTypedef(defn, m.docs, domain, foreignResolutions))
+          case defn                                            => Some(renderTypedef(defn, m.docs, domain, foreignResolutions, enumKeys))
         }
     }
 
@@ -143,16 +144,17 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
     docs: Docs,
     domain: Domain,
     foreignResolutions: Map[TypeId.User, Option[TypeRef]],
+    enumKeys: Set[TypeId.User],
   ): String = {
     defn match {
-      case dto: Typedef.Dto => renderDto(dto, docs, foreignResolutions)
+      case dto: Typedef.Dto => renderDto(dto, docs, foreignResolutions, enumKeys)
       case e: Typedef.Enum  => renderEnum(e, docs)
-      case adt: Typedef.Adt => renderAdt(adt, docs, domain, foreignResolutions)
+      case adt: Typedef.Adt => renderAdt(adt, docs, domain, foreignResolutions, enumKeys)
       case other            => throw new IllegalArgumentException(s"Unexpected typedef in OpenAPI renderTypedef: ${other.id}")
     }
   }
 
-  private def renderDto(dto: Typedef.Dto, docs: Docs, foreignResolutions: Map[TypeId.User, Option[TypeRef]]): String = {
+  private def renderDto(dto: Typedef.Dto, docs: Docs, foreignResolutions: Map[TypeId.User, Option[TypeRef]], enumKeys: Set[TypeId.User]): String = {
     val name        = typeTranslator.schemaName(dto.id)
     val esc         = typeTranslator.escapeJson _
     val descJson    = typeTranslator.renderOasDescription(docs).map(d => s""", "description": "${esc(d)}"""").getOrElse("")
@@ -172,7 +174,7 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
 
       val propsJson = resolvedFields.map {
         f =>
-          val schema    = typeTranslator.typeRefSchema(f.tpe)
+          val schema    = typeTranslator.typeRefSchema(f.tpe, enumKeys)
           val fieldDesc = typeTranslator.renderOasDescription(f.docs)
           fieldDesc match {
             case Some(d) =>
@@ -209,6 +211,7 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
     docs: Docs,
     domain: Domain,
     foreignResolutions: Map[TypeId.User, Option[TypeRef]],
+    enumKeys: Set[TypeId.User],
   ): String = {
     import Typedef.Adt.AdtSyntax
     val name        = typeTranslator.schemaName(adt.id)
@@ -222,7 +225,7 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
         domain.defs.meta.nodes.get(memberId).collect {
           case u: DomainMember.User =>
             u.defn match {
-              case dto: Typedef.Dto => renderDto(dto, u.docs, foreignResolutions)
+              case dto: Typedef.Dto => renderDto(dto, u.docs, foreignResolutions, enumKeys)
               case e: Typedef.Enum  => renderEnum(e, u.docs)
               case other            => throw new IllegalArgumentException(s"Unexpected ADT branch type in OpenAPI backend: ${other.id}")
             }

@@ -56,6 +56,7 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     val ctx = ForeignContext(
       resolutions = typeTranslator.foreignTypeResolution(domain),
       defs        = foreignDefsOf(domain),
+      enums       = enumDefsOf(domain),
     )
 
     val rootId = requestSig match {
@@ -265,25 +266,47 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     }
   }
 
-  /** Map schema: string-keyed → object+additionalProperties; non-string-keyed
-    * (enum/foreign/id key) → array of `{key,value}` entry objects (JSON has no
-    * native non-string-keyed map). Mirrors the OAS map shape but with local
-    * element refs.
+  /** Map schema: string-keyed → object+additionalProperties; ENUM-keyed →
+    * object+additionalProperties with `propertyNames` constrained to the enum's
+    * wire values (D6/T30: every backend's JSON codec stringifies an enum map key
+    * to its wire-name and emits a string-keyed JSON object, so the inputSchema
+    * must declare a string-keyed object — not an entry-array — to match the
+    * wire); other non-string-keyed (foreign/id key) → array of `{key,value}`
+    * entry objects (JSON has no native non-string-keyed map). Mirrors the OAS
+    * map shape but with local element refs.
     */
   private def mapSchema(keyRef: TypeRef, valRef: TypeRef, ctx: ForeignContext): Json = {
     val valSchema = fieldSchema(valRef, ctx)
-    if (isStringKey(keyRef)) {
-      Json.obj(typeKeyword -> Json.fromString("object"), additionalPropertiesKeyword -> valSchema)
-    } else {
-      val keySchema = fieldSchema(keyRef, ctx)
-      val entry = Json.obj(
-        typeKeyword       -> Json.fromString("object"),
-        requiredKeyword   -> Json.arr(Json.fromString("key"), Json.fromString("value")),
-        propertiesKeyword -> Json.obj("key" -> keySchema, "value" -> valSchema),
-      )
-      Json.obj(typeKeyword -> Json.fromString("array"), itemsKeyword -> entry)
+    enumKey(keyRef, ctx) match {
+      case Some(e) =>
+        Json.obj(
+          typeKeyword                 -> Json.fromString("object"),
+          additionalPropertiesKeyword -> valSchema,
+          propertyNamesKeyword        -> enumSchema(e),
+        )
+      case None =>
+        if (isStringKey(keyRef)) {
+          Json.obj(typeKeyword -> Json.fromString("object"), additionalPropertiesKeyword -> valSchema)
+        } else {
+          val keySchema = fieldSchema(keyRef, ctx)
+          val entry = Json.obj(
+            typeKeyword       -> Json.fromString("object"),
+            requiredKeyword   -> Json.arr(Json.fromString("key"), Json.fromString("value")),
+            propertiesKeyword -> Json.obj("key" -> keySchema, "value" -> valSchema),
+          )
+          Json.obj(typeKeyword -> Json.fromString("array"), itemsKeyword -> entry)
+        }
     }
   }
+
+  /** The enum typedef a map key resolves to, if any (after Baboon `rt` foreign
+    * resolution). `None` for non-enum keys.
+    */
+  private def enumKey(ref: TypeRef, ctx: ForeignContext): Option[Typedef.Enum] =
+    typeTranslator.resolveTypeRef(ref, ctx.resolutions) match {
+      case TypeRef.Scalar(id: TypeId.User) => ctx.enums.get(id)
+      case _                               => None
+    }
 
   private def isStringKey(ref: TypeRef): Boolean = ref match {
     case TypeRef.Scalar(TypeId.Builtins.str) => true
@@ -338,6 +361,15 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
         }
     }.flatten.toMap
 
+  private def enumDefsOf(domain: Domain): Map[TypeId.User, Typedef.Enum] =
+    domain.defs.meta.nodes.values.collect {
+      case u: DomainMember.User =>
+        u.defn match {
+          case e: Typedef.Enum => Some(e.id -> e)
+          case _               => None
+        }
+    }.flatten.toMap
+
   /** Parse a JSON fragment string produced by the OAS fragment generator into a
     * `Json` value. The OAS generator returns well-formed JSON object literals;
     * a parse failure indicates an emitter defect and is surfaced eagerly.
@@ -370,6 +402,7 @@ object McpInputSchemaEmitter {
   final val itemsKeyword                = "items"
   final val uniqueItemsKeyword          = "uniqueItems"
   final val additionalPropertiesKeyword = "additionalProperties"
+  final val propertyNamesKeyword        = "propertyNames"
   final val descriptionKeyword          = "description"
   final val refKeyword                  = "$ref"
   final val defsKeyword                 = "$defs"
@@ -382,6 +415,7 @@ object McpInputSchemaEmitter {
   private final case class ForeignContext(
     resolutions: Map[TypeId.User, Option[TypeRef]],
     defs: Map[TypeId.User, Typedef.Foreign],
+    enums: Map[TypeId.User, Typedef.Enum],
   )
 
   /** Per-language declaration strings that denote that language's native string

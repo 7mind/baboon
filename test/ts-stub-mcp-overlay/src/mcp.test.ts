@@ -298,11 +298,13 @@ describe("MCP §2: tools/list and AJV inputSchema validation", () => {
 
     test("§2.3 AJV tool[0] McpTools_listCollections: conforming instance is valid", () => {
         const validate = ajv.compile(tools[0].inputSchema as object);
+        // D6/T30: byColor is map[Color,str] — a string-keyed object with enum wire-name
+        // keys (matches the wire the codecs emit and the reconciled inputSchema).
         const valid = validate({
             tags: ["a", "b"],
             uniqueIds: [1, 2],
             labels: { k: "v" },
-            byColor: [{ key: "Green", value: "ok" }],
+            byColor: { Green: "ok", Red: "stop" },
         });
         expect(valid).toBe(true);
     });

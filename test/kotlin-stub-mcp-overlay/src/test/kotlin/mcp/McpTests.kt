@@ -82,8 +82,8 @@ private val REF_LIST_COLLECTIONS = Json.parseToJsonElement(
       "\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}," +
       "\"uniqueIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"format\":\"int64\"},\"uniqueItems\":true}," +
       "\"labels\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}," +
-      "\"byColor\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"key\",\"value\"]," +
-        "\"properties\":{\"key\":{\"\$ref\":\"#/\$defs/mcp_stub_Color\"},\"value\":{\"type\":\"string\"}}}}" +
+      "\"byColor\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}," +
+        "\"propertyNames\":{\"type\":\"string\",\"enum\":[\"Red\",\"Green\",\"Blue\"]}}" +
     "}," +
     "\"required\":[\"tags\",\"uniqueIds\",\"labels\",\"byColor\"]," +
     "\"\$defs\":{\"mcp_stub_Color\":{\"type\":\"string\",\"enum\":[\"Red\",\"Green\",\"Blue\"]}}" +
@@ -527,10 +527,11 @@ class McpTests {
             server, session,
             JsonRpcRequest(
                 JsonPrimitive(4), "tools/call",
-                // byColor is map[Color,str] which Kotlin encodes/decodes as a JSON object
-                // with enum-name keys (e.g. {"Red":"r"}), not an array. Send an empty
-                // object {} which satisfies the decoder (no required entries).
-                Json.parseToJsonElement("""{"name":"McpTools_listCollections","arguments":{"tags":["a","b"],"uniqueIds":[1,2],"labels":{"k":"v"},"byColor":{}}}"""),
+                // D6/T30: byColor is map[Color,str] which Kotlin encodes/decodes as a JSON
+                // object with enum-name keys (e.g. {"Green":"ok"}). Send a NON-EMPTY object
+                // — it conforms to the inputSchema (string-keyed object, propertyNames
+                // constrained to the enum wire values) and exercises the enum key-codec path.
+                Json.parseToJsonElement("""{"name":"McpTools_listCollections","arguments":{"tags":["a","b"],"uniqueIds":[1,2],"labels":{"k":"v"},"byColor":{"Green":"ok","Red":"stop"}}}"""),
             ),
         )
 

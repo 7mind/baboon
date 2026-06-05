@@ -89,8 +89,8 @@ public class McpTests {
           "\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}," +
           "\"uniqueIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"format\":\"int64\"},\"uniqueItems\":true}," +
           "\"labels\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}," +
-          "\"byColor\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"key\",\"value\"]," +
-            "\"properties\":{\"key\":{\"$ref\":\"#/$defs/mcp_stub_Color\"},\"value\":{\"type\":\"string\"}}}}" +
+          "\"byColor\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}," +
+            "\"propertyNames\":{\"type\":\"string\",\"enum\":[\"Red\",\"Green\",\"Blue\"]}}" +
         "}," +
         "\"required\":[\"tags\",\"uniqueIds\",\"labels\",\"byColor\"]," +
         "\"$defs\":{\"mcp_stub_Color\":{\"type\":\"string\",\"enum\":[\"Red\",\"Green\",\"Blue\"]}}" +
@@ -562,7 +562,10 @@ public class McpTests {
             new JsonRpcRequest(
                 MAPPER.readTree("4"),
                 "tools/call",
-                MAPPER.readTree("{\"name\":\"McpTools_listCollections\",\"arguments\":{\"tags\":[\"a\",\"b\"],\"uniqueIds\":[1,2],\"labels\":{\"k\":\"v\"},\"byColor\":[]}}")
+                // D6/T30: byColor is map[Color,str]; Java encodes/decodes it as a string-keyed
+                // object with enum wire-name keys. Send a NON-EMPTY object conforming to the
+                // inputSchema (exercises the enum key-codec path).
+                MAPPER.readTree("{\"name\":\"McpTools_listCollections\",\"arguments\":{\"tags\":[\"a\",\"b\"],\"uniqueIds\":[1,2],\"labels\":{\"k\":\"v\"},\"byColor\":{\"Green\":\"ok\",\"Red\":\"stop\"}}}")
             ));
 
         assertEquals(4, resp.id.intValue());

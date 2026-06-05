@@ -258,15 +258,9 @@ fn ref_schema_list_collections() -> serde_json::Value {
             "uniqueIds": { "type": "array", "items": { "type": "integer", "format": "int64" }, "uniqueItems": true },
             "labels":    { "type": "object", "additionalProperties": { "type": "string" } },
             "byColor": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["key", "value"],
-                    "properties": {
-                        "key":   { "$ref": "#/$defs/mcp_stub_Color" },
-                        "value": { "type": "string" }
-                    }
-                }
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "propertyNames": { "type": "string", "enum": ["Red", "Green", "Blue"] }
             }
         },
         "required": ["tags", "uniqueIds", "labels", "byColor"],

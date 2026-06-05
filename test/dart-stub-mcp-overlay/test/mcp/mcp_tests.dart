@@ -56,7 +56,7 @@ import '../../lib/mcp/stub/mcptools/ping/out.dart' as ping_out;
 // ---------------------------------------------------------------------------
 
 // Tool 1: McpTools_listCollections — list/set/map[str]/map[enum-key]
-final _refListCollections = jsonDecode(r'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tags":{"type":"array","items":{"type":"string"}},"uniqueIds":{"type":"array","items":{"type":"integer","format":"int64"},"uniqueItems":true},"labels":{"type":"object","additionalProperties":{"type":"string"}},"byColor":{"type":"array","items":{"type":"object","required":["key","value"],"properties":{"key":{"$ref":"#/$defs/mcp_stub_Color"},"value":{"type":"string"}}}}},"required":["tags","uniqueIds","labels","byColor"],"$defs":{"mcp_stub_Color":{"type":"string","enum":["Red","Green","Blue"]}}}') as Map<String, dynamic>;
+final _refListCollections = jsonDecode(r'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tags":{"type":"array","items":{"type":"string"}},"uniqueIds":{"type":"array","items":{"type":"integer","format":"int64"},"uniqueItems":true},"labels":{"type":"object","additionalProperties":{"type":"string"}},"byColor":{"type":"object","additionalProperties":{"type":"string"},"propertyNames":{"type":"string","enum":["Red","Green","Blue"]}}},"required":["tags","uniqueIds","labels","byColor"],"$defs":{"mcp_stub_Color":{"type":"string","enum":["Red","Green","Blue"]}}}') as Map<String, dynamic>;
 
 // Tool 2: McpTools_submitComposite — nested DTO + opt[DTO] + enum + foreign-string
 final _refSubmitComposite = jsonDecode(r'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"nested":{"$ref":"#/$defs/mcp_stub_Nested"},"maybePoint":{"oneOf":[{"$ref":"#/$defs/mcp_stub_Point"},{"type":"null"}]},"color":{"$ref":"#/$defs/mcp_stub_Color"},"fancy":{"type":"string"}},"required":["nested","color","fancy"],"$defs":{"mcp_stub_Color":{"type":"string","enum":["Red","Green","Blue"]},"mcp_stub_Nested":{"type":"object","properties":{"point":{"$ref":"#/$defs/mcp_stub_Point"},"color":{"$ref":"#/$defs/mcp_stub_Color"},"label":{"oneOf":[{"type":"string"},{"type":"null"}]}},"required":["point","color"]},"mcp_stub_Point":{"type":"object","properties":{"x":{"type":"integer","format":"int32"},"y":{"type":"integer","format":"int32"}},"required":["x","y"]}}}') as Map<String, dynamic>;
@@ -376,12 +376,12 @@ void main() {
       final session = McpSession();
       _initSession(server, session, stub);
 
-      // byColor is map[Color,str]. In the Dart JSON codec, map[non-string-key]
-      // is represented as a JSON object with enum-name keys (e.g. {"Red":"r"}).
-      // Send an empty object {} which satisfies the decoder.
+      // D6/T30: byColor is map[Color,str]. In the Dart JSON codec, map[enum-key]
+      // is a JSON object with enum-name keys (e.g. {"Green":"ok"}). Send a NON-EMPTY
+      // object conforming to the inputSchema (exercises the enum key-codec path).
       final resp = _send(server, session, stub, JsonRpcRequest(
         4, 'tools/call',
-        jsonDecode('{"name":"McpTools_listCollections","arguments":{"tags":["a","b"],"uniqueIds":[1,2],"labels":{"k":"v"},"byColor":{}}}'),
+        jsonDecode('{"name":"McpTools_listCollections","arguments":{"tags":["a","b"],"uniqueIds":[1,2],"labels":{"k":"v"},"byColor":{"Green":"ok","Red":"stop"}}}'),
       ));
 
       expect(resp.error, isNull, reason: 'Unexpected error on listCollections call');

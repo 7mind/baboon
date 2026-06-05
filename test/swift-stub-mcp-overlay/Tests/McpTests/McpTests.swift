@@ -54,7 +54,7 @@ final class McpTests: XCTestCase {
     // [String: Any] shape the server returns, then deep-compared.
     // -----------------------------------------------------------------------
 
-    private let refListCollections = ##"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tags":{"type":"array","items":{"type":"string"}},"uniqueIds":{"type":"array","items":{"type":"integer","format":"int64"},"uniqueItems":true},"labels":{"type":"object","additionalProperties":{"type":"string"}},"byColor":{"type":"array","items":{"type":"object","required":["key","value"],"properties":{"key":{"$ref":"#/$defs/mcp_stub_Color"},"value":{"type":"string"}}}}},"required":["tags","uniqueIds","labels","byColor"],"$defs":{"mcp_stub_Color":{"type":"string","enum":["Red","Green","Blue"]}}}"##
+    private let refListCollections = ##"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tags":{"type":"array","items":{"type":"string"}},"uniqueIds":{"type":"array","items":{"type":"integer","format":"int64"},"uniqueItems":true},"labels":{"type":"object","additionalProperties":{"type":"string"}},"byColor":{"type":"object","additionalProperties":{"type":"string"},"propertyNames":{"type":"string","enum":["Red","Green","Blue"]}}},"required":["tags","uniqueIds","labels","byColor"],"$defs":{"mcp_stub_Color":{"type":"string","enum":["Red","Green","Blue"]}}}"##
 
     private let refSubmitComposite = ##"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"nested":{"$ref":"#/$defs/mcp_stub_Nested"},"maybePoint":{"oneOf":[{"$ref":"#/$defs/mcp_stub_Point"},{"type":"null"}]},"color":{"$ref":"#/$defs/mcp_stub_Color"},"fancy":{"type":"string"}},"required":["nested","color","fancy"],"$defs":{"mcp_stub_Color":{"type":"string","enum":["Red","Green","Blue"]},"mcp_stub_Nested":{"type":"object","properties":{"point":{"$ref":"#/$defs/mcp_stub_Point"},"color":{"$ref":"#/$defs/mcp_stub_Color"},"label":{"oneOf":[{"type":"string"},{"type":"null"}]}},"required":["point","color"]},"mcp_stub_Point":{"type":"object","properties":{"x":{"type":"integer","format":"int32"},"y":{"type":"integer","format":"int32"}},"required":["x","y"]}}}"##
 
@@ -332,9 +332,11 @@ final class McpTests: XCTestCase {
         let session = McpSession()
         initSession(server, session, stub)
 
-        // byColor is map[Color,str]; an empty object {} satisfies the decoder.
+        // D6/T30: byColor is map[Color,str]; Swift encodes/decodes it as a string-keyed
+        // object with enum wire-name keys. Send a NON-EMPTY object conforming to the
+        // inputSchema (exercises the enum key-codec path).
         let resp = send(server, session, stub, JsonRpcRequest(4, "tools/call",
-            parseAny(#"{"name":"McpTools_listCollections","arguments":{"tags":["a","b"],"uniqueIds":[1,2],"labels":{"k":"v"},"byColor":{}}}"#)))
+            parseAny(#"{"name":"McpTools_listCollections","arguments":{"tags":["a","b"],"uniqueIds":[1,2],"labels":{"k":"v"},"byColor":{"Green":"ok","Red":"stop"}}}"#)))
 
         XCTAssertNil(resp.error, "Unexpected error on listCollections call")
         let result = resp.result as! [String: Any]

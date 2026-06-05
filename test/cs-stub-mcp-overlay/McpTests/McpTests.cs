@@ -297,7 +297,9 @@ namespace McpTest
             var (tools, _) = InitAndList();
             var schemaJson = NormalizeForNJsonSchema(tools[0]["inputSchema"]!.ToString(Formatting.None));
             var schema = await JsonSchema.FromJsonAsync(schemaJson);
-            var errors = schema.Validate("{\"tags\":[\"a\",\"b\"],\"uniqueIds\":[1,2],\"labels\":{\"k\":\"v\"},\"byColor\":[{\"key\":\"Green\",\"value\":\"ok\"}]}");
+            // D6/T30: byColor is map[Color,str] — a string-keyed object with enum wire-name
+            // keys (matches the wire the codecs emit and the reconciled inputSchema).
+            var errors = schema.Validate("{\"tags\":[\"a\",\"b\"],\"uniqueIds\":[1,2],\"labels\":{\"k\":\"v\"},\"byColor\":{\"Green\":\"ok\",\"Red\":\"stop\"}}");
             Assert.AreEqual(0, errors.Count,
                 $"McpTools_listCollections conforming instance must be valid; errors: {FormatErrors(errors)}");
         }

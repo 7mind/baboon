@@ -217,7 +217,7 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
         }
     }
 
-    "listCollections: list / set+uniqueItems / map[str] / map[enumKey] entry-objects" in {
+    "listCollections: list / set+uniqueItems / map[str] / map[enumKey] string-keyed object" in {
       (loader: BaboonLoader[F]) =>
         for {
           family <- loadStubFamily(loader)
@@ -238,20 +238,26 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
           assert(field(labels, "type").asString.contains("object"))
           assert(field(labels, "additionalProperties") == Json.obj("type" -> Json.fromString("string")))
 
-          // byColor: map[Color,str] (enum key) -> array of {key,value} entry objects
+          // byColor: map[Color,str] (enum key) -> string-keyed object (D6/T30): every
+          // backend's JSON codec stringifies the enum key to its wire-name and emits a
+          // string-keyed object, so the schema is an object whose property values are the
+          // map value type and whose property NAMES are constrained to the enum's wire values.
           val byColor = field(props, "byColor")
-          assert(field(byColor, "type").asString.contains("array"))
-          val entry = field(byColor, "items")
-          assert(requiredSet(entry) == Set("key", "value"))
-          val entryKey = field(field(entry, "properties"), "key")
-          assert(field(entryKey, "$ref").asString.exists(_.startsWith("#/$defs/")), s"enum-key map entry key must be a local $$ref: ${entryKey.noSpaces}")
+          assert(field(byColor, "type").asString.contains("object"))
+          assert(field(byColor, "additionalProperties") == Json.obj("type" -> Json.fromString("string")))
+          val byColorPropNames = field(byColor, "propertyNames")
+          assert(field(byColorPropNames, "type").asString.contains("string"))
+          assert(
+            field(byColorPropNames, "enum") == Json.arr(Json.fromString("Red"), Json.fromString("Green"), Json.fromString("Blue")),
+            s"enum-key map propertyNames must constrain to the enum wire values: ${byColorPropNames.noSpaces}",
+          )
 
           assertWellFormed("listCollections", schema)
           val instance = Json.obj(
             "tags"      -> Json.arr(Json.fromString("a"), Json.fromString("b")),
             "uniqueIds" -> Json.arr(Json.fromLong(1L), Json.fromLong(2L)),
             "labels"    -> Json.obj("k" -> Json.fromString("v")),
-            "byColor"   -> Json.arr(Json.obj("key" -> Json.fromString("Green"), "value" -> Json.fromString("ok"))),
+            "byColor"   -> Json.obj("Green" -> Json.fromString("ok")),
           )
           assertAccepts("listCollections", schema, instance)
         }

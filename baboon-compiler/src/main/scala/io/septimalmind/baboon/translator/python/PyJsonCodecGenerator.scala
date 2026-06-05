@@ -317,6 +317,12 @@ final class PyJsonCodecGenerator(
   private def mkJsonKeyEncoder(tpe: TypeRef, ref: TextTree[PyValue]): TextTree[PyValue] = tpe match {
     case TypeRef.Scalar(u: TypeId.User) =>
       domain.defs.meta.nodes.get(u) match {
+        // D6 (T30): enum map keys stringify via the member's `.value` (the wire-name string),
+        // mirroring the value-side enum codec (`json.dumps(value.value)`) and Scala's
+        // `$ref.toString` arm (ScJsonCodecGenerator.scala:317-321). A `map[Color, V]` thus
+        // round-trips as a string-keyed JSON object instead of hitting the `case _` BUG-throw.
+        case Some(DomainMember.User(_, _: Typedef.Enum, _, _)) =>
+          q"$ref.value"
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.isIdentifier =>
           q"str($ref)"
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
@@ -396,6 +402,14 @@ final class PyJsonCodecGenerator(
   private def mkJsonKeyDecoder(tpe: TypeRef, ref: TextTree[PyValue]): TextTree[PyValue] = tpe match {
     case TypeRef.Scalar(u: TypeId.User) =>
       domain.defs.meta.nodes.get(u) match {
+        // D6 (T30): reconstruct an enum map key from its wire-name string via the enum's
+        // value-lookup constructor (`EnumType(s)`), mirroring the value-side decoder
+        // (`EnumType(json.loads(wire))`) and Scala's enum key-decoder arm
+        // (ScJsonCodecGenerator.scala:476-481). A malformed key raises ValueError from the
+        // enum constructor — consistent with the fail-fast contract for the other key arms.
+        case Some(DomainMember.User(_, _: Typedef.Enum, _, _)) =>
+          val tpeRef = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+          q"$tpeRef($ref)"
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.isIdentifier =>
           val tpeRef     = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
           val codecClass = PyType(tpeRef.moduleId, s"${tpeRef.name}Codec")
