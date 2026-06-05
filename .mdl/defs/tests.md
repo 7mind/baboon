@@ -2791,6 +2791,7 @@ dep action.test-kotlin-mcp
 dep action.test-java-mcp
 dep action.test-dart-mcp
 dep action.test-python-mcp
+dep action.test-swift-mcp
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
@@ -3063,6 +3064,90 @@ dart pub get
 dart analyze --fatal-warnings lib/ test/mcp/
 dart test test/mcp/mcp_tests.dart
 popd
+
+ret success:bool=true
+```
+
+# action: test-gen-swift-mcp
+
+Generate code for the Swift MCP round-trip overlay test (T17).
+Uses the mcp-stub-ok model + `--sw-generate-mcp-server=true` (no-errors mode) and
+assembles a self-contained Swift package: the generated `Sources/BaboonRuntime`
+(including the additive `baboon_mcp_runtime.swift`, emitted only when the flag is on)
+and `Sources/McpStub` (definitions + JSON/UEBA codecs + service wiring + the
+per-service `McpToolsMcpServer`), then overlays `test/swift-stub-mcp-overlay/`
+(Package.swift + the McpTests target).
+
+Applies the Swift fixture fan-out post-codegen step the regular-adt harness uses
+(CrossLanguageFixturePath.swift into each `Tests/BaboonTests/<Module>/`); this pass
+emits no `--test-output` so the helper is absent and the step is a guarded no-op,
+kept for parity with the regular-adt harness.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-swift-mcp"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sw-stub"
+mkdir -p "$TEST_DIR/sw-stub/Sources"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --lock-file=./target/baboon-swift-mcp.lock \
+  :swift \
+  --output "$TEST_DIR/sw-stub/Sources" \
+  --sw-write-evolution-dict=true \
+  --sw-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --sw-generate-mcp-server=true
+
+# Swift SPM splits Tests/BaboonTests into per-module .testTarget()s; the
+# codegen-emitted CrossLanguageFixturePath.swift sits at the top level and must
+# be copied into each per-module subdirectory (mirrors test-gen-regular-adt).
+# This MCP pass emits no test product, so the helper is absent — guarded no-op.
+SW_BTESTS="$TEST_DIR/sw-stub/Tests/BaboonTests"
+if [ -f "$SW_BTESTS/CrossLanguageFixturePath.swift" ]; then
+  for sub in "$SW_BTESTS"/*/; do
+    [ -d "$sub" ] || continue
+    cp "$SW_BTESTS/CrossLanguageFixturePath.swift" "$sub"
+  done
+  rm -f "$SW_BTESTS/CrossLanguageFixturePath.swift"
+fi
+
+# Apply MCP overlay (Package.swift + McpTests target).
+rsync -a ./test/swift-stub-mcp-overlay/ "$TEST_DIR/sw-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-swift-mcp
+
+Run the Swift MCP round-trip overlay tests (T17).
+Validates initialize/tools-list/tools-call + error paths; runs the K1 validity tier on
+every returned inputSchema (each is re-serialized/re-parsed via JSONSerialization for
+well-formedness AND deep-compared structurally to the embedded T7 §2.3 reference
+literal, with a live negative control). Channel-B is triggered with a non-object nested
+field (Swift force-unwrap traps, so the missing-field trigger used by the GC-language
+replicas is deliberately avoided).
+
+```bash
+if ! command -v swift &> /dev/null; then
+  if [[ "$(uname)" == "Linux" ]]; then
+    echo "Swift is required on Linux but was not found in PATH" >&2
+    exit 1
+  fi
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+TEST_DIR="${action.test-gen-swift-mcp.test_dir}"
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
 
 ret success:bool=true
 ```

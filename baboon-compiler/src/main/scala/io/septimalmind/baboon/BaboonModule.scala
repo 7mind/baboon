@@ -17,7 +17,6 @@ import io.septimalmind.baboon.translator.kotlin.*
 import io.septimalmind.baboon.translator.graphql.*
 import io.septimalmind.baboon.translator.openapi.*
 import io.septimalmind.baboon.translator.McpServerGeneratorHook
-import io.septimalmind.baboon.translator.McpServerGeneratorHook.McpServerGeneratorHookStub
 import io.septimalmind.baboon.translator.swift.*
 import io.septimalmind.baboon.translator.typescript.*
 import io.septimalmind.baboon.typer.*
@@ -362,7 +361,11 @@ class BaboonCommonSwModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[SwTypeTranslator]
   makeFactory[SwConversionTranslator.Factory[F]]
 
-  make[McpServerGeneratorHook[F]].from[McpServerGeneratorHookStub[F]]
+  // The shared MCP inputSchema emitter (T5) reuses the OpenAPI scalar/any
+  // fragment logic via OasTypeTranslator; bind it here so the Swift MCP generator
+  // (T17) can construct the emitter. OasTypeTranslator is stateless.
+  make[OasTypeTranslator]
+  make[McpServerGeneratorHook[F]].from[SwMcpServerGenerator[F]]
   make[SwBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[SwBaboonTranslator[F]]
