@@ -225,8 +225,8 @@ abstract class ScalaMcpServerEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
 
           // K1 negative control: ensure we actually parsed some schemas (not vacuously green).
           assert(inlineSchemas.nonEmpty, s"K1 negative control: no inputSchema literals extracted from generated source — K1 gate is vacuous:\n$server")
-          // K1 structural equality: ensure all 5 method schemas were found.
-          assert(inlineSchemas.size == 5, s"K1: expected 5 inputSchema literals (one per method), got ${inlineSchemas.size}:\n$server")
+          // K1 structural equality: ensure all 6 method schemas were found (5 original + processTagged added in D1/T26).
+          assert(inlineSchemas.size == 6, s"K1: expected 6 inputSchema literals (one per method), got ${inlineSchemas.size}:\n$server")
         }
     }
 

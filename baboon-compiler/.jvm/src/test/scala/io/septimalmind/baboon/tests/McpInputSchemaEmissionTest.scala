@@ -141,7 +141,7 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
           val domain = stubDomain(family)
           val tools  = emitAllTools(domain)
           assert(
-            tools.keySet == Set("listCollections", "submitComposite", "processShape", "pagePoints", "ping"),
+            tools.keySet == Set("listCollections", "submitComposite", "processShape", "processTagged", "pagePoints", "ping"),
             s"unexpected tool set: ${tools.keySet}",
           )
           // (b) EVERY emitted inputSchema must be well-formed JSON Schema.
@@ -296,6 +296,77 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
             ),
           )
           assertAccepts("processShape", schema, instance)
+        }
+    }
+
+    // D1 / T26: contract-bearing ADT — H3 empirical lock.
+    // `Tagged` has `is HasId` at the ADT level; `HasId` carries `id: str`.
+    // BaboonTranslator (lines 289-306) merges ADT-level contract fields into
+    // every branch DTO at typing time.  Each branch's $defs entry must
+    // therefore already have `id` in `properties` WITHOUT any `allOf` merge
+    // (allOf would duplicate the field — the H3 analysis says no fix needed).
+    "processTagged: contract-bearing ADT — branch $defs entries include contract field id:str (H3 empirical lock)" in {
+      (loader: BaboonLoader[F]) =>
+        for {
+          family <- loadStubFamily(loader)
+        } yield {
+          val schema = emitAllTools(stubDomain(family))("processTagged")
+          val props  = field(schema, "properties")
+          val defs   = field(schema, "$defs").asObject.getOrElse(fail("no $defs"))
+
+          // tagged: Tagged -> local ref to a oneOf ADT entry
+          val taggedRef     = field(field(props, "tagged"), "$ref").asString.getOrElse(fail("tagged has no $ref"))
+          assert(taggedRef.startsWith("#/$defs/"), s"tagged ref must be local, got: $taggedRef")
+          val taggedDefName = taggedRef.stripPrefix("#/$defs/")
+          val taggedDef     = defs(taggedDefName).getOrElse(fail(s"$taggedDefName not in $$defs"))
+
+          // Tagged def is oneOf its branches
+          val branches = field(taggedDef, "oneOf").asArray.getOrElse(fail("Tagged def is not oneOf")).toList
+          assert(branches.size == 2, s"Tagged must have 2 branches, got ${branches.size}")
+
+          // Locate TagA and TagB in $defs
+          val tagAName = defs.keys.find(_.endsWith("_TagA")).getOrElse(fail(s"TagA branch missing from $$defs: ${defs.keys.toList}"))
+          val tagBName = defs.keys.find(_.endsWith("_TagB")).getOrElse(fail(s"TagB branch missing from $$defs: ${defs.keys.toList}"))
+          val tagADef  = defs(tagAName).getOrElse(fail(s"$tagAName entry missing"))
+          val tagBDef  = defs(tagBName).getOrElse(fail(s"$tagBName entry missing"))
+
+          // H3 empirical lock: each branch $defs entry must have 'id' in properties
+          // (merged at typing time from the HasId contract — NO allOf present).
+          val tagAProps = field(tagADef, "properties").asObject.getOrElse(fail(s"TagA has no properties: ${tagADef.noSpaces}"))
+          val tagBProps = field(tagBDef, "properties").asObject.getOrElse(fail(s"TagB has no properties: ${tagBDef.noSpaces}"))
+
+          assert(tagAProps.contains("id"), s"TagA branch $defs entry missing contract field 'id'; H3 requires no allOf fix: ${tagADef.noSpaces}")
+          assert(tagBProps.contains("id"), s"TagB branch $defs entry missing contract field 'id'; H3 requires no allOf fix: ${tagBDef.noSpaces}")
+
+          // id is a string (from `id: str` in HasId)
+          val tagAIdSchema = tagAProps("id").getOrElse(fail(s"TagA.id field not in properties"))
+          val tagBIdSchema = tagBProps("id").getOrElse(fail(s"TagB.id field not in properties"))
+          assert(field(tagAIdSchema, "type").asString.contains("string"), s"TagA.id must be type:string, got: ${tagAIdSchema.noSpaces}")
+          assert(field(tagBIdSchema, "type").asString.contains("string"), s"TagB.id must be type:string, got: ${tagBIdSchema.noSpaces}")
+
+          // branch-specific fields are also present (tag / weight)
+          assert(tagAProps.contains("tag"),    s"TagA missing its own field 'tag'")
+          assert(tagBProps.contains("weight"), s"TagB missing its own field 'weight'")
+
+          // id is required in both branches (non-optional field from the contract)
+          assert(requiredSet(tagADef).contains("id"),  s"TagA: contract field 'id' must be required")
+          assert(requiredSet(tagBDef).contains("id"),  s"TagB: contract field 'id' must be required")
+
+          // No allOf present in either branch entry (H3: merge already happened at typing, not emission)
+          assert(!hasKey(tagADef, "allOf"), s"TagA branch must NOT have allOf (fields are merged at typing, not emission): ${tagADef.noSpaces}")
+          assert(!hasKey(tagBDef, "allOf"), s"TagB branch must NOT have allOf (fields are merged at typing, not emission): ${tagBDef.noSpaces}")
+
+          assertWellFormed("processTagged", schema)
+          // a conforming instance: TagA branch (discriminated by its own fields)
+          val instanceA = Json.obj(
+            "tagged" -> Json.obj("id" -> Json.fromString("abc"), "tag" -> Json.fromString("hello"))
+          )
+          assertAccepts("processTagged", schema, instanceA)
+          // TagB branch
+          val instanceB = Json.obj(
+            "tagged" -> Json.obj("id" -> Json.fromString("def"), "weight" -> Json.fromInt(42))
+          )
+          assertAccepts("processTagged", schema, instanceB)
         }
     }
 

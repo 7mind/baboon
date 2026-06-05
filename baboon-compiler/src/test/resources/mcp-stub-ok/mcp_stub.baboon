@@ -9,6 +9,7 @@
 //   - enum (Color)
 //   - DTO with nested DTO field (Point, Nested)
 //   - ADT with multiple branches (Shape — Circle and Rect branches)
+//   - contract-bearing ADT (Tagged — HasId contract carries id:str to all branches) [D1/T26]
 //   - recursive DTO (Tree — left:opt[Tree], children:lst[Tree])
 //   - type alias / template instantiation (PointPage = Page[Point])
 //   - collection list (lst[str], lst[Tree])
@@ -68,6 +69,22 @@ adt Shape {
   data Rect   { w: f64  h: f64 }
 }
 
+// ── Contract-bearing ADT (D1/T26) ─────────────────────────────────────────────
+// Exercises: ADT whose branches share a contract carrying fields.
+// The contract `HasId` contributes `id: str` to EVERY branch DTO at typing
+// time (BaboonTranslator:289-306). The MCP emitter must emit each branch's
+// $defs entry with `id` already in `properties` (H3 refutation: no allOf
+// merge is needed because the fields are merged into each branch DTO).
+contract HasId {
+  id: str
+}
+
+adt Tagged {
+  is HasId
+  data TagA { tag: str }
+  data TagB { weight: i32 }
+}
+
 // ── Type alias / template instantiation ──────────────────────────────────────
 // Exercises: generic data template + alias instantiation (type alias).
 data Page[T] {
@@ -118,6 +135,16 @@ root service McpTools {
     data in {
       shape: Shape
       tree:  Tree
+    }
+    data out { ok: bit }
+  )
+
+  // Method 3b: contract-bearing ADT (D1/T26)
+  // Exercises: ADT field (tagged: Tagged) where every branch carries a
+  // contract field (id: str) merged at typing time.
+  def processTagged (
+    data in {
+      tagged: Tagged
     }
     data out { ok: bit }
   )
