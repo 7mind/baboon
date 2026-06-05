@@ -474,11 +474,15 @@ class ScJsonCodecGenerator(
                 case u: DomainMember.User =>
                   u.defn match {
                     case _: Typedef.Enum =>
-                      val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                      // Route through `codecName` so the emitted node is a real imported
+                      // `<X>_JsonCodec` ScType (harvested by the ScType-only import collector,
+                      // ScBaboonTranslator.renderTree) instead of a bare string-concatenated
+                      // suffix that never resolves from a nested package (D5).
+                      val targetTpe = codecName(trans.toScTypeRefKeepForeigns(uid, domain, evo))
                       // PR-F (M24): malformed map-key consistency — replace silent `.toOption`
                       // with explicit Right/Left match that throws BaboonCodecException.DecoderFailure
                       // on Left so cross-language behaviour is uniform.
-                      q"""$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)) match { case Right(v) => Some(v); case Left(_) => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s") })"""
+                      q"""$circeKeyDecoder.instance(s => $targetTpe.instance.decode(ctx, $circeJson.fromString(s)) match { case Right(v) => Some(v); case Left(_) => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s") })"""
                     case f: Typedef.Foreign =>
                       f.bindings.get(BaboonLang.Scala) match {
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
@@ -548,12 +552,17 @@ class ScJsonCodecGenerator(
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       getDecoder(aliasedRef)
                     case _ =>
-                      val targetTpe = trans.toScTypeRefKeepForeigns(u, domain, evo)
-                      q"${targetTpe}_JsonCodec.circeDecoder"
+                      // Route through `codecName` so the `<X>_JsonCodec` node is a real
+                      // imported ScType (mirroring the encode path) — emitting it as a
+                      // bare string suffix on the foreign type leaves it unimported and
+                      // additionally drags the companion-less foreign type into the import
+                      // set (D4).
+                      val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                      q"$targetTpe.circeDecoder"
                   }
                 case _ =>
-                  val targetTpe = trans.toScTypeRefKeepForeigns(u, domain, evo)
-                  q"${targetTpe}_JsonCodec.circeDecoder"
+                  val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                  q"$targetTpe.circeDecoder"
               }
           }
         case TypeRef.Constructor(id, args) =>

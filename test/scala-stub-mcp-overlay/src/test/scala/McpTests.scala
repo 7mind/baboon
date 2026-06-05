@@ -58,8 +58,9 @@ import org.scalatest.matchers.should.Matchers
 // uses the FFancyStr foreign type codec which requires external registration;
 // the Scala BaboonSingleton LazyInstance pattern doesn't support runtime override
 // in this test context. ping, listCollections, processShape, and pagePoints are
-// fully exercised. Compilation proof that FFancyStr_JsonCodec exists is implicit
-// via the import in mcp.stub (the overlay's FFancyStrShim.scala provides object FFancyStr).
+// fully exercised. The generated submitComposite codec now references
+// FFancyStr_JsonCodec via a properly imported _JsonCodec ScType (T29/D4), so no
+// FFancyStr shim is required for compilation.
 
 // ---------------------------------------------------------------------------
 // Stub McpTools service: every method returns ok=true by convention (T7 §3).
@@ -83,7 +84,6 @@ class McpTests extends AnyFlatSpec with Matchers {
 
   // Note: FFancyStr_JsonCodec.instance throws by default (foreign type codec).
   // Tests that use submitComposite (which requires FFancyStr codec) are omitted.
-  // See _checkFFancyStrCodecExists above for compilation proof.
 
   private val codecCtx = BaboonCodecContext.Default
   private val rt       = mcp.stub.BaboonServiceRtDefault
