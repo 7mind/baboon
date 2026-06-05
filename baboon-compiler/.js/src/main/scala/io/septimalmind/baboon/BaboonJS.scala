@@ -268,6 +268,7 @@ object BaboonJS {
     val pragma: js.UndefOr[js.Array[String]]
     val generateDomainFacade: js.UndefOr[Boolean]
     val asyncServices: js.UndefOr[Boolean]
+    val generateMcpServer: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -290,6 +291,7 @@ object BaboonJS {
     val serviceContextParameterName: js.UndefOr[String]
     val pragma: js.UndefOr[js.Array[String]]
     val generateDomainFacade: js.UndefOr[Boolean]
+    val generateMcpServer: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -312,6 +314,7 @@ object BaboonJS {
     val serviceContextParameterName: js.UndefOr[String]
     val pragma: js.UndefOr[js.Array[String]]
     val generateDomainFacade: js.UndefOr[Boolean]
+    val generateMcpServer: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -443,7 +446,7 @@ object BaboonJS {
                 pragmas                                   = parsePragmas(opts.pragma),
                 generateDomainFacade                      = opts.generateDomainFacade.getOrElse(true),
                 asyncServices                             = opts.asyncServices.getOrElse(false),
-                generateMcpServer                         = false,
+                generateMcpServer                         = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "scala" =>
@@ -472,7 +475,7 @@ object BaboonJS {
                 serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                generateMcpServer           = false,
+                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "python" =>
@@ -494,7 +497,7 @@ object BaboonJS {
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 asyncServices               = opts.asyncServices.getOrElse(false),
-                generateMcpServer           = false,
+                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "rust" =>
@@ -518,7 +521,7 @@ object BaboonJS {
                 cratePrefix                 = "crate",
                 reexportMode                = "selective",
                 edition                     = "2024",
-                generateMcpServer           = false,
+                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "typescript" =>
@@ -545,7 +548,7 @@ object BaboonJS {
                 timestampsUtcMode           = "wrapper",
                 timestampsOffsetMode        = "wrapper",
                 enumLowercaseValues         = false,
-                generateMcpServer           = false,
+                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "kotlin" =>
@@ -567,7 +570,7 @@ object BaboonJS {
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 multiplatform               = opts.multiplatform.getOrElse(false),
-                generateMcpServer           = false,
+                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "java" =>
@@ -589,7 +592,7 @@ object BaboonJS {
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 asyncServices               = opts.asyncServices.getOrElse(false),
-                generateMcpServer           = false,
+                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "dart" =>
@@ -609,7 +612,7 @@ object BaboonJS {
                 serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                generateMcpServer           = false,
+                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "swift" =>
@@ -630,7 +633,7 @@ object BaboonJS {
                 pragmas                     = parsePragmas(opts.pragma),
                 generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 asyncServices               = opts.asyncServices.getOrElse(false),
-                generateMcpServer           = false,
+                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "graphql" =>

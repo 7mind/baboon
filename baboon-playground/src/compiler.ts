@@ -51,6 +51,7 @@ interface JSLangOptions {
   serviceResultHkt?: boolean;
   serviceResultHktName?: string;
   serviceResultHktSignature?: string;
+  generateMcpServer?: boolean;
 }
 
 interface JSGenericOptions {
@@ -437,6 +438,7 @@ function buildTargets(options: CompilerOptions): JSCompilerTarget[] {
         serviceResultHkt: lo.serviceResultHkt,
         serviceResultHktName: str(lo.serviceResultHktName),
         serviceResultHktSignature: str(lo.serviceResultHktSignature),
+        generateMcpServer: lo.generateMcpServer,
       };
       target[language] = langOpts;
     }

@@ -55,6 +55,8 @@ export interface LanguageOptions {
   serviceResultHkt: boolean;
   serviceResultHktName: string;
   serviceResultHktSignature: string;
+  // MCP server generation
+  generateMcpServer: boolean;
 }
 
 export interface CompilerOptions {
@@ -116,6 +118,7 @@ export const DEFAULT_LANGUAGE_OPTIONS: LanguageOptions = {
   serviceResultHkt: false,
   serviceResultHktName: "F",
   serviceResultHktSignature: "[+_, +_]",
+  generateMcpServer: false,
 };
 
 function defaultsForLanguage(lang: BaboonTargetLanguage): LanguageOptions {
@@ -232,6 +235,8 @@ const LANGUAGE_OPTION_DEFS: LanguageOptionDef[] = [
   { kind: "checkbox", key: "serviceResultHkt", label: "Service result HKT", description: "Use a higher-kinded type parameter for service results", langs: ["scala"] },
   { kind: "text", key: "serviceResultHktName", label: "HKT name", description: "HKT type parameter name (e.g. F)", langs: ["scala"], placeholder: "F" },
   { kind: "text", key: "serviceResultHktSignature", label: "HKT signature", description: "HKT type parameter signature (e.g. [+_, +_])", langs: ["scala"], placeholder: "[+_, +_]" },
+  // MCP server
+  { kind: "checkbox", key: "generateMcpServer", label: "Generate MCP server", description: "Emit a Model Context Protocol server implementation", langs: ["typescript", "cs", "scala", "rust", "kotlin", "java", "dart", "swift", "python"] },
 ];
 
 // Aggregated in the "All Languages" section: only uniform-default common checkboxes.
