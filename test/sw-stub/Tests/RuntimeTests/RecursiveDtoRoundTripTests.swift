@@ -1,7 +1,7 @@
 // T23 / D8 regression — recursive value-type DTO codegen (reference indirection).
 //
 // Before T23 the Swift generator emitted every Baboon DTO as a value-type `struct` with each
-// field a bare stored property. A recursive DTO such as the mcp-stub-ok stub's
+// field a bare stored property. A recursive DTO such as the recursive.tree model's
 // `Tree { value: i32; left: opt[Tree]; children: lst[Tree] }` therefore declared
 // `let left: Tree?` INLINE inside `struct Tree`, giving the struct infinite size; swiftc
 // rejected it with `value type 'Tree' cannot have a stored property that recursively contains
@@ -17,7 +17,7 @@
 import XCTest
 import Foundation
 @testable import BaboonRuntime
-@testable import McpStub
+@testable import RecursiveTree
 
 final class RecursiveDtoRoundTripTests: XCTestCase {
 

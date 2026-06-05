@@ -1,0 +1,26 @@
+// Minimal recursive-DTO coverage model (T24 / D9 follow-up).
+//
+// Purpose: preserve T23's recursive value-type DTO codegen coverage across the
+// regular/wrapped cross-language matrix WITHOUT the cross-namespace fixture
+// hazards that forced relocation of the MCP stub out of the shared model-dir.
+//
+// This model declares ONLY a self-referential `Tree` (no enum, foreign type,
+// ADT, template, or map-with-enum-key). A bare recursive `Tree` produces NO
+// cross-namespace fixture references, so its generated cross-language fixtures
+// compile cleanly under every wiring/regular/wrapped lane that scans the shared
+// `--model-dir`. The Swift target boxes `left: opt[Tree]` behind
+// `@BaboonIndirect` (T23) so the value-type struct stays finite-size; the swift
+// RecursiveDtoRoundTripTests round-trips it.
+
+model recursive.tree
+
+version "1.0.0"
+
+// Recursive / self-referential DTO:
+//   - `left` is opt[Tree]  (nullable self-ref — boxed via @BaboonIndirect in Swift)
+//   - `children` is lst[Tree] (heap-backed list of self-refs — stays bare)
+root data Tree {
+  value:    i32
+  left:     opt[Tree]
+  children: lst[Tree]
+}

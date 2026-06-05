@@ -80,7 +80,7 @@ abstract class PyMcpServerEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestM
         CompilerOptions(
           debug                    = false,
           individualInputs         = Set.empty,
-          directoryInputs          = Set(FSPath.parse(NEString.unsafeFrom("./baboon-compiler/src/test/resources/baboon/mcp-stub-ok"))),
+          directoryInputs          = Set(FSPath.parse(NEString.unsafeFrom("./baboon-compiler/src/test/resources/mcp-stub-ok"))),
           metaWriteEvolutionJsonTo = None,
           lockFile                 = Some(FSPath.parse(NEString.unsafeFrom("./target/baboon.lock"))),
           emitOnly                 = None,
@@ -98,7 +98,7 @@ abstract class PyMcpServerEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestM
 
   private def loadStubFamily(loader: BaboonLoader[F]): F[NEList[BaboonIssue], BaboonFamily] = {
     val root = IzResources
-      .getPath("baboon/mcp-stub-ok")
+      .getPath("mcp-stub-ok")
       .getOrElse(throw new AssertionError("mcp-stub-ok fixture not found"))
       .asInstanceOf[IzResources.LoadablePathReference]
       .path

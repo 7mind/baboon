@@ -31,7 +31,7 @@ import scala.jdk.CollectionConverters.*
   *       swagger-parser.
   *
   * The fixture is the LOCKED stub model at
-  * `baboon-compiler/src/test/resources/baboon/mcp-stub-ok/mcp_stub.baboon`.
+  * `baboon-compiler/src/test/resources/mcp-stub-ok/mcp_stub.baboon`.
   */
 final class McpInputSchemaEmissionTest extends McpInputSchemaEmissionTestBase[Either]
 
@@ -41,7 +41,7 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
 
   private def loadStubFamily(loader: BaboonLoader[F]): F[NEList[BaboonIssue], BaboonFamily] = {
     val root = IzResources
-      .getPath("baboon/mcp-stub-ok")
+      .getPath("mcp-stub-ok")
       .getOrElse(throw new AssertionError("mcp-stub-ok fixture not found"))
       .asInstanceOf[IzResources.LoadablePathReference]
       .path

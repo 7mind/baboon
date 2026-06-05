@@ -1608,7 +1608,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
   ./test/ts-stub/ "$TEST_DIR/ts-stub/"
 
 $BABOON_BIN \
-  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
   --lock-file=./target/baboon-ts-mcp.lock \
   :typescript \
   --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
@@ -1662,7 +1662,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
   ./test/cs-stub/ "$TEST_DIR/cs-stub/"
 
 $BABOON_BIN \
-  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
   --lock-file=./target/baboon-cs-mcp.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
@@ -1719,7 +1719,7 @@ mkdir -p "$TEST_DIR/rs-stub"
 cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
 
 $BABOON_BIN \
-  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
   --lock-file=./target/baboon-rust-mcp.lock \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
@@ -1772,7 +1772,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --excl
   ./test/kt-stub/ "$TEST_DIR/kt-stub/"
 
 $BABOON_BIN \
-  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
   --lock-file=./target/baboon-kotlin-mcp.lock \
   :kotlin \
   --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
@@ -1826,7 +1826,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
   ./test/jv-stub/ "$TEST_DIR/jv-stub/"
 
 $BABOON_BIN \
-  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
   --lock-file=./target/baboon-java-mcp.lock \
   :java \
   --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
@@ -2630,7 +2630,7 @@ rsync -a --exclude='target' --exclude='project/target' \
   ./test/scala-stub-mcp/ "$TEST_DIR/scala-stub-mcp/"
 
 $BABOON_BIN \
-  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
   --lock-file=./target/baboon-scala-mcp.lock \
   :scala \
   --output "$TEST_DIR/scala-stub-mcp/src/main/scala/generated-main" \
@@ -2684,7 +2684,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' \
   ./test/py-stub/ "$TEST_DIR/py-stub/"
 
 $BABOON_BIN \
-  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
   --lock-file=./target/baboon-python-mcp.lock \
   :python \
   --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
@@ -3023,7 +3023,7 @@ rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock'
   ./test/dt-stub/ "$TEST_DIR/dt-stub/"
 
 $BABOON_BIN \
-  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
   --lock-file=./target/baboon-dart-mcp.lock \
   :dart \
   --output "$TEST_DIR/dt-stub/lib" \
@@ -3094,7 +3094,7 @@ rm -rf "$TEST_DIR/sw-stub"
 mkdir -p "$TEST_DIR/sw-stub/Sources"
 
 $BABOON_BIN \
-  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
   --lock-file=./target/baboon-swift-mcp.lock \
   :swift \
   --output "$TEST_DIR/sw-stub/Sources" \

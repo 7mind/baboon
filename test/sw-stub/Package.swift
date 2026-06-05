@@ -159,15 +159,18 @@ let package = Package(
             path: "Sources/MyOkM20Simple"
         ),
 
-        // ----- mcp.stub (T22 fixture; recursive DTO `Tree`) -------------------------------------
-        // T23 / D8: wired into the Swift matrix so the recursive value-type DTO `Tree`
+        // ----- recursive.tree (T24 minimal recursive-DTO fixture; recursive DTO `Tree`) ---------
+        // T23 / D8 coverage: wired into the Swift matrix so the recursive value-type DTO `Tree`
         // (`left: opt[Tree]`, boxed behind `@BaboonIndirect`) is compiled AND round-tripped.
-        // Before T23 the generated McpStub module failed `swift build` (infinite-size struct),
-        // so the stub package omitted it; it is included now that struct recursion is fixed.
+        // T24 / D9: this coverage previously rode on the MCP stub's `McpStub` module, but that
+        // stub lived inside the shared `--model-dir` and its cross-namespace fixtures broke the
+        // wiring lanes. The stub was relocated out of the shared dir; this minimal single-type
+        // `recursive.tree` model (module `RecursiveTree`) preserves the recursive-DTO coverage
+        // without any cross-namespace fixture references.
         .target(
-            name: "McpStub",
+            name: "RecursiveTree",
             dependencies: ["BaboonRuntime"],
-            path: "Sources/McpStub"
+            path: "Sources/RecursiveTree"
         ),
 
         // ----- Hand-written runtime tests -------------------------------------------------------
@@ -176,7 +179,7 @@ let package = Package(
         // AnyRoundTripTests imports MyOk; IdentifierReprTests imports IdentifierOk.
         .testTarget(
             name: "RuntimeTests",
-            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0", "McpStub"],
+            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0", "RecursiveTree"],
             path: "Tests/RuntimeTests"
         ),
 
