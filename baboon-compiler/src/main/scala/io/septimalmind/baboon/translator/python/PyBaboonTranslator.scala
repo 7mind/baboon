@@ -296,7 +296,17 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
 
     val allImports = (usualImportsByModule ++ versionedImports).joinN()
 
-    val full = Seq(allImports, o.tree).joinNN()
+    // PEP 563 (D7 / Q7): postponed evaluation of annotations, emitted as the FIRST
+    // statement of EVERY generated Python module (a `from __future__` import must
+    // precede everything except a module docstring). This makes all field
+    // annotations lazy strings, so self-referential and mutually-recursive pydantic
+    // DTOs (e.g. the recursive `Tree` with `left: Optional[Tree]`) resolve under
+    // Python 3.12 instead of raising NameError at class-body evaluation. Emitting it
+    // unconditionally — rather than only under --py-generate-mcp-server — was
+    // authorized by Q7 as the new flag-off Python baseline.
+    val futureAnnotations = TextTree.text[PyValue]("from __future__ import annotations")
+
+    val full = Seq(futureAnnotations, allImports, o.tree).joinNN()
 
     full.mapRender {
       case t: PyValue.PyType => aliasMap.getOrElse(t, t.name)

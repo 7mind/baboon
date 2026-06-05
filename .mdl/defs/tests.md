@@ -2699,17 +2699,6 @@ $BABOON_BIN \
   '--service-result-pattern=<$error, $success>' \
   --py-generate-mcp-server=true
 
-# PEP 563 (D7): prepend `from __future__ import annotations` to generated Python
-# files in the MCP overlay so that self-referential pydantic models (e.g. the
-# recursive Tree type in mcp-stub-ok) resolve correctly under Python 3.12.
-# This overlay is scoped to the MCP test harness only; the generator itself is
-# unchanged and flag-off byte-identity is preserved.
-find "$TEST_DIR/py-stub/BaboonDefinitions/Generated" -name "*.py" | while IFS= read -r f; do
-  if ! head -1 "$f" | grep -q "from __future__ import annotations"; then
-    printf 'from __future__ import annotations\n' | cat - "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-  fi
-done
-
 rsync -a ./test/py-stub-mcp-overlay/ "$TEST_DIR/py-stub/"
 
 ret success:bool=true
