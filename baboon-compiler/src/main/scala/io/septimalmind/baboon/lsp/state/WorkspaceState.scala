@@ -190,6 +190,7 @@ class WorkspaceState(
       case IdentifierFieldAny(_, _, meta)                       => Some(meta.pos)
       case IneligibleUserMapKey(_, _, _, meta)                  => Some(meta.pos)
       case MapKeyMissingDerivation(_, _, _, _, meta)            => Some(meta.pos)
+      case DataTypeExpectedField(_, _, meta)                    => Some(meta.pos)
       case _: LockedVersionModified                             => None
       case _: MissingTypeDef                                    => None
       case _: ReferentialCyclesFound                            => None
@@ -238,7 +239,10 @@ class WorkspaceState(
           case TemplateArityMismatch(tname, alias, exp, act, meta) =>
             (extractLocation(meta.pos), s"Template '$tname' instantiated in alias '$alias' with wrong arity: expected $exp, got $act")
           case TemplateInstantiationInForbiddenPosition(containingName, instName, meta) =>
-            (extractLocation(meta.pos), s"Template instantiation `$instName` is forbidden here — templates may only be instantiated as the right-hand side of a top-level `type` alias (matrix #1 / decision #3). Containing context: '$containingName'")
+            (
+              extractLocation(meta.pos),
+              s"Template instantiation `$instName` is forbidden here — templates may only be instantiated as the right-hand side of a top-level `type` alias (matrix #1 / decision #3). Containing context: '$containingName'",
+            )
           case TemplateNotInstantiated(tname, alias, meta) =>
             (extractLocation(meta.pos), s"Alias '$alias' references template '$tname' without type arguments — use '$tname[…]'")
           case NotATemplate(head, alias, meta) =>
@@ -247,14 +251,20 @@ class WorkspaceState(
             (extractLocation(meta.pos), s"Template '$tname' carries ':derived[…]' — write the annotation on the alias instead")
           case TemplateBodyNotFlatForRemoval(tname, recv, kind, offending, meta) =>
             val op = if (kind == "minus") "-" else if (kind == "caret") "^" else kind
-            (extractLocation(meta.pos), s"Template '$tname' cannot be used under '$op' on '$recv': substituted body contains non-field member ($offending). Restrict the template body to fields when used under '-' or '^'.")
+            (
+              extractLocation(meta.pos),
+              s"Template '$tname' cannot be used under '$op' on '$recv': substituted body contains non-field member ($offending). Restrict the template body to fields when used under '-' or '^'.",
+            )
           case DuplicatedAdtBranches(id, branch, sources, meta) =>
             (extractLocation(meta.pos), s"Duplicate ADT branches '$branch' in ${id.name.name}: contributed by ${sources.map(_.name.name).mkString(", ")}")
           case WrongAdtInclusion(id, ref, reason, meta) =>
             (extractLocation(meta.pos), s"Invalid ADT inheritance arm in ${id.name.name} referencing '${ref.path.toList.map(_.name).mkString(".")}': $reason")
           case CrossVersionAdtInclusion(id, ref, includeId, meta) =>
-            (extractLocation(meta.pos), s"Cross-version ADT inclusion in ${id.name.name}: '${ref.path.toList.map(_.name).mkString(".")}' resolved to ${includeId.name.name}")
-          case _                                      => (None, ti.toString.take(100))
+            (
+              extractLocation(meta.pos),
+              s"Cross-version ADT inclusion in ${id.name.name}: '${ref.path.toList.map(_.name).mkString(".")}' resolved to ${includeId.name.name}",
+            )
+          case _ => (None, ti.toString.take(100))
         }
 
       case BaboonIssue.Verification(vi) =>
@@ -267,14 +277,24 @@ class WorkspaceState(
           case IdentifierFieldCollection(owner, fields, meta) =>
             (extractLocation(meta.pos), s"identifier '${owner.id.name.name}' has collection field(s): ${fields.map(_.name.name).mkString(", ")}")
           case IdentifierFieldUserNotIdentifier(owner, fields, meta) =>
-            (extractLocation(meta.pos), s"identifier '${owner.id.name.name}' references non-`id` type(s): ${fields.map { case (f, t) => s"${f.name.name} → ${t.name.name}" }.mkString(", ")}")
+            (
+              extractLocation(meta.pos),
+              s"identifier '${owner.id.name.name}' references non-`id` type(s): ${fields.map { case (f, t) => s"${f.name.name} → ${t.name.name}" }.mkString(", ")}",
+            )
           case IdentifierFieldAny(owner, fields, meta) =>
             (extractLocation(meta.pos), s"identifier '${owner.id.name.name}' has `any` field(s): ${fields.map(_.name.name).mkString(", ")}")
           case IneligibleUserMapKey(owner, badField, reason, meta) =>
             (extractLocation(meta.pos), s"map key field '${badField.name.name}' in ${owner.id.name.name} is ineligible: $reason")
           case MapKeyMissingDerivation(owner, badField, keyType, missing, meta) =>
             (extractLocation(meta.pos), s"map key field '${badField.name.name}' in ${owner.id.name.name}: key type ${keyType.name.name} lacks `: derived[$missing]`")
-          case _                                  => (None, vi.toString.take(100))
+          case DataTypeExpectedField(owner, badFields, meta) =>
+            (
+              extractLocation(meta.pos),
+              s"field(s) in ${owner.id.name.name} reference a contract/service where a data type is expected: ${badFields.map {
+                  case (f, t) => s"${f.name.name} → ${t.name.name}"
+                }.mkString(", ")}",
+            )
+          case _ => (None, vi.toString.take(100))
         }
 
       case BaboonIssue.Evolution(ei)    => (None, s"Evolution: ${ei.toString.take(80)}")

@@ -131,7 +131,10 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
         (Some(meta), s"Template '$tname' carries ':derived[…]' — write the annotation on the alias instead")
       case TemplateBodyNotFlatForRemoval(tname, recv, kind, offending, meta) =>
         val op = if (kind == "minus") "-" else if (kind == "caret") "^" else kind
-        (Some(meta), s"Template '$tname' cannot be used under '$op' on '$recv': substituted body contains non-field member ($offending). Restrict the template body to fields when used under '-' or '^'.")
+        (
+          Some(meta),
+          s"Template '$tname' cannot be used under '$op' on '$recv': substituted body contains non-field member ($offending). Restrict the template body to fields when used under '-' or '^'.",
+        )
       case DagError(e, meta)                    => (Some(meta), s"DAG error: $e")
       case ScalarExpected(id, meta)             => (Some(meta), s"Scalar expected: ${id.name.name}")
       case CollectionExpected(id, meta)         => (Some(meta), s"Collection expected: ${id.name.name}")
@@ -199,6 +202,13 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
         (Some(meta), s"map key field '${badField.name.name}' in ${owner.id.name.name} is ineligible: $reason")
       case MapKeyMissingDerivation(owner, badField, keyType, missing, meta) =>
         (Some(meta), s"map key field '${badField.name.name}' in ${owner.id.name.name}: key type ${keyType.name.name} lacks `: derived[$missing]`")
+      case DataTypeExpectedField(owner, badFields, meta) =>
+        (
+          Some(meta),
+          s"field(s) in ${owner.id.name.name} reference a contract/service where a data type is expected: ${badFields.map {
+              case (f, t) => s"${f.name.name} → ${t.name.name}"
+            }.mkString(", ")}",
+        )
       case LockedVersionModified(pkg, version) =>
         (None, s"Locked version modified: $pkg@$version")
       case MissingTypeDef(domain, missing) =>

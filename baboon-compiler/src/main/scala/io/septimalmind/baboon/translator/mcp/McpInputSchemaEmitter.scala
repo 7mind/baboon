@@ -166,7 +166,18 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
   private def emitNamedType(m: DomainMember.User, domain: Domain, ctx: ForeignContext): List[(String, Json)] = {
     val name = typeTranslator.schemaName(m.id)
     m.defn match {
-      case _: Typedef.NonDataTypedef => List.empty
+      case _: Typedef.NonDataTypedef =>
+        // Defense-in-depth (D2): a contract/service is not a data type and must
+        // never reach the closure — the upstream validator guard
+        // (`BaboonValidator.checkDataTypeFields`, VerificationIssue.DataTypeExpectedField)
+        // rejects a plain field whose resolved user type is a NonDataTypedef before
+        // codegen. If one still arrives here, emitting `List.empty` while the
+        // reference site already produced a `#/$defs/<Name>` ref would yield a
+        // dangling ref; fail eagerly instead (matching the eager-failure style at
+        // the `other` arm below and in `fieldSchema`).
+        throw new IllegalArgumentException(
+          s"Contract/service '${m.id}' reached the MCP inputSchema closure as a data type — this must be rejected upstream by the validator (D2 guard)."
+        )
       case _: Typedef.Foreign =>
         // A foreign type that survived into the closure had no precise scalar
         // resolution; emit the documented opaque object.
@@ -190,8 +201,8 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     if (dto.fields.isEmpty) {
       Json.obj()
     } else {
-      val required = dto.fields.filterNot(f => isOptional(f.tpe)).map(f => Json.fromString(f.name.name))
-      val props    = dto.fields.map(f => f.name.name -> fieldSchema(f.tpe, ctx))
+      val required  = dto.fields.filterNot(f => isOptional(f.tpe)).map(f => Json.fromString(f.name.name))
+      val props     = dto.fields.map(f => f.name.name -> fieldSchema(f.tpe, ctx))
       val withProps = Json.obj(propertiesKeyword -> Json.obj(props*))
       if (required.isEmpty) withProps
       else mergeObjects(withProps, Json.obj(requiredKeyword -> Json.arr(required*)))
@@ -378,15 +389,15 @@ object McpInputSchemaEmitter {
     * precise `{"type":"string"}` MCP schema instead of an opaque object.
     */
   final val stringTypeNames: Set[String] = Set(
-    "System.String",       // cs
-    "java.lang.String",    // scala / kotlin / java
-    "kotlin.String",       // kotlin (alt)
-    "builtins.str",        // py
-    "str",                 // py (alt)
+    "System.String", // cs
+    "java.lang.String", // scala / kotlin / java
+    "kotlin.String", // kotlin (alt)
+    "builtins.str", // py
+    "str", // py (alt)
     "std::string::String", // rust
-    "String",              // rust / swift (alt)
-    "string",              // typescript
-    "dart.core.String",    // dart
-    "Swift.String",        // swift
+    "String", // rust / swift (alt)
+    "string", // typescript
+    "dart.core.String", // dart
+    "Swift.String", // swift
   )
 }

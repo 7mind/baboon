@@ -121,6 +121,14 @@ object VerificationIssue {
   // user-typed key K does not derive the same. `missing` is "json" or "ueba".
   case class MapKeyMissingDerivation(owner: Typedef.User, badField: Field, keyType: TypeId, missing: String, meta: RawNodeMeta) extends VerificationIssue
 
+  // D2: a plain field (or a collection element) whose resolved user type is a
+  // `NonDataTypedef` (a `contract` or `service`). Contracts/services are not data
+  // types — they cannot be carried as a field value or codec'd — yet the typer's
+  // `convertTpe` admits any `TypeId.User` (which extends `TypeId.Scalar`) as a
+  // field type with only a `ScalarExpected` guard. `badFields` pairs each offending
+  // field with the offending `TypeId.User` it resolved to.
+  case class DataTypeExpectedField(owner: Typedef.User, badFields: List[(Field, TypeId.User)], meta: RawNodeMeta) extends VerificationIssue
+
   implicit val lockedVersionModifiedPrinter: IssuePrinter[LockedVersionModified] =
     (issue: LockedVersionModified) => {
       s"""Model ${issue.pkg.toString}@${issue.version} was modified but it's not the latest version so it's locked with the lockfile""".stripMargin
@@ -399,6 +407,17 @@ object VerificationIssue {
          |In: ${issue.owner.id.toString}
          |Map key field '${issue.badField.name.name}' uses key type '${issue.keyType.name.name}' which is missing `: derived[${issue.missing}]`.
          |The owning type derives '${issue.missing}', so the key type must too.
+         |""".stripMargin
+    }
+
+  implicit val dataTypeExpectedFieldPrinter: IssuePrinter[DataTypeExpectedField] =
+    (issue: DataTypeExpectedField) => {
+      val fieldText = issue.badFields.map { case (f, t) => s"'${f.name.name}' → '${t.name.name}'" }
+        .mkString(", ")
+      s"""${extractLocation(issue.meta)}
+         |In: ${issue.owner.id.toString}
+         |Field(s) reference a contract/service where a data type is expected: $fieldText
+         |Contracts and services are not data types — they cannot be used as a field value type. Use a `data`, `adt`, `enum`, or `foreign` type, or inherit the contract via `is`.
          |""".stripMargin
     }
 

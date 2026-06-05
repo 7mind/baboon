@@ -60,6 +60,7 @@ object BaboonValidator {
         _ <- checkPathologicGenerics(domain)
         _ <- checkAnyFields(domain)
         _ <- checkIdentifierFields(domain)
+        _ <- checkDataTypeFields(domain)
         _ <- checkUserMapKeysEligibility(domain)
         _ <- checkRoots(domain)
       } yield {}
@@ -568,6 +569,82 @@ object BaboonValidator {
 
       F.when(badFields.nonEmpty)(
         F.fail(BaboonIssue.of(VerificationIssue.MapKeysShouldNotBeGeneric(dto, badFields, meta)))
+      )
+    }
+
+    // D2: a plain field (or a collection element) must resolve to a DATA type
+    // (`data`/`adt`/`enum`/`foreign`), never to a `NonDataTypedef` (`contract` /
+    // `service`). The typer's `convertTpe` admits any `TypeId.User` as a field type
+    // (User extends TypeId.Scalar) with only a `ScalarExpected` guard, and the
+    // map-KEY eligibility check is the only contract-rejecting path — so a contract
+    // used as a plain field value (or a collection element) slipped through to
+    // codegen, where the MCP emitter would emit a dangling `#/$defs/<Contract>` ref.
+    // This is the missing "data type expected" guard (ScalarExpected-adjacent).
+    //
+    // Coverage mirrors `checkAnyFields`: Dto fields, Contract fields (also visible on
+    // every inheriting DTO — both report independently), Adt own fields, and Service
+    // method sig/out/err pseudo-fields. Note: a contract referenced via `is`
+    // (inheritance) is NOT a field reference and is unaffected — `contracts` lists
+    // are not part of `fields`.
+    private def checkDataTypeFields(
+      domain: Domain
+    ): F[NEList[BaboonIssue], Unit] = {
+      F.traverseAccumErrors_(domain.defs.meta.nodes.values) {
+        case _: DomainMember.Builtin =>
+          F.unit
+        case u: DomainMember.User =>
+          u.defn match {
+            case d: Typedef.Dto =>
+              checkDataTypeOnFields(domain, d, d.fields, u.meta)
+            case c: Typedef.Contract =>
+              checkDataTypeOnFields(domain, c, c.fields, u.meta)
+            case a: Typedef.Adt =>
+              checkDataTypeOnFields(domain, a, a.fields, u.meta)
+            case s: Typedef.Service =>
+              val pseudo: List[Field] = s.methods.flatMap {
+                m =>
+                  val sigF = Field(FieldName(s"${m.name.name}.sig"), m.sig, None)
+                  val outF = m.out.map(t => Field(FieldName(s"${m.name.name}.out"), t, None))
+                  val errF = m.err.map(t => Field(FieldName(s"${m.name.name}.err"), t, None))
+                  List(sigF) ++ outF.toList ++ errF.toList
+              }
+              checkDataTypeOnFields(domain, s, pseudo, u.meta)
+            case _ =>
+              F.unit
+          }
+      }
+    }
+
+    private def checkDataTypeOnFields(
+      domain: Domain,
+      owner: Typedef.User,
+      fields: List[Field],
+      meta: RawNodeMeta,
+    ): F[NEList[BaboonIssue], Unit] = {
+      // Collect every user type referenced at a VALUE position within a field type,
+      // descending through collection constructors and `any[T]` underlyings. (`any`
+      // underlyings are independently shape-checked by `checkAnyFields`, but a
+      // `NonDataTypedef` underlying is still a data-type violation here.)
+      def collectUserTypes(t: TypeRef): List[TypeId.User] = t match {
+        case TypeRef.Scalar(id: TypeId.User) => List(id)
+        case _: TypeRef.Scalar               => Nil
+        case c: TypeRef.Constructor          => c.args.toList.flatMap(collectUserTypes)
+        case TypeRef.Any(_, None)            => Nil
+        case TypeRef.Any(_, Some(u))         => collectUserTypes(u)
+      }
+
+      def isNonDataType(id: TypeId.User): Boolean =
+        domain.defs.meta.nodes.get(id).exists {
+          case DomainMember.User(_, _: Typedef.NonDataTypedef, _, _) => true
+          case _                                                     => false
+        }
+
+      val badFields: List[(Field, TypeId.User)] = fields.flatMap {
+        f => collectUserTypes(f.tpe).filter(isNonDataType).map(id => (f, id))
+      }
+
+      F.when(badFields.nonEmpty)(
+        F.fail(BaboonIssue.of(VerificationIssue.DataTypeExpectedField(owner = owner, badFields = badFields, meta = meta)))
       )
     }
 

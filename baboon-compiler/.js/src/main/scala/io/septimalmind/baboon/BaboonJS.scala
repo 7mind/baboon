@@ -380,12 +380,13 @@ object BaboonJS {
   // / mkServiceResult) so the playground honours the same service / pragma
   // settings; absent fields fall back to the per-language defaults.
   private def parsePragmas(raw: js.UndefOr[js.Array[String]]): Map[String, String] = {
-    raw.toOption.toList.flatMap(_.toList).flatMap {
-      s =>
-        val idx = s.indexOf('=')
-        if (idx > 0) Some(s.substring(0, idx).trim -> s.substring(idx + 1).trim)
-        else None
-    }.toMap
+    raw.toOption.toList
+      .flatMap(_.toList).flatMap {
+        s =>
+          val idx = s.indexOf('=')
+          if (idx > 0) Some(s.substring(0, idx).trim -> s.substring(idx + 1).trim)
+          else None
+      }.toMap
   }
 
   private def mkServiceContext(
@@ -441,12 +442,12 @@ object BaboonJS {
                 generateJsonCodecsByDefault               = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault               = opts.generateUebaCodecsByDefault.getOrElse(false),
                 deduplicate                               = opts.deduplicate.getOrElse(true),
-                serviceResult                             = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.csDefault),
-                serviceContext                            = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
-                pragmas                                   = parsePragmas(opts.pragma),
-                generateDomainFacade                      = opts.generateDomainFacade.getOrElse(true),
-                asyncServices                             = opts.asyncServices.getOrElse(false),
-                generateMcpServer                         = opts.generateMcpServer.getOrElse(false),
+                serviceResult  = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.csDefault),
+                serviceContext = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas        = parsePragmas(opts.pragma),
+                generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
+                asyncServices        = opts.asyncServices.getOrElse(false),
+                generateMcpServer    = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "scala" =>
@@ -463,7 +464,7 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = mkServiceResult(
+                serviceResult = mkServiceResult(
                   opts.serviceResultNoErrors,
                   opts.serviceResultType,
                   opts.serviceResultPattern,
@@ -472,10 +473,10 @@ object BaboonJS {
                   else None,
                   ServiceResultConfig.scalaDefault,
                 ),
-                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
-                pragmas                     = parsePragmas(opts.pragma),
-                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
+                serviceContext       = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas              = parsePragmas(opts.pragma),
+                generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
+                generateMcpServer    = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "python" =>
@@ -492,12 +493,12 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.pythonDefault),
-                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
-                pragmas                     = parsePragmas(opts.pragma),
-                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                asyncServices               = opts.asyncServices.getOrElse(false),
-                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
+                serviceResult  = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.pythonDefault),
+                serviceContext = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas        = parsePragmas(opts.pragma),
+                generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
+                asyncServices        = opts.asyncServices.getOrElse(false),
+                generateMcpServer    = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "rust" =>
@@ -513,15 +514,15 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.rustDefault),
-                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
-                pragmas                     = parsePragmas(opts.pragma),
-                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                asyncServices               = opts.asyncServices.getOrElse(false),
-                cratePrefix                 = "crate",
-                reexportMode                = "selective",
-                edition                     = "2024",
-                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
+                serviceResult  = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.rustDefault),
+                serviceContext = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas        = parsePragmas(opts.pragma),
+                generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
+                asyncServices        = opts.asyncServices.getOrElse(false),
+                cratePrefix          = "crate",
+                reexportMode         = "selective",
+                edition              = "2024",
+                generateMcpServer    = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "typescript" =>
@@ -538,17 +539,18 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.typescriptDefault),
-                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
-                pragmas                     = parsePragmas(opts.pragma),
-                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                asyncServices               = false,
-                bareServiceSymbols          = false,
-                mapsAsRecords               = false,
-                timestampsUtcMode           = "wrapper",
-                timestampsOffsetMode        = "wrapper",
-                enumLowercaseValues         = false,
-                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
+                serviceResult =
+                  mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.typescriptDefault),
+                serviceContext       = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas              = parsePragmas(opts.pragma),
+                generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
+                asyncServices        = false,
+                bareServiceSymbols   = false,
+                mapsAsRecords        = false,
+                timestampsUtcMode    = "wrapper",
+                timestampsOffsetMode = "wrapper",
+                enumLowercaseValues  = false,
+                generateMcpServer    = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "kotlin" =>
@@ -565,12 +567,12 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.kotlinDefault),
-                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
-                pragmas                     = parsePragmas(opts.pragma),
-                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                multiplatform               = opts.multiplatform.getOrElse(false),
-                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
+                serviceResult  = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.kotlinDefault),
+                serviceContext = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas        = parsePragmas(opts.pragma),
+                generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
+                multiplatform        = opts.multiplatform.getOrElse(false),
+                generateMcpServer    = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "java" =>
@@ -587,12 +589,12 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.javaDefault),
-                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
-                pragmas                     = parsePragmas(opts.pragma),
-                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                asyncServices               = opts.asyncServices.getOrElse(false),
-                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
+                serviceResult  = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.javaDefault),
+                serviceContext = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas        = parsePragmas(opts.pragma),
+                generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
+                asyncServices        = opts.asyncServices.getOrElse(false),
+                generateMcpServer    = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "dart" =>
@@ -608,11 +610,11 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.dartDefault),
-                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
-                pragmas                     = parsePragmas(opts.pragma),
-                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
+                serviceResult  = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.dartDefault),
+                serviceContext = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas        = parsePragmas(opts.pragma),
+                generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
+                generateMcpServer    = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "swift" =>
@@ -628,12 +630,12 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.swiftDefault),
-                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
-                pragmas                     = parsePragmas(opts.pragma),
-                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
-                asyncServices               = opts.asyncServices.getOrElse(false),
-                generateMcpServer           = opts.generateMcpServer.getOrElse(false),
+                serviceResult  = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.swiftDefault),
+                serviceContext = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas        = parsePragmas(opts.pragma),
+                generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
+                asyncServices        = opts.asyncServices.getOrElse(false),
+                generateMcpServer    = opts.generateMcpServer.getOrElse(false),
               ),
             )
           case "graphql" =>
@@ -1673,6 +1675,7 @@ object BaboonJS {
       case IdentifierFieldAny(_, _, meta)                       => Some(meta.pos)
       case IneligibleUserMapKey(_, _, _, meta)                  => Some(meta.pos)
       case MapKeyMissingDerivation(_, _, _, _, meta)            => Some(meta.pos)
+      case DataTypeExpectedField(_, _, meta)                    => Some(meta.pos)
       case _: LockedVersionModified                             => None
       case _: MissingTypeDef                                    => None
       case _: ReferentialCyclesFound                            => None
