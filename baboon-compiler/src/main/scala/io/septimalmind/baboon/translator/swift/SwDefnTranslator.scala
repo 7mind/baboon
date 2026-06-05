@@ -338,6 +338,78 @@ object SwDefnTranslator {
       }
     }
 
+    /** T23 / D8: names of the fields of `dto` that must be boxed behind `@BaboonIndirect`
+      * to keep the generated value-type struct finite-size.
+      *
+      * A field is "inline-recursive" when its type can reach `dto.id` following ONLY
+      * inline (value-type) storage edges:
+      *   - a scalar reference to another struct DTO stores it inline → follow into its fields;
+      *   - `opt[X]` stores its payload inline (Swift `Optional<X>`) → follow into X;
+      *   - `lst`/`set`/`map` are heap-backed (Array/Set/Dictionary) → STOP, they break the cycle;
+      *   - an enum is a finite value type with no further user refs → STOP;
+      *   - an ADT is emitted as a Swift `indirect enum` (pointer-sized) → STOP, already heap-broken;
+      *   - foreign types / type aliases are dereferenced to their underlying before deciding.
+      *
+      * Boxing every field whose inline closure includes `dto.id` is sufficient and generic:
+      * it breaks every inline cycle through this struct (over-boxing, if any, only adds a
+      * pointer indirection and never changes the public field type or value semantics).
+      */
+    private def recursiveFieldNames(dto: Typedef.Dto): Set[String] = {
+      val selfId = dto.id
+
+      def derefUser(uid: TypeId.User): Option[DomainMember.User] = {
+        domain.defs.meta.nodes.get(uid).collect { case u: DomainMember.User => u }
+      }
+
+      // Does `tpe`, via inline storage only, reach `selfId`? `visited` guards against
+      // non-self cycles (A → opt[B] → opt[A] → …) so the walk always terminates.
+      def reachesSelfInline(tpe: TypeRef, visited: Set[TypeId.User]): Boolean = {
+        tpe match {
+          case TypeRef.Scalar(uid: TypeId.User) =>
+            if (uid == selfId) true
+            else if (visited.contains(uid)) false
+            else
+              derefUser(uid) match {
+                case Some(DomainMember.User(_, sub: Typedef.Dto, _, _)) =>
+                  sub.fields.exists(f => reachesSelfInline(f.tpe, visited + uid))
+                case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
+                  // A foreign mapped to a baboon-ref alias keeps walking through the alias; a
+                  // foreign mapped to a host primitive (no baboon-ref) cannot reach `selfId` and
+                  // stops. (The Swift surface type comes from `asSwRef` at render time; here we
+                  // only need the alias TypeRef to continue the reachability walk.)
+                  foreignAliasRef(uid) match {
+                    case Some(aliasRef) => reachesSelfInline(aliasRef, visited + uid)
+                    case None           => false
+                  }
+                // Enum / ADT / Contract / Service: not inline-recursive struct storage.
+                case _ => false
+              }
+          case TypeRef.Scalar(_) => false
+          case TypeRef.Constructor(id, args) if id == TypeId.Builtins.opt =>
+            reachesSelfInline(args.head, visited)
+          // lst/set/map are heap-backed; they cannot make the struct infinite-size.
+          case _: TypeRef.Constructor => false
+          case _: TypeRef.Any         => false
+        }
+      }
+
+      dto.fields.filter(f => reachesSelfInline(f.tpe, Set.empty)).map(_.name.name).toSet
+    }
+
+    /** Resolve a foreign type's `baboonRef` alias TypeRef, if it is mapped to another baboon
+      * type rather than a host primitive. Used only by the recursion-detection walk.
+      */
+    private def foreignAliasRef(uid: TypeId.User): Option[TypeRef] = {
+      domain.defs.meta.nodes.get(uid).collect {
+        case DomainMember.User(_, f: Typedef.Foreign, _, _) => f
+      }.flatMap {
+        f =>
+          f.bindings.valuesIterator.collectFirst {
+            case Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(ref)) => ref
+          }
+      }
+    }
+
     private def renderDto(
       dto: Typedef.Dto,
       name: SwType,
@@ -347,11 +419,24 @@ object SwDefnTranslator {
     ): DefnRepr = {
       val hasFields = dto.fields.nonEmpty
 
+      // T23 / D8: a value-type `struct` whose field transitively contains the struct itself
+      // through inline (value-type) storage has infinite size and is rejected by swiftc
+      // (`value type X cannot have a stored property that recursively contains it`). Swift
+      // `indirect` applies to enums only; for struct DTOs we box exactly the offending fields
+      // behind `@BaboonIndirect` (a reference indirection) so the struct stays finite-size.
+      // Only fields whose inline closure reaches this DTO are boxed — `lst`/`set`/`map` are
+      // heap-backed and break the cycle, so a field like `children: lst[Tree]` is NOT boxed.
+      val recursiveFields = recursiveFieldNames(dto)
+
       val fieldDeclarations = dto.fields.map {
         f =>
           val t       = trans.asSwRef(f.tpe, domain, evo)
           val escaped = trans.escapeSwiftKeyword(f.name.name)
-          prependDocs(f.docs, q"public let $escaped: $t")
+          if (recursiveFields.contains(f.name.name)) {
+            prependDocs(f.docs, q"@$baboonIndirect public var $escaped: $t")
+          } else {
+            prependDocs(f.docs, q"public let $escaped: $t")
+          }
       }
 
       val contractParents = dto.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))

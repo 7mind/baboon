@@ -159,13 +159,24 @@ let package = Package(
             path: "Sources/MyOkM20Simple"
         ),
 
+        // ----- mcp.stub (T22 fixture; recursive DTO `Tree`) -------------------------------------
+        // T23 / D8: wired into the Swift matrix so the recursive value-type DTO `Tree`
+        // (`left: opt[Tree]`, boxed behind `@BaboonIndirect`) is compiled AND round-tripped.
+        // Before T23 the generated McpStub module failed `swift build` (infinite-size struct),
+        // so the stub package omitted it; it is included now that struct recursion is fixed.
+        .target(
+            name: "McpStub",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/McpStub"
+        ),
+
         // ----- Hand-written runtime tests -------------------------------------------------------
         // AnyMetaCodecTests / AnyRoundTripTests / IdentifierReprTests live under
         // Tests/RuntimeTests/ to keep the codegen-owned Tests/BaboonTests/ tree pristine.
         // AnyRoundTripTests imports MyOk; IdentifierReprTests imports IdentifierOk.
         .testTarget(
             name: "RuntimeTests",
-            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0"],
+            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0", "McpStub"],
             path: "Tests/RuntimeTests"
         ),
 

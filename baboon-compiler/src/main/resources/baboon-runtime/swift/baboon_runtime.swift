@@ -13,6 +13,51 @@ public enum BaboonCodecError: Error {
     case invalidUuid
 }
 
+// --- Recursive value-type indirection ---
+
+// `@BaboonIndirect` boxes a stored property behind a reference type so a value-type
+// `struct` can transitively contain itself (e.g. a recursive DTO `Tree` whose field is
+// `opt[Tree]`) without becoming infinite-size. Swift's built-in `indirect` keyword applies
+// to enums only; struct DTOs need an explicit reference box. The wrapper is applied by the
+// Swift code generator ONLY to fields that transitively reach the enclosing struct through
+// inline (value-type) storage; non-recursive fields keep their bare `let` declarations.
+//
+// Value semantics are preserved end-to-end:
+//   - `wrappedValue` get returns the boxed payload; set allocates a fresh box, so mutating
+//     one copy of the struct never aliases another (no shared mutable reference leaks out).
+//   - Equatable/Hashable forward to the payload, so the auto-synthesised conformances of the
+//     enclosing struct compare/hash by value across the box exactly as for a bare field.
+@propertyWrapper
+public struct BaboonIndirect<Value> {
+    private final class Box {
+        let value: Value
+        init(_ value: Value) { self.value = value }
+    }
+
+    private var box: Box
+
+    public var wrappedValue: Value {
+        get { box.value }
+        set { box = Box(newValue) }
+    }
+
+    public init(wrappedValue: Value) {
+        self.box = Box(wrappedValue)
+    }
+}
+
+extension BaboonIndirect: Equatable where Value: Equatable {
+    public static func == (lhs: BaboonIndirect<Value>, rhs: BaboonIndirect<Value>) -> Bool {
+        return lhs.wrappedValue == rhs.wrappedValue
+    }
+}
+
+extension BaboonIndirect: Hashable where Value: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(wrappedValue)
+    }
+}
+
 // --- Metadata Interfaces ---
 
 public protocol BaboonGenerated {}
