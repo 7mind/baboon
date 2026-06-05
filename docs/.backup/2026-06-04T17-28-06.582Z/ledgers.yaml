@@ -42,13 +42,12 @@ ledgers:
       statusValues:
         - open
         - wip
-        - root-caused
-        - inconclusive
+        - blocked
         - resolved
-        - wontfix
+        - abandoned
       terminalStatuses:
         - resolved
-        - wontfix
+        - abandoned
       fields:
         headline:
           type: string
@@ -68,9 +67,6 @@ ledgers:
         severity:
           type: string
           required: true
-        sessionLogs:
-          type: string[]
-          required: false
         sourceRefs:
           type: string[]
           required: false
@@ -93,22 +89,20 @@ ledgers:
       transitions:
         open:
           - wip
+          - blocked
           - resolved
-          - wontfix
+          - abandoned
         wip:
-          - root-caused
-          - inconclusive
+          - blocked
           - resolved
-          - wontfix
-        root-caused:
+          - abandoned
+        blocked:
+          - open
+          - wip
           - resolved
-          - wontfix
-          - wip
-        inconclusive:
-          - wip
-          - wontfix
+          - abandoned
         resolved: []
-        wontfix: []
+        abandoned: []
   - name: tasks
     schema:
       statusValues:
@@ -141,9 +135,6 @@ ledgers:
           required: false
         severity:
           type: string
-          required: false
-        sessionLogs:
-          type: string[]
           required: false
         sourceRefs:
           type: string[]
@@ -205,9 +196,6 @@ ledgers:
           type: id
           required: false
         evidence:
-          type: string[]
-          required: false
-        sessionLogs:
           type: string[]
           required: false
         sourceRefs:
@@ -370,9 +358,6 @@ ledgers:
         sourceRefs:
           type: string[]
           required: false
-        sessionLogs:
-          type: string[]
-          required: false
       idPrefix: G
       transitions:
         clarifying:
@@ -419,53 +404,7 @@ ledgers:
         sourceRefs:
           type: string[]
           required: false
-        sessionLogs:
-          type: string[]
-          required: false
       idPrefix: R
       transitions:
         go-ahead: []
         revise: []
-  - name: handoffs
-    schema:
-      statusValues:
-        - drained
-        - answers-required
-        - mixed
-        - illness-detected
-      terminalStatuses:
-        - drained
-        - answers-required
-        - mixed
-        - illness-detected
-      fields:
-        summary:
-          type: string
-          required: true
-        flow:
-          type: string
-          required: false
-        ledgerRefs:
-          type: id[]
-          required: false
-        blockingQuestions:
-          type: id[]
-          required: false
-        handoffReasons:
-          type: string[]
-          required: false
-        sessionLogs:
-          type: string[]
-          required: false
-        tags:
-          type: string[]
-          required: false
-        sourceRefs:
-          type: string[]
-          required: false
-      idPrefix: HO
-      transitions:
-        drained: []
-        answers-required: []
-        mixed: []
-        illness-detected: []

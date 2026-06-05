@@ -2665,6 +2665,65 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-python-mcp
+
+Generate code for the Python MCP round-trip overlay test (T18).
+Uses the mcp-stub-ok model + `--py-generate-mcp-server=true` (Either mode) and
+overlays `test/py-stub-mcp-overlay/` on top of a py-stub copy.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-python-mcp"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/py-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' \
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/mcp-stub-ok/ \
+  --lock-file=./target/baboon-python-mcp.lock \
+  :python \
+  --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --py-generate-mcp-server=true
+
+rsync -a ./test/py-stub-mcp-overlay/ "$TEST_DIR/py-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-python-mcp
+
+Run the Python MCP round-trip overlay tests (T18).
+Validates initialize/tools-list/tools-call + error paths; runs structural-equality
+validation on every returned inputSchema against T7 §2.3 reference values (K1);
+exercises negative controls.
+
+```bash
+TEST_DIR="${action.test-gen-python-mcp.test_dir}"
+pushd "$TEST_DIR/py-stub"
+python3 -m venv .venv
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
+python3 -m pip install -r requirements.txt
+python3 -m unittest BaboonTests.mcp.test_mcp
+popd
+
+ret success:bool=true
+```
+
 # action: test
 
 Run complete test suite (orchestrator action).
@@ -2720,6 +2779,7 @@ dep action.test-rust-mcp
 dep action.test-kotlin-mcp
 dep action.test-java-mcp
 dep action.test-dart-mcp
+dep action.test-python-mcp
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
