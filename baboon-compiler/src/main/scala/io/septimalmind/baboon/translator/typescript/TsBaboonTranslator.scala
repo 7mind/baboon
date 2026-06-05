@@ -165,7 +165,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       val verSuffix     = versionStr.replace('.', '_')
       // Relative path prefix from facade file's dir (= latestBasename) to type's dir
       val relPrefix = if (isLatest) "." else s"./v$verSuffix"
-      domain.defs.meta.nodes.toList.flatMap {
+      val collected = domain.defs.meta.nodes.toList.flatMap {
         case (_, defn: DomainMember.User) =>
           defn.id.owner match {
             case Owner.Adt(_) => None // skip ADT branches
@@ -211,6 +211,11 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
           }
         case _ => None
       }
+      // D3 fix: `meta.nodes` is a hash-ordered Map, so its iteration order is
+      // non-deterministic across runs/JVMs. Sort the collected types by their
+      // rendered import path then symbol name, giving the facade a total lexical
+      // ordering for both its import lines and its codec/meta registrations.
+      collected.sortBy { case (importPath, _, typeName, typeId, _, _) => (importPath, typeName, typeId) }
     }
 
     // Ordered versions (ascending)
@@ -417,7 +422,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       if (levelsUp == 0) s"./$remainingPath$sfx" else s"${"../" * levelsUp}$remainingPath$sfx"
     }
 
-    def baboonTypeImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
+    // The rendered `from '...'` source path for a baboon runtime/fixture module.
+    def baboonTypeImportPath(moduleId: TsModuleId): String = {
       // The cross-language fixture helper is emitted with CompilerProduct.Test,
       // so the file lands under testsOutput (testBasePkg), NOT output
       // (definitionsBasePkg). Imports for it must therefore be resolved against
@@ -428,26 +434,48 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       if (o.module.path.startsWith(targetBasePkg)) {
         val afterBase    = o.module.path.drop(targetBasePkg.size)
         val pathToModule = (0 until afterBase.size - 1).map(_ => "../").mkString("")
-        q"import {$types} from '$pathToModule${moduleId.path.mkString("")}$sfx'"
+        s"$pathToModule${moduleId.path.mkString("")}$sfx"
       } else {
         val pathToCommonParent = (0 until o.module.path.size - 1).map(_ => "../").mkString("")
-        q"import {$types} from '$pathToCommonParent${targetBasePkg.mkString("/")}/${moduleId.path.mkString("")}$sfx'"
+        s"$pathToCommonParent${targetBasePkg.mkString("/")}/${moduleId.path.mkString("")}$sfx"
       }
     }
 
-    def definitionImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
+    def baboonTypeImport(moduleId: TsModuleId, types: String): TextTree[TsValue] =
+      q"import {$types} from '${baboonTypeImportPath(moduleId)}'"
+
+    def definitionImportPath(moduleId: TsModuleId): String = {
       if (o.module.path.startsWith(tsFileTools.definitionsBasePkg)) {
-        val importPath = relativeImportPath(o.module.path, moduleId.path)
-        q"import {$types} from '$importPath'"
+        relativeImportPath(o.module.path, moduleId.path)
       } else {
         val pathToCommonParent = (0 until o.module.path.size - 1).map(_ => "../").mkString("")
-        q"import {$types} from '$pathToCommonParent${moduleId.path.mkString("/")}$sfx'"
+        s"$pathToCommonParent${moduleId.path.mkString("/")}$sfx"
       }
     }
 
-    def fixtureImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
-      val importPath = relativeImportPath(o.module.path, moduleId.path)
-      q"import {$types} from '$importPath'"
+    def definitionImport(moduleId: TsModuleId, types: String): TextTree[TsValue] =
+      q"import {$types} from '${definitionImportPath(moduleId)}'"
+
+    def fixtureImportPath(moduleId: TsModuleId): String =
+      relativeImportPath(o.module.path, moduleId.path)
+
+    def fixtureImport(moduleId: TsModuleId, types: String): TextTree[TsValue] =
+      q"import {$types} from '${fixtureImportPath(moduleId)}'"
+
+    // The exact rendered `from '...'` source string a module's import line will
+    // carry, dispatched identically to `mkImportFor`. Used as the deterministic
+    // sort key for `typesByModule` so the emitted import block is lexically
+    // ordered by what the reader actually sees (D3, CRITICISM 1).
+    def renderedImportSource(moduleId: TsModuleId): String = {
+      if (moduleId.path.startsWith(tsFileTools.definitionsBasePkg)) {
+        definitionImportPath(moduleId)
+      } else if (moduleId.path.startsWith(tsFileTools.fixturesBasePkg) && tsFileTools.fixturesBasePkg.nonEmpty) {
+        fixtureImportPath(moduleId)
+      } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared || moduleId == tsBaboonAnyOpaqueModule || moduleId == tsBaboonIdReprModule || moduleId == tsCrossLangFixtureModule) {
+        baboonTypeImportPath(moduleId)
+      } else {
+        moduleId.path.mkString("/")
+      }
     }
 
     val usedTypes = o.tree.values.collect { case t: TsValue.TsType => t }
@@ -458,7 +486,19 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
     val aliasMap = buildAliasMap(usedTypes)
 
-    val typesByModule = usedTypes.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse
+    // D3 fix (CRITICISM 1): import ordering must be total, deterministic, AND match what the
+    // reader sees. The primary module key is the rendered `from '...'` source string — the
+    // same `relativeImportPath`/`importPath` dispatch `mkImportFor` emits — so the emitted
+    // import block is lexically ordered by the rendered path, not by `moduleId.path` (whose
+    // ordering can diverge from the `../`-relative rendered path on asymmetric `../` depths).
+    // The module path and version are appended as a total tiebreaker so ties never fall back
+    // to hash-derived HashMap iteration order. Per-module symbols are sorted by name
+    // (mirroring the `names.toList.sorted` barrel sort in `namedReexports`).
+    val typesByModule = usedTypes
+      .groupBy(_.moduleId)
+      .toList
+      .map { case (moduleId, types) => (moduleId, types.sortBy(t => (t.name, t.alias.getOrElse("")))) }
+      .sortBy { case (moduleId, _) => (renderedImportSource(moduleId), moduleId.path.mkString("/"), moduleId.version.map(_.toString).getOrElse("")) }
 
     val importsByModule =
       typesByModule.flatMap {
@@ -483,7 +523,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
               } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared || moduleId == tsBaboonAnyOpaqueModule || moduleId == tsBaboonIdReprModule || moduleId == tsCrossLangFixtureModule) {
                 baboonTypeImport(moduleId, typesString)
               } else {
-                q"import {$typesString} from '${moduleId.path.mkString("/")}'"
+                q"import {$typesString} from '${renderedImportSource(moduleId)}'"
               }
               Some(result)
             }
