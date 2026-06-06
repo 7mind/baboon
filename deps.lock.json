@@ -122,6 +122,66 @@
       "sha256": "1p1ldfhdi292y3r4q2bm7jz2ip840z7xg3gxj1n41c3lbx6nwi19"
     },
     {
+      "url": "https://repo1.maven.org/maven2/com/ethlo/time/itu/1.14.0/itu-1.14.0.jar",
+      "sha256": "0jhnxbfgs21fpim4fcqrfbbrb0hwszng7cbmp2r8m0kprjq0mx2w"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/ethlo/time/itu/1.14.0/itu-1.14.0.pom",
+      "sha256": "1iabmqsm05iqq43b5qx469l6hw1q4l9nr2nccff555clq2zf0nhd"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-annotations/2.18.3/jackson-annotations-2.18.3.jar",
+      "sha256": "0cc9idgz99410viv4a66cwi7gcqzmbdvl6xl11ah59dmh06p99ca"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-annotations/2.18.3/jackson-annotations-2.18.3.pom",
+      "sha256": "0jrqk14m5v5wlxj2605jn8hf5apyd0cq132c7mlip9lywalqpjdr"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-core/2.18.3/jackson-core-2.18.3.jar",
+      "sha256": "1ng1haaz1c9v6n26inpnbh9dx38gkqzppa8g8lhyhg75wp9w8sq5"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-core/2.18.3/jackson-core-2.18.3.pom",
+      "sha256": "1jg3a0pjmn2gdbcpf8iwc5jxvij14gx9ijhmqad7194icf7npp1p"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.18.3/jackson-databind-2.18.3.jar",
+      "sha256": "13qhgs5c871f3w95fmxf0q4lb8c8jhim3f1kpz2qcqbsbakxs2si"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.18.3/jackson-databind-2.18.3.pom",
+      "sha256": "0zv1v8m0f62y2ppzfkjih49fq6ahsfx217nnjn2x9nz42jn4i3z5"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/dataformat/jackson-dataformat-yaml/2.18.3/jackson-dataformat-yaml-2.18.3.jar",
+      "sha256": "10z4asyyd6v0728pddsghb1vm7jyfgycikyx72affhybrx3hx81w"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/dataformat/jackson-dataformat-yaml/2.18.3/jackson-dataformat-yaml-2.18.3.pom",
+      "sha256": "0jl6nj961czqvqg7cvnyv2ig2cj6w2fhqp6172hswhjp5ffplkkb"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/dataformat/jackson-dataformats-text/2.18.3/jackson-dataformats-text-2.18.3.pom",
+      "sha256": "09bfw1pz8743y1rfd0x4r4d6nnircgf4dszdxinrfmg8qsndlwsn"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/jackson-base/2.18.3/jackson-base-2.18.3.pom",
+      "sha256": "1zd4yglxdpxknzd34f819m8cyrgxka0dx4k0id4hw8s5hhygvfym"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/jackson-bom/2.18.3/jackson-bom-2.18.3.pom",
+      "sha256": "145j4yd1wmb08gx083vxrprah3wlxv2vpsazh066a611nfpcdm7i"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/jackson-parent/2.18.1/jackson-parent-2.18.1.pom",
+      "sha256": "134r22cx3vnzlw8116yhd68n2kwsqhhcjifli95q89h23an2z0nh"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/fasterxml/oss-parent/61/oss-parent-61.pom",
+      "sha256": "0i350gfmdnr4q7wyxv85v3djpqa3qnl8cnc5l1niiscpyly52j9n"
+    },
+    {
       "url": "https://repo1.maven.org/maven2/com/github/alexarchambault/case-app-annotations_2.13/2.1.0-M30/case-app-annotations_2.13-2.1.0-M30.jar",
       "sha256": "16mvbqrlchnpmzxs8igh8gh3r5csxg2ax1s5vivc81p8hp97w5a7"
     },
@@ -360,6 +420,14 @@
     {
       "url": "https://repo1.maven.org/maven2/com/michaelpollmeier/versionsort/1.0.11/versionsort-1.0.11.pom",
       "sha256": "0wa1i57cqzhjg0rgvnfpqq6696dnikk12l8ilrj0p7grxrk0mwm8"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/networknt/json-schema-validator/1.5.9/json-schema-validator-1.5.9.jar",
+      "sha256": "1r4s1lbd59r0502x6455x93l9x82i96rgqsf8lks06zxg3mvmf70"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/com/networknt/json-schema-validator/1.5.9/json-schema-validator-1.5.9.pom",
+      "sha256": "1317kkkdaamv7c18kli3yiiw4spbf0j7wiqgz3mrhcszshkx7r0k"
     },
     {
       "url": "https://repo1.maven.org/maven2/com/orrsella/sbt-stats_2.12_1.0/1.0.7/sbt-stats-1.0.7.jar",
@@ -1482,6 +1550,10 @@
       "sha256": "1wn3gcrspfigcz4g3dj6ian01hc5iabj0jzzfyahc82bdwlb1i11"
     },
     {
+      "url": "https://repo1.maven.org/maven2/org/junit/junit-bom/5.10.2/junit-bom-5.10.2.pom",
+      "sha256": "0s4r7bjcs9072a9gm2d92hy9zzib55icqn76zw655xmhlh2dk78n"
+    },
+    {
       "url": "https://repo1.maven.org/maven2/org/junit/junit-bom/5.9.3/junit-bom-5.9.3.pom",
       "sha256": "1mrf6kf0y6bic98n30w8s9gnxykgzv5j8mx1bh745wkjkv6jj0sd"
     },
@@ -2454,6 +2526,18 @@
       "sha256": "1116vkg10llq7ljvs3764n5fnwypnp42fb8wn65r4dwl4af6l17v"
     },
     {
+      "url": "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar",
+      "sha256": "0cmq5ri9qck33mcr36373c4kdls5yv0q2wgdpxd4v5b142aisxbv"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.pom",
+      "sha256": "1gr6f2bsrigiils6pnr3q0rlz34jiv4sl31qp4hxrv3wgwl4030m"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/org/slf4j/slf4j-bom/2.0.17/slf4j-bom-2.0.17.pom",
+      "sha256": "1s9ij1hf3r2v31lgx7sr6w7z7rwzrnsh5hczhgmqdf5l8av2g3gp"
+    },
+    {
       "url": "https://repo1.maven.org/maven2/org/slf4j/slf4j-parent/1.7.30/slf4j-parent-1.7.30.pom",
       "sha256": "0xabwdxnhnshb8rzszl5nq110d1zx2knsgy37bxmn34awib7jr0i"
     },
@@ -2464,6 +2548,10 @@
     {
       "url": "https://repo1.maven.org/maven2/org/slf4j/slf4j-parent/1.7.7/slf4j-parent-1.7.7.pom",
       "sha256": "1m1k7nkwc73mr6bza02nznzr9lfryn68k5hw4rz59l38wwyaxzqx"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/org/slf4j/slf4j-parent/2.0.17/slf4j-parent-2.0.17.pom",
+      "sha256": "0fxz5c4fwpal1cp8b4a30bkb5hkyslwvkdsqdq92knyzabl73kcm"
     },
     {
       "url": "https://repo1.maven.org/maven2/org/sonatype/buildsupport/buildsupport/6/buildsupport-6.pom",
@@ -2684,6 +2772,14 @@
     {
       "url": "https://repo1.maven.org/maven2/org/xerial/sbt/sbt-sonatype_2.12_1.0/3.10.0/sbt-sonatype_2.12_1.0-3.10.0.pom",
       "sha256": "1r4a66ww35gqvq1v3glj8n7qdgl9dr9vdr8fsf8h3b4cnvqcrab5"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/org/yaml/snakeyaml/2.3/snakeyaml-2.3.jar",
+      "sha256": "0ilizwqd5z16ijx0h829pgaagnjq09ppw41c9jyn08v5dgk6z9v3"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/org/yaml/snakeyaml/2.3/snakeyaml-2.3.pom",
+      "sha256": "0bsqwf9ac3fl6l3bgnylycbqpq9d6b535gjjwd4h06rk0rd2cnhg"
     }
   ]
 }
