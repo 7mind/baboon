@@ -2,8 +2,13 @@
 ledger: questions
 counters:
   milestone: 0
-  item: 5
-archives: []
+  item: 7
+archives:
+  - id: M4
+    path: ./archive/questions/M4.md
+    summary: MCP gen W3 (replicate to remaining 7 backends) COMPLETE. Tasks T12-T18,T23 + D4/D5/D6/D7/D10 fixes (T29,T30,T31,T32) done; defects D4,D5,D6,D7,D8,D10 resolved; hypotheses H1,H2,H6,H7,H8,H9,H10 terminal; reviews terminal. All items terminal.
+    title: MCP gen W3 — replicate generator to remaining 7 backends
+    status: done
 ---
 
 # questions
@@ -74,3 +79,31 @@ archives: []
 - recommendation: Per-language compile + a local round-trip test that drives the generated transport-abstract dispatch entrypoint through `initialize` / `tools/list` / `tools/call` (no real transport, no cross-language NxN), wired as `test-gen-<lang>-mcp` + `test-<lang>-mcp` actions registered in the `test` aggregator — matching the wiring-overlay harness pattern. A full MCP-client cross-language matrix can be a follow-up if you want interop guarantees beyond per-language dispatch correctness.
 - ledgerRefs: ["goals:G1"]
 - answer: ""
+
+## M-AMBIENT
+
+### Q7 — answered
+
+- createdAt: 2026-06-05T09:14:00.526Z
+- updatedAt: 2026-06-05T17:44:45.286Z
+- author: user
+- session: 91173875-8554-45c0-a418-1837a6648f6f
+- question: "Disposition for the 7 pre-existing / out-of-scope defects (D1-D7) surfaced during the MCP work: for EACH, fix now (as a new plan-flow task) or mark wontfix? Each fix changes generated output (a versioned external API) for all users, and the filing reviewers explicitly flagged each as 'candidate for a separate fix or wontfix'. None is on the MCP feature's critical path (unlike D8, which you already chose to fix via Q6). Please answer per defect, e.g. 'fix D4,D5,D6,D7; wontfix D1,D2,D3' or 'fix all' / 'wontfix all'."
+- context: |
+    D1 (low, MCP-emitter latent, UNEXERCISED by current stub): McpInputSchemaEmitter.adtSchema drops an ADT's hoisted common fields (emits only oneOf of branch $refs). The K6 stub's ADT (Shape) has no common fields, so untested. Fix: merge adt.fields into each branch / allOf. Recommend: wontfix-for-now (add when an ADT-with-common-fields tool request actually exists) OR small emitter fix.
+    
+    D2 (low, MCP-emitter latent, likely UNREACHABLE): contract id in the reachable closure would emit a dangling #/$defs ref; Baboon contracts are structural mixins, not field-referenceable, so unreachable in practice. Fix: add a guard/assertion, or inline contract fields if ever referenceable. Recommend: add the cheap guard/assertion.
+    
+    D3 (low, PRE-EXISTING, cosmetic, tsc-inert): the non-MCP TS generator emits nondeterministic import ORDERING (iteration over an unordered Set). Fix: sort imports by module-path then symbol before rendering. Recommend: fix (cheap; restores byte-reproducible codegen).
+    
+    D4 (medium, PRE-EXISTING, generated Scala does NOT compile): foreign type FFancyStr is imported but no bare `object/type FFancyStr` is emitted, so the import does not resolve (worked around with FFancyStrShim). Fix: don't emit the bare import for primitive-mapped foreigns, or emit a companion. Recommend: fix (correctness).
+    
+    D5 (medium, PRE-EXISTING, generated Scala does NOT compile): in a nested-package codec file, Color_JsonCodec is referenced (map-with-enum-key decoder) but not imported (worked around with a package-object re-export). Fix: add Color_JsonCodec to the import set or fully-qualify. Recommend: fix (correctness).
+    
+    D6 (low, PRE-EXISTING): the Python JSON codec does not round-trip the {key,value} entry-array shape for a non-string-keyed map (map[Color,str]); test passes byColor:{} to avoid the path. Fix: align Python non-string-keyed-map handling with the OAS/MCP entry-array representation. Recommend: fix.
+    
+    D7 (medium, PRE-EXISTING, EXTERNAL-BASELINE change, analogous to D8): recursive pydantic models fail on py3.12 without `from __future__ import annotations`; the proper generator fix changes flag-off Python baseline output for all users (a deliberate, separately-scoped baseline decision, like D8 was). Fix: emit the future-import for files with recursive/self-referential types + update the Python regular-adt baseline. Recommend: fix (mirrors your D8 decision), but it is an intentional external-API baseline change so confirming explicitly.
+- suggestions: ["Fix all 7 as new plan-flow tasks (then re-run /advance to plan+implement them)","Fix the correctness/determinism ones (D3,D4,D5,D6,D7) and wontfix the latent/unexercised MCP-emitter ones (D1,D2)","Wontfix all 7 (record as documented known limitations) and ship only the MCP feature","Mixed per-defect (specify which to fix vs wontfix in your answer)"]
+- recommendation: "Suggestion 2: fix the genuine correctness/determinism defects D3 (TS import order), D4+D5 (generated Scala that does not compile), D6 (Python enum-keyed map codec), and D7 (Python recursive future-import, mirroring your D8 'fix now' choice); mark D1 and D2 wontfix-for-now since they are latent and unexercised by any current model (revisit if/when a real model exercises ADT-common-fields or field-referenced contracts). Adjust per defect as you prefer."
+- ledgerRefs: ["defects:D1","defects:D2","defects:D3","defects:D4","defects:D5","defects:D6","defects:D7"]
+- answer: Fix all 7 as new plan-flow tasks (then re-run /advance to plan+implement them)

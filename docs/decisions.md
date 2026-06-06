@@ -2,7 +2,7 @@
 ledger: decisions
 counters:
   milestone: 0
-  item: 7
+  item: 12
 archives: []
 ---
 
@@ -162,3 +162,53 @@ archives: []
 - ledgerRefs: ["goals:G1"]
 - dependsOn: ["K3","K4","K5"]
 - tags: ["mcp","fixture","stub-model","type-inventory","T22","T5"]
+
+### K8 — locked
+
+- createdAt: 2026-06-05T09:19:28.496Z
+- updatedAt: 2026-06-05T09:19:28.496Z
+- author: "opus-4.8[1m]"
+- session: 91173875-8554-45c0-a418-1837a6648f6f
+- headline: "plan review: approved (follow-up T23 delta)"
+- rationale: "Reviewer go-ahead on R22 (0 criticisms, 0 new questions): follow-up delta approved — T23 (Swift recursive value-type DTO codegen fix) faithfully reifies D8's source-verified root cause + suggestedFix with concrete/testable acceptance; DAG acyclic and correctly sequenced T23->T17->{T19,T20,T21}; rewiring surgical (T17 blocked->planned, dependsOn [T11,T23]; D8.dependsOn [T23]); all done/approved tasks untouched. Plan executable."
+- ledgerRefs: ["goals:G1"]
+
+### K9 — locked
+
+- createdAt: 2026-06-05T12:32:14.382Z
+- updatedAt: 2026-06-05T12:32:14.382Z
+- author: "opus-4.8[1m]"
+- session: 91173875-8554-45c0-a418-1837a6648f6f
+- headline: "plan review: approved (D9 follow-up T24 delta)"
+- rationale: "Reviewer go-ahead on R27 (0 criticisms, 0 new questions): D9 follow-up delta approved. T24 faithfully reifies D9's confirmed root cause (H2) as a test-infra-only fix (relocate mcp-stub-ok out of the shared --model-dir, add a minimal recursive-only Tree model preserving T23 coverage, rewire the 9 mcp lanes + sw-stub). DAG acyclic and correctly sequenced (T23 done -> T24 [dependsOn T23] -> T21 [dependsOn T19,T20,T24], T21 blocked->planned; D9.dependsOn [T24]); rewiring surgical (done tasks T1-T20/T22/T23 untouched); acceptance concrete/testable. Plan executable."
+- ledgerRefs: ["goals:G1"]
+
+### K10 — locked
+
+- createdAt: 2026-06-05T18:15:32.144Z
+- updatedAt: 2026-06-05T18:15:32.144Z
+- author: "opus-4.8[1m]"
+- session: 91173875-8554-45c0-a418-1837a6648f6f
+- headline: "plan review: approved"
+- rationale: "Reviewer go-ahead on the D1-D7 fix delta (tasks T26-T31), ref review R30: 0 criticisms, 0 new questions; tasks reify each defect's confirmed root cause with testable acceptance and verified Q20 bidirectional links."
+- ledgerRefs: ["goals:G1"]
+
+### K11 — locked
+
+- createdAt: 2026-06-05T20:25:26.407Z
+- updatedAt: 2026-06-05T20:25:26.407Z
+- author: "opus-4.8[1m]"
+- session: 91173875-8554-45c0-a418-1837a6648f6f
+- headline: "plan review: approved"
+- rationale: Reviewer go-ahead on SCOPE 4 plan delta (T32 D10 fix + T33 final CI closeout); ref review R37 (0 criticisms, 0 new questions).
+- ledgerRefs: ["goals:G1"]
+
+### K12 — locked
+
+- createdAt: 2026-06-05T21:32:54.366Z
+- updatedAt: 2026-06-05T21:32:54.366Z
+- author: "opus-4.8[1m]"
+- session: 91173875-8554-45c0-a418-1837a6648f6f
+- headline: "plan review: approved"
+- rationale: Reviewer go-ahead on the revised SCOPE 5 plan (T34 D11 fix) with 0 criticisms; ref review R40.
+- ledgerRefs: ["goals:G1"]
