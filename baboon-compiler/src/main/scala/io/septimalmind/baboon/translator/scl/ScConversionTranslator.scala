@@ -244,8 +244,9 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             val ops = c.ops.map(o => o.targetField -> o).toMap
             val assigns = dto.fields.map {
               f =>
-                val op  = ops(f)
-                val fld = f.name.name
+                val op          = ops(f)
+                val fld         = escapeScKeyword(f.name.name)
+                val localVarName = escapeScKeyword(f.name.name.toLowerCase)
                 val expr = op match {
                   case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"_from.$fld", 1)
                   case o: FieldOp.InitializeWithDefault =>
@@ -268,9 +269,9 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                   case _: FieldOp.WrapIntoCollection => q"$scList(_from.$fld).asInstanceOf[${trans.asScRef(f.tpe, domain, evo)}]"
                   case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1, Some(o.oldTpe))
                   case o: FieldOp.SwapCollectionType => swapCollType(q"_from.$fld", o, 0)
-                  case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"_from.${o.sourceFieldName.name}", 1)
+                  case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"_from.${escapeScKeyword(o.sourceFieldName.name)}", 1)
                   case o: FieldOp.Redef =>
-                    val srcFieldRef = q"_from.${o.sourceFieldName.name}"
+                    val srcFieldRef = q"_from.${escapeScKeyword(o.sourceFieldName.name)}"
                     o.modify match {
                       case _: FieldOp.WrapIntoCollection =>
                         q"$scList($srcFieldRef).asInstanceOf[${trans.asScRef(f.tpe, domain, evo)}]"
@@ -280,9 +281,9 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                         swapCollType(srcFieldRef, m, 0)
                     }
                 }
-                q"val ${f.name.name.toLowerCase}: ${trans.asScRef(f.tpe, domain, evo)} = $expr"
+                q"val $localVarName: ${trans.asScRef(f.tpe, domain, evo)} = $expr"
             }
-            val ctorArgs = dto.fields.map(f => q"${f.name.name.toLowerCase}")
+            val ctorArgs = dto.fields.map(f => q"${escapeScKeyword(f.name.name.toLowerCase)}")
             val classDef = q"""
                               |@scala.annotation.nowarn("cat=deprecation") object $className
                               |  extends $baboonAbstractConversion[$tin, $tout] {

@@ -198,7 +198,7 @@ class ScJsonCodecGenerator(
         val branchNs            = q"${adt.id.name.name}"
         val branchName          = m.name.name
         val fqBranch            = q"$branchNs.$branchName"
-        val branchNameRef       = q"${branchName.toLowerCase}"
+        val branchNameRef       = q"${escapeScKeyword(branchName.toLowerCase)}"
         val routedBranchEncoder = q"${fqBranch}_JsonCodec.instance.encode(ctx, $branchNameRef)"
 
         val branchEncoder = if (target.language.wrappedAdtBranchCodecs) {
@@ -259,12 +259,13 @@ class ScJsonCodecGenerator(
   private def genDtoBodies(name: ScValue.ScType, d: Typedef.Dto): (TextTree[ScValue], TextTree[ScValue]) = {
     val fields = d.fields.map {
       f =>
-        val fieldRef = q"value.${f.name.name}"
-        val enc      = mkEncoder(f.tpe, fieldRef)
-        val dec      = decoder(f.name.name, f.tpe, q"jsonObject")
+        val escapedName = escapeScKeyword(f.name.name)
+        val fieldRef    = q"value.$escapedName"
+        val enc         = mkEncoder(f.tpe, fieldRef)
+        val dec         = decoder(f.name.name, f.tpe, q"jsonObject")
         (
           q""""${f.name.name}" -> $enc""",
-          q"${f.name.name} <- $dec",
+          q"$escapedName <- $dec",
         )
     }
 
@@ -281,7 +282,7 @@ class ScJsonCodecGenerator(
       if (d.fields.nonEmpty) {
         q"""for {
            |  ${fields.map(_._2).joinN().shift(2).trim}
-           |} yield $name(${d.fields.map(_.name.name).mkString(",")})
+           |} yield $name(${d.fields.map(f => escapeScKeyword(f.name.name)).mkString(",")})
            |""".stripMargin
       } else q"Right($name())"
 

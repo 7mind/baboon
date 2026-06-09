@@ -258,7 +258,7 @@ class ScUEBACodecGenerator(
         val fqBranch   = q"$branchNs.$branchName"
         val cName      = q"${fqBranch}_UEBACodec"
 
-        val castedName = branchName.toLowerCase
+        val castedName = escapeScKeyword(branchName.toLowerCase)
 
         val encBody = if (target.language.wrappedAdtBranchCodecs) {
           q"""$cName.instance.encode(ctx, writer, $castedName)"""
@@ -417,11 +417,12 @@ class ScUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[ScValue], TextTree[ScValue], TextTree[ScValue])] = {
     dto.fields.map {
       field =>
-        val fieldRef   = q"value.${field.name.name}"
-        val enc        = mkEncoder(field.tpe, fieldRef, q"writer")
-        val fakeEnc    = mkEncoder(field.tpe, fieldRef, q"fakeWriter")
-        val decoder    = mkDecoder(field.tpe)
-        val decodeTree = q"${field.name.name} = $decoder"
+        val escapedName = escapeScKeyword(field.name.name)
+        val fieldRef    = q"value.$escapedName"
+        val enc         = mkEncoder(field.tpe, fieldRef, q"writer")
+        val fakeEnc     = mkEncoder(field.tpe, fieldRef, q"fakeWriter")
+        val decoder     = mkDecoder(field.tpe)
+        val decodeTree  = q"$escapedName = $decoder"
 
         val w = domain.refMeta(field.tpe).len match {
           case BinReprLen.Fixed(bytes) =>

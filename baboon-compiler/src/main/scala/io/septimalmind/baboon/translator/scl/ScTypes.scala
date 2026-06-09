@@ -197,4 +197,28 @@ object ScTypes {
 
   def parsePkg(pkg: String): NEList[String] = NEList.unsafeFrom(pkg.split('.').toList)
   def parseScPkg(pkg: String): ScPackageId  = ScPackageId(parsePkg(pkg))
+
+  /** The full set of Scala reserved keywords. These cannot be used bare as identifiers and require
+    * backtick quoting. Source: Scala 2 / Scala 3 language specification (keywords).
+    * Note: `default` is NOT a Scala keyword.
+    */
+  val scReservedKeywords: Set[String] = Set(
+    "abstract", "case", "catch", "class", "def", "do", "else", "extends",
+    "false", "final", "finally", "for", "forSome", "if", "implicit", "import",
+    "lazy", "match", "new", "null", "object", "override", "package", "private",
+    "protected", "return", "sealed", "super", "this", "throw", "trait", "try",
+    "true", "type", "val", "var", "while", "with", "yield",
+    // Scala 3 soft keywords that can appear as identifiers in certain positions but are
+    // safer to escape when used as field names:
+    "then", "export", "given", "using", "inline", "transparent", "opaque", "open",
+    "infix", "end",
+  )
+
+  /** Escape a Scala identifier with backtick quoting when it collides with a reserved keyword.
+    * Backtick quoting is source-only and does not change the identifier's meaning or any wire
+    * representation — `` `type` `` and `type` denote the same identifier to the compiler, but only
+    * the former is a legal identifier when the bare form is a keyword. Idempotent for non-keywords.
+    */
+  def escapeScKeyword(identifier: String): String =
+    if (scReservedKeywords.contains(identifier)) s"`$identifier`" else identifier
 }

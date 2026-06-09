@@ -303,7 +303,7 @@ object ScDefnTranslator {
           val params = dto.fields.map {
             f =>
               val t       = trans.asScRef(f.tpe, domain, evo)
-              val fieldEx = q"${f.name.name}: $t"
+              val fieldEx = q"${escapeScKeyword(f.name.name)}: $t"
               prependDocs(f.docs, fieldEx)
           }
           val paramsList      = if (params.nonEmpty) params.join(",\n") else q""
@@ -417,7 +417,7 @@ object ScDefnTranslator {
           val methods = contract.fields.map {
             f =>
               val t        = trans.asScRef(f.tpe, domain, evo)
-              val methodEx = q"def ${f.name.name}: $t"
+              val methodEx = q"def ${escapeScKeyword(f.name.name)}: $t"
               prependDocs(f.docs, methodEx)
           }
           val parents       = contract.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
@@ -575,31 +575,33 @@ object ScDefnTranslator {
       * named `value` because we wrap the body inside a per-field block.
       */
     private def renderFieldValueExpr(fieldName: String, kind: IdentifierFieldKind): TextTree[ScValue] = {
+      val escapedFieldName = escapeScKeyword(fieldName)
       kind match {
-        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.bitToString(this.$fieldName)"
-        case IdentifierFieldKind.SignedInt        => q"this.$fieldName.toString"
+        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.bitToString(this.$escapedFieldName)"
+        case IdentifierFieldKind.SignedInt        => q"this.$escapedFieldName.toString"
         case IdentifierFieldKind.UnsignedSmallInt =>
           // u08/u16/u32 require width-aware masking. The single 32-bit mask used
           // here would silently produce wrong values for u08/u16. All call sites
           // MUST special-case UnsignedSmallInt and dispatch to renderUnsignedSmallInt.
           throw new IllegalStateException("UnsignedSmallInt requires width-aware emission via renderUnsignedSmallInt")
-        case IdentifierFieldKind.UnsignedLong => q"$baboonIdRepr.u64ToString(this.$fieldName)"
-        case IdentifierFieldKind.Str          => q"$baboonIdRepr.escapeStr(this.$fieldName)"
-        case IdentifierFieldKind.Uid          => q"this.$fieldName.toString"
-        case IdentifierFieldKind.Tsu          => q"$baboonIdRepr.tsuToString(this.$fieldName)"
-        case IdentifierFieldKind.Tso          => q"$baboonIdRepr.tsoToString(this.$fieldName)"
-        case IdentifierFieldKind.Bytes        => q"$baboonIdRepr.bytesToHex(this.$fieldName)"
-        case IdentifierFieldKind.NestedId(_)  => q"\"{\" + this.$fieldName.toString + \"}\""
+        case IdentifierFieldKind.UnsignedLong => q"$baboonIdRepr.u64ToString(this.$escapedFieldName)"
+        case IdentifierFieldKind.Str          => q"$baboonIdRepr.escapeStr(this.$escapedFieldName)"
+        case IdentifierFieldKind.Uid          => q"this.$escapedFieldName.toString"
+        case IdentifierFieldKind.Tsu          => q"$baboonIdRepr.tsuToString(this.$escapedFieldName)"
+        case IdentifierFieldKind.Tso          => q"$baboonIdRepr.tsoToString(this.$escapedFieldName)"
+        case IdentifierFieldKind.Bytes        => q"$baboonIdRepr.bytesToHex(this.$escapedFieldName)"
+        case IdentifierFieldKind.NestedId(_)  => q"\"{\" + this.$escapedFieldName.toString + \"}\""
       }
     }
 
     /** Per-field rendering for u08/u16 needs separate masks. Collapse here for clarity. */
     private def renderUnsignedSmallInt(fieldName: String, b: TypeId.BuiltinScalar): TextTree[ScValue] = {
+      val escapedFieldName = escapeScKeyword(fieldName)
       import TypeId.Builtins.*
       b match {
-        case `u08` => q"((this.$fieldName.toInt) & 0xFF).toString"
-        case `u16` => q"((this.$fieldName.toInt) & 0xFFFF).toString"
-        case `u32` => q"(this.$fieldName.toLong & 0xFFFFFFFFL).toString"
+        case `u08` => q"((this.$escapedFieldName.toInt) & 0xFF).toString"
+        case `u16` => q"((this.$escapedFieldName.toInt) & 0xFFFF).toString"
+        case `u32` => q"(this.$escapedFieldName.toLong & 0xFFFFFFFFL).toString"
         case _     => throw new IllegalStateException(s"renderUnsignedSmallInt called with $b")
       }
     }
@@ -770,7 +772,7 @@ object ScDefnTranslator {
              |$sep""".stripMargin.trim
       }
 
-      val constructorArgs = dto.fields.map(f => q"${f.name.name} = ${f.name.name}_v").toSeq
+      val constructorArgs = dto.fields.map(f => q"${escapeScKeyword(f.name.name)} = ${f.name.name}_v").toSeq
       val ctor =
         if (constructorArgs.nonEmpty) q"new ${name.name}(${constructorArgs.join(", ")})"
         else q"new ${name.name}()"
