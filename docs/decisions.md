@@ -2,7 +2,7 @@
 ledger: decisions
 counters:
   milestone: 0
-  item: 2
+  item: 3
 archives: []
 ---
 
@@ -32,3 +32,15 @@ archives: []
 - rationale: "T1 deliverable, locked from docs/drafts/20260609-g1-wire-key-contract-and-site-inventory.md (committed aa324e53). CONTRACT: (1) Wire-key invariant — when a backend with no escape syntax (Java/Python/TypeScript/Dart) RENAMES a model-derived identifier to dodge a target keyword, the emitted JSON wire key and UEBA byte layout MUST remain a function of the model name + field/branch order, never the emitted target identifier. Per-backend mechanism: Java = Jackson @JsonProperty(\"<modelName>\") (hand-rolled codec already emits the model-name string literal, so codec is wire-safe; annotation covers non-codec Jackson consumers); Python = pydantic Field(alias=\"<modelName>\", serialization_alias=\"<modelName>\") for the transparent model_dump_json path (explicit-walker path already emits a literal); TypeScript = bracket-string wire key already literal, rename only the TS member identifier + UEBA local; Dart = literal map key already model-name, rename only the getter + named-ctor param. UEBA is positional/index-based => rename-neutral (confirmed CSUEBA:196/201/218/285). All mirror Rust's existing #[serde(rename)] discipline (RsDefnTranslator:1066-1073). (2) Site inventory: per-backend table of identifier-emission sites with file:line citations across all 9 backends, classifying centralized render passes (Scala ScBaboonTranslator:283-290 [no-op], Dart DtBaboonTranslator:270-303 [type names], Swift SwBaboonTranslator:331-340 [type/field]) vs scattered raw emissions (codec capture locals, ADT-branch/enum case names). Per-language fix tasks T3-T12 implement against this contract."
 - sourceRefs: ["docs/drafts/20260609-g1-wire-key-contract-and-site-inventory.md"]
 - ledgerRefs: ["goals:G1","defects:D1","tasks:T1"]
+
+## M6
+
+### K3 — locked
+
+- createdAt: 2026-06-09T22:29:08.021Z
+- updatedAt: 2026-06-09T22:29:08.021Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "plan review: approved"
+- rationale: "Reviewer go-ahead (R9): G2 plan T15-T18 judged fine-grained, correctly sequenced (T15/T16/T17 parallel, T18 dependsOn all three), testable, and grounded with all cited sites source-verified. 0 criticisms, 0 new questions, no out-of-scope defects."
+- ledgerRefs: ["goals:G2"]

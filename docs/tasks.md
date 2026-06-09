@@ -2,7 +2,7 @@
 ledger: tasks
 counters:
   milestone: 0
-  item: 14
+  item: 18
 archives: []
 ---
 
@@ -222,3 +222,76 @@ archives: []
 - suggestedModel: frontier
 - dependsOn: ["T13"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+
+## M7
+
+### T15 — planned
+
+- createdAt: 2026-06-09T22:24:56.031Z
+- updatedAt: 2026-06-09T22:24:56.031Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "D3: fully-qualify the stdlib `Class` reference in baboonAdtType metadata across the 3 JVM-family domain-tree-tools"
+- description: |
+    Fix the confirmed Class-shadowing root cause. The per-ADT metadata field `baboonAdtType` references stdlib `java.lang.Class` by SHORT predef name; a model ADT branch/type named `Class` (present in reserved-words-ok) shadows it -> compile errors in generated Scala/Kotlin/Java.
+    
+    Fix at the predef definition where possible so the rendered reference is fully-qualified and non-shadowable:
+    - Java: translator/java/JvTypes.scala:104 `javaClass = JvType(javaLangPkg, "Class", predef = true)`. Make it render fully-qualified `java.lang.Class` (drop predef short-name rendering for this ref, or override at the emission site translator/java/JvDomainTreeTools.scala:67 which emits `$javaClass<?> baboonAdtType`). Goal: emitted type is `java.lang.Class<?>`.
+    - Kotlin: translator/kotlin/KtTypes.scala:63-67 `javaClass` — ONLY the JVM (non-multiplatform) arm at :66 `KtType(javaLangPkg, "Class", predef = true)` is defective; the multiplatform arm at :64 already uses FQ-able `kotlin.reflect.KClass`. Make the JVM arm render `java.lang.Class`. Emission site KtDomainTreeTools.scala:70 `val baboonAdtType: $javaClass<*>` should yield `java.lang.Class<*>`.
+    - Scala: ScDomainTreeTools (emits `Class[?]`, per D3 rootCause). Resolve its exact path under translator/ (grep for ScDomainTreeTools / baboonAdtType), make the reference render `_root_.java.lang.Class[?]`.
+    
+    Distinct from D1: `Class` is not a keyword, so do NOT route through any escapeKeyword path. C# is unaffected (typeof->System.Type) and non-JVM backends have no such field — do not touch them. OPTIONAL broader audit (note, do not over-scope): JvTypes jvString:100/jvObject:101 and any `Type` predef are also short-named and could shadow under analogous model names; if cheap, make stdlib predefs render FQ at the metadata-emission site, otherwise leave as a follow-up note.
+- acceptance: "Generated Scala, Kotlin, and Java for the reserved-words-ok model (baboon-compiler/src/test/resources/baboon/reserved-words-ok/reserved.baboon, which contains a `Class` ADT branch) each emit the metadata field as a fully-qualified `java.lang.Class` (`_root_.java.lang.Class[?]` in Scala) and compile without the ~32 shadowing errors previously seen in AvatarItem.kt. Confirmed by the dedicated verification task. C# output is byte-identical to pre-change baseline."
+- suggestedModel: frontier
+- ledgerRefs: ["goals:G2","defects:D3"]
+
+### T16 — planned
+
+- createdAt: 2026-06-09T22:25:11.759Z
+- updatedAt: 2026-06-09T22:25:11.759Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "D2: escape the ADT-name package segment in Java JvTypeTranslator.renderOwner"
+- description: |
+    In translator/java/JvTypeTranslator.scala:193 the `Owner.Adt` arm `case Owner.Adt(id) => renderOwner(id.owner) :+ id.name.name` appends the ADT name UNESCAPED as a package-path segment, asymmetric with the `Owner.Ns` arm at :192 which routes through `JvTypeTranslator.escapeJvKeyword(s.name.toLowerCase)`. An ADT used as a package qualifier whose (lowercased) name is a Java keyword would emit an illegal package segment.
+    
+    Fix: route the `Owner.Adt` arm's `id.name.name` through `JvTypeTranslator.escapeJvKeyword` to match the `Owner.Ns` arm. Preserve existing casing behavior unless the Ns arm's lowercasing is also required for package segments — follow whatever the Ns arm does so the two arms are symmetric. Low severity, latent (ADT names are conventionally capitalized so no current fixture triggers it); do not add a new fixture. Independent of T15 (different file region) — may proceed in parallel.
+- acceptance: "translator/java/JvTypeTranslator.scala renderOwner Owner.Adt arm routes the ADT name segment through escapeJvKeyword (symmetric with the Owner.Ns arm). Full build + Java test matrix (mdl :build :test, or at minimum the java regular/wrapped/manual lanes) stays GREEN with output byte-identical to baseline for all existing fixtures (no fixture exercises a keyword-named ADT-as-package-qualifier)."
+- suggestedModel: standard
+- ledgerRefs: ["goals:G2","defects:D2"]
+
+### T17 — planned
+
+- createdAt: 2026-06-09T22:25:18.796Z
+- updatedAt: 2026-06-09T22:25:18.796Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "D4: escape Kotlin service-method wiring call sites in KtServiceWiringTranslator"
+- description: |
+    In translator/kotlin/KtServiceWiringTranslator.scala the wiring CALL sites emit `impl.${m.name.name}(...)` with the RAW method name (confirmed at lines 447/448 and 489/490; per the defect also the symmetric sites 669/677/699/707/767/775). T6 already escaped the method DECLARATION (`fun ´when´(...)`), so a service method named after a Kotlin hard keyword would declare the escaped name but be CALLED as `.when()` -> compile error. Pre-T6 both sides were unescaped (consistent); T6 introduced the asymmetry.
+    
+    Fix: route each `m.name.name` at the `impl.<method>(...)` call sites (and the symmetric `"${m.name.name}" -> {` when-branch labels if they must match an escaped identifier — verify whether the string-literal method-name key needs escaping; the dispatch key is a String literal, NOT an identifier, so it likely does NOT, but the `impl.<method>` invocation receiver DOES) through `KtTypeTranslator.escapeKtKeyword`, matching the escaped declaration from T6. Audit ALL call-site occurrences in the file (json + ueba, errors + no-errors variants) so none are missed. Low severity, latent (no current fixture has a keyword-named service method); do not add a new fixture. Independent of T15 (different file) — may proceed in parallel.
+- acceptance: "Every `impl.${m.name.name}(...)` invocation in translator/kotlin/KtServiceWiringTranslator.scala routes the method name through KtTypeTranslator.escapeKtKeyword (declaration and call site now symmetric). String-literal dispatch keys left as-is unless verified to require escaping. Full build + Kotlin test matrix incl. service-wiring lanes (kt regular/wrapped + service-acceptance) stays GREEN, output byte-identical to baseline for existing fixtures."
+- suggestedModel: standard
+- ledgerRefs: ["goals:G2","defects:D4"]
+
+### T18 — planned
+
+- createdAt: 2026-06-09T22:25:34.431Z
+- updatedAt: 2026-06-09T22:25:34.431Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Verify: reserved-words-ok generates+compiles for Scala+Kotlin+Java (closes D3, unblocks G1 T14) and full JVM-family matrix is green"
+- description: |
+    Verification gate for goal G2. Confirms the D3 fix (T15) closes the Class-shadowing defect and unblocks G1's T14 green-matrix gate, and that the D2 (T16) and D4 (T17) fixes did not regress the JVM family.
+    
+    Steps:
+    1. Generate code for the reserved-words-ok model (baboon-compiler/src/test/resources/baboon/reserved-words-ok/reserved.baboon — it contains a `Class` ADT branch) for the Scala, Kotlin, and Java backends.
+    2. Confirm the emitted baboonAdtType metadata field is fully-qualified (`_root_.java.lang.Class[?]` Scala / `java.lang.Class<*>` Kotlin / `java.lang.Class<?>` Java) and that each compiles — specifically that the ~32 shadowing errors previously seen in AvatarItem.kt are gone.
+    3. Run the JVM-family test lanes that cover these (e.g. mdl :build :test, or at minimum the scala/kotlin/java regular+wrapped+manual + kt service lanes) and confirm GREEN.
+    
+    Build discipline (CLAUDE.md): sbt-git (jgit) CANNOT build inside a linked git worktree (NoWorkTreeException) — if running from a worktree, clone the repo to a real dir (e.g. /tmp/baboon-ci-clone) and run the pipeline there. No `bun run check` in this project; build/test via mdl (use --simple-log when capturing output, --seq on <16GB RAM to avoid Kotlin daemon OOM). Run `sbt clean` only if baboon-runtime resources changed (they should not for this goal).
+- acceptance: Generated Scala, Kotlin, and Java for reserved-words-ok COMPILE with zero errors (the prior ~32 AvatarItem.kt Class-shadowing errors absent), the metadata field renders fully-qualified java.lang.Class in all three, and the JVM-family test matrix (scala/kotlin/java regular+wrapped+manual, kt service lanes) is GREEN. This is the evidence that D3 is closed and G1's T14 green-matrix gate is unblocked.
+- suggestedModel: standard
+- dependsOn: ["T15","T16","T17"]
+- ledgerRefs: ["goals:G2","defects:D3"]

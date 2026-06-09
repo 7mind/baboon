@@ -2,7 +2,7 @@
 ledger: hypothesis
 counters:
   milestone: 0
-  item: 2
+  item: 5
 archives: []
 ---
 
@@ -33,3 +33,38 @@ archives: []
 - ledgerRefs: ["defects:D1"]
 - evidence: ["[correct] SCALA — NO escaping anywhere. ScJsonCodecGenerator.scala:201 `branchNameRef = branchName.toLowerCase` → :211 `case $branchNameRef: $fqBranch =>` (validated against source); DTO field names verbatim (ScDefnTranslator:307); terminal renderer ScBaboonTranslator:283-290 emits names raw. Scala keywords exclude `default`, but `type`/`val`/`object`/`class`/`match` trigger it. Native fix: backtick `` `name` ``.","[correct] KOTLIN — NO escaping anywhere. KtUEBACodecGenerator.scala:185 `val castedName = branchName.toLowerCase` → :204 `val $castedName = instance` (validated); field/type/package names verbatim. Triggers: `object`/`is`/`when`/`fun`/`val`/`class`. Native fix: backtick `` `name` ``.","[correct] JAVA — NO escaping anywhere (Java has no escape syntax → must rename). JvUEBACodecGenerator.scala:182 `val castedName = branchName.toLowerCase` → :199 `if (value instanceof $adtRef $castedName)` (validated); `default` IS a Java keyword (exact C# trigger). Field/package/class/enum names verbatim. JSON codec uses fixed `branchVal` (safe).","[correct] PYTHON — NO escaping anywhere. Field names verbatim (PyDefnTranslator.scala:540 `q\"$fieldName: $fieldType\"`); class/enum/method names `.capitalize`. No branch-lowercase analog (ADT dispatch via isinstance). Triggers: field/method named `class`/`def`/`import`/`lambda`/`is`/`in`; also `none`/`true`/`false`→`None`/`True`/`False`. Native fix: RENAME (PEP8 trailing `_`), no escape syntax.","[correct] TYPESCRIPT — escaper `escapeTsKeyword` EXISTS (TsTypeTranslator.scala:310-319) but has ZERO callers tree-wide (validated by orchestrator `rg`: dead code). Defect fully applies via field getters/params, UEBA `const <field>` local (TsUEBACodecGenerator:169), enum members, type/class names. ADT branch dispatch by instanceof/index. Native fix: RENAME (no escape syntax; property access can use bracket-string).","[correct] RUST — PARTIAL: escapeRustKeyword(`r#`) + escapeRustModuleName EXIST and ARE applied to field/fn/module names via toSnakeCase (RsDefnTranslator.scala:1533-1546, validated). Residual narrow gap: type/struct/enum/trait + variant names emitted as bare `tid.name.name.capitalize` (RsTypeTranslator:155, validated) with no escape. Rust keywords are lowercase so `.capitalize` dodges most; `self`/`super`/`crate`→`Self`/... collide AND are not r#-escapable. Branch local uses fixed `v` (safe). Lowest-risk backend.","[correct] DART — MIXED: escapeDartKeyword (rename `_`) EXISTS and IS applied to TYPE names via the DtBaboonTranslator render pass (:272-301) + DtServiceWiringTranslator (:359-360) (validated by orchestrator `rg`). But field/getter/method names bypass it: DtDefnTranslator:307/318/538/571 + DtJsonCodecGenerator:164/169 emit `f.name.name` verbatim. Triggers (field/getter/method): `default`/`class`/`final`/`void`/`switch`/`is`/`in`. ADT codec uses fixed `branchVal` (safe). Fix: wire existing helper through member emission.","[correct] SWIFT — MIXED: escapeSwiftKeyword (backticks) EXISTS and IS applied via centralized render pass (SwBaboonTranslator.scala:331-340) + per-site for type/field names. But ADT branch case names + enum case names are built as RAW strings and bypass it: SwDefnTranslator:889-894 + SwJsonCodecGenerator:109-128 + SwUEBACodecGenerator:150-178 produce `case default(...)` for a branch named `Default`. Fix: route case names through escapeSwiftKeyword.","[correct] AGGREGATE: the defect CLASS (a model identifier rendered into a target keyword without escaping) is present in ALL 8 audited backends + C#. The literal 'no escaping anywhere' holds only for C#/Scala/Kotlin/Java/Python; Rust/TS/Dart/Swift have partial escaping with gaps. Native fix mechanism is per-language: C#=`@`-verbatim, Scala/Kotlin/Swift=backticks, Rust=`r#`(+rename for self/super/crate/Self), Java/Python/TypeScript/Dart=RENAME (no escape syntax)."]
 - sessionLogs: ["docs/logs/20260609-190158-a5a5a81722f58e956.md","docs/logs/20260609-190158-a6e4b7512b52af94b.md","docs/logs/20260609-190158-a123e05351e969bd7.md","docs/logs/20260609-190158-a339a8ad797fbee13.md","docs/logs/20260609-190158-a119c0b6658e6655f.md","docs/logs/20260609-190158-abf8f375663b3c77b.md","docs/logs/20260609-190158-a6a64824537135162.md","docs/logs/20260609-190158-a3ef4e52b3b442ee7.md"]
+
+## M4
+
+### H3 — confirmed
+
+- createdAt: 2026-06-09T22:19:18.483Z
+- updatedAt: 2026-06-09T22:19:18.483Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: JVM-family domain-tree-tools emit the `baboonAdtType` metadata field using the predef/short `Class` (java.lang.Class) reference, which a model ADT branch/type named `Class` shadows
+- description: Root cause for D3. The generated per-ADT metadata field `baboonAdtType` references the JVM stdlib `java.lang.Class` by SHORT name (predef) in Scala/Kotlin/Java domain-tree-tools. A model type/branch named `Class` produces a nested type that shadows it -> compile error. C# differs (typeof->System.Type); non-JVM backends have no such field.
+- evidence: ["[correct] JvTypes.scala:104 `val javaClass: JvType = JvType(javaLangPkg, \"Class\", predef = true)` — read against source: the Java stdlib Class reference is `predef`, so it renders UNQUALIFIED as `Class` (relies on java.lang auto-import).","[correct] JvDomainTreeTools.scala:67 `q\"public static final $javaClass<?> baboonAdtType\"` — emits `Class<?> baboonAdtType` (short name).","[correct] KtDomainTreeTools.scala:70 `q\"val baboonAdtType: $javaClass<*>\"` — emits `Class<*>` (short name).","[correct] ScDomainTreeTools.scala:67 `q\"def baboonAdtType: $javaClass[?]\"` — emits `Class[?]` (short name; java.lang.Class auto-imported in Scala).","[correct] CONTRAST C#: CSDomainTreeTools.scala:57/97 `public $csTpe BaboonAdtType() => typeof(...)` uses System.Type, not a short `Class` binding — so C# is NOT affected; confirms the defect is JVM-family-specific."]
+- ledgerRefs: ["defects:D3"]
+
+### H4 — confirmed
+
+- createdAt: 2026-06-09T22:21:34.303Z
+- updatedAt: 2026-06-09T22:21:34.303Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: JvTypeTranslator.renderOwner Owner.Adt arm appends the ADT name raw (unescaped) as a package segment
+- description: Root cause for D2.
+- evidence: ["[correct] JvTypeTranslator.scala:193 `case Owner.Adt(id) => renderOwner(id.owner) :+ id.name.name` — read against source: the ADT name is appended UNESCAPED, unlike the Owner.Ns arm at :192 `path.map(s => JvTypeTranslator.escapeJvKeyword(s.name.toLowerCase))` which escapes+lowercases. So an ADT used as a package qualifier whose name maps to a Java keyword would emit an illegal package segment. Low severity: ADT names are conventionally capitalized."]
+- ledgerRefs: ["defects:D2"]
+
+### H5 — confirmed
+
+- createdAt: 2026-06-09T22:21:38.461Z
+- updatedAt: 2026-06-09T22:21:38.461Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: KtServiceWiringTranslator emits service-method call sites `impl.<m>()` with the raw method name, asymmetric with T6's now-escaped declaration
+- description: Root cause for D4.
+- evidence: ["[correct] KtServiceWiringTranslator.scala: `impl.${m.name.name}(...)` at lines 447, 448, 489, 490, 669, 677, 699, 707, 767, 775 (and symmetric) — read against source: the wiring call sites use the RAW `m.name.name`, while T6 escaped the method DECLARATION (`fun escapeKtKeyword(name)`). For a service method named after a Kotlin hard keyword the declaration would be backtick-escaped but the call site `impl.when(...)` would not → compile error. Low severity: no current fixture has a keyword-named service method."]
+- ledgerRefs: ["defects:D4"]

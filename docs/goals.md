@@ -2,7 +2,7 @@
 ledger: goals
 counters:
   milestone: 0
-  item: 1
+  item: 2
 archives: []
 ---
 
@@ -45,3 +45,28 @@ archives: []
     - Exhaustive-match discipline (CLAUDE.md): if any fix adds a TyperIssue case, update 3 sites (DiagnosticsProvider, WorkspaceState, BaboonJS). `sbt clean` required after editing baboon-runtime resources. CI runs `sbt +compile` (JVM+JS) via `mdl :build :test`.
 - milestones: ["M3","M4","M5"]
 - sessionLogs: ["docs/logs/20260609-205006-a3f6cdd284886c24d.md","docs/logs/20260609-205337-ac80569ba528cf99b.md","docs/logs/20260609-205547-a57ca9ba4b4b1caa3.md"]
+
+## M6
+
+### G2 — planned
+
+- createdAt: 2026-06-09T22:20:22.405Z
+- updatedAt: 2026-06-09T22:29:34.863Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- title: Fix codegen identifier follow-ups (D3 Class-shadowing; consolidates D2/D4)
+- description: |
+    DEFECT-SEEDED goal (root cause confirmed — skip clarifying per T35). Consolidates the generated-code identifier-correctness follow-up defects discovered during G1's implementation. These are DISTINCT from D1 (reserved-keyword escaping); they are codegen-correctness bugs surfaced by the reserved-words-ok test model.
+    
+    CONFIRMED ROOT CAUSE — D3 (medium, BLOCKS G1's T14): the per-ADT metadata field `baboonAdtType` references the JVM stdlib `java.lang.Class` by SHORT/predef name in all three JVM-family domain-tree-tools. `JvTypes.scala:104` `javaClass = JvType(javaLangPkg, "Class", predef = true)` (unqualified); emitted as `Class<?>` (JvDomainTreeTools:67), `Class<*>` (KtDomainTreeTools:70), `Class[?]` (ScDomainTreeTools:67). A model ADT branch/type named `Class` shadows `java.lang.Class` → compile errors. C# unaffected (typeof→System.Type); non-JVM backends have no such field.
+    SUGGESTED FIX (D3): fully-qualify the stdlib Class reference in the metadata field — Scala `_root_.java.lang.Class[?]`, Java `java.lang.Class<?>`, Kotlin `java.lang.Class<*>` (or KClass per the multiplatform arm) — ideally at the `javaClass` predef definition. Then generated Scala/Kotlin/Java for the reserved-words-ok `Class` branch must compile. Broader: audit other predef short-name refs (`Type`,`String`) for the same shadowing hazard.
+    
+    TO BE CONSOLIDATED (pending their investigate passes this run):
+    - D2 (low): Java `renderOwner` ADT-name package segment not keyword-escaped (JvTypeTranslator:166) — route through escapeJvKeyword.
+    - D4 (low): Kotlin service-method wiring call sites `impl.<m>()` in KtServiceWiringTranslator (lines 669/677/699/707/767/775/798/806) not backtick-escaped, asymmetric with the now-escaped declaration — route through escapeKtKeyword.
+    
+    See defects D3 (rootCause/suggestedFix) + H3 (confirmed), and D2/D4.
+- sourceRefs: ["defects:D3","defects:D2","defects:D4"]
+- grounding: "Source-validated this pass (translator pkg is io/septimalmind/baboon/translator). D3 predef def confirmed at translator/java/JvTypes.scala:104 `javaClass = JvType(javaLangPkg, \"Class\", predef = true)` — short, shadowable; sibling jvString:100/jvObject:101 also short (broader-audit hazard). D3 emission sites confirmed: translator/java/JvDomainTreeTools.scala:67 `q\"public static final $javaClass<?> baboonAdtType\"`; translator/kotlin/KtDomainTreeTools.scala:70 `q\"val baboonAdtType: $javaClass<*>\"`. Kotlin javaClass predef at translator/kotlin/KtTypes.scala:63-67: multiplatform arm already FQ (kotlin.reflect.KClass), JVM arm :66 uses short `Class` predef = the defect; fix only the JVM arm. Scala domain-tree-tools (ScDomainTreeTools:67 `Class[?]`, per D3 rootCause validated) lives under a translator subpkg I could not glob this pass — implementer resolves exact path; fix = `_root_.java.lang.Class[?]`. D2 confirmed translator/java/JvTypeTranslator.scala:193 `case Owner.Adt(id) => renderOwner(id.owner) :+ id.name.name` (unescaped) vs Owner.Ns :192 `escapeJvKeyword(s.name.toLowerCase)`. D4 confirmed translator/kotlin/KtServiceWiringTranslator.scala raw `impl.${m.name.name}(...)` at 447/448/489/490 (+ 669/677/699/707/767/775 symmetric). Verification: generate+compile reserved-words-ok model (has a `Class` ADT branch) for Scala+Kotlin+Java; per CLAUDE.md sbt-git cannot build in a linked worktree so implement workers clone to /tmp; no `bun run check`, build via mdl/sbt."
+- milestones: ["M7"]
+- sessionLogs: ["docs/logs/20260609-222602-a88e96d286fbec03b.md","docs/logs/20260609-222834-a392629b29a540856.md"]

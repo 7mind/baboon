@@ -49,38 +49,47 @@ archives: []
 
 ## M4
 
-### D2 — open
+### D2 — root-caused
 
 - createdAt: 2026-06-09T21:42:07.419Z
-- updatedAt: 2026-06-09T21:42:07.419Z
+- updatedAt: 2026-06-09T22:25:41.138Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Java: ADT-name package segment in renderOwner not keyword-escaped"
 - description: "Filed by T9 reviewer (out-of-scope for T9's field/accessor/capture-var scope). In JvTypeTranslator.renderOwner (JvTypeTranslator.scala:166), the Owner.Adt arm emits `renderOwner(id.owner) :+ id.name.name` retaining the ADT name at original casing as a package-path segment, unlike the Owner.Ns arm which now lowercases-and-escapes. If a model declared an ADT whose name lowercased to a Java keyword AND used it as a package qualifier, the emitted package segment could be illegal. Latent edge; ADT names are conventionally capitalized so collision is unlikely. Default disposition: FIX (fold into the C#/Java general-pass scope or a follow-up)."
 - severity: low
-- suggestedFix: Route ADT-as-package-segment names through escapeJvKeyword (as the Ns arm now does), or document the capitalization invariant that makes it collision-free.
+- suggestedFix: "Route the Owner.Adt arm's `id.name.name` through `JvTypeTranslator.escapeJvKeyword` (matching the Owner.Ns arm at :192), or document the capitalization invariant. Fix under goal G2."
 - ledgerRefs: ["tasks:T9","goals:G1"]
+- rootCause: "Validated against source: JvTypeTranslator.scala:193 `case Owner.Adt(id) => renderOwner(id.owner) :+ id.name.name` appends the ADT name UNESCAPED as a package-path segment, unlike the Owner.Ns arm (:192) which routes through `escapeJvKeyword(s.name.toLowerCase)`. An ADT used as a package qualifier whose (lowercased) name is a Java keyword would emit an illegal package segment. Low severity (ADT names conventionally capitalized). See H4 (confirmed). Consolidated into goal G2."
+- sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
+- dependsOn: ["T16"]
 
-### D3 — open
+### D3 — root-caused
 
 - createdAt: 2026-06-09T22:02:49.218Z
-- updatedAt: 2026-06-09T22:02:49.218Z
+- updatedAt: 2026-06-09T22:25:40.341Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: ADT branch/type named `Class` shadows stdlib `java.lang.Class` in generated metadata field (cross-language; distinct from D1 keyword-escaping)
 - description: "Discovered independently by the T5 (Scala) and T6 (Kotlin) workers while compiling the reserved-words-ok model. The generated per-type metadata field `baboonAdtType: Class[?]` (Scala) / `Class<*>` (Kotlin), emitted by the domain-tree-tools, references the stdlib `java.lang.Class` by SHORT name. When an ADT has a branch named `Class` (or a type named `Class`), the nested `AvatarItem.Class` case class/object shadows `java.lang.Class`, so the metadata field's type resolves to the wrong `Class` => compile errors (~32 in AvatarItem.kt; analogous in Scala). This is NOT a reserved-keyword collision (`Class` is not a language keyword) and is NOT caused by/limited to the keyword-escaping fixes — it is a separate stdlib-type-name-shadowing defect. Likely affects every backend whose generated metadata/runtime interface references a stdlib type by short name (Scala, Kotlin, Java at least). BLOCKS G1's T14 green-matrix gate because the reserved-words-ok model includes a `Class` branch. Default disposition: FIX."
 - severity: medium
-- suggestedFix: "Emit stdlib type references in generated metadata/runtime-interface fields by FULLY-QUALIFIED name (e.g. `java.lang.Class[?]` / `kotlin reflect or java.lang.Class<*>`) or via an import alias, so a model type/branch named `Class` cannot shadow it. Audit all backends' domain-tree-tools / runtime-interface emission for short-name stdlib references (Class, Type, etc.). Alternatively (narrower, to unblock G1 only) rename the `Class` branch in reserved-words-ok — but the underlying shadowing defect should still be fixed."
+- suggestedFix: "In the JVM-family domain-tree-tools, emit the stdlib `Class` reference in the `baboonAdtType` metadata field by a NON-SHADOWABLE form so a model type/branch named `Class` cannot capture it: (a) Scala (ScDomainTreeTools:67) — fully-qualify as `_root_.java.lang.Class[?]`; (b) Java (JvDomainTreeTools:67) — fully-qualify as `java.lang.Class<?>`; (c) Kotlin (KtDomainTreeTools:70) — fully-qualify as `java.lang.Class<*>` (or `kotlin.reflect.KClass` per the existing multiplatform branch — check the `multiplatform` arm at KtTypes javaClass:63). Implement by making the `javaClass` predef reference fully-qualified at its definition (JvTypes:104 etc.) OR overriding it at the metadata-field emission site. Add coverage: the reserved-words-ok model already includes a `Class` ADT branch — once fixed, generated Scala/Kotlin/Java for it must compile. Broader: audit other predef short-name references in generated code (`Type`, `String`, etc.) for the same model-name-shadowing hazard."
 - ledgerRefs: ["tasks:T5","tasks:T6","goals:G1"]
+- rootCause: "The generated per-ADT metadata field `baboonAdtType` references the JVM stdlib `java.lang.Class` by SHORT/predef name in all three JVM-family domain-tree-tools. Validated against source: `JvTypes.scala:104` defines `javaClass = JvType(javaLangPkg, \"Class\", predef = true)` (renders unqualified `Class`); it is emitted as `Class<?> baboonAdtType` (JvDomainTreeTools:67), `Class<*>` (KtDomainTreeTools:70), `Class[?]` (ScDomainTreeTools:67). When a model ADT has a branch (or a type) named `Class`, the generated nested type `<Adt>.Class` shadows `java.lang.Class` in scope, so the field's type resolves to the model type → compile errors (~32 in AvatarItem.kt; analogous in Scala/Java). C# is NOT affected (CSDomainTreeTools:57/97 uses `typeof(...)→System.Type`, no short `Class` binding); Rust/TypeScript/Dart/Swift/Python emit no such `Class`-typed metadata field. Distinct from D1: `Class` is not a language keyword, so keyword-escaping does not and must not touch it. See hypothesis H3 (confirmed)."
+- sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
+- dependsOn: ["T15","T18"]
 
-### D4 — open
+### D4 — root-caused
 
 - createdAt: 2026-06-09T22:06:55.181Z
-- updatedAt: 2026-06-09T22:06:55.181Z
+- updatedAt: 2026-06-09T22:25:42.098Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Kotlin: service-method wiring call sites not keyword-escaped (asymmetric with escaped declaration)"
 - description: "Filed by T6 reviewer (out-of-scope for T6). T6 escaped the service-method DECLARATION (`fun ´when´(...)` in KtDefnTranslator ~:445) but the symmetric wiring CALL sites `impl.${m.name.name}(...)` in KtServiceWiringTranslator.scala (lines 669/677/699/707/767/775/798/806) still use raw `m.name.name`. A service method named after a Kotlin hard keyword would declare `´when´` but be called as `.when()` => compile error. Pre-T6 both sides were unescaped (consistent); T6 introduced the asymmetry. No current fixture exercises it; build stays green. Default disposition: FIX."
 - severity: low
-- suggestedFix: "In KtServiceWiringTranslator.scala route each `impl.${m.name.name}(...)` invocation through KtTypeTranslator.escapeKtKeyword so call sites match the escaped interface declaration."
+- suggestedFix: "Route each `impl.${m.name.name}(...)` invocation in KtServiceWiringTranslator through `KtTypeTranslator.escapeKtKeyword` so call sites match the escaped interface declaration. Fix under goal G2."
 - ledgerRefs: ["tasks:T6","goals:G1"]
+- rootCause: "Validated against source: KtServiceWiringTranslator.scala emits `impl.${m.name.name}(...)` with the RAW method name at lines 447/448/489/490/669/677/699/707/767/775 (and symmetric), while T6 escaped the method DECLARATION. For a service method named after a Kotlin hard keyword the escaped declaration would not match the unescaped call site → compile error. Low severity (no current fixture has a keyword-named service method). See H5 (confirmed). Consolidated into goal G2."
+- sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
+- dependsOn: ["T17"]

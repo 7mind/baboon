@@ -2,7 +2,7 @@
 ledger: questions
 counters:
   milestone: 0
-  item: 1
+  item: 2
 archives: []
 ---
 
@@ -19,3 +19,15 @@ archives: []
 - question: "Root cause of D1 (reserved-word identifier collisions in generated code) is confirmed and a defect-seeded goal G1 is ready to plan — run `/cq:plan:advance G1` to produce the reviewed fix tasks."
 - context: "D1 root-caused: C# JSON/UEBA codecs lowercase ADT branch names into unescaped pattern-capture variables (branch `Default` → `if (value is AvatarItem.Default default)` → CS1026; reproduced + compile-confirmed). Audit confirmed the same defect CLASS in all 8 other backends with per-language nuance (C#/Scala/Kotlin/Java/Python: no escaping; TypeScript: escaper exists but dead; Rust/Dart/Swift: partial escaping with gaps). Native fix mechanism differs per language (C# `@`, Scala/Kotlin/Swift backticks, Rust `r#`+rename, Java/Python/TS/Dart rename with wire-key preservation). Goal G1 (milestone M2) embeds the confirmed root cause + suggestedFix verbatim and is in `planning` status (defect-seeded → clarifying skipped per T35). Run `/cq:plan:advance G1`."
 - ledgerRefs: ["defects:D1","goals:G1"]
+
+## M6
+
+### Q2 — open
+
+- createdAt: 2026-06-09T22:20:35.386Z
+- updatedAt: 2026-06-09T22:20:35.386Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- question: "Root cause of D3 (JVM-family `Class`-shadowing in baboonAdtType metadata) confirmed; defect-seeded goal G2 ready to plan. (Auto-launched inside /cq:advance — G2 will be auto-resumed by the parent flow; no manual action needed.)"
+- context: "D3 root-caused: Scala/Kotlin/Java domain-tree-tools emit `baboonAdtType` using the predef SHORT `Class` (java.lang.Class) ref (JvTypes:104; JvDomainTreeTools:67 / KtDomainTreeTools:70 / ScDomainTreeTools:67); a model ADT branch/type named `Class` shadows it. Fix: fully-qualify the stdlib Class ref. G2 (milestone M6, planning) consolidates D3 + the pending D2/D4 follow-ups. D3's fix unblocks G1's T14 green gate. This investigation was auto-launched by /cq:advance."
+- ledgerRefs: ["defects:D3","goals:G2"]

@@ -2,7 +2,7 @@
 ledger: milestones
 counters:
   milestone: 0
-  item: 5
+  item: 7
 archives: []
 ---
 
@@ -52,3 +52,17 @@ archives: []
 - title: "G1-W3: Test-matrix wiring and full cross-language CI verification"
 - description: Wire reserved-word stub coverage into per-language test actions, verify generated keyword-named code compiles in all 9 targets and cross-language JSON/UEBA round-trips preserve wire keys. Depends on G1-W2.
 - dependsOn: ["M4"]
+
+### M6 — open
+
+- createdAt: 2026-06-09T22:20:06.934Z
+- updatedAt: 2026-06-09T22:20:06.934Z
+- title: "Plan: fix codegen identifier follow-ups (D3 Class-shadowing; +D2/D4)"
+- description: Defect-seeded plan milestone for codegen identifier-correctness follow-ups discovered during G1's implementation. Seeded from D3 (JVM-family `Class`-shadowing in baboonAdtType metadata). Will consolidate D2 (Java renderOwner) and D4 (Kotlin wiring asymmetry) when their investigate passes confirm. D3's fix unblocks G1's T14 green-matrix gate.
+
+### M7 — open
+
+- createdAt: 2026-06-09T22:24:35.870Z
+- updatedAt: 2026-06-09T22:24:35.870Z
+- title: G2 codegen identifier follow-ups (D3 Class-shadowing + D2/D4)
+- description: "Work milestone for goal G2: fix the three confirmed generated-code identifier-correctness defects (D3 JVM-family Class-shadowing in baboonAdtType metadata; D2 Java renderOwner ADT-name package segment; D4 Kotlin service-wiring call sites), then verify generated Scala+Kotlin+Java for the reserved-words-ok model compiles (closes D3, unblocks G1's T14)."

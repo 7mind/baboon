@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 8
+  item: 9
 archives: []
 ---
 
@@ -109,3 +109,18 @@ archives: []
 - new_questions: []
 - ledgerRefs: ["tasks:T6","goals:G1"]
 - sessionLogs: ["docs/logs/20260609-220620-aef8c4956d229a5b8.md"]
+
+## M6
+
+### R9 — go-ahead
+
+- createdAt: 2026-06-09T22:28:20.180Z
+- updatedAt: 2026-06-09T22:28:45.695Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: "approve G2 plan (T15-T18): fine-grained, correctly sequenced (T15/T16/T17 parallel, T18 dependsOn all three), testable, grounded, complete. All cited sites source-verified: ScDomainTreeTools.scala:67 def baboonAdtType: $javaClass[?] (translator/scl pkg), KtDomainTreeTools:70 + KtTypes:66 JVM arm short Class (multiplatform :64 already FQ KClass), JvTypes:104, JvTypeTranslator:193 Owner.Adt unescaped vs :192 Ns escaped, KtServiceWiringTranslator impl.<m> raw at 447/448/489/490/669/677/699/707/767/775/798/806, reserved-words-ok adt AvatarItem data Class branch. D3 covers all 3 JVM backends and the correct Kotlin JVM arm; T18 asserts D3 closure unblocks G1 T14. Defect-seeded, root causes confirmed; no clarification needed."
+- new_questions: []
+- criticism: []
+- ledgerRefs: ["goals:G2"]
+- sourceRefs: ["defects:D3","defects:D2","defects:D4"]
+- sessionLogs: ["docs/logs/20260609-222834-ada7374e3219f56b9.md"]
