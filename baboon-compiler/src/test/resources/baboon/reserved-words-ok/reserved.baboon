@@ -1,0 +1,60 @@
+// Reserved-word collision test model (T2).
+//
+// Purpose: exercise identifier names that are keywords in one or more target
+// languages (C#, Scala, Kotlin, Java, Swift, Rust, TypeScript, Python, Dart)
+// so that every per-language reserved-word escape/rename fix site is hit by a
+// single generation pass.
+//
+// Baboon parser note: the Baboon grammar uses `idt.symbol` (plain identifier)
+// for field names, ADT branch names, and enum member names with NO keyword
+// exclusion — all names below are legal Baboon identifiers. `true`/`false` as
+// field/member names parse fine (fieldName = idt.symbol never consults the
+// bool-literal parser).
+
+model reserved.words
+
+version "1.0.0"
+
+enum KindEnum {
+  Type
+  Object
+  Default
+  Is
+  In
+  True
+  False
+}
+
+adt AvatarItem {
+  data Default {}
+  data Type {}
+  data Object {}
+  data Class {}
+  data When {}
+  data Match {}
+  data Is {}
+  data In {}
+}
+
+root data Holder {
+  item:    AvatarItem
+  kind:    KindEnum
+  default: str
+  class:   str
+  final:   str
+  void:    str
+  is:      str
+  in:      str
+  none:    str
+  val:     str
+  object:  str
+  def:     str
+  switch:  str
+  self:    str
+  super:   str
+  crate:   str
+  import:  str
+  type:    str
+  true:    str
+  false:   str
+}
