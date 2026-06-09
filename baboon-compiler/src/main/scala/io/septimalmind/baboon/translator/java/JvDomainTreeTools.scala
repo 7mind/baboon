@@ -64,7 +64,7 @@ object JvDomainTreeTools {
             q"$adtRef.baboonAdtTypeIdentifier",
           )
           val baboonAdtType = MetaField(
-            q"public static final $javaClass<?> baboonAdtType",
+            q"public static final ${javaClass.fullyQualified}<?> baboonAdtType",
             q"${typeTranslator.asJvType(id, domain, evolution)}.class",
             q"$adtRef.baboonAdtType",
           )

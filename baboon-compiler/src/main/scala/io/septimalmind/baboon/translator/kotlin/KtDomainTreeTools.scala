@@ -67,7 +67,7 @@ object KtDomainTreeTools {
             q"$adtRef.baboonAdtTypeIdentifier",
           )
           val baboonAdtType = MetaField(
-            q"val baboonAdtType: $javaClass<*>",
+            q"val baboonAdtType: ${javaClass.fullyQualified}<*>",
             q"${typeTranslator.asKtType(id, domain, evolution)}$classRefSuffix",
             q"$adtRef.baboonAdtType",
           )

@@ -64,7 +64,7 @@ object ScDomainTreeTools {
             q"$adtRef.baboonAdtTypeIdentifier",
           )
           val baboonAdtType = MetaField(
-            q"def baboonAdtType: $javaClass[?]",
+            q"def baboonAdtType: _root_.${javaClass.fullyQualified}[?]",
             q"${typeTranslator.asScType(id, domain, evolution)}.getClass",
             q"$adtRef.baboonAdtType",
           )
