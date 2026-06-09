@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 12
+  item: 13
 archives: []
 ---
 
@@ -162,3 +162,17 @@ archives: []
 - new_questions: []
 - ledgerRefs: ["tasks:T17","goals:G2"]
 - sessionLogs: ["docs/logs/20260609-224538-T17-worker-reviewer.md"]
+
+## M8
+
+### R13 — go-ahead
+
+- createdAt: 2026-06-09T22:56:56.403Z
+- updatedAt: 2026-06-09T22:57:23.377Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: "G3 plan (M9: T19 Java-D5 FQ / T20 Scala+Kotlin-D5 analogues / T21 kt-D6 escape; M10: T22 verify) is fine-grained, correctly sequenced (T22 dependsOn T19/T20/T21), testable, source-grounded, and complete; no gaps."
+- new_questions: []
+- criticism: []
+- ledgerRefs: ["goals:G3"]
+- sessionLogs: ["docs/logs/20260609-225505-abf943028b0ba5ff7.md"]

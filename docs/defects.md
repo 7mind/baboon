@@ -101,7 +101,7 @@ archives: []
 ### D5 — root-caused
 
 - createdAt: 2026-06-09T22:46:48.909Z
-- updatedAt: 2026-06-09T22:49:07.400Z
+- updatedAt: 2026-06-09T22:54:20.523Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Java `equals(Object)` (and bare java.lang.Object refs) shadowed by a model ADT branch/type named `Object` — sibling of D3
@@ -111,11 +111,12 @@ archives: []
 - ledgerRefs: ["tasks:T15","goals:G2","defects:D3"]
 - rootCause: "Validated against source (H6 confirmed): JvDefnTranslator.scala:431 `public boolean equals(Object other)` emits the parameter type as a BARE `Object` literal; a model ADT branch/type named `Object` (nested type) shadows java.lang.Object → the override is mistyped → ~15 javac errors. Same defect CLASS as D3 but for `Object` and at the equals-emission site. Also JvTypes:100-101 jvString/jvObject predefs render short-named (same hazard for `String`). GENERAL class: JVM stdlib predef short-name refs in generated code are shadowable by a model type of that name. Blocks G2's T18 (Java compile) and G1's T14."
 - sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
+- dependsOn: ["T19","T20","T22"]
 
 ### D6 — root-caused
 
 - createdAt: 2026-06-09T22:46:53.812Z
-- updatedAt: 2026-06-09T22:49:11.119Z
+- updatedAt: 2026-06-09T22:54:21.472Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Kotlin client-stub method declarations not keyword-escaped (KtServiceWiringTranslator:864/882)"
@@ -125,3 +126,4 @@ archives: []
 - ledgerRefs: ["tasks:T17","goals:G2"]
 - rootCause: "Validated (H7 confirmed): KtServiceWiringTranslator.scala:864/882 client-stub declarations `suspend fun ${m.name.name}(...)`/`...Json(...)` emit the raw model method name, not routed through escapeKtKeyword (unlike T6's escaped interface declaration). A keyword-named service method emits an unparseable Kotlin client stub. Transport string args (867/884) correctly raw. Low severity, latent."
 - sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
+- dependsOn: ["T21","T22"]

@@ -2,7 +2,7 @@
 ledger: decisions
 counters:
   milestone: 0
-  item: 3
+  item: 4
 archives: []
 ---
 
@@ -44,3 +44,15 @@ archives: []
 - headline: "plan review: approved"
 - rationale: "Reviewer go-ahead (R9): G2 plan T15-T18 judged fine-grained, correctly sequenced (T15/T16/T17 parallel, T18 dependsOn all three), testable, and grounded with all cited sites source-verified. 0 criticisms, 0 new questions, no out-of-scope defects."
 - ledgerRefs: ["goals:G2"]
+
+## M8
+
+### K4 — locked
+
+- createdAt: 2026-06-09T22:57:48.898Z
+- updatedAt: 2026-06-09T22:57:48.898Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "plan review: approved"
+- rationale: "Reviewer go-ahead (ref review R13): G3 plan fine-grained, correctly sequenced (T22 dependsOn T19/T20/T21), testable, source-grounded, complete; 0 criticisms, 0 new questions, no out-of-scope defects."
+- ledgerRefs: ["goals:G3"]

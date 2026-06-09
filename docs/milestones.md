@@ -2,7 +2,7 @@
 ledger: milestones
 counters:
   milestone: 0
-  item: 8
+  item: 10
 archives: []
 ---
 
@@ -73,3 +73,18 @@ archives: []
 - updatedAt: 2026-06-09T22:49:13.444Z
 - title: "Plan: fix stdlib-type-shadowing (D5 Object/general) + kt client-stub (D6)"
 - description: "Defect-seeded plan milestone for the second wave of codegen identifier-correctness follow-ups surfaced by the reserved-words-ok model. D5 (high): generalize the stdlib-type-shadowing fix (Object/String/Class/Type rendered FQ in generated JVM code) — unblocks G2's T18 + G1's T14 Java compile. D6 (low): escape Kotlin client-stub method declarations."
+
+### M9 — open
+
+- createdAt: 2026-06-09T22:52:52.891Z
+- updatedAt: 2026-06-09T22:52:52.891Z
+- title: "G3-W1: codegen identifier-correctness fixes (D5 stdlib-FQ + D6 kt client-stub escape)"
+- description: "Work milestone for G3. Source-level fixes: D5 general FQ of JVM stdlib type refs (Java equals/hashCode/toString + any Scala/Kotlin analogues), D6 Kotlin client-stub declaration escaping. Verification lives in the dependent milestone."
+
+### M10 — open
+
+- createdAt: 2026-06-09T22:52:56.967Z
+- updatedAt: 2026-06-09T22:52:56.967Z
+- title: "G3-W2: verification — generated Scala+Kotlin+Java for reserved-words-ok compiles (green gate; subsumes G2's T18 for Object/Class shadowing)"
+- description: "Verification milestone for G3, depends on G3-W1. The real green gate: generated JVM code for reserved-words-ok (Object/Class/Type branches + keyword fields) compiles across Scala, Kotlin, Java. This is the same gate G2's T18 wants for the Object/Class shadowing class."
+- dependsOn: ["M9"]

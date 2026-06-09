@@ -2,7 +2,7 @@
 ledger: tasks
 counters:
   milestone: 0
-  item: 18
+  item: 22
 archives: []
 ---
 
@@ -304,3 +304,78 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T15","T16","T17"]
 - ledgerRefs: ["goals:G2","defects:D3"]
+
+## M9
+
+### T19 — planned
+
+- createdAt: 2026-06-09T22:53:25.558Z
+- updatedAt: 2026-06-09T22:53:25.558Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "D5 (Java): fully-qualify JVM stdlib type refs at all Java emission sites so a model type/branch named Object/String/Class/Type cannot shadow them"
+- description: |
+    GENERAL fix for D5 on the Java backend (generalizes T15's narrow Class fix). The defect: generated Java references java.lang stdlib types by SHORT name; a model ADT branch/type of that name shadows the stdlib type → ~15 javac errors compiling AvatarItem.java for the reserved-words-ok model (which has empty-field branches `data Object {}`, `data Class {}`, `data Type {}`).
+    
+    Confirmed sites (grounded against source):
+    - baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvDefnTranslator.scala:431 — `public boolean equals(Object other)` emits `Object` as a BARE STRING LITERAL inside the `emptyRecordMethods` q-template (only emitted for empty-field records, i.e. exactly the `data Object {}`/`data Class {}` branches). Also :425 `public String toString()` is a bare `String` literal in the same block. Neither passes through the FQ renderer. FIX: interpolate `${jvObject.fullyQualified}` and `${jvString.fullyQualified}` (JvType.fullyQualified flips fq=true → renderer emits java.lang.Object / java.lang.String).
+    - baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvTypes.scala:100-101,104 — jvString/jvObject/javaClass predefs are short-named. AUDIT every emission site that interpolates these predefs (and any other bare `Object`/`String`/`Class`/`Type` string literals in q-templates across the java/ translator package, incl. JvCodec*, service-wiring, metadata sites beyond T15's). Render them FQ wherever a model type could shadow them. Prefer the minimal, mechanical change that makes generation correct: interpolate `${predef.fullyQualified}` at the shadowing-risk sites rather than globally flipping the predef default (a global default flip would change byte-output of the pre-MCP baseline for ALL models and break golden tests — scope the FQ to the shadowing-risk emission sites, confirm no unintended baseline diff).
+    
+    This resolves D5's Java portion and pre-empts the String/Type siblings. Verification (model compiles) is the dependent task T-verify under G3-W2; do NOT duplicate G2's T18 — G3's verify subsumes it for this defect class.
+- acceptance: "1) No bare `Object`/`String`/`Class`/`Type` stdlib type literal remains at a Java emission site that an empty-field/branch model type could shadow (grep the java/ package; each shadowing-risk ref routed through `.fullyQualified`). 2) Generated AvatarItem.java for reserved-words-ok emits `java.lang.Object`/`java.lang.String` in equals/toString. 3) `mdl :build` (sbt +compile, JVM+JS) stays GREEN — the translator change compiles and the exhaustive-match/JS sites are unaffected. 4) No unintended diff in existing golden/round-trip baselines for models WITHOUT shadowing names (the FQ is scoped to shadowing-risk sites). Full compile-of-generated-Java verification is deferred to T-verify (G3-W2)."
+- suggestedModel: frontier
+- ledgerRefs: ["goals:G3","defects:D5"]
+
+### T20 — planned
+
+- createdAt: 2026-06-09T22:53:39.243Z
+- updatedAt: 2026-06-09T22:53:39.243Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "D5 (Scala + Kotlin analogues): fully-qualify any bare stdlib type refs in Scala/Kotlin emission so reserved-words-ok (Object/Class/Type branches) compiles"
+- description: |
+    Sibling of the Java D5 fix, on the Scala and Kotlin backends. D5's root-cause class — generated code references a stdlib type by SHORT name, shadowed by a model type/branch of that name — is NOT inherently Java-only. The reserved-words-ok model's `Object`/`Class`/`Type` ADT branches and `object:`/`class:`/`type:` keyword fields will surface any analogous bare-stdlib-ref sites in Scala/Kotlin codegen at the T-verify compile (G3-W2).
+    
+    Scope: AUDIT the scala/ and kotlin/ translator packages for bare stdlib type references at emission sites that a model type/branch could shadow — in particular equals/hashCode/toString overrides, metadata fields (Scala/Kotlin analogue of the baboonAdtType site T15 fixed for Java's Class), and any `Object`/`String`/`Class`/`Any`/`Nothing`/`KClass`/`java.lang.*` short-name literal in q-templates. For Scala, a branch named `Object`/`Type` etc. is a nested type that can shadow `scala.Any`/`Predef` aliases or `java.lang.*` refs in generated equals/canEqual/Product code; for Kotlin, `Any`/`Class`/`Object`-named branches vs `kotlin.Any`/`java.lang.Class` refs (e.g. in reflective metadata). Apply the same FQ remedy used on the Java side (route the ref through the type's fully-qualified form), scoped to shadowing-risk sites only — do NOT globally change predef defaults (would diff non-shadowing baselines).
+    
+    If the audit finds NO analogous bare-ref site in a backend (the model already compiles for it), record that finding in the task notes and make no change for that backend — do not invent fixes. The authoritative test is T-verify: generated Scala AND Kotlin for reserved-words-ok must compile.
+- acceptance: "1) scala/ and kotlin/ translator packages audited for bare stdlib type refs shadowable by a model `Object`/`Class`/`Type`/`Any`-named branch/field; every such shadowing-risk ref routed through its fully-qualified form (or, if none found for a backend, that absence recorded as the finding). 2) `mdl :build` (sbt +compile JVM+JS) stays GREEN. 3) No unintended baseline diff for models without shadowing names. Compile-of-generated-Scala+Kotlin verification is T-verify (G3-W2)."
+- suggestedModel: frontier
+- ledgerRefs: ["goals:G3","defects:D5"]
+
+### T21 — planned
+
+- createdAt: 2026-06-09T22:53:52.020Z
+- updatedAt: 2026-06-09T22:53:52.020Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "D6 (Kotlin): escape client-stub method declaration names at KtServiceWiringTranslator:864/882 via escapeKtKeyword"
+- description: |
+    Confirmed root cause (H7): in baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtServiceWiringTranslator.scala the generated client-stub DECLARATIONS at line 864 (`suspend fun ${m.name.name}(...)`) and line 882 (`suspend fun ${m.name.name}Json(...)`) emit the model method name as a RAW Kotlin identifier, NOT routed through KtTypeTranslator.escapeKtKeyword (unlike the escaped interface declaration that T6 fixed). A model service method named after a Kotlin hard keyword (e.g. `object`, `when`, `is`, `in`, `fun` — all in ktHardKeywords at KtTypeTranslator.scala:16-21) would emit an unparseable client stub.
+    
+    FIX: wrap the declaration identifier at :864 and :882 (the `${m.name.name}` and `${m.name.name}Json` declaration tokens) through `KtTypeTranslator.escapeKtKeyword(m.name.name)`. The `Json` variant escapes the base name then appends `Json` (the suffixed identifier as a whole is not a keyword; escape the base method name, append the literal Json suffix — confirm the backtick placement yields a valid identifier, e.g. ``object``Json` is invalid Kotlin, so escape the WHOLE `${m.name.name}Json` token if its base is a keyword — implementer to verify the correct backtick scope against the Kotlin grammar). CRITICAL: do NOT touch the transport string args at :867 and :884 (`"${m.name.name}"`) — those are on-wire method names and must stay the raw model name (per H7 + the escapeKtKeyword docstring: wire-key string literals must NOT pass through escapeKtKeyword).
+    
+    Low severity, LATENT: no current fixture has a keyword-named service method, and the reserved-words-ok model defines no service — so this fix has no observable codegen diff for existing fixtures. Verification is 'escape applied + nothing regresses' (T-verify), not a new keyword-named-service compile.
+- acceptance: "1) KtServiceWiringTranslator.scala:864/882 declaration identifiers routed through escapeKtKeyword (base method name escaped; `Json` variant produces a grammar-valid backtick-quoted identifier when the base is a keyword). 2) Transport string args at :867/:884 remain the raw model name (unchanged). 3) `mdl :build` GREEN. 4) Existing kt service-wiring fixtures (no keyword-named methods) emit byte-identical output — no regression (verify via the kt wiring round-trip lane in T-verify)."
+- suggestedModel: standard
+- ledgerRefs: ["goals:G3","defects:D6"]
+
+## M10
+
+### T22 — planned
+
+- createdAt: 2026-06-09T22:54:14.772Z
+- updatedAt: 2026-06-09T22:54:14.772Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Verify: generated Scala + Kotlin + Java for reserved-words-ok COMPILES green (the real gate; subsumes G2's T18 for the Object/Class shadowing class)"
+- description: |
+    The authoritative green gate for G3. After T19 (D5-Java), T20 (D5-Scala/Kotlin), T21 (D6-kt) land, generate code for the reserved-words-ok model (baboon-compiler/src/test/resources/baboon/reserved-words-ok/reserved.baboon — has `data Object {}`/`data Class {}`/`data Type {}` empty-field branches, `enum KindEnum { Type Object ... }`, and `root data Holder` with `object:`/`class:`/`type:` keyword fields) and compile the generated Scala, Kotlin, and Java with their real toolchains. The ~15 javac errors D5 documented (method-does-not-override, `Object cannot be converted to <Branch>` in AvatarItem.java) must be GONE, and Scala/Kotlin must compile too.
+    
+    Mechanics (repo realities): drive via mdl, NOT a bare sbt in a worktree — sbt-git (jgit) throws NoWorkTreeException inside a linked git worktree, so a worker editing in a worktree must clone the repo to a real dir (e.g. /tmp/baboon-ci-clone) and run the pipeline there. Use `mdl --simple-log` when capturing output. The reserved-words-ok model is in the shared model-dir scanned by `--model-dir ./baboon-compiler/src/test/resources/baboon/`, so the existing per-language test-gen + compile lanes (`test-gen-regular-adt` → `test-{scala,kotlin,java}-regular`, and the wrapped variants) already exercise it; confirm whether a dedicated compile assertion for reserved-words-ok exists or whether the regular-adt lanes already cover it — if the model is only generated but its output is not compiled by an existing lane, add/extend the assertion so the Object/Class shadowing is a STANDING regression gate (not a one-off manual check).
+    
+    CROSS-GOAL coordination: this verification IS the green gate G2's T18 wants for the Object/Class shadowing defect class. Do NOT run a duplicate verification under G2's T18 for this class — this G3 task subsumes it; note in the T18 thread (or via a decision/comment) that G3-W2 verify covers the Object/Class shadowing compile, leaving T18 to cover only any G2-specific scope outside D5/D6. Surface to the orchestrator that G1's T14 green-CI gate now unblocks once this passes.
+- acceptance: "1) `mdl :build :test-gen-regular-adt :test-scala-regular :test-kotlin-regular :test-java-regular :test-gen-wrapped-adt :test-scala-wrapped :test-kotlin-wrapped :test-java-wrapped` runs GREEN with the reserved-words-ok model in scope (the model's generated Scala/Kotlin/Java compiles). 2) Specifically: generated AvatarItem.java (Object/Class/Type empty-field branches) compiles with zero javac errors — the ~15 errors D5 cited are gone. 3) The kt service-wiring lanes (`test-gen-kt-mcp`/wiring lanes) stay green — T21's D6 escape introduced no regression. 4) If reserved-words-ok output was previously generated-but-not-compiled by any lane, a compile assertion now covers it so the shadowing is a standing gate. 5) Run from a real clone (not a linked worktree) per sbt-git constraint. Record the exact mdl targets run + green result in the session log."
+- suggestedModel: standard
+- dependsOn: ["T19","T20","T21"]
+- ledgerRefs: ["goals:G3","defects:D5","defects:D6"]

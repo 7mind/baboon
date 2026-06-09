@@ -73,10 +73,10 @@ archives: []
 
 ## M8
 
-### G3 — planning
+### G3 — planned
 
 - createdAt: 2026-06-09T22:49:31.137Z
-- updatedAt: 2026-06-09T22:49:31.137Z
+- updatedAt: 2026-06-09T22:58:35.997Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - title: Fix stdlib-type-shadowing (D5, general) + Kotlin client-stub escape (D6)
@@ -89,3 +89,14 @@ archives: []
     
     CROSS-GOAL: D5's fix unblocks G2's T18 (verification) and thus G1's T14 (green CI gate). See defects D5/D6 + hypotheses H6/H7.
 - sourceRefs: ["defects:D5","defects:D6"]
+- grounding: |
+    Grounded against source on main (2026-06-09):
+    - JvValue.scala:16-18 — `JvType(pkg, name, fq=false, predef=false)` with `.fullyQualified` flipping `fq=true`. The renderer emits FQ when `fq=true`. So the FIX mechanism for D5 is to route stdlib refs through a JvType with fq=true (or interpolate `${jvObject.fullyQualified}`), NOT a bare string.
+    - JvDefnTranslator.scala:431 — `public boolean equals(Object other)` has `Object` as a BARE STRING LITERAL inside the empty-record q-template (emptyRecordMethods, only emitted when `!hasFields`, i.e. for empty-field records like the `data Object {}`/`data Class {}` branches). It is NOT a `$jvObject` interpolation, so it never passes through the FQ renderer. hashCode/toString in the same block use no stdlib type refs except `String` at :425 (`public String toString()`), also a bare literal. FIX: interpolate `${jvObject.fullyQualified}` / `${jvString.fullyQualified}` here.
+    - JvTypes.scala:100-101,104 — jvString/jvObject/javaClass predefs declared short-named (predef=true). T15 narrowly FQ'd only the Class ref at the baboonAdtType metadata site. The general fix: make these predefs render FQ at emission sites where a model type could shadow them (equals/hashCode/toString, metadata, any other bare site).
+    - reserved-words-ok model (baboon-compiler/src/test/resources/baboon/reserved-words-ok/reserved.baboon) has `adt AvatarItem { data Object {} data Class {} ... }` (empty-field branches → hit JvDefnTranslator:431 emptyRecordMethods) AND `data Type {}`; plus `enum KindEnum { Type Object ... }`; plus `root data Holder { object: str class: str type: str ... }` keyword fields. NO service defined → D6 (kt client-stub) is LATENT in this model; D6 verification is 'nothing regresses + escape applied', not a keyword-named-service compile.
+    - KtServiceWiringTranslator.scala (translator/kotlin/, NOT java/):864 `suspend fun ${m.name.name}(...)` and :882 `suspend fun ${m.name.name}Json(...)` emit the raw model method name. KtTypeTranslator.escapeKtKeyword (KtTypeTranslator.scala:28) backtick-quotes hard keywords (incl. `object`,`class`,`fun`,`when`,`is`,`in`). FIX: wrap the two declaration names in escapeKtKeyword; transport string args at :867/:884 stay raw (wire names).
+    - CROSS-GOAL: G3's Java-compile verification of reserved-words-ok IS the same green gate G2's T18 wants for the Object/Class shadowing; G3 verify subsumes T18 for this defect class.
+    - Build: Scala/sbt via mdl; sbt-git cannot build in a linked worktree (clone to /tmp); the JVM codegen-shape ScalaTest suite lives in hidden .jvm/src/test.
+- milestones: ["M9","M10"]
+- sessionLogs: ["docs/logs/20260609-225505-a1ea2fd80fba9d77e.md","docs/logs/20260609-225505-a036ec45a78e0d7d3.md"]
