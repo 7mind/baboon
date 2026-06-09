@@ -444,8 +444,8 @@ object KtServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"val result = impl.${m.name.name}(${ctxArgPass}decoded)"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded)"
+            case Some(_) => q"val result = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)"
+            case None    => q"impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)"
           }
 
           q""""${m.name.name}" -> {
@@ -486,8 +486,8 @@ object KtServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"val result = impl.${m.name.name}(${ctxArgPass}decoded)"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded)"
+            case Some(_) => q"val result = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)"
+            case None    => q"impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)"
           }
 
           q""""${m.name.name}" -> {
@@ -666,7 +666,7 @@ object KtServiceWiringTranslator {
               val callBody = if (hasErrType) {
                 val errType = trans.asKtRef(m.err.get, domain, evo)
                 q"""try {
-                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  val callResult = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}v)
                    |  rt.leftMap<$errType, $outType, $bweFq>(
                    |    callResult) { err -> $bweFq.CallFailed(method, err) }
                    |} catch (ex: Throwable) {
@@ -674,7 +674,7 @@ object KtServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  rt.pure<$bweFq, $outType>(impl.${m.name.name}(${ctxArgPass}v))
+                   |  rt.pure<$bweFq, $outType>(impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}v))
                    |} catch (ex: Throwable) {
                    |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
                    |}""".stripMargin
@@ -696,7 +696,7 @@ object KtServiceWiringTranslator {
               val callBody = if (hasErrType) {
                 val errType = trans.asKtRef(m.err.get, domain, evo)
                 q"""try {
-                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  val callResult = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}v)
                    |  rt.leftMap<$errType, Unit, $bweFq>(
                    |    callResult) { err -> $bweFq.CallFailed(method, err) }
                    |} catch (ex: Throwable) {
@@ -704,7 +704,7 @@ object KtServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  impl.${m.name.name}(${ctxArgPass}v)
+                   |  impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}v)
                    |  rt.pure<$bweFq, Unit>(Unit)
                    |} catch (ex: Throwable) {
                    |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
@@ -764,7 +764,7 @@ object KtServiceWiringTranslator {
               val callBody = if (hasErrType) {
                 val errType = trans.asKtRef(m.err.get, domain, evo)
                 q"""try {
-                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  val callResult = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}v)
                    |  rt.leftMap<$errType, $outType, $bweFq>(
                    |    callResult) { err -> $bweFq.CallFailed(method, err) }
                    |} catch (ex: Throwable) {
@@ -772,7 +772,7 @@ object KtServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  rt.pure<$bweFq, $outType>(impl.${m.name.name}(${ctxArgPass}v))
+                   |  rt.pure<$bweFq, $outType>(impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}v))
                    |} catch (ex: Throwable) {
                    |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
                    |}""".stripMargin
@@ -795,7 +795,7 @@ object KtServiceWiringTranslator {
               val callBody = if (hasErrType) {
                 val errType = trans.asKtRef(m.err.get, domain, evo)
                 q"""try {
-                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  val callResult = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}v)
                    |  rt.leftMap<$errType, Unit, $bweFq>(
                    |    callResult) { err -> $bweFq.CallFailed(method, err) }
                    |} catch (ex: Throwable) {
@@ -803,7 +803,7 @@ object KtServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  impl.${m.name.name}(${ctxArgPass}v)
+                   |  impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}v)
                    |  rt.pure<$bweFq, Unit>(Unit)
                    |} catch (ex: Throwable) {
                    |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
