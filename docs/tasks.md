@@ -10,10 +10,10 @@ archives: []
 
 ## M3
 
-### T1 — planned
+### T1 — done
 
 - createdAt: 2026-06-09T20:47:06.854Z
-- updatedAt: 2026-06-09T20:47:06.854Z
+- updatedAt: 2026-06-09T21:12:31.077Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Lock wire-key-preservation contract for RENAME backends and define the per-backend identifier-emission site inventory
@@ -26,11 +26,14 @@ archives: []
 - acceptance: "A `locked` decisions item linked goals:G1+defects:D1 exists containing (a) the wire-key invariant with the concrete annotation mechanism named for each of Java/Python/TS/Dart and an explicit statement that UEBA layout is unaffected by renames, and (b) a per-backend table of identifier-emission sites with file:line citations covering all 9 backends. No source files changed by this task."
 - suggestedModel: frontier
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: aa324e53
+- completion: "Committed design doc docs/drafts/20260609-g1-wire-key-contract-and-site-inventory.md: wire-key invariant for the 4 RENAME backends + 9-backend identifier-emission site inventory."
+- sessionLogs: ["docs/logs/20260609-210918-aa2c6fb6e62d45c77.md","docs/logs/20260609-210918-afce4af53bd336852.md"]
 
-### T2 — planned
+### T2 — wip
 
 - createdAt: 2026-06-09T20:47:26.002Z
-- updatedAt: 2026-06-09T20:47:26.002Z
+- updatedAt: 2026-06-09T21:01:37.956Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Add shared reserved-word test model(s) to the test resource model-dir
