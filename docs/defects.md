@@ -98,26 +98,30 @@ archives: []
 
 ## M7
 
-### D5 — open
+### D5 — root-caused
 
 - createdAt: 2026-06-09T22:46:48.909Z
-- updatedAt: 2026-06-09T22:46:48.909Z
+- updatedAt: 2026-06-09T22:49:07.400Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Java `equals(Object)` (and bare java.lang.Object refs) shadowed by a model ADT branch/type named `Object` — sibling of D3
 - description: "Discovered by the T15 worker + reviewer while compiling the reserved-words-ok model (which has a `data Object {}` ADT branch). SAME defect CLASS as D3 (stdlib type referenced by SHORT name, shadowed by a model type/branch of that name) but for `java.lang.Object` rather than `Class`, and at a DIFFERENT emission site: the generated Java `equals(Object other)` method signature (and likely other bare `Object` refs). A `data Object {}` branch produces a nested `Object` type that shadows `java.lang.Object` → ~15 residual javac errors (`method does not override`, `Object cannot be converted to <Branch>`) in AvatarItem.java AFTER T15 fixed the Class-shadowing. BLOCKS G2's T18 verification (and thus G1's T14 green gate) for the Java backend. Default disposition: FIX. Related: the T15 worker also flagged JvTypes jvString:100/jvObject:101 predefs are short-named (broader audit). Likely the general fix is to render stdlib predef type refs in generated code fully-qualified wherever a model type could shadow them."
 - severity: high
-- suggestedFix: "Render the `equals` parameter type (and any other generated bare `java.lang.Object` references) as fully-qualified `java.lang.Object`, mirroring T15's `.fullyQualified` approach for `java.lang.Class`. Audit JvDefnTranslator's equals/hashCode generation + the jvObject/jvString predefs. Consider the general fix: stdlib predef type references in generated code should be FQ (or the model-type refs qualified) so no model type/branch name can shadow a stdlib type — this would also pre-empt further `Type`/`String` siblings."
+- suggestedFix: "GENERAL fix (preferred): render JVM stdlib type references (Object, String, Class, Type) fully-qualified at all generated-code emission sites — fix the bare `Object` in JvDefnTranslator equals/hashCode (:431+), and make jvObject/jvString/javaClass predefs render FQ (mirroring T15's .fullyQualified for Class). This resolves D5 and pre-empts String/Type siblings. Generalizes T15's narrow Class fix. Verify generated Java for reserved-words-ok (which has Object+Class branches) compiles."
 - ledgerRefs: ["tasks:T15","goals:G2","defects:D3"]
+- rootCause: "Validated against source (H6 confirmed): JvDefnTranslator.scala:431 `public boolean equals(Object other)` emits the parameter type as a BARE `Object` literal; a model ADT branch/type named `Object` (nested type) shadows java.lang.Object → the override is mistyped → ~15 javac errors. Same defect CLASS as D3 but for `Object` and at the equals-emission site. Also JvTypes:100-101 jvString/jvObject predefs render short-named (same hazard for `String`). GENERAL class: JVM stdlib predef short-name refs in generated code are shadowable by a model type of that name. Blocks G2's T18 (Java compile) and G1's T14."
+- sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
 
-### D6 — open
+### D6 — root-caused
 
 - createdAt: 2026-06-09T22:46:53.812Z
-- updatedAt: 2026-06-09T22:46:53.812Z
+- updatedAt: 2026-06-09T22:49:11.119Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Kotlin client-stub method declarations not keyword-escaped (KtServiceWiringTranslator:864/882)"
 - description: "Discovered by the T17 reviewer (out of D4's wiring-call-site scope). In KtServiceWiringTranslator.scala the generated client-stub DECLARATIONS at lines 864 (`suspend fun ${m.name.name}(...)`) and 882 (`suspend fun ${m.name.name}Json(...)`) emit the model method name as a raw Kotlin identifier without routing through escapeKtKeyword. A model service method named after a Kotlin hard keyword would emit an unparseable client stub. Distinct from the transport string args at 867/884 which must stay raw (wire names). Low severity, latent (no current fixture has a keyword-named service method). Default disposition: FIX."
 - severity: low
-- suggestedFix: "Wrap the declaration identifier at KtServiceWiringTranslator.scala:864/882 (and the `Json`-suffix variant) in KtTypeTranslator.escapeKtKeyword(m.name.name), keeping the transport string args at 867/884 as raw wire names."
+- suggestedFix: "Route the declaration identifier at KtServiceWiringTranslator:864/882 (+ Json variant) through KtTypeTranslator.escapeKtKeyword; keep transport string args raw."
 - ledgerRefs: ["tasks:T17","goals:G2"]
+- rootCause: "Validated (H7 confirmed): KtServiceWiringTranslator.scala:864/882 client-stub declarations `suspend fun ${m.name.name}(...)`/`...Json(...)` emit the raw model method name, not routed through escapeKtKeyword (unlike T6's escaped interface declaration). A keyword-named service method emits an unparseable Kotlin client stub. Transport string args (867/884) correctly raw. Low severity, latent."
+- sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]

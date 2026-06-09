@@ -2,7 +2,7 @@
 ledger: hypothesis
 counters:
   milestone: 0
-  item: 5
+  item: 7
 archives: []
 ---
 
@@ -68,3 +68,27 @@ archives: []
 - description: Root cause for D4.
 - evidence: ["[correct] KtServiceWiringTranslator.scala: `impl.${m.name.name}(...)` at lines 447, 448, 489, 490, 669, 677, 699, 707, 767, 775 (and symmetric) — read against source: the wiring call sites use the RAW `m.name.name`, while T6 escaped the method DECLARATION (`fun escapeKtKeyword(name)`). For a service method named after a Kotlin hard keyword the declaration would be backtick-escaped but the call site `impl.when(...)` would not → compile error. Low severity: no current fixture has a keyword-named service method."]
 - ledgerRefs: ["defects:D4"]
+
+## M7
+
+### H6 — confirmed
+
+- createdAt: 2026-06-09T22:48:49.554Z
+- updatedAt: 2026-06-09T22:48:49.554Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: Java generated `equals(Object)` (and short-named jvObject/jvString predefs) reference stdlib types by bare name, shadowed by a model type/branch of that name
+- description: Root cause for D5 (general stdlib-shadowing class, sibling of D3).
+- evidence: ["[correct] JvDefnTranslator.scala:431 `public boolean equals(Object other) {` — read against source: the equals parameter type is the BARE literal `Object` in the q-template, so a model ADT branch/type named `Object` (nested type) shadows java.lang.Object → the override is mistyped → ~15 javac errors. Not fixed by T15 (which only FQ'd `Class` in baboonAdtType).","[correct] JvTypes.scala:100-101 `jvString = JvType(javaLangPkg, \"String\", predef = true)` / `jvObject = JvType(javaLangPkg, \"Object\", predef = true)` — read against source: stdlib String/Object predefs render by SHORT name, same shadowing hazard as the Class predef (JvTypes:104) D3 covered. General class: any JVM stdlib predef short-name ref is shadowable by a model type of that name."]
+- ledgerRefs: ["defects:D5"]
+
+### H7 — confirmed
+
+- createdAt: 2026-06-09T22:48:53.930Z
+- updatedAt: 2026-06-09T22:48:53.930Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Kotlin client-stub method declarations at KtServiceWiringTranslator:864/882 emit the raw method name (not escaped), unlike T6's escaped interface declaration"
+- description: Root cause for D6.
+- evidence: ["[correct] KtServiceWiringTranslator.scala:864/882 `suspend fun ${m.name.name}(...)` / `${m.name.name}Json(...)` — confirmed by the T17 reviewer reading source: the client-stub DECLARATIONS use the raw model method name, not routed through escapeKtKeyword. A keyword-named service method emits an unparseable client stub. Transport string args (867/884) correctly stay raw (wire names). Low severity, latent."]
+- ledgerRefs: ["defects:D6"]

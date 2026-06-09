@@ -2,7 +2,7 @@
 ledger: questions
 counters:
   milestone: 0
-  item: 2
+  item: 3
 archives: []
 ---
 
@@ -31,3 +31,15 @@ archives: []
 - question: "Root cause of D3 (JVM-family `Class`-shadowing in baboonAdtType metadata) confirmed; defect-seeded goal G2 ready to plan. (Auto-launched inside /cq:advance — G2 will be auto-resumed by the parent flow; no manual action needed.)"
 - context: "D3 root-caused: Scala/Kotlin/Java domain-tree-tools emit `baboonAdtType` using the predef SHORT `Class` (java.lang.Class) ref (JvTypes:104; JvDomainTreeTools:67 / KtDomainTreeTools:70 / ScDomainTreeTools:67); a model ADT branch/type named `Class` shadows it. Fix: fully-qualify the stdlib Class ref. G2 (milestone M6, planning) consolidates D3 + the pending D2/D4 follow-ups. D3's fix unblocks G1's T14 green gate. This investigation was auto-launched by /cq:advance."
 - ledgerRefs: ["defects:D3","goals:G2"]
+
+## M8
+
+### Q3 — open
+
+- createdAt: 2026-06-09T22:50:20.216Z
+- updatedAt: 2026-06-09T22:50:20.216Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- question: "Root causes of D5 (stdlib-type-shadowing, general) + D6 (kt client-stub) confirmed; defect-seeded goal G3 ready to plan. (Auto-launched inside /cq:advance — G3 auto-resumed by the parent flow; no manual action needed.)"
+- context: "D5 (high): JVM generated code references stdlib types by short name (JvDefnTranslator:431 bare `Object` in equals; jvObject/jvString predefs) → shadowed by model types named Object/String/Class. General FQ fix unblocks G2's T18 + G1's T14. D6 (low): kt client-stub decls (KtServiceWiringTranslator:864/882) unescaped. G3 (M8, planning) consolidates both. Auto-launched by /cq:advance."
+- ledgerRefs: ["defects:D5","defects:D6","goals:G3"]

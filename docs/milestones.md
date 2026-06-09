@@ -2,7 +2,7 @@
 ledger: milestones
 counters:
   milestone: 0
-  item: 7
+  item: 8
 archives: []
 ---
 
@@ -66,3 +66,10 @@ archives: []
 - updatedAt: 2026-06-09T22:24:35.870Z
 - title: G2 codegen identifier follow-ups (D3 Class-shadowing + D2/D4)
 - description: "Work milestone for goal G2: fix the three confirmed generated-code identifier-correctness defects (D3 JVM-family Class-shadowing in baboonAdtType metadata; D2 Java renderOwner ADT-name package segment; D4 Kotlin service-wiring call sites), then verify generated Scala+Kotlin+Java for the reserved-words-ok model compiles (closes D3, unblocks G1's T14)."
+
+### M8 — open
+
+- createdAt: 2026-06-09T22:49:13.444Z
+- updatedAt: 2026-06-09T22:49:13.444Z
+- title: "Plan: fix stdlib-type-shadowing (D5 Object/general) + kt client-stub (D6)"
+- description: "Defect-seeded plan milestone for the second wave of codegen identifier-correctness follow-ups surfaced by the reserved-words-ok model. D5 (high): generalize the stdlib-type-shadowing fix (Object/String/Class/Type rendered FQ in generated JVM code) — unblocks G2's T18 + G1's T14 Java compile. D6 (low): escape Kotlin client-stub method declarations."
