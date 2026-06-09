@@ -154,15 +154,19 @@ class KtJsonCodecGenerator(
   private def genDtoBodies(name: KtValue.KtType, d: Typedef.Dto): (TextTree[KtValue], TextTree[KtValue]) = {
     val encFields = d.fields.map {
       f =>
-        val fieldRef = q"instance.${f.name.name}"
-        val enc      = mkEncoder(f.tpe, fieldRef)
+        val ktFieldName = KtTypeTranslator.escapeKtKeyword(f.name.name)
+        val fieldRef    = q"instance.$ktFieldName"
+        val enc         = mkEncoder(f.tpe, fieldRef)
+        // Wire key is always the original model name (T1 contract).
         q"""put("${f.name.name}", $enc)"""
     }
 
     val decFields = d.fields.map {
       f =>
+        val ktFieldName = KtTypeTranslator.escapeKtKeyword(f.name.name)
+        // Wire key is always the original model name; the named arg uses the escaped Kotlin name.
         val dec = mkDecoder(f.name.name, f.tpe, q"jsonObj")
-        q"${f.name.name} = $dec"
+        q"$ktFieldName = $dec"
     }
 
     val mainEnc = q"""$buildJsonObject {
@@ -223,8 +227,9 @@ class KtJsonCodecGenerator(
                   q"$ref.toString()"
                 // M19/PR-60: single-primitive-field wrappers — peel and recurse.
                 case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
-                  val inner = d.fields.head
-                  encodeKey(inner.tpe, q"$ref.${inner.name.name}")
+                  val inner      = d.fields.head
+                  val innerKtName = KtTypeTranslator.escapeKtKeyword(inner.name.name)
+                  encodeKey(inner.tpe, q"$ref.$innerKtName")
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }

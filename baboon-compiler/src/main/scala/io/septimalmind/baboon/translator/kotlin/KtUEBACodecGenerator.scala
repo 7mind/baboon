@@ -182,7 +182,7 @@ class KtUEBACodecGenerator(
         val adtRef = trans.toKtTypeRefKeepForeigns(m, domain, evo)
         val cName  = codecName(adtRef)
 
-        val castedName = branchName.toLowerCase
+        val castedName = KtTypeTranslator.escapeKtKeyword(branchName.toLowerCase)
 
         val encBody = if (target.language.wrappedAdtBranchCodecs) {
           q"""$cName.instance.encode(ctx, writer, $castedName)"""
@@ -351,11 +351,12 @@ class KtUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[KtValue], TextTree[KtValue], TextTree[KtValue])] = {
     dto.fields.map {
       field =>
-        val fieldRef   = q"instance.${field.name.name}"
-        val enc        = mkEncoder(field.tpe, fieldRef, q"writer")
-        val fakeEnc    = mkEncoder(field.tpe, fieldRef, q"fakeWriter")
-        val decoder    = mkDecoder(field.tpe)
-        val decodeTree = q"${field.name.name} = $decoder"
+        val ktFieldName = KtTypeTranslator.escapeKtKeyword(field.name.name)
+        val fieldRef    = q"instance.$ktFieldName"
+        val enc         = mkEncoder(field.tpe, fieldRef, q"writer")
+        val fakeEnc     = mkEncoder(field.tpe, fieldRef, q"fakeWriter")
+        val decoder     = mkDecoder(field.tpe)
+        val decodeTree  = q"$ktFieldName = $decoder"
 
         val w = domain.refMeta(field.tpe).len match {
           case BinReprLen.Fixed(bytes) =>

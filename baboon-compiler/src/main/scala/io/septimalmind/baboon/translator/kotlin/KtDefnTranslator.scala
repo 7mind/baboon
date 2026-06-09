@@ -267,7 +267,8 @@ object KtDefnTranslator {
             f =>
               val t        = trans.asKtNullableRef(f.tpe, domain, evo)
               val prefix   = if (contractFieldNames.contains(f.name.name)) "override val" else "val"
-              val fieldTree = q"$prefix ${f.name.name}: $t"
+              val ktName   = KtTypeTranslator.escapeKtKeyword(f.name.name)
+              val fieldTree = q"$prefix $ktName: $t"
               prependDocs(f.docs, fieldTree)
           }
           val paramsList      = if (params.nonEmpty) params.join(",\n") else q""
@@ -406,7 +407,8 @@ object KtDefnTranslator {
           val methods = contract.fields.map {
             f =>
               val t         = trans.asKtNullableRef(f.tpe, domain, evo)
-              val methodTree = q"val ${f.name.name}: $t"
+              val ktName    = KtTypeTranslator.escapeKtKeyword(f.name.name)
+              val methodTree = q"val $ktName: $t"
               prependDocs(f.docs, methodTree)
           }
           val contractParents = contract.contracts.map(c => trans.toKtTypeRefKeepForeigns(c, domain, evo))
@@ -439,8 +441,9 @@ object KtDefnTranslator {
               }
               val outStr = out.map(_.mapRender(ktFqName)).getOrElse("")
               val errStr = err.map(_.mapRender(ktFqName))
-              val retStr   = resolved.renderReturnType(outStr, errStr, "Unit")
-              val methodTree = q"fun ${m.name.name}(${ctxParam}arg: $in): $retStr"
+              val retStr    = resolved.renderReturnType(outStr, errStr, "Unit")
+              val ktMName   = KtTypeTranslator.escapeKtKeyword(m.name.name)
+              val methodTree = q"fun $ktMName(${ctxParam}arg: $in): $retStr"
               prependDocs(m.docs, methodTree)
           }
           val typeParams = Seq(
@@ -624,8 +627,10 @@ object KtDefnTranslator {
       val fieldExprs: List[TextTree[KtValue]] = dto.fields.map {
         f =>
           val srcFieldName = f.name.name
+          val ktFieldName  = KtTypeTranslator.escapeKtKeyword(srcFieldName)
           val kind         = identifierFieldKind(f.tpe)
-          val valueExpr    = renderFieldValueExpr(srcFieldName, kind)
+          val valueExpr    = renderFieldValueExpr(ktFieldName, kind)
+          // The string label in the repr always uses the original model name (wire key).
           q""""$srcFieldName:" + ($valueExpr)"""
       }
 

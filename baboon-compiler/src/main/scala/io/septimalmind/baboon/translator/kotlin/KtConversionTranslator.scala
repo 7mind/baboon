@@ -263,8 +263,9 @@ class KtConversionTranslator[F[+_, +_]: Error2](
             val ops = c.ops.map(o => o.targetField -> o).toMap
             val assigns = dto.fields.map {
               f =>
-                val op  = ops(f)
-                val fld = f.name.name
+                val op        = ops(f)
+                val fld       = KtTypeTranslator.escapeKtKeyword(f.name.name)
+                val localName = KtTypeTranslator.escapeKtKeyword(f.name.name.toLowerCase)
                 val expr = op match {
                   case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"_from.$fld", 1)
                   case o: FieldOp.InitializeWithDefault =>
@@ -288,9 +289,12 @@ class KtConversionTranslator[F[+_, +_]: Error2](
                     }
                   case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1, Some(o.oldTpe))
                   case o: FieldOp.SwapCollectionType => swapCollType(q"_from.$fld", o, 0)
-                  case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"_from.${o.sourceFieldName.name}", 1)
+                  case o: FieldOp.Rename =>
+                    val srcName = KtTypeTranslator.escapeKtKeyword(o.sourceFieldName.name)
+                    transfer(o.targetField.tpe, q"_from.$srcName", 1)
                   case o: FieldOp.Redef =>
-                    val srcFieldRef = q"_from.${o.sourceFieldName.name}"
+                    val srcName     = KtTypeTranslator.escapeKtKeyword(o.sourceFieldName.name)
+                    val srcFieldRef = q"_from.$srcName"
                     o.modify match {
                       case w: FieldOp.WrapIntoCollection =>
                         w.targetField.tpe match {
@@ -304,9 +308,9 @@ class KtConversionTranslator[F[+_, +_]: Error2](
                         swapCollType(srcFieldRef, m, 0)
                     }
                 }
-                q"val ${f.name.name.toLowerCase}: ${trans.asKtRef(f.tpe, domain, evo)} = $expr"
+                q"val $localName: ${trans.asKtRef(f.tpe, domain, evo)} = $expr"
             }
-            val ctorArgs = dto.fields.map(f => q"${f.name.name} = ${f.name.name.toLowerCase}")
+            val ctorArgs = dto.fields.map(f => q"${KtTypeTranslator.escapeKtKeyword(f.name.name)} = ${KtTypeTranslator.escapeKtKeyword(f.name.name.toLowerCase)}")
             val classDef = q"""
                               |@Suppress("DEPRECATION") object $className
                               |  : $baboonAbstractConversion<$tin, $tout>($tin${ktTypes.classRefSuffix}, $tout${ktTypes.classRefSuffix}) {

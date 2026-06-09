@@ -7,6 +7,28 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
+object KtTypeTranslator {
+  // Kotlin hard keywords (§3 of the Kotlin spec).  Any model-derived identifier
+  // equal to one of these must be backtick-quoted in the emitted source so it
+  // compiles without error.  Soft/modifier keywords are contextual and do NOT
+  // require escaping.  The on-wire JSON key always uses the original model name
+  // (string literal) and must NOT pass through this function.
+  private val ktHardKeywords: Set[String] = Set(
+    "as", "break", "class", "continue", "do", "else", "false", "for",
+    "fun", "if", "in", "interface", "is", "null", "object", "package",
+    "return", "super", "this", "throw", "true", "try", "typealias",
+    "typeof", "val", "var", "when", "while",
+  )
+
+  /** Backtick-quote any identifier that clashes with a Kotlin hard keyword.
+    * Applied to model-derived Kotlin identifiers (field names, accessor names,
+    * local capture variables).  Wire-key string literals always use the
+    * original model name and must NOT pass through this function.
+    */
+  def escapeKtKeyword(name: String): String =
+    if (ktHardKeywords.contains(name)) s"`$name`" else name
+}
+
 class KtTypeTranslator(ktTypes: KtTypes) {
   import ktTypes.*
   def asKtRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[KtValue] = {
