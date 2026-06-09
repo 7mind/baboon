@@ -155,7 +155,7 @@ class CSJsonCodecGenerator(
         val branchNs      = q"${csTypeInfo.adtNsName(a.id)}"
         val branchName    = m.name.name
         val fqBranch      = q"$branchNs.$branchName"
-        val branchNameRef = q"${branchName.toLowerCase}"
+        val branchNameRef = q"${escapeCsKeyword(branchName.toLowerCase)}"
 
         val branchTpe           = trans.asCsType(m, domain, evo)
         val branchCodec         = codecName(branchTpe, CSTypeOrigin(m, domain))

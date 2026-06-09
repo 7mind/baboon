@@ -193,7 +193,7 @@ class CSUEBACodecGenerator(
 
         val cName = codecName(m)
 
-        val castedName = branchName.toLowerCase
+        val castedName = escapeCsKeyword(branchName.toLowerCase)
 
         val encBody = if (target.language.wrappedAdtBranchCodecs) {
           q"""$cName.Instance.Encode(ctx, writer, $castedName);"""
