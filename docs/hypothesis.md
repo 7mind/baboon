@@ -2,28 +2,34 @@
 ledger: hypothesis
 counters:
   milestone: 0
-  item: 10
-archives:
-  - id: M5
-    path: ./archive/hypothesis/M5.md
-    summary: "MCP gen W4 closeout COMPLETE: all 9 test-gen-<lang>-mcp + test-<lang>-mcp lanes registered in the `test` aggregator (T19); --<lang>-generate-mcp-server exposed in the playground for all 9 langs (T20, also closed a latent BaboonJS hardcoded-false gap); D9 regression fixed by relocating mcp-stub-ok out of the shared model-dir + a minimal recursive Tree model (T24, D9 resolved); full CI closeout green — `mdl --seq :build :test` (114 actions) + the :ci-only delta (smoke/test-acceptance 200/200/test-editors 80/80/test-service-acceptance/jv-client-roundtrip) all GREEN, GraalVM native-image green, off-by-default byte-identity verified (T21). All items terminal (T19/T20/T21/T24 done; D9 resolved; H2 confirmed; reviews R25/R26/R28/R29 go-ahead)."
-    title: MCP gen W4 — test-matrix integration, playground & CI
-    status: done
-  - id: M2
-    path: ./archive/hypothesis/M2.md
-    summary: MCP gen W1 (design/dispatch-contract/inputSchema-decision) COMPLETE. Tasks T1-T5,T22 + D1/D2 fixes (T26,T27) done; decisions K1/K3/K4/K5/K6 locked; defects D1 (refuted→verified, T26) + D2 (contract-field validator guard, T27) resolved; hypotheses H3(wrong)/H4(confirmed) terminal; reviews terminal. All items terminal.
-    title: MCP gen W1 — design, dispatch contract & inputSchema decision
-    status: done
-  - id: M3
-    path: ./archive/hypothesis/M3.md
-    summary: MCP gen W2 (flags all 9 + reference backends TS & C#) COMPLETE. Tasks T6-T11 + D3 fix (T28) done; defect D3 (TS import determinism, T28) resolved; hypothesis H5 confirmed; reviews terminal. All items terminal.
-    title: MCP gen W2 — flags (all 9) + reference backends TS & C#
-    status: done
-  - id: M4
-    path: ./archive/hypothesis/M4.md
-    summary: MCP gen W3 (replicate to remaining 7 backends) COMPLETE. Tasks T12-T18,T23 + D4/D5/D6/D7/D10 fixes (T29,T30,T31,T32) done; defects D4,D5,D6,D7,D8,D10 resolved; hypotheses H1,H2,H6,H7,H8,H9,H10 terminal; reviews terminal. All items terminal.
-    title: MCP gen W3 — replicate generator to remaining 7 backends
-    status: done
+  item: 2
+archives: []
 ---
 
 # hypothesis
+
+## M1
+
+### H1 — confirmed
+
+- createdAt: 2026-06-09T18:51:54.467Z
+- updatedAt: 2026-06-09T19:03:33.484Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: C# codec generators lowercase ADT branch names into unescaped pattern-capture identifiers; a branch whose lowercased name is a C# keyword (Default→default) emits non-compiling C#
+- description: "The reported symptom is NOT a type-name collision (C# is case-sensitive; `Default` the class name is legal). The actual mechanism: the C# JSON and UEBA codec generators take the ADT branch name and `.toLowerCase` it to form a pattern-match capture variable in `if (value is <Adt>.<Branch> <lower>) { ... Encode(ctx, <lower>); }`. For branch `Default`, `<lower>` = `default`, which is a reserved C# keyword and is illegal as an identifier without the `@` verbatim prefix. No reserved-word escaping exists anywhere in the C# identifier-emission path. What would make this true: locating the `.toLowerCase` branch-variable sites and confirming no `@`-escaping is applied; reproducing the generated C#."
+- ledgerRefs: ["defects:D1"]
+- evidence: ["[correct] CSJsonCodecGenerator.scala:158 `val branchNameRef = q\"${branchName.toLowerCase}\"` — used at :177 `if (value is $fqBranch $branchNameRef)` and :162 `...Encode(ctx, $branchNameRef)`. Re-read against source: the ADT branch name is lowercased into a C# pattern-capture variable. No reserved-word escaping in the C# identifier path.","[correct] CSUEBACodecGenerator.scala:196 `val castedName = branchName.toLowerCase` — used at :199 `if (value is $fqBranch $castedName)`. Re-read against source: same lowercase-into-pattern-variable mechanism in the UEBA codec.","[correct] REPRODUCED (orchestrator, executed): model `adt AvatarItem { data Default {} data BuiltIn { id: str } }` reachable via `root data Holder { item: AvatarItem }`, compiled `:cs --generate-json-codecs-by-default=true --generate-ueba-codecs-by-default=true`. Generated Avatar/AvatarItem.cs:437 `if (value is AvatarItem.Default default)` and :499-502 (UEBA). `default` is the C# keyword used as a pattern-capture identifier.","[correct] COMPILE CONFIRMED (dotnet net9.0): the snippet `if (value is AvatarItem.Default default)` fails with `error CS1026: ) expected` at the `default` column (sibling `builtin` branch compiles fine). Replacing with the C#-verbatim identifier `@default` → `Build succeeded`. Confirms both the non-compiling output and the native-fix direction (`@`-prefix).","[correct] NOTE on trigger conditions: per-type codecs are emitted only for `derived[json]`/`derived[ueba]`-annotated types unless `--generate-{json,ueba}-codecs-by-default=true` is passed; a bare unannotated ADT emits the (valid) type definition but no codec, so the collision only surfaces when codecs are generated for the ADT."]
+- sessionLogs: ["docs/logs/20260609-190158-orchestrator-h1-repro.md"]
+
+### H2 — confirmed
+
+- createdAt: 2026-06-09T18:52:03.098Z
+- updatedAt: 2026-06-09T19:04:01.973Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: The same defect class (model identifier rendered into a target identifier with no reserved-word escaping) affects the other 8 backends (Scala, Python, Rust, TypeScript, Kotlin, Java, Dart, Swift)
+- description: "Generalization of H1. Each backend's translator derives target-language identifiers (type names, branch names, field accessors, codec locals/params, discriminator-derived variables) from model names. If none applies a reserved-word escaping/normalization pass native to its target, then any model whose name maps to a target keyword produces invalid code in that backend too. What would make this true: per-language evidence that (a) no reserved-word escaping exists in the identifier-emission path, and (b) at least one concrete collision site exists (e.g. a lowercased branch local, a camelCased field param, a type/namespace name) where a model name equal to a target keyword would be emitted verbatim."
+- ledgerRefs: ["defects:D1"]
+- evidence: ["[correct] SCALA — NO escaping anywhere. ScJsonCodecGenerator.scala:201 `branchNameRef = branchName.toLowerCase` → :211 `case $branchNameRef: $fqBranch =>` (validated against source); DTO field names verbatim (ScDefnTranslator:307); terminal renderer ScBaboonTranslator:283-290 emits names raw. Scala keywords exclude `default`, but `type`/`val`/`object`/`class`/`match` trigger it. Native fix: backtick `` `name` ``.","[correct] KOTLIN — NO escaping anywhere. KtUEBACodecGenerator.scala:185 `val castedName = branchName.toLowerCase` → :204 `val $castedName = instance` (validated); field/type/package names verbatim. Triggers: `object`/`is`/`when`/`fun`/`val`/`class`. Native fix: backtick `` `name` ``.","[correct] JAVA — NO escaping anywhere (Java has no escape syntax → must rename). JvUEBACodecGenerator.scala:182 `val castedName = branchName.toLowerCase` → :199 `if (value instanceof $adtRef $castedName)` (validated); `default` IS a Java keyword (exact C# trigger). Field/package/class/enum names verbatim. JSON codec uses fixed `branchVal` (safe).","[correct] PYTHON — NO escaping anywhere. Field names verbatim (PyDefnTranslator.scala:540 `q\"$fieldName: $fieldType\"`); class/enum/method names `.capitalize`. No branch-lowercase analog (ADT dispatch via isinstance). Triggers: field/method named `class`/`def`/`import`/`lambda`/`is`/`in`; also `none`/`true`/`false`→`None`/`True`/`False`. Native fix: RENAME (PEP8 trailing `_`), no escape syntax.","[correct] TYPESCRIPT — escaper `escapeTsKeyword` EXISTS (TsTypeTranslator.scala:310-319) but has ZERO callers tree-wide (validated by orchestrator `rg`: dead code). Defect fully applies via field getters/params, UEBA `const <field>` local (TsUEBACodecGenerator:169), enum members, type/class names. ADT branch dispatch by instanceof/index. Native fix: RENAME (no escape syntax; property access can use bracket-string).","[correct] RUST — PARTIAL: escapeRustKeyword(`r#`) + escapeRustModuleName EXIST and ARE applied to field/fn/module names via toSnakeCase (RsDefnTranslator.scala:1533-1546, validated). Residual narrow gap: type/struct/enum/trait + variant names emitted as bare `tid.name.name.capitalize` (RsTypeTranslator:155, validated) with no escape. Rust keywords are lowercase so `.capitalize` dodges most; `self`/`super`/`crate`→`Self`/... collide AND are not r#-escapable. Branch local uses fixed `v` (safe). Lowest-risk backend.","[correct] DART — MIXED: escapeDartKeyword (rename `_`) EXISTS and IS applied to TYPE names via the DtBaboonTranslator render pass (:272-301) + DtServiceWiringTranslator (:359-360) (validated by orchestrator `rg`). But field/getter/method names bypass it: DtDefnTranslator:307/318/538/571 + DtJsonCodecGenerator:164/169 emit `f.name.name` verbatim. Triggers (field/getter/method): `default`/`class`/`final`/`void`/`switch`/`is`/`in`. ADT codec uses fixed `branchVal` (safe). Fix: wire existing helper through member emission.","[correct] SWIFT — MIXED: escapeSwiftKeyword (backticks) EXISTS and IS applied via centralized render pass (SwBaboonTranslator.scala:331-340) + per-site for type/field names. But ADT branch case names + enum case names are built as RAW strings and bypass it: SwDefnTranslator:889-894 + SwJsonCodecGenerator:109-128 + SwUEBACodecGenerator:150-178 produce `case default(...)` for a branch named `Default`. Fix: route case names through escapeSwiftKeyword.","[correct] AGGREGATE: the defect CLASS (a model identifier rendered into a target keyword without escaping) is present in ALL 8 audited backends + C#. The literal 'no escaping anywhere' holds only for C#/Scala/Kotlin/Java/Python; Rust/TS/Dart/Swift have partial escaping with gaps. Native fix mechanism is per-language: C#=`@`-verbatim, Scala/Kotlin/Swift=backticks, Rust=`r#`(+rename for self/super/crate/Self), Java/Python/TypeScript/Dart=RENAME (no escape syntax)."]
+- sessionLogs: ["docs/logs/20260609-190158-a5a5a81722f58e956.md","docs/logs/20260609-190158-a6e4b7512b52af94b.md","docs/logs/20260609-190158-a123e05351e969bd7.md","docs/logs/20260609-190158-a339a8ad797fbee13.md","docs/logs/20260609-190158-a119c0b6658e6655f.md","docs/logs/20260609-190158-abf8f375663b3c77b.md","docs/logs/20260609-190158-a6a64824537135162.md","docs/logs/20260609-190158-a3ef4e52b3b442ee7.md"]

@@ -433,13 +433,11 @@ ledgers:
         - answers-required
         - mixed
         - illness-detected
-        - user-action-required
       terminalStatuses:
         - drained
         - answers-required
         - mixed
         - illness-detected
-        - user-action-required
       fields:
         summary:
           type: string
@@ -471,4 +469,3 @@ ledgers:
         answers-required: []
         mixed: []
         illness-detected: []
-        user-action-required: []
