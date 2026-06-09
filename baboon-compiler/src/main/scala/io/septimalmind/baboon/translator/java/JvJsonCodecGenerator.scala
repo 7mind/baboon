@@ -167,13 +167,17 @@ class JvJsonCodecGenerator(
   private def genDtoBodies(name: JvValue.JvType, d: Typedef.Dto): (TextTree[JvValue], TextTree[JvValue]) = {
     val encFields = d.fields.map {
       f =>
-        val fieldRef = q"value.${f.name.name}()"
+        val javaName = JvTypeTranslator.escapeJvKeyword(f.name.name)
+        val fieldRef = q"value.$javaName()"
         val enc      = mkEncoder(f.tpe, fieldRef)
+        // Wire key is always the original model name (T1 contract).
         q"""obj.set("${f.name.name}", $enc);"""
     }
 
     val decFields = d.fields.map {
       f =>
+        // Wire key is always the original model name; the decoder returns a value
+        // passed to the record constructor whose component names are escaped.
         mkDecoder(f.name.name, f.tpe, q"jsonObj")
     }
 

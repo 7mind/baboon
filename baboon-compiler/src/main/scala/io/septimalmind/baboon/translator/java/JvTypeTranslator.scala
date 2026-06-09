@@ -8,6 +8,33 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
+object JvTypeTranslator {
+  // Full set of Java reserved keywords (JLS §3.9) plus the boolean/null literals.
+  // Any model-derived identifier equal to one of these must be renamed; the
+  // on-wire JSON key always uses the original model name (string literal).
+  private val javaKeywords: Set[String] = Set(
+    "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",
+    "class", "const", "continue", "default", "do", "double", "else", "enum",
+    "extends", "final", "finally", "float", "for", "goto", "if", "implements",
+    "import", "instanceof", "int", "interface", "long", "native", "new",
+    "package", "private", "protected", "public", "return", "short", "static",
+    "strictfp", "super", "switch", "synchronized", "this", "throw", "throws",
+    "transient", "try", "var", "void", "volatile", "while",
+    // Literals (also illegal as identifiers)
+    "true", "false", "null",
+    // Context keywords added in later JLS editions
+    "record", "sealed", "permits", "yield",
+  )
+
+  /** Rename any identifier that clashes with a Java keyword by appending `_`.
+    * Applied to model-derived Java identifiers (field names, accessor names,
+    * local capture variables). Wire-key string literals always use the original
+    * model name and must NOT pass through this function.
+    */
+  def escapeJvKeyword(name: String): String =
+    if (javaKeywords.contains(name)) s"${name}_" else name
+}
+
 class JvTypeTranslator {
   def asJvRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[JvValue] = {
     tpe match {
@@ -115,7 +142,7 @@ class JvTypeTranslator {
       .split('.')
       .mkString("_")
 
-    val base = p.path.map(_.toLowerCase)
+    val base = p.path.map(s => JvTypeTranslator.escapeJvKeyword(s.toLowerCase))
     val segments = if (omitVersion) {
       base
     } else {
@@ -162,7 +189,7 @@ class JvTypeTranslator {
   private def renderOwner(owner: Owner): Seq[String] = {
     owner match {
       case Owner.Toplevel => Seq.empty
-      case Owner.Ns(path) => path.map(_.name.toLowerCase)
+      case Owner.Ns(path) => path.map(s => JvTypeTranslator.escapeJvKeyword(s.name.toLowerCase))
       case Owner.Adt(id)  => renderOwner(id.owner) :+ id.name.name
     }
   }
@@ -171,7 +198,7 @@ class JvTypeTranslator {
     val basePkg = toJvPkg(domain.id, domain.version, evo)
     owner match {
       case Owner.Toplevel => basePkg
-      case Owner.Ns(path) => JvPackageId(NEList.unsafeFrom(basePkg.parts.toList ++ path.map(_.name.toLowerCase)))
+      case Owner.Ns(path) => JvPackageId(NEList.unsafeFrom(basePkg.parts.toList ++ path.map(s => JvTypeTranslator.escapeJvKeyword(s.name.toLowerCase))))
       case Owner.Adt(id)  => effectiveJvPkg(id.owner, domain, evo)
     }
   }

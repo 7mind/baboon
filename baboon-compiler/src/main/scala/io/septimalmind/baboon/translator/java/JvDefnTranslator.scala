@@ -381,7 +381,8 @@ object JvDefnTranslator {
       val params = dto.fields.map {
         f =>
           val t         = trans.asJvRef(f.tpe, domain, evo)
-          val fieldTree = q"$t ${f.name.name}"
+          val javaName  = JvTypeTranslator.escapeJvKeyword(f.name.name)
+          val fieldTree = q"$t $javaName"
           prependDocs(f.docs, fieldTree)
       }
       val paramsList = if (params.nonEmpty) params.join(",\n") else q""
@@ -555,7 +556,8 @@ object JvDefnTranslator {
       val methods = contract.fields.map {
         f =>
           val t          = trans.asJvRef(f.tpe, domain, evo)
-          val methodTree = q"$t ${f.name.name}();"
+          val javaName   = JvTypeTranslator.escapeJvKeyword(f.name.name)
+          val methodTree = q"$t $javaName();"
           prependDocs(f.docs, methodTree)
       }
       val contractParents = contract.contracts.map(c => trans.toJvTypeRefKeepForeigns(c, domain, evo))
@@ -602,7 +604,8 @@ object JvDefnTranslator {
           val outStr     = out.map(_.mapRender(jvFqName)).getOrElse("void")
           val errStr     = err.map(_.mapRender(jvFqName))
           val retStr     = resolved.renderReturnType(outStr, errStr, "void")
-          val methodTree = q"$retStr ${m.name.name}($ctxParam$in arg);"
+          val javaMethodName = JvTypeTranslator.escapeJvKeyword(m.name.name)
+          val methodTree     = q"$retStr $javaMethodName($ctxParam$in arg);"
           prependDocs(m.docs, methodTree)
       }
       val typeParams = Seq(
@@ -729,9 +732,10 @@ object JvDefnTranslator {
 
       val fieldExprs: List[TextTree[JvValue]] = dto.fields.map {
         f =>
-          val srcFieldName = f.name.name
+          val srcFieldName = f.name.name  // original model name (used in repr key)
+          val javaName     = JvTypeTranslator.escapeJvKeyword(srcFieldName) // Java accessor name
           val kind         = identifierFieldKind(f.tpe)
-          val valueExpr    = renderFieldValueExpr(srcFieldName, kind, f)
+          val valueExpr    = renderFieldValueExpr(javaName, kind, f)
           // The repr field name is the source name per spec §2.1.
           q""""$srcFieldName:" + ($valueExpr)"""
       }

@@ -179,7 +179,7 @@ class JvUEBACodecGenerator(
         val adtRef = trans.toJvTypeRefKeepForeigns(m, domain, evo)
         val cName  = codecName(adtRef, m.owner)
 
-        val castedName = branchName.toLowerCase
+        val castedName = JvTypeTranslator.escapeJvKeyword(branchName.toLowerCase)
 
         val encBody = if (target.language.wrappedAdtBranchCodecs) {
           q"""$cName.INSTANCE.encode(ctx, output, $castedName);"""
@@ -352,7 +352,8 @@ class JvUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[JvValue], TextTree[JvValue], TextTree[JvValue])] = {
     dto.fields.map {
       field =>
-        val fieldRef   = q"value.${field.name.name}()"
+        val javaName   = JvTypeTranslator.escapeJvKeyword(field.name.name)
+        val fieldRef   = q"value.$javaName()"
         val enc        = mkEncoder(field.tpe, fieldRef, q"output")
         val fakeEnc    = mkEncoder(field.tpe, fieldRef, q"fakeWriter")
         val decoder    = mkDecoder(field.tpe)
