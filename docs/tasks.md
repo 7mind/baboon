@@ -82,10 +82,10 @@ archives: []
 - dependsOn: ["T3"]
 - ledgerRefs: ["goals:G1","defects:D1"]
 
-### T5 — planned
+### T5 — done
 
 - createdAt: 2026-06-09T20:47:59.203Z
-- updatedAt: 2026-06-09T20:53:07.282Z
+- updatedAt: 2026-06-09T22:08:17.649Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Scala: backtick-escape all model-derived identifiers (no escaping exists today)"
@@ -94,11 +94,14 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: 36a32e52
+- completion: ScTypes.escapeScKeyword (backtick) routed through case-class params, codec accessors/binders/ctor-args, ADT branch capture vars, conversion vars. Wire-neutral. sbt baboonJVM/test 602/602. (Class-shadowing → D3, orthogonal.)
+- sessionLogs: ["docs/logs/20260609-220620-adcb227c4d5dd8da1.md","docs/logs/20260609-220620-a45bf9d85e30b139e.md"]
 
-### T6 — planned
+### T6 — done
 
 - createdAt: 2026-06-09T20:48:08.169Z
-- updatedAt: 2026-06-09T20:53:08.698Z
+- updatedAt: 2026-06-09T22:08:20.939Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Kotlin: backtick-escape all model-derived identifiers (no escaping exists today)"
@@ -107,6 +110,9 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: a24eeff7
+- completion: KtTypeTranslator.escapeKtKeyword (backtick, 28 hard keywords) routed through field params, codec accessors/ctor-args, UEBA ADT branch capture, conversion vars; covers kt-stub + kmp. Jackson wire keys unescaped. sbt baboonJVM/test 602/602. (Class-shadowing → D3; service-wiring asymmetry → D4.)
+- sessionLogs: ["docs/logs/20260609-220620-a3e0a7c5d864fab08.md","docs/logs/20260609-220620-aef8c4956d229a5b8.md"]
 
 ### T7 — planned
 

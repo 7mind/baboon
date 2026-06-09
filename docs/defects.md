@@ -2,7 +2,7 @@
 ledger: defects
 counters:
   milestone: 0
-  item: 2
+  item: 4
 archives: []
 ---
 
@@ -60,3 +60,27 @@ archives: []
 - severity: low
 - suggestedFix: Route ADT-as-package-segment names through escapeJvKeyword (as the Ns arm now does), or document the capitalization invariant that makes it collision-free.
 - ledgerRefs: ["tasks:T9","goals:G1"]
+
+### D3 — open
+
+- createdAt: 2026-06-09T22:02:49.218Z
+- updatedAt: 2026-06-09T22:02:49.218Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: ADT branch/type named `Class` shadows stdlib `java.lang.Class` in generated metadata field (cross-language; distinct from D1 keyword-escaping)
+- description: "Discovered independently by the T5 (Scala) and T6 (Kotlin) workers while compiling the reserved-words-ok model. The generated per-type metadata field `baboonAdtType: Class[?]` (Scala) / `Class<*>` (Kotlin), emitted by the domain-tree-tools, references the stdlib `java.lang.Class` by SHORT name. When an ADT has a branch named `Class` (or a type named `Class`), the nested `AvatarItem.Class` case class/object shadows `java.lang.Class`, so the metadata field's type resolves to the wrong `Class` => compile errors (~32 in AvatarItem.kt; analogous in Scala). This is NOT a reserved-keyword collision (`Class` is not a language keyword) and is NOT caused by/limited to the keyword-escaping fixes — it is a separate stdlib-type-name-shadowing defect. Likely affects every backend whose generated metadata/runtime interface references a stdlib type by short name (Scala, Kotlin, Java at least). BLOCKS G1's T14 green-matrix gate because the reserved-words-ok model includes a `Class` branch. Default disposition: FIX."
+- severity: medium
+- suggestedFix: "Emit stdlib type references in generated metadata/runtime-interface fields by FULLY-QUALIFIED name (e.g. `java.lang.Class[?]` / `kotlin reflect or java.lang.Class<*>`) or via an import alias, so a model type/branch named `Class` cannot shadow it. Audit all backends' domain-tree-tools / runtime-interface emission for short-name stdlib references (Class, Type, etc.). Alternatively (narrower, to unblock G1 only) rename the `Class` branch in reserved-words-ok — but the underlying shadowing defect should still be fixed."
+- ledgerRefs: ["tasks:T5","tasks:T6","goals:G1"]
+
+### D4 — open
+
+- createdAt: 2026-06-09T22:06:55.181Z
+- updatedAt: 2026-06-09T22:06:55.181Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Kotlin: service-method wiring call sites not keyword-escaped (asymmetric with escaped declaration)"
+- description: "Filed by T6 reviewer (out-of-scope for T6). T6 escaped the service-method DECLARATION (`fun ´when´(...)` in KtDefnTranslator ~:445) but the symmetric wiring CALL sites `impl.${m.name.name}(...)` in KtServiceWiringTranslator.scala (lines 669/677/699/707/767/775/798/806) still use raw `m.name.name`. A service method named after a Kotlin hard keyword would declare `´when´` but be called as `.when()` => compile error. Pre-T6 both sides were unescaped (consistent); T6 introduced the asymmetry. No current fixture exercises it; build stays green. Default disposition: FIX."
+- severity: low
+- suggestedFix: "In KtServiceWiringTranslator.scala route each `impl.${m.name.name}(...)` invocation through KtTypeTranslator.escapeKtKeyword so call sites match the escaped interface declaration."
+- ledgerRefs: ["tasks:T6","goals:G1"]

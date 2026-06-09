@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 6
+  item: 8
 archives: []
 ---
 
@@ -85,3 +85,27 @@ archives: []
 - new_questions: []
 - ledgerRefs: ["tasks:T9","goals:G1"]
 - sessionLogs: ["docs/logs/20260609-214140-a2cea0e21e7bdf37d.md"]
+
+### R7 — go-ahead
+
+- createdAt: 2026-06-09T22:06:56.703Z
+- updatedAt: 2026-06-09T22:06:56.703Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T5 — escapeScKeyword (full Scala keyword set) applied at all identifier-emission sites, wire-key strings unescaped (wire-neutral); surgical, 602/602. D3 Class-shadowing out of scope.
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T5","goals:G1"]
+- sessionLogs: ["docs/logs/20260609-220620-a45bf9d85e30b139e.md"]
+
+### R8 — go-ahead
+
+- createdAt: 2026-06-09T22:06:59.482Z
+- updatedAt: 2026-06-09T22:06:59.482Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T6 — escapeKtKeyword (Kotlin hard-keyword set) applied at field/codec/capture sites (kt-stub + kmp), wire-neutral; type-preserving, 602/602. One low out-of-scope defect filed (D4, service-wiring asymmetry). D3 Class-shadowing out of scope.
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T6","goals:G1"]
+- sessionLogs: ["docs/logs/20260609-220620-aef8c4956d229a5b8.md"]
