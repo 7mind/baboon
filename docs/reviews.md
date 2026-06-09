@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 4
+  item: 6
 archives: []
 ---
 
@@ -59,3 +59,29 @@ archives: []
 - new_questions: []
 - ledgerRefs: ["tasks:T2","goals:G1"]
 - sessionLogs: ["docs/logs/20260609-210918-abc7909e0fe01a7d1.md","docs/logs/20260609-211657-a6ee12345aa4afd7b.md"]
+
+## M4
+
+### R5 — go-ahead
+
+- createdAt: 2026-06-09T21:42:08.176Z
+- updatedAt: 2026-06-09T21:42:08.176Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: "approve T3 — escapeCsKeyword (full 77-keyword set) applied at both JSON (:158) and UEBA (:196) capture sites across both branch-codec arms; wire-neutral, no regression for non-keyword branches."
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T3","goals:G1"]
+- sessionLogs: ["docs/logs/20260609-214140-af3a9491b3c67864c.md"]
+
+### R6 — go-ahead
+
+- createdAt: 2026-06-09T21:42:11.031Z
+- updatedAt: 2026-06-09T21:42:11.031Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T9 — keyword rename (full JLS set) applied at all model-field/accessor/capture sites; JSON/UEBA wire keys provably preserved as original model names; class names safe via capitalization. One low out-of-scope defect filed (renderOwner ADT package segment).
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T9","goals:G1"]
+- sessionLogs: ["docs/logs/20260609-214140-a2cea0e21e7bdf37d.md"]

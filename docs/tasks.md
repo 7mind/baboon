@@ -53,10 +53,10 @@ archives: []
 
 ## M4
 
-### T3 — planned
+### T3 — done
 
 - createdAt: 2026-06-09T20:47:38.592Z
-- updatedAt: 2026-06-09T20:53:05.917Z
+- updatedAt: 2026-06-09T21:42:34.613Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "C# (minimal symptom fix): @-escape the two ADT branch codec capture variables"
@@ -65,6 +65,9 @@ archives: []
 - suggestedModel: frontier
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: 75191d49
+- completion: Added CSTypes.escapeCsKeyword (@-verbatim, full 77-keyword C# set), applied to ADT-branch capture var in CSJsonCodecGenerator + CSUEBACodecGenerator. Branch `Default` now emits `@default` (was CS1026). dotnet build clean + negative control confirmed. Resolves the reported D1 symptom.
+- sessionLogs: ["docs/logs/20260609-210918-a70e8f3c745ee46fe.md","docs/logs/20260609-214140-af3a9491b3c67864c.md"]
 
 ### T4 — planned
 
@@ -131,10 +134,10 @@ archives: []
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
 
-### T9 — planned
+### T9 — done
 
 - createdAt: 2026-06-09T20:48:39.748Z
-- updatedAt: 2026-06-09T20:53:13.397Z
+- updatedAt: 2026-06-09T21:43:00.301Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Java: RENAME keyword-colliding identifiers and preserve wire keys via @JsonProperty"
@@ -143,6 +146,9 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: 137bf305
+- completion: "Added JvTypeTranslator.escapeJvKeyword (full JLS set), applied to DTO components, method names, identifier accessor, JSON+UEBA field accessors, UEBA ADT branch capture. JSON wire-key literals + positional UEBA preserved (original model names). Verified javac clean + sbt baboonJVM/test 605 green. NOTE: worker's stale-base emission test + model variant NOT merged (kept T2's canonical model); matrix coverage via T13. Out-of-scope defect D2 filed (renderOwner ADT package segment)."
+- sessionLogs: ["docs/logs/20260609-210918-a55935b64519dbee2.md","docs/logs/20260609-214140-a2cea0e21e7bdf37d.md"]
 
 ### T10 — planned
 

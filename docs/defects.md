@@ -2,7 +2,7 @@
 ledger: defects
 counters:
   milestone: 0
-  item: 1
+  item: 2
 archives: []
 ---
 
@@ -46,3 +46,17 @@ archives: []
     - Java / Python / TypeScript / Dart: NO escape syntax exists — must RENAME (e.g. trailing `_`, with a wire-format `@JsonProperty`/serde-rename/alias to preserve the on-wire key, mirroring Rust's existing `#[serde(rename)]` discipline). TypeScript: wire up the dead `escapeTsKeyword`. Dart: wire the existing escapeDartKeyword through field/getter/method emission.
     WHEN RENAMING (not escaping) changes an emitted identifier, the JSON/UEBA wire key MUST be preserved via an explicit rename annotation so cross-language serialization stays compatible. Add per-language test models with keyword-named branches/fields/types and assert the generated code compiles in each target (extend the existing per-language test matrix). Reproduction harness: model `adt AvatarItem { data Default {} data BuiltIn { id: str } }` + `root data Holder { item: AvatarItem }`, compiled with `--generate-{json,ueba}-codecs-by-default=true`.
 - sessionLogs: ["docs/logs/20260609-190158-orchestrator-h1-repro.md","docs/logs/20260609-190158-a5a5a81722f58e956.md","docs/logs/20260609-190158-a6e4b7512b52af94b.md","docs/logs/20260609-190158-a123e05351e969bd7.md","docs/logs/20260609-190158-a339a8ad797fbee13.md","docs/logs/20260609-190158-a119c0b6658e6655f.md","docs/logs/20260609-190158-abf8f375663b3c77b.md","docs/logs/20260609-190158-a6a64824537135162.md","docs/logs/20260609-190158-a3ef4e52b3b442ee7.md"]
+
+## M4
+
+### D2 — open
+
+- createdAt: 2026-06-09T21:42:07.419Z
+- updatedAt: 2026-06-09T21:42:07.419Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Java: ADT-name package segment in renderOwner not keyword-escaped"
+- description: "Filed by T9 reviewer (out-of-scope for T9's field/accessor/capture-var scope). In JvTypeTranslator.renderOwner (JvTypeTranslator.scala:166), the Owner.Adt arm emits `renderOwner(id.owner) :+ id.name.name` retaining the ADT name at original casing as a package-path segment, unlike the Owner.Ns arm which now lowercases-and-escapes. If a model declared an ADT whose name lowercased to a Java keyword AND used it as a package qualifier, the emitted package segment could be illegal. Latent edge; ADT names are conventionally capitalized so collision is unlikely. Default disposition: FIX (fold into the C#/Java general-pass scope or a follow-up)."
+- severity: low
+- suggestedFix: Route ADT-as-package-segment names through escapeJvKeyword (as the Ns arm now does), or document the capitalization invariant that makes it collision-free.
+- ledgerRefs: ["tasks:T9","goals:G1"]
