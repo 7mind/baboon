@@ -10,10 +10,10 @@ archives: []
 
 ## M2
 
-### G1 — planning
+### G1 — planned
 
 - createdAt: 2026-06-09T19:05:26.509Z
-- updatedAt: 2026-06-09T19:05:26.509Z
+- updatedAt: 2026-06-09T20:55:56.945Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - title: Escape/normalize reserved-word identifier collisions across all 9 backends
@@ -33,3 +33,15 @@ archives: []
     
     See defect D1 (rootCause/suggestedFix) and hypotheses H1/H2 for full validated evidence.
 - sourceRefs: ["defects:D1"]
+- grounding: |
+    Verified against source (Read; codegraph/Grep/Glob unavailable in runtime):
+    - C# capture sites confirmed exactly: CSJsonCodecGenerator.scala:158 `val branchNameRef = q"${branchName.toLowerCase}"` used at :162/:177; CSUEBACodecGenerator.scala:196 `val castedName = branchName.toLowerCase` used at :199. No `@`-escaping in the C# identifier path. Note `wrappedAdtBranchCodecs` branch at :164/:198 takes a different path (`wire`/cName) — escaping the capture var must cover BOTH the wrapped and non-wrapped arms.
+    - TS escapeTsKeyword (TsTypeTranslator.scala:310-319) confirmed present, rename mechanism = trailing `_`; zero callers (dead).
+    - Swift enum-case site SwDefnTranslator.scala:889-894 builds `caseName = memberName.head.toLower + tail` RAW, bypassing escapeSwiftKeyword (which exists per H2 via render pass).
+    - Rust RsTypeTranslator.scala:155 emits `RsType(fullCrate, tid.name.name.capitalize)` raw for type/variant names (residual gap); escapeRustKeyword(`r#`) + escapeRustModuleName confirmed at RsDefnTranslator.scala:1533-1546 (module form uses `_`/readable rename, `in`→`input`); self/super/crate/Self NOT in rustKeywords list and not r#-escapable → need rename.
+    - Dart DtDefnTranslator.scala:307/318 emit `f.name.name` verbatim for field decls + ctor params (bypass escapeDartKeyword).
+    - Rust `#[serde(rename = "<wireKey>")]` is the existing wire-key-preservation discipline; the RENAME backends (Java=@JsonProperty, Python=alias/metadata, TS=bracket-string property access, Dart=JsonKey/explicit map key) must mirror it so the on-wire key is the UNRENAMED model name.
+    - Test matrix: shared model-dir `baboon-compiler/src/test/resources/baboon/<subdir>/` (e.g. recursive-ok/) generated into per-lang stubs by `test-gen-regular-adt`/`test-gen-wrapped-adt`, then compiled by `test-<lang>-{regular,wrapped}` mdl actions (.mdl/defs/tests.md). Per-lang keyword test models go here; codecs only emit under `--generate-{json,ueba}-codecs-by-default=true`.
+    - Exhaustive-match discipline (CLAUDE.md): if any fix adds a TyperIssue case, update 3 sites (DiagnosticsProvider, WorkspaceState, BaboonJS). `sbt clean` required after editing baboon-runtime resources. CI runs `sbt +compile` (JVM+JS) via `mdl :build :test`.
+- milestones: ["M3","M4","M5"]
+- sessionLogs: ["docs/logs/20260609-205006-a3f6cdd284886c24d.md","docs/logs/20260609-205337-ac80569ba528cf99b.md","docs/logs/20260609-205547-a57ca9ba4b4b1caa3.md"]
