@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 3
+  item: 4
 archives: []
 ---
 
@@ -47,3 +47,15 @@ archives: []
 - new_questions: []
 - ledgerRefs: ["tasks:T1","goals:G1"]
 - sessionLogs: ["docs/logs/20260609-210918-afce4af53bd336852.md"]
+
+### R4 — go-ahead
+
+- createdAt: 2026-06-09T21:18:46.804Z
+- updatedAt: 2026-06-09T21:18:46.804Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: "approve (round 2): reserved-words model complete — true/false fields + True/False enum members added; all prior keyword coverage intact; parses + typechecks."
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T2","goals:G1"]
+- sessionLogs: ["docs/logs/20260609-210918-abc7909e0fe01a7d1.md","docs/logs/20260609-211657-a6ee12345aa4afd7b.md"]

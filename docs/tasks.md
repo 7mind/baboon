@@ -30,10 +30,10 @@ archives: []
 - completion: "Committed design doc docs/drafts/20260609-g1-wire-key-contract-and-site-inventory.md: wire-key invariant for the 4 RENAME backends + 9-backend identifier-emission site inventory."
 - sessionLogs: ["docs/logs/20260609-210918-aa2c6fb6e62d45c77.md","docs/logs/20260609-210918-afce4af53bd336852.md"]
 
-### T2 — wip
+### T2 — done
 
 - createdAt: 2026-06-09T20:47:26.002Z
-- updatedAt: 2026-06-09T21:01:37.956Z
+- updatedAt: 2026-06-09T21:19:51.421Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Add shared reserved-word test model(s) to the test resource model-dir
@@ -47,6 +47,9 @@ archives: []
 - acceptance: New `.baboon` model file(s) committed under baboon-compiler/src/test/resources/baboon/<subdir>/; running the baboon compiler on that model-dir succeeds (parse+typecheck pass, exit 0) and the model contains branches, fields, and enum members named after reserved words covering C#/Java `default`, Scala/Kotlin keywords, Python `none/true/false`, and Rust `self/super/crate`. Generated target code is NOT required to compile yet.
 - suggestedModel: standard
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: b3f48fb6
+- completion: Added baboon-compiler/src/test/resources/baboon/reserved-words-ok/reserved.baboon (enum KindEnum, adt AvatarItem w/ 8 keyword branches incl. Default, root Holder w/ 19 keyword fields incl. true/false/self/super/crate); parse+typecheck verified exit 0.
+- sessionLogs: ["docs/logs/20260609-210918-a90169a141d378671.md","docs/logs/20260609-211657-a4134e0e0efb254d0.md","docs/logs/20260609-210918-abc7909e0fe01a7d1.md","docs/logs/20260609-211657-a6ee12345aa4afd7b.md"]
 
 ## M4
 
