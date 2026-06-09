@@ -2,7 +2,7 @@
 ledger: defects
 counters:
   milestone: 0
-  item: 4
+  item: 6
 archives: []
 ---
 
@@ -49,10 +49,10 @@ archives: []
 
 ## M4
 
-### D2 — root-caused
+### D2 — resolved
 
 - createdAt: 2026-06-09T21:42:07.419Z
-- updatedAt: 2026-06-09T22:25:41.138Z
+- updatedAt: 2026-06-09T22:46:36.199Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Java: ADT-name package segment in renderOwner not keyword-escaped"
@@ -63,6 +63,7 @@ archives: []
 - rootCause: "Validated against source: JvTypeTranslator.scala:193 `case Owner.Adt(id) => renderOwner(id.owner) :+ id.name.name` appends the ADT name UNESCAPED as a package-path segment, unlike the Owner.Ns arm (:192) which routes through `escapeJvKeyword(s.name.toLowerCase)`. An ADT used as a package qualifier whose (lowercased) name is a Java keyword would emit an illegal package segment. Low severity (ADT names conventionally capitalized). See H4 (confirmed). Consolidated into goal G2."
 - sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
 - dependsOn: ["T16"]
+- fix: "T16 (merged 7e36259a): JvTypeTranslator.renderOwner Owner.Adt arm now routes the ADT-name package segment through escapeJvKeyword (escape-only, casing preserved). 602 green, byte-identical for existing fixtures."
 
 ### D3 — root-caused
 
@@ -79,10 +80,10 @@ archives: []
 - sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
 - dependsOn: ["T15","T18"]
 
-### D4 — root-caused
+### D4 — resolved
 
 - createdAt: 2026-06-09T22:06:55.181Z
-- updatedAt: 2026-06-09T22:25:42.098Z
+- updatedAt: 2026-06-09T22:46:38.651Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Kotlin: service-method wiring call sites not keyword-escaped (asymmetric with escaped declaration)"
@@ -93,3 +94,30 @@ archives: []
 - rootCause: "Validated against source: KtServiceWiringTranslator.scala emits `impl.${m.name.name}(...)` with the RAW method name at lines 447/448/489/490/669/677/699/707/767/775 (and symmetric), while T6 escaped the method DECLARATION. For a service method named after a Kotlin hard keyword the escaped declaration would not match the unescaped call site → compile error. Low severity (no current fixture has a keyword-named service method). See H5 (confirmed). Consolidated into goal G2."
 - sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
 - dependsOn: ["T17"]
+- fix: "T17 (merged e33a1b43): all 12 impl.<method>() service-wiring call-site receivers in KtServiceWiringTranslator now route through escapeKtKeyword (symmetric with T6's escaped declaration); wire-name string literals left raw. 602 green, byte-identical for existing fixtures."
+
+## M7
+
+### D5 — open
+
+- createdAt: 2026-06-09T22:46:48.909Z
+- updatedAt: 2026-06-09T22:46:48.909Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: Java `equals(Object)` (and bare java.lang.Object refs) shadowed by a model ADT branch/type named `Object` — sibling of D3
+- description: "Discovered by the T15 worker + reviewer while compiling the reserved-words-ok model (which has a `data Object {}` ADT branch). SAME defect CLASS as D3 (stdlib type referenced by SHORT name, shadowed by a model type/branch of that name) but for `java.lang.Object` rather than `Class`, and at a DIFFERENT emission site: the generated Java `equals(Object other)` method signature (and likely other bare `Object` refs). A `data Object {}` branch produces a nested `Object` type that shadows `java.lang.Object` → ~15 residual javac errors (`method does not override`, `Object cannot be converted to <Branch>`) in AvatarItem.java AFTER T15 fixed the Class-shadowing. BLOCKS G2's T18 verification (and thus G1's T14 green gate) for the Java backend. Default disposition: FIX. Related: the T15 worker also flagged JvTypes jvString:100/jvObject:101 predefs are short-named (broader audit). Likely the general fix is to render stdlib predef type refs in generated code fully-qualified wherever a model type could shadow them."
+- severity: high
+- suggestedFix: "Render the `equals` parameter type (and any other generated bare `java.lang.Object` references) as fully-qualified `java.lang.Object`, mirroring T15's `.fullyQualified` approach for `java.lang.Class`. Audit JvDefnTranslator's equals/hashCode generation + the jvObject/jvString predefs. Consider the general fix: stdlib predef type references in generated code should be FQ (or the model-type refs qualified) so no model type/branch name can shadow a stdlib type — this would also pre-empt further `Type`/`String` siblings."
+- ledgerRefs: ["tasks:T15","goals:G2","defects:D3"]
+
+### D6 — open
+
+- createdAt: 2026-06-09T22:46:53.812Z
+- updatedAt: 2026-06-09T22:46:53.812Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Kotlin client-stub method declarations not keyword-escaped (KtServiceWiringTranslator:864/882)"
+- description: "Discovered by the T17 reviewer (out of D4's wiring-call-site scope). In KtServiceWiringTranslator.scala the generated client-stub DECLARATIONS at lines 864 (`suspend fun ${m.name.name}(...)`) and 882 (`suspend fun ${m.name.name}Json(...)`) emit the model method name as a raw Kotlin identifier without routing through escapeKtKeyword. A model service method named after a Kotlin hard keyword would emit an unparseable client stub. Distinct from the transport string args at 867/884 which must stay raw (wire names). Low severity, latent (no current fixture has a keyword-named service method). Default disposition: FIX."
+- severity: low
+- suggestedFix: "Wrap the declaration identifier at KtServiceWiringTranslator.scala:864/882 (and the `Json`-suffix variant) in KtTypeTranslator.escapeKtKeyword(m.name.name), keeping the transport string args at 867/884 as raw wire names."
+- ledgerRefs: ["tasks:T17","goals:G2"]

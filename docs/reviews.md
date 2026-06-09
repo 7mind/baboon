@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 9
+  item: 12
 archives: []
 ---
 
@@ -124,3 +124,41 @@ archives: []
 - ledgerRefs: ["goals:G2"]
 - sourceRefs: ["defects:D3","defects:D2","defects:D4"]
 - sessionLogs: ["docs/logs/20260609-222834-ada7374e3219f56b9.md"]
+
+## M7
+
+### R10 — go-ahead
+
+- createdAt: 2026-06-09T22:46:14.193Z
+- updatedAt: 2026-06-09T22:46:14.193Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T15 — baboonAdtType rendered FQ java.lang.Class across 3 JVM backends via .fullyQualified; predefs unchanged, C#/non-JVM untouched, Java 8→0 errors, 602 green. Out-of-scope Object-shadowing filed (D5).
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T15","goals:G2"]
+- sessionLogs: ["docs/logs/20260609-224538-T15-worker-reviewer.md"]
+
+### R11 — go-ahead
+
+- createdAt: 2026-06-09T22:46:17.033Z
+- updatedAt: 2026-06-09T22:46:17.033Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T16 — Owner.Adt arm routes through escapeJvKeyword (escape-only, casing preserved); byte-identical for existing fixtures; 602 green.
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T16","goals:G2"]
+- sessionLogs: ["docs/logs/20260609-224538-T16-worker-reviewer.md"]
+
+### R12 — go-ahead
+
+- createdAt: 2026-06-09T22:46:19.841Z
+- updatedAt: 2026-06-09T22:46:19.841Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T17 — all 12 kt wiring impl call-site receivers escaped via escapeKtKeyword, wire-name strings preserved, 602 green (clean-clone verified). Client-stub declaration escape filed (D6).
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T17","goals:G2"]
+- sessionLogs: ["docs/logs/20260609-224538-T17-worker-reviewer.md"]

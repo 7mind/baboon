@@ -225,10 +225,10 @@ archives: []
 
 ## M7
 
-### T15 — planned
+### T15 — done
 
 - createdAt: 2026-06-09T22:24:56.031Z
-- updatedAt: 2026-06-09T22:24:56.031Z
+- updatedAt: 2026-06-09T22:46:23.193Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "D3: fully-qualify the stdlib `Class` reference in baboonAdtType metadata across the 3 JVM-family domain-tree-tools"
@@ -244,11 +244,14 @@ archives: []
 - acceptance: "Generated Scala, Kotlin, and Java for the reserved-words-ok model (baboon-compiler/src/test/resources/baboon/reserved-words-ok/reserved.baboon, which contains a `Class` ADT branch) each emit the metadata field as a fully-qualified `java.lang.Class` (`_root_.java.lang.Class[?]` in Scala) and compile without the ~32 shadowing errors previously seen in AvatarItem.kt. Confirmed by the dedicated verification task. C# output is byte-identical to pre-change baseline."
 - suggestedModel: frontier
 - ledgerRefs: ["goals:G2","defects:D3"]
+- resultCommit: e4cc800b
+- completion: FQ java.lang.Class in baboonAdtType across Jv/Kt/Sc domain-tree-tools (via .fullyQualified). D3 Class-shadowing fixed (Java 8→0 errors). Surfaced sibling D5 (Object-shadowing in equals).
+- sessionLogs: ["docs/logs/20260609-224538-T15-worker-reviewer.md"]
 
-### T16 — planned
+### T16 — done
 
 - createdAt: 2026-06-09T22:25:11.759Z
-- updatedAt: 2026-06-09T22:25:11.759Z
+- updatedAt: 2026-06-09T22:46:25.554Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "D2: escape the ADT-name package segment in Java JvTypeTranslator.renderOwner"
@@ -259,11 +262,14 @@ archives: []
 - acceptance: "translator/java/JvTypeTranslator.scala renderOwner Owner.Adt arm routes the ADT name segment through escapeJvKeyword (symmetric with the Owner.Ns arm). Full build + Java test matrix (mdl :build :test, or at minimum the java regular/wrapped/manual lanes) stays GREEN with output byte-identical to baseline for all existing fixtures (no fixture exercises a keyword-named ADT-as-package-qualifier)."
 - suggestedModel: standard
 - ledgerRefs: ["goals:G2","defects:D2"]
+- resultCommit: 7e36259a
+- completion: escapeJvKeyword on renderOwner Owner.Adt arm (escape-only). Byte-identical existing fixtures; 602 green.
+- sessionLogs: ["docs/logs/20260609-224538-T16-worker-reviewer.md"]
 
-### T17 — planned
+### T17 — done
 
 - createdAt: 2026-06-09T22:25:18.796Z
-- updatedAt: 2026-06-09T22:25:18.796Z
+- updatedAt: 2026-06-09T22:46:27.619Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "D4: escape Kotlin service-method wiring call sites in KtServiceWiringTranslator"
@@ -274,6 +280,9 @@ archives: []
 - acceptance: "Every `impl.${m.name.name}(...)` invocation in translator/kotlin/KtServiceWiringTranslator.scala routes the method name through KtTypeTranslator.escapeKtKeyword (declaration and call site now symmetric). String-literal dispatch keys left as-is unless verified to require escaping. Full build + Kotlin test matrix incl. service-wiring lanes (kt regular/wrapped + service-acceptance) stays GREEN, output byte-identical to baseline for existing fixtures."
 - suggestedModel: standard
 - ledgerRefs: ["goals:G2","defects:D4"]
+- resultCommit: e33a1b43
+- completion: All 12 kt service-wiring impl call sites escaped via escapeKtKeyword; wire strings raw. Byte-identical; 602 green. Surfaced D6 (client-stub decls).
+- sessionLogs: ["docs/logs/20260609-224538-T17-worker-reviewer.md"]
 
 ### T18 — planned
 
