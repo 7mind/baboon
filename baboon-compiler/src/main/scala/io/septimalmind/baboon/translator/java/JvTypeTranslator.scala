@@ -190,7 +190,7 @@ class JvTypeTranslator {
     owner match {
       case Owner.Toplevel => Seq.empty
       case Owner.Ns(path) => path.map(s => JvTypeTranslator.escapeJvKeyword(s.name.toLowerCase))
-      case Owner.Adt(id)  => renderOwner(id.owner) :+ id.name.name
+      case Owner.Adt(id)  => renderOwner(id.owner) :+ JvTypeTranslator.escapeJvKeyword(id.name.name)
     }
   }
 
