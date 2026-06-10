@@ -431,17 +431,24 @@ object TsDefnTranslator {
       // does not produce invalid TS. Identity for PascalCase names — existing fixtures byte-identical.
       val enumName        = typeTranslator.escapeTsKeyword(enum.id.name.name)
       val lowercaseValues = target.language.enumLowercaseValues
-      val branches = enum.members.map {
+      // The TS-side enum member identifier. In lowercase mode it is the (escaped) raw member name
+      // (D9: escape — critical here because the verbatim member name can coincide with a TS keyword
+      // like `type`/`in`); in canonical mode it is the PascalCase wire name. Computed ONCE and reused
+      // for BOTH the declaration and the `_values` array (D10: the array previously referenced the
+      // PascalCase wire name, which in lowercase mode is an UNDECLARED member). Identity for
+      // PascalCase members — existing fixtures byte-identical.
+      val memberIdents = enum.members.toList.map {
         m =>
           val pascal = EnumWireStyle.wireName(m.name)
+          if (lowercaseValues) typeTranslator.escapeTsKeyword(m.name) else pascal
+      }
+      val branches = enum.members.toList.zip(memberIdents).map {
+        case (m, ident) =>
+          val pascal = EnumWireStyle.wireName(m.name)
           val value  = if (lowercaseValues) pascal.toLowerCase else pascal
-          // D9: escape ident (the TS-side enum member identifier) — critical for lowercase mode where
-          // the member name is used verbatim and can coincide with a TS keyword (e.g. `type`, `in`).
           // Wire values remain the original name so JSON round-trips are unaffected.
-          val ident  = if (lowercaseValues) typeTranslator.escapeTsKeyword(m.name) else pascal
           q"$ident = \"$value\""
-      }.toSeq
-      val pascalNames     = enum.members.map(m => EnumWireStyle.wireName(m.name))
+      }
       val parseComparison = if (lowercaseValues) "v === s.toLowerCase()" else "v === s"
       DefnRepr(
         q"""export enum $enumName {
@@ -449,7 +456,7 @@ object TsDefnTranslator {
            |}
            |
            |export const ${enumName}_values: ReadonlyArray<$enumName> = [
-           |    ${pascalNames.map(pn => q"$enumName.$pn").toList.join(",\n").shift(4).trim}
+           |    ${memberIdents.map(ident => q"$enumName.$ident").join(",\n").shift(4).trim}
            |] as const;
            |
            |export function ${enumName}_parse(s: string): $enumName {
