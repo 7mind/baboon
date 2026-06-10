@@ -2,7 +2,7 @@
 ledger: defects
 counters:
   milestone: 0
-  item: 6
+  item: 8
 archives: []
 ---
 
@@ -127,3 +127,30 @@ archives: []
 - rootCause: "Validated (H7 confirmed): KtServiceWiringTranslator.scala:864/882 client-stub declarations `suspend fun ${m.name.name}(...)`/`...Json(...)` emit the raw model method name, not routed through escapeKtKeyword (unlike T6's escaped interface declaration). A keyword-named service method emits an unparseable Kotlin client stub. Transport string args (867/884) correctly raw. Low severity, latent."
 - sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
 - dependsOn: ["T21","T22"]
+
+## M9
+
+### D7 — root-caused
+
+- createdAt: 2026-06-09T23:55:52.002Z
+- updatedAt: 2026-06-09T23:55:52.002Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: C# `System.Type` shadowed by a model ADT branch/type named `Type` in BaboonAdtType() return type — C# sibling of D3/D5
+- severity: high
+- description: "Discovered + confirmed by the T4 worker compiling reserved-words-ok (which has a `data Type {}` ADT branch). `CSDomainTreeTools.scala:57` and `:97` emit `public [override] Type BaboonAdtType() => typeof(...)` using the SHORT `csTpe` (System.Type) name; inside the AvatarItem ADT scope the nested branch `AvatarItem.Type` shadows `System.Type` → 24 errors (16× CS0508 + 8× CS0738) in generated AvatarItem.cs. SAME defect CLASS as D3 (Class) / D5 (Object) but for C#'s `System.Type`. The investigate-flow H3 recorded 'C# is NOT affected' — INCOMPLETE; it missed the C# Type-return-type site. Distinct from D1 (keyword escaping): escapeCsKeyword cannot fix it (`@Type`≡`Type`; not a keyword). BLOCKS G1's T14 green gate for C#. Default disposition: FIX."
+- rootCause: "Validated by the T4 worker (probe-confirmed): CSDomainTreeTools.scala:57 `public $csTpe BaboonAdtType() => typeof(...)` and :97 (override variant) emit `csTpe` = System.Type by SHORT name. A model ADT branch named `Type` (nested AvatarItem.Type) shadows System.Type in that scope. Probe: FQ-ing `$csTpe` → `${csTpe.fullyQualified}` (→ System.Type) at both sites makes `dotnet build` of reserved-words-ok succeed."
+- suggestedFix: "At CSDomainTreeTools.scala:57 and :97, render the return type fully-qualified `${csTpe.fullyQualified}` (→ System.Type). This changes 27 existing C# golden fixtures (`Type`→`System.Type` in BaboonAdtType signatures), so it requires a golden-fixture REBASELINE + review (not byte-identical). Together with T4's merged keyword-escaping pass, makes generated C# for reserved-words-ok compile. Mirrors T15 (Class) / T19 (Object) FQ remedy."
+- ledgerRefs: ["tasks:T4","goals:G1","defects:D3"]
+
+### D8 — open
+
+- createdAt: 2026-06-10T00:11:35.168Z
+- updatedAt: 2026-06-10T00:11:35.168Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: Java enum `parse(String s)` bare-String shadow when a model enum/type is named `String` (stdlib-shadowing class)
+- severity: low
+- description: "Filed by T19 reviewer. JvDefnTranslator.scala:494 emits `public static <Name> parse(String s)` inside the enum class body with a bare `String` literal. If a model defines an enum (or type) literally named `String`, the generated `public enum String { ... parse(String s) ... }` resolves the bare `String` to the enclosing enum, shadowing java.lang.String → javac error — the symmetric remainder of the D5 stdlib-shadowing fix (T19 fixed the record-body equals/toString sites). NOT exercised by reserved-words-ok (no String-named type). Default disposition: FIX (part of the general stdlib-FQ class)."
+- suggestedFix: "Route the parameter type in the enum `parse` template through `${jvString.fullyQualified}` (mirror T19's record-body fix), and audit any other in-type-body bare Object/String/Class literals outside <T>_*Codec/conversion top-level classes."
+- ledgerRefs: ["tasks:T19","goals:G3","defects:D5"]

@@ -69,10 +69,10 @@ archives: []
 - completion: Added CSTypes.escapeCsKeyword (@-verbatim, full 77-keyword C# set), applied to ADT-branch capture var in CSJsonCodecGenerator + CSUEBACodecGenerator. Branch `Default` now emits `@default` (was CS1026). dotnet build clean + negative control confirmed. Resolves the reported D1 symptom.
 - sessionLogs: ["docs/logs/20260609-210918-a70e8f3c745ee46fe.md","docs/logs/20260609-214140-af3a9491b3c67864c.md"]
 
-### T4 — planned
+### T4 — done
 
 - createdAt: 2026-06-09T20:47:48.860Z
-- updatedAt: 2026-06-09T20:47:48.860Z
+- updatedAt: 2026-06-10T00:11:26.039Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "C# (general pass): @-escape all model-derived identifiers across the C# translator"
@@ -81,6 +81,9 @@ archives: []
 - suggestedModel: frontier
 - dependsOn: ["T3"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: 357102b6
+- completion: "C# general keyword-escaping pass: all model-derived C# identifier sites routed through escapeCsKeyword (8 files); wire keys preserved; byte-identical. C# keyword scope COMPLETE. (dotnet-build-green for reserved-words-ok blocked by separate D7 System.Type shadowing.)"
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
 
 ### T5 — done
 
@@ -114,10 +117,10 @@ archives: []
 - completion: KtTypeTranslator.escapeKtKeyword (backtick, 28 hard keywords) routed through field params, codec accessors/ctor-args, UEBA ADT branch capture, conversion vars; covers kt-stub + kmp. Jackson wire keys unescaped. sbt baboonJVM/test 602/602. (Class-shadowing → D3; service-wiring asymmetry → D4.)
 - sessionLogs: ["docs/logs/20260609-220620-a3e0a7c5d864fab08.md","docs/logs/20260609-220620-aef8c4956d229a5b8.md"]
 
-### T7 — planned
+### T7 — done
 
 - createdAt: 2026-06-09T20:48:17.897Z
-- updatedAt: 2026-06-09T20:53:10.148Z
+- updatedAt: 2026-06-10T00:11:28.865Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Swift: route ADT-branch and enum-case names through the existing escapeSwiftKeyword (backticks)"
@@ -126,11 +129,14 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: 427dfa42
+- completion: Swift ADT-branch + enum-case names escaped via escapeSwiftKeyword; JSON wire strings + UEBA ordinals preserved; +2 supporting fixes (Type metatype dot-shorthand, _self init param). swift build of reserved-words-ok green.
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
 
-### T8 — planned
+### T8 — done
 
 - createdAt: 2026-06-09T20:48:29.604Z
-- updatedAt: 2026-06-09T20:53:12.000Z
+- updatedAt: 2026-06-10T00:11:22.740Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Rust: close the residual type/variant-name gap and handle non-r#-escapable keywords (self/super/crate/Self)"
@@ -139,6 +145,9 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: aa034c78
+- completion: "Rust: self/super/crate renamed (_-suffix) + #[serde(rename)]; reserved-inactive keywords added; escapeRustTypeName on type/variant names. cargo build green; serde round-trip confirmed; byte-identical existing fixtures."
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
 
 ### T9 — done
 
@@ -307,10 +316,10 @@ archives: []
 
 ## M9
 
-### T19 — planned
+### T19 — done
 
 - createdAt: 2026-06-09T22:53:25.558Z
-- updatedAt: 2026-06-09T22:53:25.558Z
+- updatedAt: 2026-06-10T00:11:17.091Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "D5 (Java): fully-qualify JVM stdlib type refs at all Java emission sites so a model type/branch named Object/String/Class/Type cannot shadow them"
@@ -325,11 +334,14 @@ archives: []
 - acceptance: "1) No bare `Object`/`String`/`Class`/`Type` stdlib type literal remains at a Java emission site that an empty-field/branch model type could shadow (grep the java/ package; each shadowing-risk ref routed through `.fullyQualified`). 2) Generated AvatarItem.java for reserved-words-ok emits `java.lang.Object`/`java.lang.String` in equals/toString. 3) `mdl :build` (sbt +compile, JVM+JS) stays GREEN — the translator change compiles and the exhaustive-match/JS sites are unaffected. 4) No unintended diff in existing golden/round-trip baselines for models WITHOUT shadowing names (the FQ is scoped to shadowing-risk sites). Full compile-of-generated-Java verification is deferred to T-verify (G3-W2)."
 - suggestedModel: frontier
 - ledgerRefs: ["goals:G3","defects:D5"]
+- resultCommit: "32e43749"
+- completion: FQ java.lang.Object/String in Java record-body templates (equals/toString). reserved-words-ok AvatarItem compiles (15→0 javac errors). Surfaced low D8 (enum parse(String) shadow).
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
 
-### T20 — planned
+### T20 — done
 
 - createdAt: 2026-06-09T22:53:39.243Z
-- updatedAt: 2026-06-09T22:53:39.243Z
+- updatedAt: 2026-06-09T23:55:35.612Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "D5 (Scala + Kotlin analogues): fully-qualify any bare stdlib type refs in Scala/Kotlin emission so reserved-words-ok (Object/Class/Type branches) compiles"
@@ -342,11 +354,13 @@ archives: []
 - acceptance: "1) scala/ and kotlin/ translator packages audited for bare stdlib type refs shadowable by a model `Object`/`Class`/`Type`/`Any`-named branch/field; every such shadowing-risk ref routed through its fully-qualified form (or, if none found for a backend, that absence recorded as the finding). 2) `mdl :build` (sbt +compile JVM+JS) stays GREEN. 3) No unintended baseline diff for models without shadowing names. Compile-of-generated-Scala+Kotlin verification is T-verify (G3-W2)."
 - suggestedModel: frontier
 - ledgerRefs: ["goals:G3","defects:D5"]
+- completion: "AUDIT finding (zero-change): both Scala and Kotlin backends ALREADY compile reserved-words-ok (Object/Class/Type branches) given the merged T15 (Class metadata FQ in Sc/KtDomainTreeTools) + T5/T6 (keyword escaping). No analogous bare-stdlib-ref shadowing site exists in scl/ or kotlin/ (Scala uses compiler-generated case-class equals/hashCode/toString; Kotlin's one manual equals override already uses `kotlin.Any?`). Verified empirically: sc-stub `sbt compile` GREEN (-Wconf:any:error), kt-stub `gradle compileKotlin` GREEN (allWarningsAsErrors); baboonJVM/test 602/0. No source change warranted (task explicitly forbids inventing fixes). D5's Scala/Kotlin portion confirmed already-resolved."
+- sessionLogs: []
 
-### T21 — planned
+### T21 — done
 
 - createdAt: 2026-06-09T22:53:52.020Z
-- updatedAt: 2026-06-09T22:53:52.020Z
+- updatedAt: 2026-06-10T00:11:19.922Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "D6 (Kotlin): escape client-stub method declaration names at KtServiceWiringTranslator:864/882 via escapeKtKeyword"
@@ -359,6 +373,9 @@ archives: []
 - acceptance: "1) KtServiceWiringTranslator.scala:864/882 declaration identifiers routed through escapeKtKeyword (base method name escaped; `Json` variant produces a grammar-valid backtick-quoted identifier when the base is a keyword). 2) Transport string args at :867/:884 remain the raw model name (unchanged). 3) `mdl :build` GREEN. 4) Existing kt service-wiring fixtures (no keyword-named methods) emit byte-identical output — no regression (verify via the kt wiring round-trip lane in T-verify)."
 - suggestedModel: standard
 - ledgerRefs: ["goals:G3","defects:D6"]
+- resultCommit: f701d174
+- completion: "Kotlin client-stub :864/:882 declarations escaped via escapeKtKeyword; transport wire strings raw. 602 green; byte-identical."
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
 
 ## M10
 

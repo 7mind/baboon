@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 13
+  item: 18
 archives: []
 ---
 
@@ -110,6 +110,42 @@ archives: []
 - ledgerRefs: ["tasks:T6","goals:G1"]
 - sessionLogs: ["docs/logs/20260609-220620-aef8c4956d229a5b8.md"]
 
+### R16 — go-ahead
+
+- createdAt: 2026-06-10T00:11:03.611Z
+- updatedAt: 2026-06-10T00:11:03.611Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T8 — self/super/crate rename + serde wire-key preservation verified in generated Rust (reviewer built native + cargo test -D warnings green); type/variant escape byte-identical for existing fixtures.
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T8","goals:G1"]
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
+
+### R17 — go-ahead
+
+- createdAt: 2026-06-10T00:11:06.440Z
+- updatedAt: 2026-06-10T00:11:06.440Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T4 — C# general keyword-escaping pass correct/complete/wire-safe/byte-identical across 8 csharp files. dotnet-build-green is blocked by the separate filed D7 (System.Type shadowing), out of T4's keyword scope.
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T4","goals:G1"]
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
+
+### R18 — go-ahead
+
+- createdAt: 2026-06-10T00:11:09.825Z
+- updatedAt: 2026-06-10T00:11:09.825Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T7 — Swift ADT-branch/enum-case identifiers escaped at all cited sites, JSON wire strings + UEBA ordinals preserved; 2 supporting fixes (Type metatype dot-shorthand, self-field _self init param) sound + guarded; swift build green. Missing reserved-words CI lane noted (covered by planned T13).
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T7","goals:G1"]
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
+
 ## M6
 
 ### R9 — go-ahead
@@ -176,3 +212,29 @@ archives: []
 - criticism: []
 - ledgerRefs: ["goals:G3"]
 - sessionLogs: ["docs/logs/20260609-225505-abf943028b0ba5ff7.md"]
+
+## M9
+
+### R14 — go-ahead
+
+- createdAt: 2026-06-10T00:10:57.653Z
+- updatedAt: 2026-06-10T00:10:57.653Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: "approve T19 — Object/String FQ fix correct + scoped to in-record-body sites; reserved-words-ok AvatarItem compiles (15→0 javac errors, test-java-regular green). Low follow-up filed: enum parse(String) shadow (D8)."
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T19","goals:G3"]
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
+
+### R15 — go-ahead
+
+- createdAt: 2026-06-10T00:11:00.390Z
+- updatedAt: 2026-06-10T00:11:00.390Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T21 — Kotlin client-stub declarations escaped at both sites with valid Json-variant whole-token backticking; transport wire strings raw; 602 green; byte-identical.
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T21","goals:G3"]
+- sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
