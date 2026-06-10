@@ -488,10 +488,10 @@ archives: []
 - completion: "test-tree-sitter.sh:46 capture made non-fatal (`|| true`); loop now reports FAIL + Summary + exit 1 (verified 80/81, reserved.baboon the only failure). D12 fixed."
 - sessionLogs: ["docs/logs/20260610-110836-T26-worker-review.md"]
 
-### T27 — wip
+### T27 — done
 
 - createdAt: 2026-06-10T11:07:30.838Z
-- updatedAt: 2026-06-10T11:14:00.109Z
+- updatedAt: 2026-06-10T11:21:07.738Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Fix D11: make tree-sitter editor grammar accept keyword-named identifiers (or exclude reserved-words-ok fixture) so test-editors parses all real files"
@@ -508,11 +508,14 @@ archives: []
 - suggestedModel: frontier
 - dependsOn: ["T26"]
 - ledgerRefs: ["defects:D11","goals:G5"]
+- resultCommit: 8b15da11
+- completion: "D11 resolved via option (c): excluded reserved-words-ok from the test-editors real-file scan (grammar.js is in an out-of-scope nested submodule) + documented rationale. test-editors exits 0 (corpus 47/47, real 80/80); fixture stays in shared model-dir for codegen."
+- sessionLogs: ["docs/logs/20260610-110836-T27-worker-review.md"]
 
-### T28 — planned
+### T28 — wip
 
 - createdAt: 2026-06-10T11:07:44.885Z
-- updatedAt: 2026-06-10T11:07:44.885Z
+- updatedAt: 2026-06-10T11:21:12.399Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Verify test-editors green then full mdl :ci green (closes D11/D12 verification incl. the previously-aborted per-language matrix + conv-test)"

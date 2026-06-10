@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 27
+  item: 28
 archives: []
 ---
 
@@ -355,3 +355,15 @@ archives: []
 - new_questions: []
 - ledgerRefs: ["tasks:T26","goals:G5"]
 - sessionLogs: ["docs/logs/20260610-110836-T26-worker-review.md"]
+
+### R28 — go-ahead
+
+- createdAt: 2026-06-10T11:21:04.759Z
+- updatedAt: 2026-06-10T11:21:04.759Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T27 — D11 resolved via documented, correctly-scoped reserved-words-ok exclusion from the editor real-file scan; submodule constraint verified (grammar.js in nested baboon-zed-grammar, out of repo scope); test-editors green 80/80, fixture retained for codegen.
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T27","goals:G5"]
+- sessionLogs: ["docs/logs/20260610-110836-T27-worker-review.md"]
