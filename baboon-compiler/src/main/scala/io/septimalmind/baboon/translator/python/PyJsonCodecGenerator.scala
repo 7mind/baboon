@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.python
 
 import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
+import io.septimalmind.baboon.translator.python.PyKeywords.escapePyKeyword
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
@@ -128,14 +129,19 @@ final class PyJsonCodecGenerator(
       val decode = q"""return $name.model_validate_json(wire)""".stripMargin
       (encode, decode)
     } else {
-      val walkedFieldNames = dto.fields.filter(f => fieldNeedsExplicitWalk(f.tpe)).map(_.name.name)
-      val excludeSet       = walkedFieldNames.map(n => q"'$n'").join(", ")
+      // The exclude set for model_dump uses Python attribute names (not aliases).
+      // Keyword fields have attribute name `fieldName_`, others use `fieldName`.
+      val walkedFieldAttrNames = dto.fields.filter(f => fieldNeedsExplicitWalk(f.tpe))
+        .map(f => if (PyKeywords.isKeyword(f.name.name)) s"${f.name.name}_" else f.name.name)
+      val excludeSet           = walkedFieldAttrNames.map(n => q"'$n'").join(", ")
       val encodePatches = dto.fields.collect {
         case f if fieldNeedsExplicitWalk(f.tpe) =>
-          q"obj['${f.name.name}'] = ${mkJsonAnyEncoder(f.tpe, q"value.${f.name.name}")}"
+          // Wire key is the ORIGINAL model name; attribute access uses the escaped Python name.
+          q"obj['${f.name.name}'] = ${mkJsonAnyEncoder(f.tpe, q"value.${escapePyKeyword(f.name.name)}")}"
       }
       val decodePatches = dto.fields.collect {
         case f if fieldNeedsExplicitWalk(f.tpe) =>
+          // Wire key is the ORIGINAL model name.
           q"obj['${f.name.name}'] = ${mkJsonAnyDecoder(f.tpe, q"obj['${f.name.name}']")}"
       }
       val encode =
@@ -327,7 +333,7 @@ final class PyJsonCodecGenerator(
           q"str($ref)"
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
           val inner = d.fields.head
-          mkJsonKeyEncoder(inner.tpe, q"$ref.${inner.name.name}")
+          mkJsonKeyEncoder(inner.tpe, q"$ref.${escapePyKeyword(inner.name.name)}")
         // PR-I.2 (M24 Phase 3.2): Custom-foreign map keys route through the emitted
         // `<Foreign>_KeyCodecHost.instance()` extension hook (replaces PR-60-D03 silent
         // str() coercion). Explicit Custom match (PR-I-D05 pattern guidance).
@@ -424,7 +430,9 @@ final class PyJsonCodecGenerator(
           val inner    = d.fields.head
           val tpeRef   = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
           val innerDec = mkJsonKeyDecoder(inner.tpe, ref)
-          q"$tpeRef(${inner.name.name}=$innerDec)"
+          // Use the keyword-escaped attribute name as the constructor kwarg.
+          val attrName = if (PyKeywords.isKeyword(inner.name.name)) s"${inner.name.name}_" else inner.name.name
+          q"$tpeRef($attrName=$innerDec)"
         case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
           // PR-I.2 (M24 Phase 3.2): Custom-foreign map keys route through the emitted
           // `<Foreign>_KeyCodecHost.instance()` extension hook (replaces PR-60-D03 silent

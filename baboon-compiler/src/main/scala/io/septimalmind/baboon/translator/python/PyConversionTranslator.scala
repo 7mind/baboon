@@ -12,6 +12,8 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
+import io.septimalmind.baboon.translator.python.PyKeywords.escapePyKeyword
+
 import scala.util.chaining.scalaUtilChainingOps
 
 object PyConversionTranslator {
@@ -169,9 +171,11 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
         val ops = c.ops.map(o => o.targetField -> o).toMap
         val assigns = dtoDefn.fields.map {
           field =>
-            val op        = ops(field)
-            val fieldName = field.name.name
-            val fieldRef  = q"_from.$fieldName"
+            val op           = ops(field)
+            val fieldName    = field.name.name
+            // Access source object attribute using the keyword-escaped name.
+            val srcAttrName  = escapePyKeyword(fieldName)
+            val fieldRef     = q"_from.$srcAttrName"
             val expr = op match {
               case o: FieldOp.Transfer => transfer(o.targetField.tpe, fieldRef)
 
@@ -204,11 +208,11 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
               case o: FieldOp.SwapCollectionType => swapCollType(q"$fieldRef", o)
 
               case o: FieldOp.Rename =>
-                val srcFieldRef = q"_from.${o.sourceFieldName.name}"
+                val srcFieldRef = q"_from.${escapePyKeyword(o.sourceFieldName.name)}"
                 transfer(o.targetField.tpe, srcFieldRef)
 
               case o: FieldOp.Redef =>
-                val srcFieldRef = q"_from.${o.sourceFieldName.name}"
+                val srcFieldRef = q"_from.${escapePyKeyword(o.sourceFieldName.name)}"
                 o.modify match {
                   case m: FieldOp.WrapIntoCollection =>
                     m.newTpe.id match {
@@ -222,15 +226,18 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
                 }
             }
             val fieldType = asVersionedIfUserTpe(field.tpe)
-            q"${field.name.name.toLowerCase}: $fieldType = $expr"
+            // Local variable name: use lowercase of the keyword-escaped attribute name.
+            val localVarName = escapePyKeyword(fieldName).toLowerCase
+            q"$localVarName: $fieldType = $expr"
         }
-        val ctorArgs = dtoDefn.fields.map(f => q"${f.name.name.toLowerCase}")
+        // Local variable references, then constructor kwargs using escaped attribute names.
+        val ctorArgs = dtoDefn.fields.map(f => q"${escapePyKeyword(f.name.name).toLowerCase}")
         Some(q"""class ${convType.name}($abstractConversion[$typeFrom, $typeTo]):
                 |    @$pyOverride
                 |    def do_convert(self, ctx, conversions: $baboonAbstractConversions, _from: $typeFrom) -> $typeTo:
                 |        ${assigns.join("\n").shift(8).trim}
                 |        return $typeTo(
-                |            ${ctorArgs.zip(dtoDefn.fields).map { case (a, f) => q"${f.name.name}=$a" }.join(",\n").shift(12).trim}
+                |            ${ctorArgs.zip(dtoDefn.fields).map { case (a, f) => q"${if (PyKeywords.isKeyword(f.name.name)) s"${f.name.name}_" else f.name.name}=$a" }.join(",\n").shift(12).trim}
                 |        )
                 |
                 |    ${meta.shift(4).trim}

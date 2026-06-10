@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.python
 
 import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
+import io.septimalmind.baboon.translator.python.PyKeywords.escapePyKeyword
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
@@ -146,14 +147,17 @@ class PyUEBACodecGenerator(
   private def genEnumBodies(enum: Typedef.Enum): (TextTree[PyValue], TextTree[PyValue]) = {
     val branches = enum.members.zipWithIndex.toList.map {
       case (m, i) =>
-        val obj = EnumWireStyle.wireName(m.name)
+        val wireName = EnumWireStyle.wireName(m.name)
+        // Encoder matches on the string value (wire name) — always the original wire name.
+        // Decoder references the Python enum attribute — must use the escaped member name.
+        val memberPyIdent = escapePyKeyword(wireName)
         (
-          q"""if value.value == "$obj":
+          q"""if value.value == "$wireName":
              |    wire.write_byte(${i.toString})
              |    return
              |""".stripMargin,
           q"""if as_byte == ${i.toString}:
-             |    return ${enum.id.name.name.capitalize}.$obj
+             |    return ${enum.id.name.name.capitalize}.$memberPyIdent
              |""".stripMargin,
         )
     }
@@ -217,7 +221,13 @@ class PyUEBACodecGenerator(
   }
 
   private def genDtoDecoder(name: PyValue.PyType, fields: List[(TextTree[PyValue], TextTree[PyValue])], dto: Typedef.Dto): TextTree[PyValue] = {
-    val fieldsDecoders = dto.fields.zip(fields.map(_._2)).map { case (field, decoder) => q"${field.name.name}=$decoder" }
+    // Use the keyword-escaped attribute name for constructor kwargs.
+    // Keyword fields use `class_=decoder` (requires populate_by_name=True in model_config).
+    val fieldsDecoders = dto.fields.zip(fields.map(_._2)).map {
+      case (field, decoder) =>
+        val attrName = if (PyKeywords.isKeyword(field.name.name)) s"${field.name.name}_" else field.name.name
+        q"$attrName=$decoder"
+    }
     q"""index = self.read_index(ctx, wire)
        |
        |if ctx.use_indices:
@@ -285,7 +295,7 @@ class PyUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[PyValue], TextTree[PyValue], TextTree[PyValue])] = {
     dto.fields.map {
       f =>
-        val fieldRef = q"value.${f.name.name}"
+        val fieldRef = q"value.${escapePyKeyword(f.name.name)}"
         val encoder  = mkEncoder(f.tpe, fieldRef, q"wire")
         val fakeEnc  = mkEncoder(f.tpe, fieldRef, q"fake_writer")
         val dec      = mkDecoder(f.tpe)

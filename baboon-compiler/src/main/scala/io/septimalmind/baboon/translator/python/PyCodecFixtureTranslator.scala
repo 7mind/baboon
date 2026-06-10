@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.python
 
+import io.septimalmind.baboon.translator.python.PyKeywords.escapePyKeyword
 import io.septimalmind.baboon.translator.python.PyTypes.{baboonAnyMeta, baboonAnyOpaqueJson, baboonAnyOpaqueUeba, baboonFixture, pyList, pyStaticMethod}
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
@@ -52,7 +53,8 @@ object PyCodecFixtureTranslator {
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[PyValue] = {
       def fields(format: FixtureFormat): TextTree[PyValue] =
-        dto.fields.map(f => q"${f.name.name}=${genType(f.tpe, format)}").join(",\n")
+        // Use the keyword-escaped attribute name as the constructor kwarg.
+        dto.fields.map(f => q"${if (PyKeywords.isKeyword(f.name.name)) s"${f.name.name}_" else f.name.name}=${genType(f.tpe, format)}").join(",\n")
 
       val dtoType = typeTranslator
         .asPyType(dto.id, domain, evolution, pkgBase = pyFileTools.definitionsBasePkg)

@@ -4,6 +4,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
+import io.septimalmind.baboon.translator.python.PyKeywords.escapePyKeyword
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.{PyModuleId, PyType}
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
@@ -294,7 +295,14 @@ object PyDefnTranslator {
           PyDefnRepr(combined, List.empty)
 
         case enum: Typedef.Enum =>
-          val branches = enum.members.map(m => q"${EnumWireStyle.wireName(m.name)} = \"${EnumWireStyle.wireName(m.name)}\"").toSeq
+          val branches = enum.members.map {
+            m =>
+              val wireName      = EnumWireStyle.wireName(m.name)
+              // Escape Python keywords in enum member identifiers. The value (wire-string) stays
+              // as the original wire name; only the Python attribute name gets the trailing `_`.
+              val memberPyIdent = escapePyKeyword(wireName)
+              q"$memberPyIdent = \"$wireName\""
+          }.toSeq
           val enumDocstring = pyTreeTools.renderClassDocstring(defn.docs, Seq.empty, "    ")
           val enumDocTree: Seq[TextTree[PyValue]] =
             if (enumDocstring.isEmpty) Seq.empty else Seq(q"$enumDocstring")
@@ -384,7 +392,7 @@ object PyDefnTranslator {
           val methods = contract.fields.map {
             f =>
               val tpe  = typeTranslator.asPyRef(f.tpe, domain, evolution, fileTools.definitionsBasePkg)
-              val name = s"${f.name.name}"
+              val name = escapePyKeyword(f.name.name)
               q"""@$pyAbstractMethod
                  |def $name(self) -> $tpe:
                  |    raise NotImplementedError
@@ -430,8 +438,9 @@ object PyDefnTranslator {
                 methodDocTree.toList :+ q"raise NotImplementedError"
               val methodBodyTree = methodBodyParts.joinN()
               val asyncKw        = if (target.language.asyncServices) "async " else ""
+              val methodPyName   = escapePyKeyword(m.name.name)
               q"""|@$pyAbstractMethod
-                  |${asyncKw}def ${m.name.name}(self, ${ctxParam}arg: $inType) -> $retAnnotation:
+                  |${asyncKw}def $methodPyName(self, ${ctxParam}arg: $inType) -> $retAnnotation:
                   |    ${methodBodyTree.shift(4).trim}
                   |""".stripMargin
           }
@@ -532,10 +541,15 @@ object PyDefnTranslator {
     private def genDtoFields(dtoFields: List[Field], contractsFields: Set[Field]): List[TextTree[PyValue]] = {
       val fields = dtoFields.map {
         field =>
-          val fieldName = field.name.name
-          val fieldType = typeTranslator.asPyRef(field.tpe, domain, evolution, fileTools.definitionsBasePkg)
+          val fieldName   = field.name.name
+          val fieldType   = typeTranslator.asPyRef(field.tpe, domain, evolution, fileTools.definitionsBasePkg)
+          // A trailing `_` suffix is needed when either the field is a Python keyword (PEP 8
+          // convention) or the field implements a contract abstract method (to avoid a Python
+          // name-clash with the @property accessor). In both cases a pydantic alias preserves the
+          // original model name as the wire key.
+          val needsAlias  = contractsFields.contains(field) || PyKeywords.isKeyword(fieldName)
 
-          if (contractsFields.contains(field)) {
+          if (needsAlias) {
             q"${fieldName}_: $fieldType = $pydanticField(alias='$fieldName', serialization_alias='$fieldName')"
           } else q"$fieldName: $fieldType"
       }
@@ -545,17 +559,31 @@ object PyDefnTranslator {
     private def genDtoProperties(contractsFields: List[Field]): Option[List[TextTree[PyValue]]] = {
       if (contractsFields.nonEmpty) {
         val properties = contractsFields
-          .map(f => q"""@property
-                       |def ${f.name.name}(self) -> ${typeTranslator.asPyRef(f.tpe, domain, evolution, fileTools.definitionsBasePkg)}:
-                       |    return self.${f.name.name}_
-                       |""".stripMargin)
+          .map {
+            f =>
+              val fieldName    = f.name.name
+              // The backing pydantic field is always `${fieldName}_` (see genDtoFields).
+              // The property accessor uses the keyword-escaped name so the method declaration is
+              // valid Python (e.g. `def class_(self)` instead of `def class(self)`).
+              val propertyName = escapePyKeyword(fieldName)
+              q"""@property
+                 |def $propertyName(self) -> ${typeTranslator.asPyRef(f.tpe, domain, evolution, fileTools.definitionsBasePkg)}:
+                 |    return self.${fieldName}_
+                 |""".stripMargin
+          }
         Some(properties)
       } else None
     }
 
     private def genDtoPydanticModelConf(dtoFields: List[Field], hasContracts: Boolean, jsonCodecActive: Boolean): TextTree[PyType] = {
-      val frozen           = Some(q"frozen=True")
-      val serializeByAlias = if (jsonCodecActive && hasContracts) Some(q"serialize_by_alias=True") else None
+      val frozen             = Some(q"frozen=True")
+      val hasKeywordField    = dtoFields.exists(f => PyKeywords.isKeyword(f.name.name))
+      val serializeByAlias   = if (jsonCodecActive && (hasContracts || hasKeywordField)) Some(q"serialize_by_alias=True") else None
+      // populate_by_name=True allows constructing instances using the Python attribute name (the
+      // escaped name, e.g. `class_`) instead of the alias (the original model name `class`). This
+      // is required when any field is a Python keyword, because the alias cannot be used as a
+      // constructor keyword argument in generated Python code.
+      val populateByName     = if (hasKeywordField) Some(q"populate_by_name=True") else None
       val serializeJsonBytesAsHex =
         if (dtoFields.map(_.tpe.id).contains(TypeId.Builtins.bytes)) {
           List(
@@ -580,7 +608,7 @@ object PyDefnTranslator {
       val arbitraryTypesAllowed =
         if (dtoFields.exists(f => hasAnyType(f.tpe))) Some(q"arbitrary_types_allowed=True") else None
 
-      val configs = List(frozen, serializeByAlias, serializeJsonBytesAsHex, serializeDecimalAsJsonNumber, arbitraryTypesAllowed).flatten
+      val configs = List(frozen, serializeByAlias, populateByName, serializeJsonBytesAsHex, serializeDecimalAsJsonNumber, arbitraryTypesAllowed).flatten
 
       q"""model_config = $pydanticConfigDict(
          |    ${configs.join(",\n").shift(4).trim}
@@ -689,9 +717,10 @@ object PyDefnTranslator {
 
       val fieldExprs: List[TextTree[PyValue]] = dto.fields.map {
         f =>
-          val srcFieldName = f.name.name
-          val kind         = identifierFieldKindPy(f.tpe)
-          val valueExpr    = renderIdentifierFieldValueExprPy(srcFieldName, kind)
+          val srcFieldName     = f.name.name
+          val escapedFieldName = escapePyKeyword(srcFieldName)
+          val kind             = identifierFieldKindPy(f.tpe)
+          val valueExpr        = renderIdentifierFieldValueExprPy(escapedFieldName, kind)
           q""""$srcFieldName:" + ($valueExpr)"""
       }
 
@@ -851,7 +880,11 @@ object PyDefnTranslator {
 
       val ctorArgs = dto.fields.map {
         f =>
-          q"${f.name.name}=${f.name.name}_v"
+          // Use the keyword-escaped attribute name as the constructor kwarg.
+          // Non-keyword fields: `foo=foo_v` (unchanged from before).
+          // Keyword fields: `class_=class_v` (requires populate_by_name=True in model_config).
+          val attrName = if (PyKeywords.isKeyword(f.name.name)) s"${f.name.name}_" else f.name.name
+          q"$attrName=${f.name.name}_v"
       }
 
       val ctor =
