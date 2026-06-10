@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 22
+  item: 25
 archives: []
 ---
 
@@ -287,3 +287,43 @@ archives: []
 - new_questions: []
 - criticism: []
 - ledgerRefs: ["goals:G4"]
+
+## M12
+
+### R23 — go-ahead
+
+- createdAt: 2026-06-10T10:53:48.577Z
+- updatedAt: 2026-06-10T10:53:48.577Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T23 — BaboonAdtType() return type FQ'd to System.Type at both CSDomainTreeTools sites; dotnet build 24→0; source-only (no cs goldens to rebaseline).
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T23","goals:G4"]
+- sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]
+
+### R24 — go-ahead
+
+- createdAt: 2026-06-10T10:53:51.879Z
+- updatedAt: 2026-06-10T10:53:51.879Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T24 — D8 java.lang.String FQ correct, D9 TS type/enum identifiers escaped with wire values/discriminator preserved; +compile green, byte-identical existing fixtures. Low pre-existing out-of-scope defect filed (D10).
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T24","goals:G4"]
+- sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]
+
+## M5
+
+### R25 — go-ahead
+
+- createdAt: 2026-06-10T10:53:55.182Z
+- updatedAt: 2026-06-10T10:53:55.182Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: "approve T13 — option (a) verified against .mdl/defs/tests.md: regular/wrapped lanes scan shared model-dir with codecs-by-default across all 9 backends (codec-capture sites exercised); ReservedWordsScalaEmissionTest green."
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T13","goals:G1"]
+- sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]

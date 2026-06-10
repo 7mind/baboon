@@ -2,7 +2,7 @@
 ledger: defects
 counters:
   milestone: 0
-  item: 9
+  item: 10
 archives: []
 ---
 
@@ -96,10 +96,10 @@ archives: []
 - dependsOn: ["T17"]
 - fix: "T17 (merged e33a1b43): all 12 impl.<method>() service-wiring call-site receivers in KtServiceWiringTranslator now route through escapeKtKeyword (symmetric with T6's escaped declaration); wire-name string literals left raw. 602 green, byte-identical for existing fixtures."
 
-### D9 — open
+### D9 — resolved
 
 - createdAt: 2026-06-10T10:31:57.558Z
-- updatedAt: 2026-06-10T10:31:57.558Z
+- updatedAt: 2026-06-10T10:54:06.474Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: TypeScript type/class/enum NAMES + enum-member names not run through escapeTsKeyword (latent keyword-collision)
@@ -107,6 +107,9 @@ archives: []
 - description: "Filed by T11 reviewer. TsDefnTranslator emits class/type/interface names, enum name, and enum-member identifiers directly from the model name without escapeTsKeyword (T11 wired only field-level binding positions). LATENT: cannot produce invalid TS for current models — Baboon type names + enum members are PascalCase by convention (EnumWireStyle.wireName = capitalize; reserved-words-ok uses PascalCase), and all TS reserved words are lowercase, so no collision. A model with a lowercase-keyword TYPE or enum-member name would emit invalid TS. Default disposition: FIX (defensive hardening, same class as D8). NOT exercised by reserved-words-ok."
 - suggestedFix: Route the class/type/enum name + lowercase-mode enum `ident` through escapeTsKeyword; keep wire/JSON keys on the original model name (as T11 does for fields).
 - ledgerRefs: ["tasks:T11","goals:G1","defects:D1"]
+- rootCause: "Confirmed (T11 reviewer): TsDefnTranslator emits class/type/interface/enum names + enum-member identifiers directly from the model name without escapeTsKeyword (T11 wired only field-level binding positions). Latent keyword-collision: only a lowercase-keyword TYPE/enum-member name would emit invalid TS; Baboon convention PascalCases types/enum-members so no exercised model triggers it. Same defensive-escape class as D8. Fix folded into T24."
+- dependsOn: ["T24"]
+- fix: "T24 (merged 100d59f8): TS class/type/interface/enum names + lowercase-mode enum ident routed through escapeTsKeyword (asTsTypeKeepForeigns + makeEnumRepr); wire keys/discriminator/raw values preserved on the original model name. Byte-identical for existing PascalCase fixtures; +compile green."
 
 ## M7
 
@@ -156,10 +159,10 @@ archives: []
 - ledgerRefs: ["tasks:T4","goals:G1","defects:D3"]
 - dependsOn: ["T23","T25"]
 
-### D8 — open
+### D8 — root-caused
 
 - createdAt: 2026-06-10T00:11:35.168Z
-- updatedAt: 2026-06-10T08:43:21.519Z
+- updatedAt: 2026-06-10T10:34:01.655Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Java enum `parse(String s)` bare-String shadow when a model enum/type is named `String` (stdlib-shadowing class)
@@ -168,3 +171,18 @@ archives: []
 - suggestedFix: "Route the parameter type in the enum `parse` template through `${jvString.fullyQualified}` (mirror T19's record-body fix), and audit any other in-type-body bare Object/String/Class literals outside <T>_*Codec/conversion top-level classes."
 - ledgerRefs: ["tasks:T19","goals:G3","defects:D5"]
 - dependsOn: ["T24","T25"]
+- rootCause: "Confirmed (T19 reviewer): JvDefnTranslator.scala:494 emits the enum `public static <Name> parse(String s)` with a bare `String` literal; a model enum/type named `String` would shadow java.lang.String. Same stdlib-shadowing class as D5; the record-body sites were fixed by T19. Latent (reserved-words-ok has no String-named type). Fix task T24 (G4)."
+
+## M12
+
+### D10 — open
+
+- createdAt: 2026-06-10T10:54:12.386Z
+- updatedAt: 2026-06-10T10:54:12.386Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "TS makeEnumRepr lowercase-mode: member ident vs _values reference capitalization mismatch (pre-existing)"
+- severity: low
+- description: "Filed by T24 reviewer (PRE-EXISTING, not introduced by T24). In TsDefnTranslator.makeEnumRepr, lowercase mode declares enum members as `ident = escapeTsKeyword(m.name)` (raw, un-capitalized) while the `_values` array references members as `$enumName.$pn` where `pn = EnumWireStyle.wireName(m.name) = m.name.capitalize`. For a lowercase-leading enum member under enumLowercaseValues, the declared TS member identifier and the `_values` reference disagree → reference to an undeclared member. Predates T24 (before the diff `ident = m.name`, equally un-capitalized vs capitalized pascalNames). NO current fixture exercises it (all fixture enum members are PascalCase). Default disposition: FIX."
+- suggestedFix: Reference members in the _values array via the same identifier used in the declaration (the escaped/lowercase ident), not EnumWireStyle.wireName(m.name).capitalize; add a fixture with a lowercase-leading enum member under enumLowercaseValues to lock the invariant.
+- ledgerRefs: ["tasks:T24","goals:G4"]

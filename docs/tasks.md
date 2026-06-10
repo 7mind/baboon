@@ -215,10 +215,10 @@ archives: []
 
 ## M5
 
-### T13 — planned
+### T13 — done
 
 - createdAt: 2026-06-09T20:49:32.170Z
-- updatedAt: 2026-06-09T20:53:19.546Z
+- updatedAt: 2026-06-10T10:54:03.657Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Wire reserved-word coverage into the mdl test matrix (generation + per-language compile lanes)
@@ -227,6 +227,9 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T2","T3","T4","T5","T6","T7","T8","T9","T10","T11","T12"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: 9478a082
+- completion: Reserved-word matrix coverage wired via option (a) (existing regular/wrapped lanes scan shared dir with codecs-on, all 9 backends); documented + ReservedWordsScalaEmissionTest added (green).
+- sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]
 
 ### T14 — planned
 
@@ -408,10 +411,10 @@ archives: []
 
 ## M12
 
-### T23 — planned
+### T23 — done
 
 - createdAt: 2026-06-10T08:42:52.819Z
-- updatedAt: 2026-06-10T08:42:52.819Z
+- updatedAt: 2026-06-10T10:53:57.996Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "D7: FQ csTpe at both BaboonAdtType() sites in CSDomainTreeTools + rebaseline ~27 C# golden fixtures"
@@ -424,23 +427,31 @@ archives: []
 - acceptance: "(1) CSDomainTreeTools.scala L57 and L97 both render `${csTpe.fullyQualified}` (no remaining bare `$csTpe` in a BaboonAdtType return position). (2) sbt +compile / mdl :build is green (Scala.js exhaustive-match unaffected — no new TyperIssue). (3) The C# golden-fixture rebaseline diff contains ONLY `Type`→`System.Type` substitutions in BaboonAdtType() signatures (~27 fixtures); no other generated-code delta. (4) The existing cs test matrix (test-gen-regular-adt/test-gen-wrapped-adt + test-cs-regular/test-cs-wrapped) is GREEN against the rebaselined fixtures. NOT byte-identical-to-old-baseline — rebaselined-and-green is the bar."
 - suggestedModel: frontier
 - ledgerRefs: ["goals:G4","defects:D7"]
+- resultCommit: b127e202
+- completion: "FQ System.Type at CSDomainTreeTools L57/L97 BaboonAdtType(). dotnet build of reserved-words-ok C#: 24 CS0508/CS0738 → 0. Source-only (no cs goldens)."
+- sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]
 
-### T24 — planned
+### T24 — done
 
 - createdAt: 2026-06-10T08:43:04.758Z
-- updatedAt: 2026-06-10T08:43:04.758Z
+- updatedAt: 2026-06-10T10:54:00.827Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
-- headline: "D8: FQ jvString in the Java enum parse(String) param + audit in-type-body bare Object/String/Class literals"
+- headline: "D8+D9: defensive type/enum-name escaping — FQ Java enum parse(String) + audit Java in-type-body bare literals + escape TS type/class/enum names"
 - description: |
-    Fix the Java enum String stdlib-shadow (D8). In baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvDefnTranslator.scala:494, the enum class body emits `public static ${name.asName} parse(String s)` with a BARE `String` literal. If a model defines an enum/type literally named `String`, the generated `public enum String { ... parse(String s) ... }` resolves the bare `String` to the enclosing enum, shadowing java.lang.String → javac error. Route the parameter type through `${jvString.fullyQualified}` (java.lang.String), mirroring T19's record-body equals/toString fix.
+    Consolidated defensive type/enum-name hardening for the stdlib/keyword-shadowing class (LATENT — not exercised by reserved-words-ok which uses PascalCase types; default disposition FIX). Two backends:
     
-    AUDIT (part of the general stdlib-FQ class lesson): scan JvDefnTranslator (and sibling Jv* translators) for OTHER in-type-body bare `Object`/`String`/`Class` literals that a model type could shadow — EXCLUDING the <T>_*Codec / conversion top-level classes (those are not nested inside a model-named type, so no shadow risk, per the D5/T19 scoping). Where an in-type-body bare stdlib literal could be shadowed, FQ it via the corresponding jv* `.fullyQualified` ref. Document any additional sites fixed in the task notes.
+    D8 (Java): JvDefnTranslator.scala:494 emits enum `public static <Name> parse(String s)` with a bare `String`; route the param type through `${jvString.fullyQualified}` (mirror T19's record-body fix). Also audit other in-type-body bare `Object`/`String`/`Class` literals outside <T>_*Codec/conversion top-level classes and FQ them.
     
-    LATENT: reserved-words-ok has no String-named type, so this is NOT a new green gate — the bar is no-regression. Repo reality: build via mdl; sbt-git cannot build in a linked git worktree → clone to /tmp.
-- acceptance: "(1) JvDefnTranslator.scala:494 renders the parse param as `${jvString.fullyQualified}` (no bare `String` in the enum parse signature). (2) Audit completed: any other in-type-body bare Object/String/Class literal that could be model-shadowed (outside <T>_*Codec/conversion top-level classes) is either FQ'd or explicitly noted as not-shadowable, with the list recorded in the task notes. (3) sbt +compile / mdl :build green. (4) NO-REGRESSION: the full Java test matrix (test-gen-regular-adt/test-gen-wrapped-adt + test-java-regular/test-java-wrapped + test-gen-compat-java/test-manual-java) is GREEN — generated Java byte-identical except the parse-param FQ change (and any audited sites), and all jv tests pass."
+    D9 (TypeScript): TsDefnTranslator emits class/type/interface names, enum name, and enum-member identifiers directly from the model name without escapeTsKeyword (T11 wired only field binding positions). Route the class/type/enum name + lowercase-mode enum `ident` through escapeTsKeyword; keep wire/JSON keys on the ORIGINAL model name (as T11 does for fields).
+    
+    Both are identity for non-keyword/non-stdlib names → byte-identical for existing fixtures. Verify: generated Java + TS for a model with a lowercase-keyword type/enum name (or, lacking one in reserved-words-ok, confirm the escape is applied + existing fixtures byte-identical + sbt baboonJVM/test green). Independent of T23 (Java + TS vs C#).
+- acceptance: Java enum parse(String) param FQ'd; TS class/type/enum names + enum-member idents routed through escapeTsKeyword with wire keys preserved; both byte-identical for existing (PascalCase) fixtures; sbt baboonJVM/test green; sbt +compile (JVM+JS) green.
 - suggestedModel: standard
-- ledgerRefs: ["goals:G4","defects:D8"]
+- ledgerRefs: ["goals:G4","defects:D8","defects:D9"]
+- resultCommit: 100d59f8
+- completion: "D8: Java enum parse param FQ'd to java.lang.String. D9: TS class/type/enum names + lowercase enum ident escaped via escapeTsKeyword (wire values preserved). +compile + 602 green; byte-identical. Surfaced low D10 (pre-existing TS lowercase enum mismatch)."
+- sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]
 
 ### T25 — planned
 
