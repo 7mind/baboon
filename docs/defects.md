@@ -10,10 +10,10 @@ archives: []
 
 ## M1
 
-### D1 — root-caused
+### D1 — resolved
 
 - createdAt: 2026-06-09T18:46:04.620Z
-- updatedAt: 2026-06-09T19:04:33.755Z
+- updatedAt: 2026-06-10T14:33:21.022Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Generated identifiers collide with target-language reserved words (C# `Default` → invalid code); no escaping/normalization
@@ -46,6 +46,7 @@ archives: []
     - Java / Python / TypeScript / Dart: NO escape syntax exists — must RENAME (e.g. trailing `_`, with a wire-format `@JsonProperty`/serde-rename/alias to preserve the on-wire key, mirroring Rust's existing `#[serde(rename)]` discipline). TypeScript: wire up the dead `escapeTsKeyword`. Dart: wire the existing escapeDartKeyword through field/getter/method emission.
     WHEN RENAMING (not escaping) changes an emitted identifier, the JSON/UEBA wire key MUST be preserved via an explicit rename annotation so cross-language serialization stays compatible. Add per-language test models with keyword-named branches/fields/types and assert the generated code compiles in each target (extend the existing per-language test matrix). Reproduction harness: model `adt AvatarItem { data Default {} data BuiltIn { id: str } }` + `root data Holder { item: AvatarItem }`, compiled with `--generate-{json,ueba}-codecs-by-default=true`.
 - sessionLogs: ["docs/logs/20260609-190158-orchestrator-h1-repro.md","docs/logs/20260609-190158-a5a5a81722f58e956.md","docs/logs/20260609-190158-a6e4b7512b52af94b.md","docs/logs/20260609-190158-a123e05351e969bd7.md","docs/logs/20260609-190158-a339a8ad797fbee13.md","docs/logs/20260609-190158-a119c0b6658e6655f.md","docs/logs/20260609-190158-abf8f375663b3c77b.md","docs/logs/20260609-190158-a6a64824537135162.md","docs/logs/20260609-190158-a3ef4e52b3b442ee7.md"]
+- fix: "Reserved-word identifier escaping implemented across all 9 backends (T3/T4 C# @-verbatim; T5 Scala backticks; T6 Kotlin backticks; T7 Swift backticks; T8 Rust r#/rename; T9 Java rename+@JsonProperty; T10 Python rename+pydantic alias; T11+D13 TS rename+wire-preservation; T12 Dart rename+explicit map keys), with wire keys preserved per the K2 contract. Verified GREEN by full serial mdl :ci (120/120 actions, 0 failures), including the per-language matrix over reserved-words-ok and the test-acceptance 9x9 cross-language round-trip over keyword-named-field payloads."
 
 ## M4
 
@@ -65,10 +66,10 @@ archives: []
 - dependsOn: ["T16"]
 - fix: "T16 (merged 7e36259a): JvTypeTranslator.renderOwner Owner.Adt arm now routes the ADT-name package segment through escapeJvKeyword (escape-only, casing preserved). 602 green, byte-identical for existing fixtures."
 
-### D3 — root-caused
+### D3 — resolved
 
 - createdAt: 2026-06-09T22:02:49.218Z
-- updatedAt: 2026-06-09T22:25:40.341Z
+- updatedAt: 2026-06-10T14:33:24.300Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: ADT branch/type named `Class` shadows stdlib `java.lang.Class` in generated metadata field (cross-language; distinct from D1 keyword-escaping)
@@ -79,6 +80,7 @@ archives: []
 - rootCause: "The generated per-ADT metadata field `baboonAdtType` references the JVM stdlib `java.lang.Class` by SHORT/predef name in all three JVM-family domain-tree-tools. Validated against source: `JvTypes.scala:104` defines `javaClass = JvType(javaLangPkg, \"Class\", predef = true)` (renders unqualified `Class`); it is emitted as `Class<?> baboonAdtType` (JvDomainTreeTools:67), `Class<*>` (KtDomainTreeTools:70), `Class[?]` (ScDomainTreeTools:67). When a model ADT has a branch (or a type) named `Class`, the generated nested type `<Adt>.Class` shadows `java.lang.Class` in scope, so the field's type resolves to the model type → compile errors (~32 in AvatarItem.kt; analogous in Scala/Java). C# is NOT affected (CSDomainTreeTools:57/97 uses `typeof(...)→System.Type`, no short `Class` binding); Rust/TypeScript/Dart/Swift/Python emit no such `Class`-typed metadata field. Distinct from D1: `Class` is not a language keyword, so keyword-escaping does not and must not touch it. See hypothesis H3 (confirmed)."
 - sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
 - dependsOn: ["T15","T18"]
+- fix: "T15: baboonAdtType metadata field rendered with fully-qualified java.lang.Class across the 3 JVM-family domain-tree-tools (Scala/Kotlin/Java). Verified GREEN by full serial mdl :ci (reserved-words-ok, with a `Class`-named ADT branch, compiles + round-trips in all JVM backends)."
 
 ### D4 — resolved
 
@@ -113,10 +115,10 @@ archives: []
 
 ## M7
 
-### D5 — root-caused
+### D5 — resolved
 
 - createdAt: 2026-06-09T22:46:48.909Z
-- updatedAt: 2026-06-09T22:54:20.523Z
+- updatedAt: 2026-06-10T14:33:27.177Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Java `equals(Object)` (and bare java.lang.Object refs) shadowed by a model ADT branch/type named `Object` — sibling of D3
@@ -127,11 +129,12 @@ archives: []
 - rootCause: "Validated against source (H6 confirmed): JvDefnTranslator.scala:431 `public boolean equals(Object other)` emits the parameter type as a BARE `Object` literal; a model ADT branch/type named `Object` (nested type) shadows java.lang.Object → the override is mistyped → ~15 javac errors. Same defect CLASS as D3 but for `Object` and at the equals-emission site. Also JvTypes:100-101 jvString/jvObject predefs render short-named (same hazard for `String`). GENERAL class: JVM stdlib predef short-name refs in generated code are shadowable by a model type of that name. Blocks G2's T18 (Java compile) and G1's T14."
 - sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
 - dependsOn: ["T19","T20","T22"]
+- fix: "T19 (Java) + T20 (Scala/Kotlin analogues): bare stdlib type refs (Object/String/Class/Type) fully-qualified at in-record-body emission sites so a model type/branch of that name cannot shadow them. Verified GREEN by full serial mdl :ci (reserved-words-ok Object/String/Class/Type branches compile + round-trip)."
 
-### D6 — root-caused
+### D6 — resolved
 
 - createdAt: 2026-06-09T22:46:53.812Z
-- updatedAt: 2026-06-09T22:54:21.472Z
+- updatedAt: 2026-06-10T14:33:30.002Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Kotlin client-stub method declarations not keyword-escaped (KtServiceWiringTranslator:864/882)"
@@ -142,13 +145,14 @@ archives: []
 - rootCause: "Validated (H7 confirmed): KtServiceWiringTranslator.scala:864/882 client-stub declarations `suspend fun ${m.name.name}(...)`/`...Json(...)` emit the raw model method name, not routed through escapeKtKeyword (unlike T6's escaped interface declaration). A keyword-named service method emits an unparseable Kotlin client stub. Transport string args (867/884) correctly raw. Low severity, latent."
 - sessionLogs: ["docs/logs/20260609-221857-orchestrator-d3-confirm.md"]
 - dependsOn: ["T21","T22"]
+- fix: "T21: Kotlin client-stub method declaration names at KtServiceWiringTranslator:864/882 escaped via escapeKtKeyword (whole-token backticking), with transport wire-name strings kept raw. Verified GREEN by full serial mdl :ci (incl. test-service-acceptance RPC matrix)."
 
 ## M9
 
-### D7 — root-caused
+### D7 — resolved
 
 - createdAt: 2026-06-09T23:55:52.002Z
-- updatedAt: 2026-06-10T08:43:20.575Z
+- updatedAt: 2026-06-10T14:33:33.012Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: C# `System.Type` shadowed by a model ADT branch/type named `Type` in BaboonAdtType() return type — C# sibling of D3/D5
@@ -158,11 +162,12 @@ archives: []
 - suggestedFix: "At CSDomainTreeTools.scala:57 and :97, render the return type fully-qualified `${csTpe.fullyQualified}` (→ System.Type). This changes 27 existing C# golden fixtures (`Type`→`System.Type` in BaboonAdtType signatures), so it requires a golden-fixture REBASELINE + review (not byte-identical). Together with T4's merged keyword-escaping pass, makes generated C# for reserved-words-ok compile. Mirrors T15 (Class) / T19 (Object) FQ remedy."
 - ledgerRefs: ["tasks:T4","goals:G1","defects:D3"]
 - dependsOn: ["T23","T25"]
+- fix: "T23: BaboonAdtType() return type fully-qualified to System.Type at both CSDomainTreeTools sites (dotnet build 24→0 errors). Verified GREEN by full serial mdl :ci (reserved-words-ok C# with a `Type`-named branch compiles + round-trips)."
 
-### D8 — root-caused
+### D8 — resolved
 
 - createdAt: 2026-06-10T00:11:35.168Z
-- updatedAt: 2026-06-10T10:34:01.655Z
+- updatedAt: 2026-06-10T14:33:35.073Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Java enum `parse(String s)` bare-String shadow when a model enum/type is named `String` (stdlib-shadowing class)
@@ -172,20 +177,23 @@ archives: []
 - ledgerRefs: ["tasks:T19","goals:G3","defects:D5"]
 - dependsOn: ["T24","T25"]
 - rootCause: "Confirmed (T19 reviewer): JvDefnTranslator.scala:494 emits the enum `public static <Name> parse(String s)` with a bare `String` literal; a model enum/type named `String` would shadow java.lang.String. Same stdlib-shadowing class as D5; the record-body sites were fixed by T19. Latent (reserved-words-ok has no String-named type). Fix task T24 (G4)."
+- fix: "T24: Java enum parse(String) bare-String reference fully-qualified to java.lang.String (+ in-type-body bare-literal audit). Verified GREEN by full serial mdl :ci (reserved-words-ok Java with a `String`-named enum/type compiles + round-trips)."
 
 ## M12
 
-### D10 — open
+### D10 — resolved
 
 - createdAt: 2026-06-10T10:54:12.386Z
-- updatedAt: 2026-06-10T10:54:12.386Z
+- updatedAt: 2026-06-10T14:45:39.715Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "TS makeEnumRepr lowercase-mode: member ident vs _values reference capitalization mismatch (pre-existing)"
 - severity: low
 - description: "Filed by T24 reviewer (PRE-EXISTING, not introduced by T24). In TsDefnTranslator.makeEnumRepr, lowercase mode declares enum members as `ident = escapeTsKeyword(m.name)` (raw, un-capitalized) while the `_values` array references members as `$enumName.$pn` where `pn = EnumWireStyle.wireName(m.name) = m.name.capitalize`. For a lowercase-leading enum member under enumLowercaseValues, the declared TS member identifier and the `_values` reference disagree → reference to an undeclared member. Predates T24 (before the diff `ident = m.name`, equally un-capitalized vs capitalized pascalNames). NO current fixture exercises it (all fixture enum members are PascalCase). Default disposition: FIX."
-- suggestedFix: Reference members in the _values array via the same identifier used in the declaration (the escaped/lowercase ident), not EnumWireStyle.wireName(m.name).capitalize; add a fixture with a lowercase-leading enum member under enumLowercaseValues to lock the invariant.
+- suggestedFix: Compute the member identifier ONCE (escapeTsKeyword(m.name) in lowercase mode, else the PascalCase wire name) and reuse it for BOTH the member declaration and the `_values` array reference, instead of recomputing the array via wireName(m.name).capitalize.
 - ledgerRefs: ["tasks:T24","goals:G4"]
+- rootCause: "CONFIRMED by source reading + reproduction. TsDefnTranslator.makeEnumRepr (TsDefnTranslator.scala:429): under enumLowercaseValues=true the enum member is DECLARED with ident=escapeTsKeyword(m.name) (raw case, L441) but the `_values` array REFERENCED it via pascalNames=EnumWireStyle.wireName(m.name)=m.name.capitalize (L444/452). For a lowercase-leading member (e.g. pkg0's `enum T_NsPascal { cafe bar_pub }`), declaration `cafe`/`bar_pub` vs `_values` reference `T_NsPascal.Cafe`/`.Bar_pub` → reference to an UNDECLARED member → invalid TS. PascalCase members coincide (capitalize is identity), which is why no fixture tripped it. Reproduced via EnumLowercaseValuesTypeScriptEmissionTest (enumLowercaseValues=true over pkg0): generated `_values` contained `T_NsPascal.Cafe` (FAILED) before the fix. Latent: reachable only via the --ts-enum-lowercase-values backward-compat flag + a lowercase-leading enum member."
+- fix: "Committed 8b94797b. TsDefnTranslator.makeEnumRepr now computes the member identifier once (escapeTsKeyword(m.name) in lowercase mode, else the PascalCase wire name) and reuses it for both the member declaration AND the `_values` array. Identity for PascalCase members → canonical-mode output byte-identical (all existing TS emission tests unchanged). Reproduce-first regression test added (EnumLowercaseValuesTypeScriptEmissionTest, enumLowercaseValues=true over pkg0 T_NsPascal): FAILED before the fix (_values referenced T_NsPascal.Cafe), passes after. Verified: baboonJVM/test 608/608 green, sbt +compile (JVM+Scala.js cross-build) green."
 
 ## M13
 
@@ -221,10 +229,10 @@ archives: []
 
 ## M5
 
-### D13 — wip
+### D13 — resolved
 
 - createdAt: 2026-06-10T12:45:29.284Z
-- updatedAt: 2026-06-10T12:45:40.019Z
+- updatedAt: 2026-06-10T14:33:42.776Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "TypeScript DTO constructor PARAMETER binding not escaped — keyword-named field (e.g. `default`) emits illegal `constructor(default: string)`"
@@ -233,3 +241,4 @@ archives: []
 - rootCause: "TsDefnTranslator.scala:288 emits the DTO constructor parameter binding as the raw model field name (`${f.name.name}: <tpe>`), and :292 references it raw in the `this._${n.name} = ${n.name}` assignment. A field named after a TS reserved word (`default`, `class`, `void`, `is`, `in`, ...) therefore produces an illegal binding identifier. The private field (`_${name}`, `_`-prefixed) and all object-literal/member-access wire keys are legal with keyword names, so ONLY the constructor-parameter binding + its in-body reference were illegal."
 - suggestedFix: "Route the constructor-parameter binding (:288) and its `constructorInside` RHS reference (:292) through typeTranslator.escapeTsKeyword (suffix `_`: `default`->`default_`). The constructor is invoked positionally everywhere (`new $name(...)` in with/fromPlain/codecs), so the rename is purely local — call sites unaffected. The LHS `this._${n.name}` (private field) stays raw; toJSON object-literal keys stay raw → wire format unchanged."
 - ledgerRefs: ["tasks:T11","tasks:T28","goals:G1"]
+- fix: "Committed b31bdccd. Three TS identifier-emission sites escaped via escapeTsKeyword: (1) DTO constructor PARAMETER binding (TsDefnTranslator.scala:288) + its `this._x = x` RHS reference (:292) — ctor is invoked positionally everywhere so the rename is local; (2) added reserved LITERALS true/false/null to the escapeTsKeyword set (TsTypeTranslator.scala) — illegal as binding identifiers; (3) public getter accessor (TsDefnTranslator.scala:282) escaped to match the codecs' documented `value.<escaped-getter>` reads (else keyword fields round-tripped to undefined). Wire keys (toJSON keys, decode obj[\"…\"], UEBA layout) keep the original model name; only language-level identifier positions escaped → cross-language wire format unchanged. Verified: test-typescript-regular + test-typescript-wrapped green over reserved-words-ok, then full serial mdl :ci green (120/120, 0 failures incl. test-acceptance 9x9)."

@@ -231,10 +231,10 @@ archives: []
 - completion: Reserved-word matrix coverage wired via option (a) (existing regular/wrapped lanes scan shared dir with codecs-on, all 9 backends); documented + ReservedWordsScalaEmissionTest added (green).
 - sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]
 
-### T14 — wip
+### T14 — done
 
 - createdAt: 2026-06-09T20:49:45.172Z
-- updatedAt: 2026-06-10T10:55:07.520Z
+- updatedAt: 2026-06-10T14:33:49.419Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Full cross-language CI verification: green matrix + wire-key cross-language round-trip"
@@ -243,6 +243,8 @@ archives: []
 - suggestedModel: frontier
 - dependsOn: ["T13"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: e6ba6af1
+- completion: "mdl :ci completes GREEN with reserved-word coverage active; the conv-test/test-acceptance cross-language acceptance matrix passes for keyword-named-field payloads (verified via T28's full serial mdl :ci, 120/120, 0 failures)."
 
 ## M7
 
@@ -305,10 +307,10 @@ archives: []
 - completion: All 12 kt service-wiring impl call sites escaped via escapeKtKeyword; wire strings raw. Byte-identical; 602 green. Surfaced D6 (client-stub decls).
 - sessionLogs: ["docs/logs/20260609-224538-T17-worker-reviewer.md"]
 
-### T18 — planned
+### T18 — done
 
 - createdAt: 2026-06-09T22:25:34.431Z
-- updatedAt: 2026-06-09T22:25:34.431Z
+- updatedAt: 2026-06-10T14:33:52.234Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Verify: reserved-words-ok generates+compiles for Scala+Kotlin+Java (closes D3, unblocks G1 T14) and full JVM-family matrix is green"
@@ -325,6 +327,7 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T15","T16","T17"]
 - ledgerRefs: ["goals:G2","defects:D3"]
+- completion: "Subsumed by T28's full serial mdl :ci green: reserved-words-ok generates + compiles for Scala+Kotlin+Java (D3 Class-shadowing closed) and the full JVM-family matrix is green."
 
 ## M9
 
@@ -391,10 +394,10 @@ archives: []
 
 ## M10
 
-### T22 — planned
+### T22 — done
 
 - createdAt: 2026-06-09T22:54:14.772Z
-- updatedAt: 2026-06-09T22:54:14.772Z
+- updatedAt: 2026-06-10T14:33:54.176Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Verify: generated Scala + Kotlin + Java for reserved-words-ok COMPILES green (the real gate; subsumes G2's T18 for the Object/Class shadowing class)"
@@ -408,6 +411,7 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T19","T20","T21"]
 - ledgerRefs: ["goals:G3","defects:D5","defects:D6"]
+- completion: "Subsumed by T28's full serial mdl :ci green: generated Scala+Kotlin+Java for reserved-words-ok (Object/Class/Type shadowing) compiles green."
 
 ## M12
 
@@ -453,10 +457,10 @@ archives: []
 - completion: "D8: Java enum parse param FQ'd to java.lang.String. D9: TS class/type/enum names + lowercase enum ident escaped via escapeTsKeyword (wire values preserved). +compile + 602 green; byte-identical. Surfaced low D10 (pre-existing TS lowercase enum mismatch)."
 - sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]
 
-### T25 — planned
+### T25 — done
 
 - createdAt: 2026-06-10T08:43:18.706Z
-- updatedAt: 2026-06-10T08:43:18.706Z
+- updatedAt: 2026-06-10T14:33:56.075Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Verify: dotnet build of reserved-words-ok C# succeeds (closes D7, unblocks G1's T14) + cs/jv matrices green"
@@ -470,6 +474,7 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T23","T24"]
 - ledgerRefs: ["goals:G4","defects:D7","defects:D8"]
+- completion: "Subsumed by T28's full serial mdl :ci green: dotnet build of reserved-words-ok C# succeeds (D7 System.Type closed); cs/jv matrices green."
 
 ## M14
 
@@ -512,10 +517,10 @@ archives: []
 - completion: "D11 resolved via option (c): excluded reserved-words-ok from the test-editors real-file scan (grammar.js is in an out-of-scope nested submodule) + documented rationale. test-editors exits 0 (corpus 47/47, real 80/80); fixture stays in shared model-dir for codegen."
 - sessionLogs: ["docs/logs/20260610-110836-T27-worker-review.md"]
 
-### T28 — wip
+### T28 — done
 
 - createdAt: 2026-06-10T11:07:44.885Z
-- updatedAt: 2026-06-10T11:21:12.399Z
+- updatedAt: 2026-06-10T14:33:47.063Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Verify test-editors green then full mdl :ci green (closes D11/D12 verification incl. the previously-aborted per-language matrix + conv-test)"
@@ -524,3 +529,5 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T27"]
 - ledgerRefs: ["goals:G5"]
+- resultCommit: e6ba6af1
+- completion: "Full serial mdl :ci GREEN: 120/120 actions, 0 failures, ci.success=true (~59 min). test-editors passed (D11/D12), all 9 per-language matrices over reserved-words-ok passed, test-acceptance (9x9 cross-language round-trip over keyword-named-field payloads) + test-service-acceptance passed. Surfaced + fixed D13 (TS ctor-param/getter/literal escape gap, b31bdccd) en route to green. Subsumes T18/T22/T25 per-goal verifications."
