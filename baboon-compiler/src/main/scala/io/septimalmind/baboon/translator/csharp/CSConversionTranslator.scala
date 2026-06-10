@@ -200,8 +200,15 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                     trans.asCsRef(op.targetField.tpe, domain, lineage.evolution)
                   val ftNewInit =
                     trans.asCsRef(op.targetField.tpe, domain, lineage.evolution, mutableCollections = true)
-                  val base     = op.targetField.name.name.capitalize
-                  val fieldRef = q"_from.$base"
+                  // `base` is the PascalCased source field name, reused both as a
+                  // C#-property reference (`_from.<base>`) and as the stem of a
+                  // local variable name (`_<base>`). The property reference must be
+                  // keyword-escaped; the local-variable stem must NOT (a `@` inside
+                  // `_@default` is not a legal identifier — `@` only legalises a
+                  // bare keyword at the identifier head).
+                  val base       = op.targetField.name.name.capitalize
+                  val baseRef     = escapeCsKeyword(base)
+                  val fieldRef = q"_from.$baseRef"
                   val initExpr = op match {
                     case o: FieldOp.Transfer =>
                       val recConv = transfer(o.targetField.tpe, fieldRef, 0)
@@ -292,7 +299,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                       )
 
                     case o: FieldOp.Rename =>
-                      val srcField = q"_from.${o.sourceFieldName.name.capitalize}"
+                      val srcField = q"_from.${escapeCsKeyword(o.sourceFieldName.name.capitalize)}"
                       val recConv  = transfer(o.targetField.tpe, srcField, 0)
                       o.targetField.tpe match {
                         case _: TypeRef.Scalar =>
@@ -304,7 +311,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                       }
 
                     case o: FieldOp.Redef =>
-                      val srcField = q"_from.${o.sourceFieldName.name.capitalize}"
+                      val srcField = q"_from.${escapeCsKeyword(o.sourceFieldName.name.capitalize)}"
                       o.modify match {
                         case m: FieldOp.WrapIntoCollection =>
                           m.newTpe.id match {

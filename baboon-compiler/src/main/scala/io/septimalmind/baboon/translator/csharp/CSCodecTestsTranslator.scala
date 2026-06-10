@@ -118,7 +118,7 @@ object CSCodecTestsTranslator {
       val randomMethod    = if (useJsonAny) "RandomJson" else "Random"
       val randomAllMethod = if (useJsonAny) "RandomAllJson" else "RandomAll"
       definition.defn match {
-        case e: Typedef.Enum => q"var fixture = $baboonFixture.NextRandomEnum<${e.id.name.name}>();"
+        case e: Typedef.Enum => q"var fixture = $baboonFixture.NextRandomEnum<${escapeCsKeyword(e.id.name.name)}>();"
         case _: Typedef.Adt  => q"var fixtures = ${typeTranslator.csFixtureRef(definition.id, domain, evolution)}.$randomAllMethod();"
         case _               => q"var fixture = ${typeTranslator.csFixtureRef(definition.id, domain, evolution)}.$randomMethod();"
       }

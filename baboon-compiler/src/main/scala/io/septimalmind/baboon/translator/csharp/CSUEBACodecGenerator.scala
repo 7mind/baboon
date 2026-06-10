@@ -187,9 +187,9 @@ class CSUEBACodecGenerator(
   private def genAdtBodies(name: CSValue.CSType, a: Typedef.Adt) = {
     val branches = a.dataMembers(domain).zipWithIndex.toList.map {
       case (m, idx) =>
-        val branchNs   = q"${csTypeInfo.adtNsName(a.id)}"
+        val branchNs   = q"${escapeCsKeyword(csTypeInfo.adtNsName(a.id))}"
         val branchName = m.name.name
-        val fqBranch   = q"$branchNs.$branchName"
+        val fqBranch   = q"$branchNs.${escapeCsKeyword(branchName)}"
 
         val cName = codecName(m)
 
@@ -370,7 +370,7 @@ class CSUEBACodecGenerator(
   private def fieldsOf(d: Typedef.Dto) = {
     d.fields.map {
       f =>
-        val fieldRef = q"value.${f.name.name.capitalize}"
+        val fieldRef = q"value.${escapeCsKeyword(f.name.name.capitalize)}"
         val enc      = mkEncoder(f.tpe, fieldRef, q"writer")
         val fakeEnc  = mkEncoder(f.tpe, fieldRef, q"fakeWriter")
         val dec      = mkDecoder(f.tpe, q"wire")

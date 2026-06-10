@@ -152,9 +152,9 @@ class CSJsonCodecGenerator(
 
     val branches = a.dataMembers(domain).map {
       m =>
-        val branchNs      = q"${csTypeInfo.adtNsName(a.id)}"
+        val branchNs      = q"${escapeCsKeyword(csTypeInfo.adtNsName(a.id))}"
         val branchName    = m.name.name
-        val fqBranch      = q"$branchNs.$branchName"
+        val fqBranch      = q"$branchNs.${escapeCsKeyword(branchName)}"
         val branchNameRef = q"${escapeCsKeyword(branchName.toLowerCase)}"
 
         val branchTpe           = trans.asCsType(m, domain, evo)
@@ -229,12 +229,14 @@ class CSJsonCodecGenerator(
   private def genDtoBodies(name: CSValue.CSType, d: Typedef.Dto): (TextTree[CSValue], TextTree[CSValue]) = {
     val fields = d.fields.map {
       f =>
-        val fieldRef = q"value.${f.name.name.capitalize}"
+        val fieldRef = q"value.${escapeCsKeyword(f.name.name.capitalize)}"
         val enc      = mkEncoder(f.tpe, fieldRef)
+        // The string literals below are on-wire JSON keys — they MUST stay the
+        // original model field name (no `@` escaping; `@` is source-only).
         val dec      = mkDecoder(f.tpe, q"""asObject["${f.name.name}"]""")
         (
           q"""new $nsJProperty("${f.name.name}", $enc)""",
-          q"${f.name.name.capitalize}: $dec",
+          q"${escapeCsKeyword(f.name.name.capitalize)}: $dec",
         )
     }
 
@@ -311,7 +313,7 @@ class CSJsonCodecGenerator(
                 // M19/PR-60: single-primitive-field wrappers — peel and recurse.
                 case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                   val inner = d.fields.head
-                  encodeKey(inner.tpe, q"$ref.${inner.name.name.capitalize}")
+                  encodeKey(inner.tpe, q"$ref.${escapeCsKeyword(inner.name.name.capitalize)}")
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -456,7 +458,7 @@ class CSJsonCodecGenerator(
                   val inner     = d.fields.head
                   val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
                   val innerDec  = decodeKey(inner.tpe, ref)
-                  q"new $targetTpe(${inner.name.name.capitalize}: $innerDec)"
+                  q"new $targetTpe(${escapeCsKeyword(inner.name.name.capitalize)}: $innerDec)"
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }

@@ -301,7 +301,7 @@ object CSDefnTranslator {
           val outs = dto.fields.map {
             f =>
               val tpe   = trans.asCsRef(f.tpe, domain, evo)
-              val mname = s"${f.name.name.capitalize}"
+              val mname = escapeCsKeyword(s"${f.name.name.capitalize}")
               (mname, tpe, f)
           }
 
@@ -393,7 +393,12 @@ object CSDefnTranslator {
           val branches =
             e.members.map {
               m =>
-                val base = q"""${EnumWireStyle.wireName(m.name)}"""
+                // Enum member identifier. wireName PascalCases the source member;
+                // escapeCsKeyword guards the rare keyword-shaped member (identity
+                // for the common PascalCase case). The on-wire form is the member's
+                // ToString(), which the C# runtime emits without any `@` prefix, so
+                // the wire name remains the model member name.
+                val base = q"""${escapeCsKeyword(EnumWireStyle.wireName(m.name))}"""
                 m.const match {
                   case Some(value) => q"""$base = ${value.toString}"""
                   case None        => base
@@ -418,7 +423,7 @@ object CSDefnTranslator {
           val abstractFields = allFields.map {
             f =>
               val tpe   = trans.asCsRef(f.tpe, domain, evo)
-              val mname = s"${f.name.name.capitalize}" // todo: dedup
+              val mname = escapeCsKeyword(s"${f.name.name.capitalize}") // todo: dedup
               q"public abstract $tpe $mname { get; init; }"
           }.join("\n")
 
@@ -481,7 +486,7 @@ object CSDefnTranslator {
                   if (syncRet == "void") "System.Threading.Tasks.Task"
                   else s"System.Threading.Tasks.Task<$syncRet>"
                 } else syncRet
-              val methodEx = q"""public $retStr ${m.name.name.capitalize}($ctxParam${trans.asCsRef(m.sig, domain, evo)} arg);"""
+              val methodEx = q"""public $retStr ${escapeCsKeyword(m.name.name.capitalize)}($ctxParam${trans.asCsRef(m.sig, domain, evo)} arg);"""
               prependDocs(m.docs, methodEx)
           }.join("\n")
 
@@ -607,7 +612,7 @@ object CSDefnTranslator {
       fields.map {
         f =>
           val tpe      = trans.asCsRef(f.tpe, domain, evo)
-          val mname    = s"${f.name.name.capitalize}"
+          val mname    = escapeCsKeyword(s"${f.name.name.capitalize}")
           val fieldEx  = q"public $tpe $mname { get; }"
           prependDocs(f.docs, fieldEx)
       }
@@ -747,7 +752,7 @@ object CSDefnTranslator {
       val fieldExprs: List[TextTree[CSValue]] = dto.fields.map {
         f =>
           val srcFieldName = f.name.name
-          val csFieldName  = srcFieldName.capitalize
+          val csFieldName  = escapeCsKeyword(srcFieldName.capitalize)
           val kind         = identifierFieldKind(f.tpe)
           val valueExpr    = renderFieldValueExpr(csFieldName, kind)
           // The repr field name is the source name per spec §2.1.
@@ -1003,7 +1008,7 @@ object CSDefnTranslator {
       val constructorArgs = dto.fields.map {
         f =>
           val srcFieldName = f.name.name
-          val csFieldName  = srcFieldName.capitalize
+          val csFieldName  = escapeCsKeyword(srcFieldName.capitalize)
           q"$csFieldName: ${srcFieldName}_v"
       }.toSeq
 

@@ -141,7 +141,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
     serviceMethodContainers(tid, domain, evolution) match {
       case Some((nsPrefix, classes)) =>
         val staticPkg = CSPackageId(NEList.unsafeFrom((nsPrefix ++ classes).toList), isStatic = true)
-        return CSType(staticPkg, tid.name.name.capitalize, fq = false, CSTypeOrigin(tid, domain))
+        return CSType(staticPkg, CSTypes.escapeCsKeyword(tid.name.name.capitalize), fq = false, CSTypeOrigin(tid, domain))
       case None =>
     }
 
@@ -154,7 +154,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
       case _ =>
         CSPackageId(fullPrefix)
     }
-    CSType(fullPkg, tid.name.name.capitalize, fq = false, CSTypeOrigin(tid, domain))
+    CSType(fullPkg, CSTypes.escapeCsKeyword(tid.name.name.capitalize), fq = false, CSTypeOrigin(tid, domain))
   }
 
   /** True if `tid` is a `Typedef.Service`. The C# backend renders services as
@@ -233,7 +233,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
       .split('.')
       .mkString("_")
 
-    val base = p.path.map(_.capitalize)
+    val base = p.path.map(s => CSTypes.escapeCsKeyword(s.capitalize))
     val segments = if (omitVersion) {
       base
     } else {
@@ -248,9 +248,9 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
       case Owner.Toplevel =>
         Seq.empty
       case Owner.Ns(path) =>
-        path.map(_.name)
+        path.map(s => CSTypes.escapeCsKeyword(s.name))
       case Owner.Adt(id) =>
-        val sub = renderOwner(id.owner) :+ info.adtNsName(id)
+        val sub = renderOwner(id.owner) :+ CSTypes.escapeCsKeyword(info.adtNsName(id))
         sub
     }
   }

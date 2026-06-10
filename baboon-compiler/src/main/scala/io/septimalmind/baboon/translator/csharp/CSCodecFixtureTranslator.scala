@@ -116,29 +116,30 @@ object CSCodecFixtureTranslator {
              |""".stripMargin
       }
 
+      val adtName = escapeCsKeyword(adt.id.name.name)
       q"""public static class ${adt.id.name.name}_Fixture
          |{
-         |    public static ${adt.id.name.name} Random() {
+         |    public static $adtName Random() {
          |        var rnd = $baboonFixture.NextInt32(${members.size.toString});
          |        ${membersBranches.join("\n").shift(8).trim}
          |        throw new $csArgumentException();
          |    }
          |
-         |    public static ${adt.id.name.name} RandomJson() {
+         |    public static $adtName RandomJson() {
          |        var rnd = $baboonFixture.NextInt32(${members.size.toString});
          |        ${membersBranchesJson.join("\n").shift(8).trim}
          |        throw new $csArgumentException();
          |    }
          |
-         |    public static $csList<${adt.id.name.name}> RandomAll() {
-         |        return new $csList<${adt.id.name.name}>
+         |    public static $csList<$adtName> RandomAll() {
+         |        return new $csList<$adtName>
          |        {
          |            ${membersGenerators.join(",\n").shift(12).trim}
          |        };
          |    }
          |
-         |    public static $csList<${adt.id.name.name}> RandomAllJson() {
-         |        return new $csList<${adt.id.name.name}>
+         |    public static $csList<$adtName> RandomAllJson() {
+         |        return new $csList<$adtName>
          |        {
          |            ${membersGeneratorsJson.join(",\n").shift(12).trim}
          |        };

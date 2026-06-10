@@ -294,7 +294,7 @@ object CSServiceWiringTranslator {
                   case None => q"return;"
                 }
                 Some(
-                  q"""public $asyncKw$retType ${m.name.name.capitalize}($ctxParamDecl$inRef arg, $baboonCodecContext $codecCtxName)
+                  q"""public $asyncKw$retType ${escapeCsKeyword(m.name.name.capitalize)}($ctxParamDecl$inRef arg, $baboonCodecContext $codecCtxName)
                      |{
                      |    var oms = new $memoryStream();
                      |    var bw = new $binaryWriter(oms);
@@ -315,7 +315,7 @@ object CSServiceWiringTranslator {
                   case None => q"return;"
                 }
                 Some(
-                  q"""public $asyncKw$retType ${m.name.name.capitalize}Json($ctxParamDecl$inRef arg, $baboonCodecContext $codecCtxName)
+                  q"""public $asyncKw$retType ${escapeCsKeyword(m.name.name.capitalize)}Json($ctxParamDecl$inRef arg, $baboonCodecContext $codecCtxName)
                      |{
                      |    var encoded = $encodeIn;
                      |    var resp = ${awaitTransport}_transportJson(${ctxArgPass}"$svcName", "${m.name.name}", encoded.ToString($nsFormatting.None));
@@ -551,8 +551,8 @@ object CSServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"var result = ${awaitKw}impl.${m.name.name.capitalize}(${ctxArgPass}decoded);"
-            case None    => q"${awaitKw}impl.${m.name.name.capitalize}(${ctxArgPass}decoded);"
+            case Some(_) => q"var result = ${awaitKw}impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);"
+            case None    => q"${awaitKw}impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);"
           }
 
           q"""case "${m.name.name}":
@@ -598,8 +598,8 @@ object CSServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"var result = ${awaitKw}impl.${m.name.name.capitalize}(${ctxArgPass}decoded);"
-            case None    => q"${awaitKw}impl.${m.name.name.capitalize}(${ctxArgPass}decoded);"
+            case Some(_) => q"var result = ${awaitKw}impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);"
+            case None    => q"${awaitKw}impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);"
           }
 
           q"""case "${m.name.name}":
@@ -707,7 +707,7 @@ object CSServiceWiringTranslator {
                 val errType = trans.asCsRef(m.err.get, domain, evo)
                 q"""try
                    |{
-                   |    var callResult = impl.${m.name.name.capitalize}(${ctxArgPass}v);
+                   |    var callResult = impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
                    |    return rt.LeftMap<$errType, $outType, $baboonWiringError>(
                    |        callResult, err => new $baboonWiringError.CallFailed(method, err));
                    |}
@@ -718,7 +718,7 @@ object CSServiceWiringTranslator {
               } else {
                 q"""try
                    |{
-                   |    return rt.Pure<$baboonWiringError, $outType>(impl.${m.name.name.capitalize}(${ctxArgPass}v));
+                   |    return rt.Pure<$baboonWiringError, $outType>(impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v));
                    |}
                    |catch ($csException ex)
                    |{
@@ -748,7 +748,7 @@ object CSServiceWiringTranslator {
                 val errType = trans.asCsRef(m.err.get, domain, evo)
                 q"""try
                    |{
-                   |    var callResult = impl.${m.name.name.capitalize}(${ctxArgPass}v);
+                   |    var callResult = impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
                    |    return rt.LeftMap<$errType, $unit, $baboonWiringError>(
                    |        callResult, err => new $baboonWiringError.CallFailed(method, err));
                    |}
@@ -759,7 +759,7 @@ object CSServiceWiringTranslator {
               } else {
                 q"""try
                    |{
-                   |    impl.${m.name.name.capitalize}(${ctxArgPass}v);
+                   |    impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
                    |    return rt.Pure<$baboonWiringError, $unit>($unit.Default);
                    |}
                    |catch ($csException ex)
@@ -857,7 +857,7 @@ object CSServiceWiringTranslator {
             q"""${ct("BaboonWiringError", renderFq(outType))} output;
                |try
                |{
-               |    var callResult = await impl.${m.name.name.capitalize}(${ctxArgPass}decoded);
+               |    var callResult = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
                |    output = rt.LeftMap<$errType, $outType, $baboonWiringError>(
                |        callResult, err => new $baboonWiringError.CallFailed(method, err));
                |}
@@ -869,7 +869,7 @@ object CSServiceWiringTranslator {
             q"""${ct("BaboonWiringError", renderFq(outType))} output;
                |try
                |{
-               |    var callResultValue = await impl.${m.name.name.capitalize}(${ctxArgPass}decoded);
+               |    var callResultValue = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
                |    output = rt.Pure<$baboonWiringError, $outType>(callResultValue);
                |}
                |catch ($csException ex)
@@ -886,7 +886,7 @@ object CSServiceWiringTranslator {
             val errType = trans.asCsRef(m.err.get, domain, evo)
             q"""try
                |{
-               |    var callResult = await impl.${m.name.name.capitalize}(${ctxArgPass}decoded);
+               |    var callResult = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
                |    var mapped = rt.LeftMap<$errType, $unit, $baboonWiringError>(
                |        callResult, err => new $baboonWiringError.CallFailed(method, err));
                |    return rt.FlatMap<$baboonWiringError, $unit, $csString>(mapped, v => rt.Pure<$baboonWiringError, $csString>("null"));
@@ -898,7 +898,7 @@ object CSServiceWiringTranslator {
           } else {
             q"""try
                |{
-               |    await impl.${m.name.name.capitalize}(${ctxArgPass}decoded);
+               |    await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
                |    return rt.Pure<$baboonWiringError, $csString>("null");
                |}
                |catch ($csException ex)
@@ -950,7 +950,7 @@ object CSServiceWiringTranslator {
                 val errType = trans.asCsRef(m.err.get, domain, evo)
                 q"""try
                    |{
-                   |    var callResult = impl.${m.name.name.capitalize}(${ctxArgPass}v);
+                   |    var callResult = impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
                    |    return rt.LeftMap<$errType, $outType, $baboonWiringError>(
                    |        callResult, err => new $baboonWiringError.CallFailed(method, err));
                    |}
@@ -961,7 +961,7 @@ object CSServiceWiringTranslator {
               } else {
                 q"""try
                    |{
-                   |    return rt.Pure<$baboonWiringError, $outType>(impl.${m.name.name.capitalize}(${ctxArgPass}v));
+                   |    return rt.Pure<$baboonWiringError, $outType>(impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v));
                    |}
                    |catch ($csException ex)
                    |{
@@ -994,7 +994,7 @@ object CSServiceWiringTranslator {
                 val errType = trans.asCsRef(m.err.get, domain, evo)
                 q"""try
                    |{
-                   |    var callResult = impl.${m.name.name.capitalize}(${ctxArgPass}v);
+                   |    var callResult = impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
                    |    return rt.LeftMap<$errType, $unit, $baboonWiringError>(
                    |        callResult, err => new $baboonWiringError.CallFailed(method, err));
                    |}
@@ -1005,7 +1005,7 @@ object CSServiceWiringTranslator {
               } else {
                 q"""try
                    |{
-                   |    impl.${m.name.name.capitalize}(${ctxArgPass}v);
+                   |    impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
                    |    return rt.Pure<$baboonWiringError, $unit>($unit.Default);
                    |}
                    |catch ($csException ex)
@@ -1099,7 +1099,7 @@ object CSServiceWiringTranslator {
             q"""${ct("BaboonWiringError", renderFq(outType))} output;
                |try
                |{
-               |    var callResult = await impl.${m.name.name.capitalize}(${ctxArgPass}decoded);
+               |    var callResult = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
                |    output = rt.LeftMap<$errType, $outType, $baboonWiringError>(
                |        callResult, err => new $baboonWiringError.CallFailed(method, err));
                |}
@@ -1111,7 +1111,7 @@ object CSServiceWiringTranslator {
             q"""${ct("BaboonWiringError", renderFq(outType))} output;
                |try
                |{
-               |    var callResultValue = await impl.${m.name.name.capitalize}(${ctxArgPass}decoded);
+               |    var callResultValue = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
                |    output = rt.Pure<$baboonWiringError, $outType>(callResultValue);
                |}
                |catch ($csException ex)
@@ -1128,7 +1128,7 @@ object CSServiceWiringTranslator {
             val errType = trans.asCsRef(m.err.get, domain, evo)
             q"""try
                |{
-               |    var callResult = await impl.${m.name.name.capitalize}(${ctxArgPass}decoded);
+               |    var callResult = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
                |    var mapped = rt.LeftMap<$errType, $unit, $baboonWiringError>(
                |        callResult, err => new $baboonWiringError.CallFailed(method, err));
                |    return rt.FlatMap<$baboonWiringError, $unit, byte[]>(mapped, v => rt.Pure<$baboonWiringError, byte[]>(new byte[0]));
@@ -1140,7 +1140,7 @@ object CSServiceWiringTranslator {
           } else {
             q"""try
                |{
-               |    await impl.${m.name.name.capitalize}(${ctxArgPass}decoded);
+               |    await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
                |    return rt.Pure<$baboonWiringError, byte[]>(new byte[0]);
                |}
                |catch ($csException ex)
