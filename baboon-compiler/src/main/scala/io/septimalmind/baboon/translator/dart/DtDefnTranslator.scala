@@ -301,23 +301,25 @@ object DtDefnTranslator {
       val fieldDeclarations = dto.fields.map {
         f =>
           val t              = trans.asDtRef(f.tpe, domain, evo)
+          val dartName       = trans.escapeDartKeyword(f.name.name)
           val overridePrefix = if (contractFieldNames.contains(f.name.name)) "@override " else ""
           val fieldTree = f.tpe match {
             case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
-              q"${overridePrefix}final $t ${f.name.name};"
+              q"${overridePrefix}final $t $dartName;"
             case _ =>
-              q"${overridePrefix}final $t ${f.name.name};"
+              q"${overridePrefix}final $t $dartName;"
           }
           prependDocs(f.docs, fieldTree)
       }
 
       val constructorParams = dto.fields.map {
         f =>
+          val dartName = trans.escapeDartKeyword(f.name.name)
           f.tpe match {
             case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
-              q"this.${f.name.name}"
+              q"this.$dartName"
             case _ =>
-              q"required this.${f.name.name}"
+              q"required this.$dartName"
           }
       }
 
@@ -377,7 +379,10 @@ object DtDefnTranslator {
       } else q""
 
       val equalsBody = if (hasFields) {
-        val fieldComparisons = dto.fields.map(f => q"baboonDeepEquals(${f.name.name}, other.${f.name.name})")
+        val fieldComparisons = dto.fields.map { f =>
+          val dartName = trans.escapeDartKeyword(f.name.name)
+          q"baboonDeepEquals($dartName, other.$dartName)"
+        }
         q"""@override
            |bool operator ==(Object other) =>
            |  identical(this, other) ||
@@ -389,7 +394,10 @@ object DtDefnTranslator {
       }
 
       val hashCodeBody = if (hasFields) {
-        val hashParts = dto.fields.map(f => q"baboonDeepHashCode(${f.name.name})")
+        val hashParts = dto.fields.map { f =>
+          val dartName = trans.escapeDartKeyword(f.name.name)
+          q"baboonDeepHashCode($dartName)"
+        }
         q"""@override
            |int get hashCode => Object.hashAll([${hashParts.join(", ")}]);""".stripMargin
       } else {
@@ -401,7 +409,10 @@ object DtDefnTranslator {
         // Identifier toString — spec docs/spec/identifier-repr.md, PR-57d.
         renderIdentifierToString(dto, name)
       } else if (hasFields) {
-        val fieldStrings = dto.fields.map(f => q"${f.name.name}: $$${f.name.name}")
+        val fieldStrings = dto.fields.map { f =>
+          val dartName = trans.escapeDartKeyword(f.name.name)
+          q"${f.name.name}: $$$dartName"
+        }
         q"""@override
            |String toString() => '${name.asName}(${fieldStrings.join(", ")})';""".stripMargin
       } else {
@@ -535,7 +546,8 @@ object DtDefnTranslator {
       val methods = contract.fields.map {
         f =>
           val t        = trans.asDtRef(f.tpe, domain, evo)
-          val methodEx = q"$t get ${f.name.name};"
+          val dartName = trans.escapeDartKeyword(f.name.name)
+          val methodEx = q"$t get $dartName;"
           prependDocs(f.docs, methodEx)
       }
       val contractParents  = contract.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
@@ -565,10 +577,11 @@ object DtDefnTranslator {
       val ctxTypeParam   = wiringTranslator.serviceInterfaceTypeParam
       val methods = service.methods.map {
         m =>
-          val in      = trans.asDtRef(m.sig, domain, evo)
-          val out     = m.out.map(trans.asDtRef(_, domain, evo))
-          val retStr  = out.map(o => q"$o").getOrElse(q"void")
-          val methodEx = q"$retStr ${m.name.name}($ctxMethodParam$in arg);"
+          val in       = trans.asDtRef(m.sig, domain, evo)
+          val out      = m.out.map(trans.asDtRef(_, domain, evo))
+          val retStr   = out.map(o => q"$o").getOrElse(q"void")
+          val dartName = trans.escapeDartKeyword(m.name.name)
+          val methodEx = q"$retStr $dartName($ctxMethodParam$in arg);"
           prependDocs(m.docs, methodEx)
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
@@ -686,9 +699,10 @@ object DtDefnTranslator {
 
       val fieldExprs: List[TextTree[DtValue]] = dto.fields.map {
         f =>
-          val srcFieldName = f.name.name
-          val kind         = identifierFieldKind(f.tpe)
-          val valueExpr    = renderIdentifierFieldValueExpr(srcFieldName, kind)
+          val srcFieldName  = f.name.name
+          val dartFieldName = trans.escapeDartKeyword(srcFieldName)
+          val kind          = identifierFieldKind(f.tpe)
+          val valueExpr     = renderIdentifierFieldValueExpr(dartFieldName, kind)
           q""""$srcFieldName:" + ($valueExpr)"""
       }
 
@@ -842,7 +856,8 @@ object DtDefnTranslator {
 
       val ctorArgs = dto.fields.map {
         f =>
-          q"${f.name.name}: ${f.name.name}_v"
+          val dartName = trans.escapeDartKeyword(f.name.name)
+          q"$dartName: ${f.name.name}_v"
       }
 
       val ctor =

@@ -282,8 +282,9 @@ class DtConversionTranslator[F[+_, +_]: Error2](
             val ops = c.ops.map(o => o.targetField -> o).toMap
             val assigns = dto.fields.map {
               f =>
-                val op  = ops(f)
-                val fld = f.name.name
+                val op       = ops(f)
+                val fld      = trans.escapeDartKeyword(f.name.name)
+                val localVar = trans.escapeDartKeyword(f.name.name.toLowerCase)
                 val expr = op match {
                   case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"from.$fld", 1)
                   case o: FieldOp.InitializeWithDefault =>
@@ -312,9 +313,12 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                     }
                   case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"from.$fld", 1, Some(o.oldTpe))
                   case o: FieldOp.SwapCollectionType => swapCollType(q"from.$fld", o, 0)
-                  case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"from.${o.sourceFieldName.name}", 1)
+                  case o: FieldOp.Rename =>
+                    val srcDartName = trans.escapeDartKeyword(o.sourceFieldName.name)
+                    transfer(o.targetField.tpe, q"from.$srcDartName", 1)
                   case o: FieldOp.Redef =>
-                    val srcFieldRef = q"from.${o.sourceFieldName.name}"
+                    val srcDartName = trans.escapeDartKeyword(o.sourceFieldName.name)
+                    val srcFieldRef = q"from.$srcDartName"
                     o.modify match {
                       case _: FieldOp.WrapIntoCollection =>
                         o.targetField.tpe match {
@@ -333,9 +337,13 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                         swapCollType(srcFieldRef, m, 0)
                     }
                 }
-                q"final ${f.name.name.toLowerCase} = $expr;"
+                q"final $localVar = $expr;"
             }
-            val ctorArgs = dto.fields.map(f => q"${f.name.name}: ${f.name.name.toLowerCase}")
+            val ctorArgs = dto.fields.map { f =>
+              val dartName = trans.escapeDartKeyword(f.name.name)
+              val localVar = trans.escapeDartKeyword(f.name.name.toLowerCase)
+              q"$dartName: $localVar"
+            }
             val classDef = q"""class $className
                               |  extends $baboonAbstractConversion<$tin, $tout> {
                               |    static final $className instance = $className._();

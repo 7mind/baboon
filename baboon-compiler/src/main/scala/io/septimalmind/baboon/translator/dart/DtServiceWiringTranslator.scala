@@ -243,8 +243,9 @@ object DtServiceWiringTranslator {
 
           val clientMethods = service.methods.flatMap {
             m =>
-              val inTypeRef = trans.asDtRef(m.sig, domain, evo)
-              val retType   = m.out.map(o => trans.asDtRef(o, domain, evo)).getOrElse(q"void")
+              val dartMethodName = trans.escapeDartKeyword(m.name.name)
+              val inTypeRef      = trans.asDtRef(m.sig, domain, evo)
+              val retType        = m.out.map(o => trans.asDtRef(o, domain, evo)).getOrElse(q"void")
 
               val uebaMethod = if (hasUeba) {
                 val encodeIn = uebaEncodeStmt(m.sig.id, q"writer", q"arg")
@@ -256,7 +257,7 @@ object DtServiceWiringTranslator {
                   case None => q"return;"
                 }
                 Some(
-                  q"""Future<$retType> ${m.name.name}($ctxParamDecl$inTypeRef arg, [$baboonCodecContext $codecCtxName = $baboonCodecContext.defaultCtx]) async {
+                  q"""Future<$retType> $dartMethodName($ctxParamDecl$inTypeRef arg, [$baboonCodecContext $codecCtxName = $baboonCodecContext.defaultCtx]) async {
                      |  final writer = $baboonBinTools.createWriter();
                      |  $encodeIn
                      |  final resp = await _transportUeba($ctxArgPass'$svcName', '${m.name.name}', writer.toBytes());
@@ -265,7 +266,7 @@ object DtServiceWiringTranslator {
                 )
               } else None
 
-              val jsonMethodName = s"${m.name.name}Json"
+              val jsonMethodName = s"${dartMethodName}Json"
               val jsonMethod = if (hasJson) {
                 val encodeIn = jsonEncodeExpr(m.sig.id, q"arg")
                 val decodeOut = m.out match {
@@ -397,7 +398,8 @@ object DtServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val decodeIn = jsonDecodeExpr(m.sig.id, q"wire")
+          val dartMethodName = trans.escapeDartKeyword(m.name.name)
+          val decodeIn       = jsonDecodeExpr(m.sig.id, q"wire")
 
           val encodeOutput = m.out match {
             case Some(outRef) =>
@@ -409,8 +411,8 @@ object DtServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"final result = impl.${m.name.name}(${ctxArgPass}decoded);"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded);"
+            case Some(_) => q"final result = impl.$dartMethodName(${ctxArgPass}decoded);"
+            case None    => q"impl.$dartMethodName(${ctxArgPass}decoded);"
           }
 
           q"""'${m.name.name}': () {
@@ -441,7 +443,8 @@ object DtServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val decodeIn = uebaDecodeExpr(m.sig.id, q"reader")
+          val dartMethodName = trans.escapeDartKeyword(m.name.name)
+          val decodeIn       = uebaDecodeExpr(m.sig.id, q"reader")
 
           val encodeOutput = m.out match {
             case Some(outRef) =>
@@ -454,8 +457,8 @@ object DtServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"final result = impl.${m.name.name}(${ctxArgPass}decoded);"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded);"
+            case Some(_) => q"final result = impl.$dartMethodName(${ctxArgPass}decoded);"
+            case None    => q"impl.$dartMethodName(${ctxArgPass}decoded);"
           }
 
           q"""'${m.name.name}': () {
@@ -667,8 +670,9 @@ object DtServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inRef    = trans.asDtRef(m.sig, domain, evo)
-          val decodeIn = jsonDecodeExpr(m.sig.id, q"wire")
+          val dartMethodName = trans.escapeDartKeyword(m.name.name)
+          val inRef          = trans.asDtRef(m.sig, domain, evo)
+          val decodeIn       = jsonDecodeExpr(m.sig.id, q"wire")
 
           val decodeStep =
             q"""${ct(bweFq, renderFq(inRef))} input;
@@ -687,7 +691,7 @@ object DtServiceWiringTranslator {
 
               val callBody = if (hasErrType) {
                 q"""try {
-                   |  final callResult = impl.${m.name.name}(${ctxArgPass}v);
+                   |  final callResult = impl.$dartMethodName(${ctxArgPass}v);
                    |  return rt.leftMap(
                    |    callResult, (err) => $baboonWiringError.callFailed(method, err));
                    |} catch (ex) {
@@ -695,7 +699,7 @@ object DtServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  return rt.pure(impl.${m.name.name}(${ctxArgPass}v));
+                   |  return rt.pure(impl.$dartMethodName(${ctxArgPass}v));
                    |} catch (ex) {
                    |  return rt.fail($baboonWiringError.callFailed(method, ex));
                    |}""".stripMargin
@@ -716,7 +720,7 @@ object DtServiceWiringTranslator {
             case None =>
               val callBody = if (hasErrType) {
                 q"""try {
-                   |  final callResult = impl.${m.name.name}(${ctxArgPass}v);
+                   |  final callResult = impl.$dartMethodName(${ctxArgPass}v);
                    |  return rt.leftMap(
                    |    callResult, (err) => $baboonWiringError.callFailed(method, err));
                    |} catch (ex) {
@@ -724,7 +728,7 @@ object DtServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  impl.${m.name.name}(${ctxArgPass}v);
+                   |  impl.$dartMethodName(${ctxArgPass}v);
                    |  return rt.pure(null);
                    |} catch (ex) {
                    |  return rt.fail($baboonWiringError.callFailed(method, ex));
@@ -766,8 +770,9 @@ object DtServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inRef    = trans.asDtRef(m.sig, domain, evo)
-          val decodeIn = uebaDecodeExpr(m.sig.id, q"reader")
+          val dartMethodName = trans.escapeDartKeyword(m.name.name)
+          val inRef          = trans.asDtRef(m.sig, domain, evo)
+          val decodeIn       = uebaDecodeExpr(m.sig.id, q"reader")
 
           val decodeStep =
             q"""${ct(bweFq, renderFq(inRef))} input;
@@ -786,7 +791,7 @@ object DtServiceWiringTranslator {
 
               val callBody = if (hasErrType) {
                 q"""try {
-                   |  final callResult = impl.${m.name.name}(${ctxArgPass}v);
+                   |  final callResult = impl.$dartMethodName(${ctxArgPass}v);
                    |  return rt.leftMap(
                    |    callResult, (err) => $baboonWiringError.callFailed(method, err));
                    |} catch (ex) {
@@ -794,7 +799,7 @@ object DtServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  return rt.pure(impl.${m.name.name}(${ctxArgPass}v));
+                   |  return rt.pure(impl.$dartMethodName(${ctxArgPass}v));
                    |} catch (ex) {
                    |  return rt.fail($baboonWiringError.callFailed(method, ex));
                    |}""".stripMargin
@@ -816,7 +821,7 @@ object DtServiceWiringTranslator {
             case None =>
               val callBody = if (hasErrType) {
                 q"""try {
-                   |  final callResult = impl.${m.name.name}(${ctxArgPass}v);
+                   |  final callResult = impl.$dartMethodName(${ctxArgPass}v);
                    |  return rt.leftMap(
                    |    callResult, (err) => $baboonWiringError.callFailed(method, err));
                    |} catch (ex) {
@@ -824,7 +829,7 @@ object DtServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  impl.${m.name.name}(${ctxArgPass}v);
+                   |  impl.$dartMethodName(${ctxArgPass}v);
                    |  return rt.pure(null);
                    |} catch (ex) {
                    |  return rt.fail($baboonWiringError.callFailed(method, ex));

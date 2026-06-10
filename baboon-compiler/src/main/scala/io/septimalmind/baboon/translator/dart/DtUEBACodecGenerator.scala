@@ -175,7 +175,7 @@ class DtUEBACodecGenerator(
         val adtRef = trans.toDtTypeRefKeepForeigns(m, domain, evo)
         val cName  = codecName(adtRef)
 
-        val castedName = branchName.substring(0, 1).toLowerCase + branchName.substring(1)
+        val castedName = trans.escapeDartKeyword(branchName.substring(0, 1).toLowerCase + branchName.substring(1))
 
         val encBody = if (target.language.wrappedAdtBranchCodecs) {
           q"""$cName.instance.encode(ctx, writer, $castedName);"""
@@ -348,11 +348,12 @@ class DtUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[DtValue], TextTree[DtValue], TextTree[DtValue])] = {
     dto.fields.map {
       field =>
-        val fieldRef   = q"value.${field.name.name}"
+        val dartName   = trans.escapeDartKeyword(field.name.name)
+        val fieldRef   = q"value.$dartName"
         val enc        = mkEncoder(field.tpe, fieldRef, q"writer", 0)
         val bufferEnc  = mkEncoder(field.tpe, fieldRef, q"buffer", 0)
         val decoder    = mkDecoder(field.tpe)
-        val decodeTree = q"${field.name.name}: $decoder"
+        val decodeTree = q"$dartName: $decoder"
 
         val w = domain.refMeta(field.tpe).len match {
           case BinReprLen.Fixed(bytes) =>

@@ -215,6 +215,14 @@ class DtTypeTranslator {
     "while",
     "with",
     "yield",
+    // Dart core built-in type names — not formal keywords but shadowing them
+    // in generated class names breaks the type system (e.g. `Object` shadows
+    // dart.core.Object, breaking `operator ==` overrides).
+    "Function",
+    "Never",
+    "Null",
+    "Object",
+    "Type",
   )
 
   def escapeDartKeyword(name: String): String = {

@@ -159,14 +159,18 @@ class DtJsonCodecGenerator(
   private def genDtoBodies(name: DtValue.DtType, d: Typedef.Dto): (TextTree[DtValue], TextTree[DtValue]) = {
     val encFields = d.fields.map {
       f =>
-        val fieldRef = q"value.${f.name.name}"
+        val dartName = trans.escapeDartKeyword(f.name.name)
+        val fieldRef = q"value.$dartName"
         val enc      = mkEncoder(f.tpe, fieldRef)
+        // Wire key uses the original model name (unchanged on the wire).
         q"""'${f.name.name}': $enc,"""
     }
 
     val decFields = d.fields.map {
       f =>
-        q"${f.name.name}: ${mkDecoder(f.name.name, f.tpe, q"jsonObj")}"
+        val dartName = trans.escapeDartKeyword(f.name.name)
+        // Named constructor arg uses the escaped Dart identifier; JSON map key uses the original model name.
+        q"$dartName: ${mkDecoder(f.name.name, f.tpe, q"jsonObj")}"
     }
 
     val mainEnc = q"""return {
@@ -228,8 +232,9 @@ class DtJsonCodecGenerator(
                   q"$ref.toString()"
                 // M19/PR-60: single-primitive-field wrappers — peel and recurse.
                 case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
-                  val inner = d.fields.head
-                  encodeKey(inner.tpe, q"$ref.${inner.name.name}")
+                  val inner    = d.fields.head
+                  val dartName = trans.escapeDartKeyword(inner.name.name)
+                  encodeKey(inner.tpe, q"$ref.$dartName")
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -406,7 +411,8 @@ class DtJsonCodecGenerator(
                       val inner     = d.fields.head
                       val targetTpe = trans.toDtTypeRefKeepForeigns(u, domain, evo)
                       val innerDec  = decodeKey(inner.tpe, ref)
-                      q"$targetTpe(${inner.name.name}: $innerDec)"
+                      val dartName  = trans.escapeDartKeyword(inner.name.name)
+                      q"$targetTpe($dartName: $innerDec)"
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
                   }
                 case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")

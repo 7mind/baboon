@@ -75,7 +75,10 @@ object DtCodecFixtureTranslator {
       val fullType = translator.toDtTypeRefKeepForeigns(dto.id, domain, evo)
 
       def body(format: FixtureFormat): TextTree[DtValue] = {
-        val generatedFields = dto.fields.map(f => q"${f.name.name}: ${genType(f.tpe, format)}")
+        val generatedFields = dto.fields.map { f =>
+          val dartName = translator.escapeDartKeyword(f.name.name)
+          q"$dartName: ${genType(f.tpe, format)}"
+        }
         q"""return $fullType(
            |  ${generatedFields.join(",\n").shift(2).trim}
            |);""".stripMargin
