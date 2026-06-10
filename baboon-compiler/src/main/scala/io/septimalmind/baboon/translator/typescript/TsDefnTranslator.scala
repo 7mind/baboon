@@ -278,18 +278,27 @@ object TsDefnTranslator {
       val getters = dto.fields.map {
         f =>
           val tpe  = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
+          // The public getter is an accessor identifier; escape it for a keyword-named field
+          // (`class` -> `class_`) so the codecs' `value.<getter>` reads (which assume the escaped
+          // accessor name) resolve. The backing private field `_${name}` is `_`-prefixed and always
+          // legal, so it stays raw; the wire key (toJSON / decode `obj["…"]`) keeps the original name.
           val getter =
-            q"""public get ${f.name.name}(): $tpe {
+            q"""public get ${typeTranslator.escapeTsKeyword(f.name.name)}(): $tpe {
                |    return this._${f.name.name};
                |}""".stripMargin
           prependDocs(f.docs, getter)
       }
 
-      val constrcutorParams = dto.fields.map(f => q"${f.name.name}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
+      // The constructor PARAMETER is a binding identifier — illegal as a TS reserved word — so escape it
+      // (e.g. `default` -> `default_`). The constructor is invoked positionally everywhere (`new $name(...)`
+      // in with/fromPlain/codecs), so the rename is local: only the param declaration and its `this._x = x`
+      // RHS reference must agree. The private field (`_${name}`) and all object-literal/member-access wire
+      // keys keep the raw name, so the wire format is unchanged.
+      val constrcutorParams = dto.fields.map(f => q"${typeTranslator.escapeTsKeyword(f.name.name)}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
 
       val constructorInside = fieldsNameAndType.map {
         case (n, _) =>
-          q"this._${n.name} = ${n.name}"
+          q"this._${n.name} = ${typeTranslator.escapeTsKeyword(n.name)}"
       }.joinN()
 
       val implementsClause = if (parents.nonEmpty) q"implements ${parents.map(tpe => q"$tpe").join(", ")}" else q""

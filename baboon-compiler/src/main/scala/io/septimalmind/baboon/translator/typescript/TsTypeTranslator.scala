@@ -315,7 +315,7 @@ class TsTypeTranslator(target: TsTarget) {
       case "break" | "case" | "catch" | "continue" | "debugger" | "default" | "delete" | "do" | "else" | "finally" | "for" | "function" | "if" | "in" | "instanceof" |
           "new" | "return" | "switch" | "this" | "throw" | "try" | "typeof" | "var" | "void" | "while" | "with" | "class" | "const" | "enum" | "export" | "extends" |
           "import" | "super" | "implements" | "interface" | "let" | "package" | "private" | "protected" | "public" | "static" | "yield" | "await" | "async" | "of" |
-          "type" | "from" | "as" | "is" =>
+          "type" | "from" | "as" | "is" | "true" | "false" | "null" =>
         s"${s}_"
       case _ => s
     }
