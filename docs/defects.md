@@ -2,7 +2,7 @@
 ledger: defects
 counters:
   milestone: 0
-  item: 10
+  item: 12
 archives: []
 ---
 
@@ -186,3 +186,33 @@ archives: []
 - description: "Filed by T24 reviewer (PRE-EXISTING, not introduced by T24). In TsDefnTranslator.makeEnumRepr, lowercase mode declares enum members as `ident = escapeTsKeyword(m.name)` (raw, un-capitalized) while the `_values` array references members as `$enumName.$pn` where `pn = EnumWireStyle.wireName(m.name) = m.name.capitalize`. For a lowercase-leading enum member under enumLowercaseValues, the declared TS member identifier and the `_values` reference disagree → reference to an undeclared member. Predates T24 (before the diff `ident = m.name`, equally un-capitalized vs capitalized pascalNames). NO current fixture exercises it (all fixture enum members are PascalCase). Default disposition: FIX."
 - suggestedFix: Reference members in the _values array via the same identifier used in the declaration (the escaped/lowercase ident), not EnumWireStyle.wireName(m.name).capitalize; add a fixture with a lowercase-leading enum member under enumLowercaseValues to lock the invariant.
 - ledgerRefs: ["tasks:T24","goals:G4"]
+
+## M13
+
+### D11 — root-caused
+
+- createdAt: 2026-06-10T11:05:08.280Z
+- updatedAt: 2026-06-10T11:08:02.302Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: tree-sitter editor grammar rejects keyword-named identifiers the compiler accepts (is/in/def/type/import as field names) — breaks test-editors on reserved-words-ok
+- severity: medium
+- description: "Surfaced by T14 (full mdl :ci): the `test-editors` stage's real-file parse loop runs `tree-sitter parse` on every repo .baboon file; reserved-words-ok/reserved.baboon produces `(ERROR [45,4])` (exit 1). REPRODUCED: editors/baboon-zed/grammars/baboon/grammar.js uses `word: $ => $.identifier` (tree-sitter keyword extraction), so a field/member named after a grammar literal-keyword token (`is`, `in`, `def`, `type`, `import` — all in the grammar's string-token set) is lexed as that KEYWORD, not as `identifier` → parse ERROR. The compiler's FastParse grammar accepts these (idt.symbol, no keyword exclusion), so the editor grammar is stricter than the compiler. First failing field: `is` (Holder, row 45). BLOCKS mdl :ci (test-editors runs before the per-language matrix and aborts it)."
+- rootCause: "grammar.js `word: $ => $.identifier` enables tree-sitter keyword extraction; the ~45 literal string-token keywords (incl. is/in/def/type/import/with) win over `identifier` in field/member-name positions, so a model field named after one fails to parse — stricter than the compiler's idt.symbol."
+- suggestedFix: "Make the editor grammar accept keyword-named identifiers in field/type/member-name positions to match the compiler. Tree-sitter options: (a) define a `_name`/field-name rule = choice($.identifier, <the keyword tokens valid as names>) at the name-field sites, OR (b) remove/relax `word:` and add explicit precedence, OR (c) if a full grammar fix is disproportionate/destabilizing, EXCLUDE the deliberately-pathological reserved-words-ok codegen fixture from the test-editors real-file scan (test/editors/test-tree-sitter.sh file collection) with a documented rationale (editor grammar is best-effort highlighting; reserved-words-ok is a codegen torture-test, not an editing target) — mirrors the D9 mcp-stub-ok isolation philosophy. Pick the lowest-risk option that makes test-editors green. MUST also fix D12 (harness masking) so the real-file scan reports failures properly."
+- ledgerRefs: ["tasks:T14","goals:G1"]
+- dependsOn: ["T27"]
+
+### D12 — root-caused
+
+- createdAt: 2026-06-10T11:05:15.652Z
+- updatedAt: 2026-06-10T11:08:03.491Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: test/editors/test-tree-sitter.sh set -e + command-substitution silently aborts on first parse failure (masks which file failed)
+- severity: medium
+- description: "REPRODUCED: the script has `set -euo pipefail`; the real-file loop does `output=$(cd \"$GRAMMAR_DIR\" && tree-sitter parse \"$f\" 2>&1)`. `tree-sitter parse` exits non-zero on a parse ERROR, so under `set -e` the `output=$(...)` assignment aborts the WHOLE script immediately — BEFORE the `grep -q ERROR` check, the `FAIL: <file>` print, and the `--- Summary ---`. Result: the mdl test-editors stage exits non-zero with NO indication of which file failed (stdout just stops after the last OK line; stderr only has the 'dirty tree' warning). This masked the D11 failure and would mask any future editor-grammar regression."
+- rootCause: "`set -e` treats a failing command-substitution assignment as a fatal error; `tree-sitter parse` returns non-zero on parse ERROR; so the first un-parseable file kills the loop before the diagnostic print."
+- suggestedFix: "Make the parse capture non-fatal: `output=$(cd \"$GRAMMAR_DIR\" && tree-sitter parse \"$f\" 2>&1) || true` (or `set +e` around the loop body), so the loop visits every file, prints `FAIL: <file>` for each, the Summary, and exits 1 at the end based on the error count. This is a real harness bug independent of D11."
+- ledgerRefs: ["tasks:T14","goals:G1"]
+- dependsOn: ["T26"]

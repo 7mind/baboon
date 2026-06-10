@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 25
+  item: 26
 archives: []
 ---
 
@@ -327,3 +327,17 @@ archives: []
 - new_questions: []
 - ledgerRefs: ["tasks:T13","goals:G1"]
 - sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]
+
+## M13
+
+### R26 — go-ahead
+
+- createdAt: 2026-06-10T11:10:07.409Z
+- updatedAt: 2026-06-10T11:10:34.534Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: "G5 plan (M14 T26->T27->T28) is fine-grained, correctly sequenced, testable, grounded against the repo, and complete: D12 harness || true fix verified independent-of-D11; T27 bounded grammar-OR-documented-exclusion choice; T28 verifies test-editors then full mdl :ci green."
+- new_questions: []
+- criticism: []
+- ledgerRefs: ["goals:G5"]
+- sessionLogs: ["docs/logs/20260610-110836-ac6e0d89bfa2a4ffd.md"]

@@ -2,7 +2,7 @@
 ledger: milestones
 counters:
   milestone: 0
-  item: 12
+  item: 14
 archives: []
 ---
 
@@ -102,3 +102,18 @@ archives: []
 - updatedAt: 2026-06-10T08:42:34.649Z
 - title: "G4: stdlib-type-shadowing remainder (D7 C# System.Type, D8 Java enum String)"
 - description: "Work milestone for plan-flow goal G4. Third/final wave of the stdlib-type-shadowing fix class (after D3/Class=T15, D5/Object=T19). Two FQ-the-stdlib-ref fixes: D7 (C# System.Type return type of BaboonAdtType, HIGH — gates G1's T14 C# compile, requires golden rebaseline) and D8 (Java enum parse(String) param, low — latent/no-regression). Verify = dotnet build of reserved-words-ok C# succeeds + cs tests green post-rebaseline."
+
+### M13 — open
+
+- createdAt: 2026-06-10T11:04:50.939Z
+- updatedAt: 2026-06-10T11:04:50.939Z
+- title: "Plan: fix editor-grammar keyword-identifier gap + test-harness masking (D11/D12)"
+- description: "Defect-seeded milestone for the test-editors CI failure surfaced by T14 (full mdl :ci). The reserved-words-ok model (keyword-named fields is/in/def/type/import) breaks the tree-sitter editor grammar real-file parse; the harness set -e bug masks it. Both block mdl :ci green."
+
+### M14 — open
+
+- createdAt: 2026-06-10T11:06:56.251Z
+- updatedAt: 2026-06-10T11:06:56.251Z
+- title: "Editor-grammar keyword-identifier + harness-masking fix (D11/D12) — unblock mdl :ci"
+- description: "Work milestone for plan-flow goal G5. Fix D12 (test-tree-sitter.sh set -e masks parse failures) then D11 (tree-sitter grammar rejects keyword-named identifiers the compiler accepts), then verify test-editors + full mdl :ci green."
+- dependsOn: ["M13"]

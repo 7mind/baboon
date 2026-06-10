@@ -2,7 +2,7 @@
 ledger: tasks
 counters:
   milestone: 0
-  item: 25
+  item: 28
 archives: []
 ---
 
@@ -231,10 +231,10 @@ archives: []
 - completion: Reserved-word matrix coverage wired via option (a) (existing regular/wrapped lanes scan shared dir with codecs-on, all 9 backends); documented + ReservedWordsScalaEmissionTest added (green).
 - sessionLogs: ["docs/logs/20260610-105325-T23-T24-T13-batch.md"]
 
-### T14 — planned
+### T14 — wip
 
 - createdAt: 2026-06-09T20:49:45.172Z
-- updatedAt: 2026-06-09T20:49:45.172Z
+- updatedAt: 2026-06-10T10:55:07.520Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Full cross-language CI verification: green matrix + wire-key cross-language round-trip"
@@ -470,3 +470,51 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T23","T24"]
 - ledgerRefs: ["goals:G4","defects:D7","defects:D8"]
+
+## M14
+
+### T26 — wip
+
+- createdAt: 2026-06-10T11:07:09.403Z
+- updatedAt: 2026-06-10T11:11:24.285Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Fix D12: make test-tree-sitter.sh parse capture non-fatal so the real-file loop reports every failure"
+- description: "In test/editors/test-tree-sitter.sh, the real-file parse loop (line 46) does `output=$(cd \"$GRAMMAR_DIR\" && tree-sitter parse \"$f\" 2>&1)` under `set -euo pipefail` (line 2). `tree-sitter parse` exits non-zero on a parse ERROR, so the failing command-substitution assignment aborts the WHOLE script under `set -e` — BEFORE the `grep -q ERROR` check, the `FAIL:` print, and the `--- Summary ---`. The stage exits non-zero with no indication of which file failed. FIX (D12 suggestedFix): append `|| true` to the capture, i.e. `output=$(cd \"$GRAMMAR_DIR\" && tree-sitter parse \"$f\" 2>&1) || true`, so the loop visits every file, the existing `grep -q ERROR` branch counts each failure into `errors` and appends to `failed_files`, the Summary prints, and the script exits 1 at the end on error count (lines 62-69 already do this). Do NOT change the corpus-test invocation (line 34) or the exit-1-on-error logic. This is independent of D11 — fix it FIRST so the D11 grammar-fix verification reports failures properly. Edit on a fresh clone (sbt-git cannot run in a linked worktree per CLAUDE.md, though this script edit does not invoke sbt). tree-sitter is on PATH via nix."
+- acceptance: "With the deliberately-broken fixture still failing (i.e. before/independent of the D11 fix), running `bash test/editors/test-tree-sitter.sh .` runs the full real-file loop to completion: it prints `FAIL: <rel-path>` for reserved-words-ok/reserved.baboon (and any other failing file), prints the `--- Summary ---` block listing failed files, and exits with code 1 (not aborting silently after the last `OK:` line). Diff is limited to the line-46 capture in test/editors/test-tree-sitter.sh."
+- suggestedModel: fast
+- ledgerRefs: ["defects:D12","goals:G5"]
+
+### T27 — planned
+
+- createdAt: 2026-06-10T11:07:30.838Z
+- updatedAt: 2026-06-10T11:07:30.838Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Fix D11: make tree-sitter editor grammar accept keyword-named identifiers (or exclude reserved-words-ok fixture) so test-editors parses all real files"
+- description: |
+    editors/baboon-zed/grammars/baboon/grammar.js sets `word: $ => $.identifier` (line 9), enabling tree-sitter keyword extraction. Field/member/type-name positions use `field("name", $.identifier)` (e.g. field_def line 234-240, data/adt/enum/contract/foreign/service/type_alias name fields, enum_member, foreign_mapping target, type_params), but the grammar's literal string-token keywords (`is`, `in`, `def`, `type`, `import`, `with`, `was`, `data`, `struct`, `id`, `adt`, `enum`, `choice`, `contract`, `foreign`, `service`, `ns`, `root`, `domain`, `derived`, builtin types, etc.) win the keyword-extraction tiebreak over `identifier`, so a model field/member named after one fails to parse. reserved-words-ok/reserved.baboon hits this first at `is` (Holder, row 45) → `ERROR[45,4]`. The compiler's FastParse grammar accepts these (idt.symbol, no keyword exclusion), so the editor grammar is stricter than the compiler.
+    
+    The implementer EVALUATES feasibility and picks the LOWEST-RISK option that makes test-editors green AND keeps the corpus tests + ALL OTHER real files passing:
+      (a) Introduce a name-position rule, e.g. `_name = choice($.identifier, <the keyword tokens that are legal identifiers in the compiler>)`, and use it at the field/member/type/enum-member name `field("name", ...)` sites; re-run `tree-sitter generate` and resolve any conflicts (precedence/conflicts[] declarations) so the corpus tests still pass; OR
+      (b) relax/remove `word:` with explicit precedence; OR
+      (c) if a robust grammar fix is disproportionate or destabilizes the corpus/other-file parses, EXCLUDE the deliberately-pathological reserved-words-ok codegen fixture from the test-editors real-file scan — in test/editors/test-tree-sitter.sh adjust the `find ... -name '*.baboon'` collection (lines 19-22) to prune reserved-words-ok (e.g. `-not -path '*/reserved-words-ok/*'`) WITH a documented rationale comment (editor grammar is best-effort highlighting; reserved-words-ok is a codegen torture-test, not an editing target — mirrors the D9 mcp-stub-ok isolation precedent in CLAUDE.md).
+    
+    Reproduce FIRST: with T26's harness fix in place, run `bash test/editors/test-tree-sitter.sh .` and confirm it reports `FAIL: .../reserved-words-ok/reserved.baboon` with `(ERROR [45,4])` for the expected reason (keyword-as-field-name), not an unrelated error. Then apply the chosen fix. If option (a)/(b): re-run `tree-sitter generate` then `tree-sitter test` (corpus) inside editors/baboon-zed/grammars/baboon, committing the regenerated src/parser.c if the repo tracks it. Work on a fresh clone to /tmp (sbt-git cannot run in a linked worktree per CLAUDE.md). tree-sitter is on PATH via nix.
+- acceptance: "`bash test/editors/test-tree-sitter.sh .` exits 0: the `--- Corpus tests ---` stage (tree-sitter generate && tree-sitter test) passes, and the `--- Real file parse tests ---` Summary reports `<N>/<N> passed` with zero failed files — in particular reserved-words-ok/reserved.baboon no longer produces ERROR (option a/b) OR is no longer in the scanned set with a documented rationale comment (option c), AND every previously-passing real .baboon file still parses. If option (a)/(b), the regenerated parser is consistent (no uncommitted `tree-sitter generate` drift)."
+- suggestedModel: frontier
+- dependsOn: ["T26"]
+- ledgerRefs: ["defects:D11","goals:G5"]
+
+### T28 — planned
+
+- createdAt: 2026-06-10T11:07:44.885Z
+- updatedAt: 2026-06-10T11:07:44.885Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Verify test-editors green then full mdl :ci green (closes D11/D12 verification incl. the previously-aborted per-language matrix + conv-test)"
+- description: "After T26 (harness) and T27 (grammar/exclusion) land, verify the whole effort end-to-end. Step 1: run the editor stage in isolation — `bash test/editors/test-tree-sitter.sh .` (equivalently `mdl :test-editors`) — and confirm it exits 0 (corpus tests pass + real-file Summary reports all files passed). Step 2: run the full `mdl :ci` and confirm it goes GREEN end-to-end: with test-editors no longer aborting (D11) and no longer masking (D12), the gate proceeds past the editor stage and the previously-blocked downstream stages (per-language test matrix + conv-test cross-language acceptance) now execute and pass. Run from a fresh clone to /tmp because sbt-git cannot build inside a linked git worktree (CLAUDE.md); on a memory-constrained machine use `mdl --seq :ci` to avoid the Kotlin daemon OOM under the parallel matrix (CLAUDE.md). Capture mdl output with `--simple-log` when redirecting (MEMORY.md). This task does NOT close goal G5 or any defect to a terminal/done state — goal closure is user-driven; report the green result for review."
+- acceptance: "Two commands observed green from a fresh /tmp clone: (1) `bash test/editors/test-tree-sitter.sh .` exits 0 with the real-file Summary showing `<N>/<N> passed` and no failed files; (2) full `mdl :ci` completes with exit 0 — the editor stage passes AND the downstream per-language test matrix + conv-test stages (previously unreached because test-editors aborted) run and pass. Captured log evidence (e.g. the mdl --simple-log tail showing the final success and no RED stage) attached to the task on completion."
+- suggestedModel: standard
+- dependsOn: ["T27"]
+- ledgerRefs: ["goals:G5"]

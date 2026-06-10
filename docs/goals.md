@@ -2,7 +2,7 @@
 ledger: goals
 counters:
   milestone: 0
-  item: 4
+  item: 5
 archives: []
 ---
 
@@ -121,3 +121,25 @@ archives: []
 - sourceRefs: ["defects:D7","defects:D8"]
 - grounding: "Verified both emission sites in-repo (2026-06-10). D7: CSDomainTreeTools.scala has TWO BaboonAdtType() sites — L57 (makeFullMeta, `public $csTpe BaboonAdtType() => typeof(...)`) and L97 (makeRefMeta, `public override $csTpe BaboonAdtType() => typeof(...)`); both use the SHORT `$csTpe` interpolation (System.Type). FQ remedy: `${csTpe.fullyQualified}` at both, mirroring the proven T15(Class)/T19(Object) `.fullyQualified` member. Sibling `$csString`/`$csType` already render FQ in adjacent arms, confirming the member exists on CSValue refs. D8: JvDefnTranslator.scala:494 emits `public static ${name.asName} parse(String s)` inside the enum class body with a BARE `String` literal; FQ remedy routes the param through `${jvString.fullyQualified}` (java.lang.String). Repo realities: Scala/sbt built via mdl; sbt-git cannot build inside a linked git worktree (NoWorkTreeException) so implement workers must clone to /tmp; reserved-words-ok model (has `data Type {}` ADT branch, no String-named type) is on main. D7 fix changes ~27 existing C# golden fixtures (`Type`→`System.Type` in BaboonAdtType signatures) → NOT byte-identical; requires golden-fixture rebaseline + review. D8 is latent (not exercised by reserved-words-ok) → its verify is a no-regression check, not a new-green gate. D7 fix is the gate that unblocks G1's T14 C# compile."
 - milestones: ["M12"]
+
+## M13
+
+### G5 — planned
+
+- createdAt: 2026-06-10T11:05:48.828Z
+- updatedAt: 2026-06-10T11:11:23.280Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- title: "Fix editor-grammar keyword-identifier gap + test-harness masking (D11/D12) — unblock mdl :ci"
+- description: |
+    DEFECT-SEEDED goal (root causes confirmed — skip clarifying). Both block the full `mdl :ci` green gate (T14); surfaced when CI ran with the reserved-words-ok fixture.
+    
+    D11 (medium): the tree-sitter editor grammar (editors/baboon-zed/grammars/baboon/grammar.js) uses `word: $ => $.identifier`, so model field/member names that are grammar literal-keyword tokens (`is`/`in`/`def`/`type`/`import`) lex as keywords → `tree-sitter parse reserved.baboon` = ERROR[45,4], exit 1. The compiler accepts these (idt.symbol). FIX: make the grammar accept keyword-named identifiers in name positions (choice($.identifier, <keyword tokens>) at field/type/member name fields, or relax `word:`), re-run `tree-sitter generate` + `tree-sitter test` (corpus) + the real-file scan; OR if a robust grammar fix is disproportionate/destabilizing, EXCLUDE the pathological reserved-words-ok codegen fixture from the test-editors real-file scan with a documented rationale (mirrors D9 mcp-stub-ok isolation). Pick the lowest-risk option that makes test-editors green AND keeps the corpus tests + all OTHER real files passing.
+    
+    D12 (medium): test/editors/test-tree-sitter.sh `set -euo pipefail` + `output=$(tree-sitter parse "$f" 2>&1)` aborts silently on the FIRST parse failure (before FAIL/Summary). FIX: make the capture non-fatal (`... || true`) so the loop reports every failure + Summary + exits 1 on error count. Independent of D11; fix regardless.
+    
+    Verify: `test/editors/test-tree-sitter.sh .` (or `mdl :test-editors`) green, then the full `mdl :ci` green (unblocks T14 — the per-language matrix + conv-test will then run). See defects D11/D12.
+- sourceRefs: ["defects:D11","defects:D12"]
+- milestones: ["M14"]
+- grounding: "Verified against the repo. (1) test/editors/test-tree-sitter.sh: `set -euo pipefail` (L2); real-file loop L43-56 captures `output=$(cd \"$GRAMMAR_DIR\" && tree-sitter parse \"$f\" 2>&1)` at L46 with NO `|| true`, so the failing assignment aborts before the L47 `grep -q ERROR`/`FAIL:`/Summary (L59-69 already count errors + exit 1) — confirms D12. File collection L19-22 is `find baboon-compiler/src/test/resources + test -name '*.baboon' -not -path '*/target/*'` (exclusion-point for D11 option c). (2) editors/baboon-zed/grammars/baboon/grammar.js: `word: $ => $.identifier` (L9); `identifier` = /[a-zA-Z_$][a-zA-Z0-9_]*/ (L350); name positions all use `field(\"name\", $.identifier)` (field_def L234-240, data/id/adt/enum/contract/foreign/service/namespace/type_alias name fields, enum_member L111-116, foreign_mapping target L143, type_params L256); literal keyword tokens incl. is/in/def/type/import/with/was/data/struct/id/adt/enum/choice/contract/foreign/service/ns/root/domain/derived + builtin types — these win keyword-extraction over identifier at name sites — confirms D11; corpus tests live in editors/baboon-zed/grammars/baboon/test/corpus and run via `tree-sitter generate && tree-sitter test` (script L34). (3) Verify path: .mdl/defs/tests.md defines the per-language test matrix + conv-test (test-gen-manual + test-gen-compat-* + test-manual-*) that run AFTER test-editors in `mdl :ci`; reserved-words-ok lives in the SHARED model-dir and must stay (T13 coverage note L26-40). Repo constraints: sbt-git fails in a linked worktree (clone to /tmp); tree-sitter on PATH via nix; D9 mcp-stub-ok isolation is the documented precedent for fixture exclusion."
+- sessionLogs: ["docs/logs/20260610-110836-afc5c0ed1c1c29b16.md","docs/logs/20260610-110836-a221e8bcb1647f025.md"]
