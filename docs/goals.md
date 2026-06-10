@@ -2,7 +2,7 @@
 ledger: goals
 counters:
   milestone: 0
-  item: 3
+  item: 4
 archives: []
 ---
 
@@ -100,3 +100,22 @@ archives: []
     - Build: Scala/sbt via mdl; sbt-git cannot build in a linked worktree (clone to /tmp); the JVM codegen-shape ScalaTest suite lives in hidden .jvm/src/test.
 - milestones: ["M9","M10"]
 - sessionLogs: ["docs/logs/20260609-225505-a1ea2fd80fba9d77e.md","docs/logs/20260609-225505-a036ec45a78e0d7d3.md"]
+
+## M11
+
+### G4 — planning
+
+- createdAt: 2026-06-10T00:12:44.722Z
+- updatedAt: 2026-06-10T00:12:44.722Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- title: Remaining stdlib-type-shadowing fixes (D7 C# System.Type; D8 Java enum String)
+- description: |
+    DEFECT-SEEDED goal (root causes confirmed — skip clarifying per T35). Third/final wave of the stdlib-type-shadowing class (D3 Class / D5 Object already fixed via T15/T19) — the remaining instances surfaced by reserved-words-ok.
+    
+    CONFIRMED ROOT CAUSE — D7 (HIGH, BLOCKS G1's T14 C# compile): `CSDomainTreeTools.scala:57` + `:97` emit `public [override] Type BaboonAdtType() => typeof(...)` using the SHORT `csTpe` (System.Type); a model ADT branch named `Type` (nested `AvatarItem.Type`) shadows System.Type → 24 errors (16×CS0508 + 8×CS0738) in AvatarItem.cs. T4-worker probe-confirmed: FQ-ing `$csTpe`→`${csTpe.fullyQualified}` (→ System.Type) at both sites makes dotnet build succeed. SUGGESTED FIX: FQ csTpe at CSDomainTreeTools:57/97. NOTE: this changes 27 existing C# golden fixtures (`Type`→`System.Type` in BaboonAdtType signatures) — requires a golden-fixture REBASELINE + review (NOT byte-identical). Mirrors T15(Class)/T19(Object).
+    
+    CONFIRMED ROOT CAUSE — D8 (low): `JvDefnTranslator.scala:494` emits enum `public static <Name> parse(String s)` with a bare `String` literal; a model enum/type named `String` shadows java.lang.String. SUGGESTED FIX: route the param type through `${jvString.fullyQualified}` (mirror T19's record-body fix); audit other in-type-body bare Object/String/Class literals outside <T>_*Codec classes. Not exercised by reserved-words-ok (no String-named type).
+    
+    See defects D7/D8. Both are the SAME class as D3/D5; the general lesson is that stdlib type refs in generated code should be FQ at any in-type-body emission site a model type could shadow.
+- sourceRefs: ["defects:D7","defects:D8"]

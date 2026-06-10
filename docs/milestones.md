@@ -2,7 +2,7 @@
 ledger: milestones
 counters:
   milestone: 0
-  item: 10
+  item: 11
 archives: []
 ---
 
@@ -88,3 +88,10 @@ archives: []
 - title: "G3-W2: verification — generated Scala+Kotlin+Java for reserved-words-ok compiles (green gate; subsumes G2's T18 for Object/Class shadowing)"
 - description: "Verification milestone for G3, depends on G3-W1. The real green gate: generated JVM code for reserved-words-ok (Object/Class/Type branches + keyword fields) compiles across Scala, Kotlin, Java. This is the same gate G2's T18 wants for the Object/Class shadowing class."
 - dependsOn: ["M9"]
+
+### M11 — open
+
+- createdAt: 2026-06-10T00:12:28.557Z
+- updatedAt: 2026-06-10T00:12:28.557Z
+- title: "Plan: remaining stdlib-type-shadowing fixes (D7 C# Type; D8 Java enum String)"
+- description: "Defect-seeded plan milestone for the remaining instances of the stdlib-type-shadowing class (same class as D3/D5, surfaced by the reserved-words-ok torture model). D7 (high): C# `System.Type` shadowed by a `data Type {}` branch in BaboonAdtType() return type — blocks G1's T14 C# compile. D8 (low): Java enum `parse(String)` shadow when a model type is named `String`."

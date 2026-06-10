@@ -2,7 +2,7 @@
 ledger: questions
 counters:
   milestone: 0
-  item: 3
+  item: 4
 archives: []
 ---
 
@@ -43,3 +43,15 @@ archives: []
 - question: "Root causes of D5 (stdlib-type-shadowing, general) + D6 (kt client-stub) confirmed; defect-seeded goal G3 ready to plan. (Auto-launched inside /cq:advance — G3 auto-resumed by the parent flow; no manual action needed.)"
 - context: "D5 (high): JVM generated code references stdlib types by short name (JvDefnTranslator:431 bare `Object` in equals; jvObject/jvString predefs) → shadowed by model types named Object/String/Class. General FQ fix unblocks G2's T18 + G1's T14. D6 (low): kt client-stub decls (KtServiceWiringTranslator:864/882) unescaped. G3 (M8, planning) consolidates both. Auto-launched by /cq:advance."
 - ledgerRefs: ["defects:D5","defects:D6","goals:G3"]
+
+## M11
+
+### Q4 — open
+
+- createdAt: 2026-06-10T00:13:01.114Z
+- updatedAt: 2026-06-10T00:13:01.114Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- question: "Root causes of D7 (C# System.Type shadow) + D8 (Java enum String shadow) confirmed; defect-seeded goal G4 ready to plan. (Auto-launched inside /cq:advance — G4 auto-resumed by the parent flow; no manual action needed.)"
+- context: "D7 (high, blocks G1 T14 C#): FQ csTpe at CSDomainTreeTools:57/97 (+27-fixture rebaseline). D8 (low): FQ jvString in JvDefnTranslator enum parse template. Both same class as D3/D5. G4 (M11, planning). Auto-launched by /cq:advance."
+- ledgerRefs: ["defects:D7","defects:D8","goals:G4"]
