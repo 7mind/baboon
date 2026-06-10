@@ -23,6 +23,22 @@ ret success:bool=true
 
 Generate code with regular (non-wrapped) ADT branch codecs.
 
+Reserved-word coverage (T13): the `reserved-words-ok/` model lives INSIDE the
+shared `--model-dir ./baboon-compiler/src/test/resources/baboon/` scanned below,
+so its keyword-named ADT branches (`Default`/`Type`/`Object`/`Class`/`When`/
+`Match`/`Is`/`In`), enum members (`Type`/`Object`/`Default`/`Is`/`In`/`True`/
+`False`), and keyword DTO fields (`default`/`class`/`final`/`void`/`type`/
+`true`/`false`/…) are GENERATED into every per-language stub here AND compiled
+by the matching `test-<lang>-regular` / `test-<lang>-wrapped` lanes. Both
+`test-gen-*-adt` passes set `--generate-json-codecs-by-default=true` and
+`--generate-ueba-codecs-by-default=true`, so the codec-capture / branch-lowercase
+collision sites (C#/Java/Scala/Kotlin) ARE exercised with codecs ON — no
+dedicated `test-gen-reserved` lane is needed (option (a)). The
+`ReservedWords*EmissionTest` JVM suite (`baboon-compiler/.jvm/src/test`) is the
+fast codegen-shape regression guard for the keyword-escaping fixes (T3-T12).
+Do NOT remove `reserved-words-ok/` from the shared model-dir without replacing
+this coverage.
+
 ```bash
 dep action.restore-dotnet
 
