@@ -277,19 +277,20 @@ object TsDefnTranslator {
 
       val getters = dto.fields.map {
         f =>
-          val tpe  = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
+          val tpe     = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
+          val getterN = typeTranslator.escapeTsKeyword(f.name.name)
           val getter =
-            q"""public get ${f.name.name}(): $tpe {
+            q"""public get $getterN(): $tpe {
                |    return this._${f.name.name};
                |}""".stripMargin
           prependDocs(f.docs, getter)
       }
 
-      val constrcutorParams = dto.fields.map(f => q"${f.name.name}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
+      val constrcutorParams = dto.fields.map(f => q"${typeTranslator.escapeTsKeyword(f.name.name)}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
 
       val constructorInside = fieldsNameAndType.map {
         case (n, _) =>
-          q"this._${n.name} = ${n.name}"
+          q"this._${n.name} = ${typeTranslator.escapeTsKeyword(n.name)}"
       }.joinN()
 
       val implementsClause = if (parents.nonEmpty) q"implements ${parents.map(tpe => q"$tpe").join(", ")}" else q""

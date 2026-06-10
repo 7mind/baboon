@@ -143,7 +143,7 @@ class TsUEBACodecGenerator(
     val indexCount = dto.fields.count(f => domain.refMeta(f.tpe).len.isVariable)
     val ctorFields = dto.fields.map {
       f =>
-        q"${f.name.name},"
+        q"${typeTranslator.escapeTsKeyword(f.name.name)},"
     }
     q"""const header = $tsBinTools.readByte(reader);
        |const useIndices = header === 0x01;
@@ -162,11 +162,14 @@ class TsUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[TsValue], TextTree[TsValue], TextTree[TsValue])] = {
     dto.fields.map {
       field =>
-        val fieldName  = field.name.name
-        val isVariable = domain.refMeta(field.tpe).len.isVariable
-        val enc        = mkEncoder(field.tpe, q"value.$fieldName", "writer")
-        val fakeEnc    = mkEncoder(field.tpe, q"value.$fieldName", "buffer")
-        val dec        = q"const $fieldName = ${mkDecoder(field.tpe)};"
+        val fieldName        = field.name.name
+        val escapedFieldName = typeTranslator.escapeTsKeyword(fieldName)
+        val isVariable       = domain.refMeta(field.tpe).len.isVariable
+        // Property access uses the escaped getter name; local var name is also escaped to avoid
+        // emitting `const default = ...` or `const class = ...` which are TS syntax errors.
+        val enc     = mkEncoder(field.tpe, q"value.$escapedFieldName", "writer")
+        val fakeEnc = mkEncoder(field.tpe, q"value.$escapedFieldName", "buffer")
+        val dec     = q"const $escapedFieldName = ${mkDecoder(field.tpe)};"
         val w = if (isVariable) {
           q"""{
              |    const before = buffer.position();
