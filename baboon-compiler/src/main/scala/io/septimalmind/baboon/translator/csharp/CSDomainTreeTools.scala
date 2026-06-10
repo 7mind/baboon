@@ -54,7 +54,7 @@ object CSDomainTreeTools {
           List(
             q"""public const $csString BaboonAdtTypeIdentifierValue = "${id.toString}";
                |public $csString BaboonAdtTypeIdentifier() => BaboonAdtTypeIdentifierValue;
-               |public $csTpe BaboonAdtType() => typeof(${trans.asCsType(id, domain, evo)});
+               |public ${csTpe.fullyQualified} BaboonAdtType() => typeof(${trans.asCsType(id, domain, evo)});
                |""".stripMargin
           )
         case _ => List.empty
@@ -94,7 +94,7 @@ object CSDomainTreeTools {
         case Owner.Adt(id) =>
           List(
             q"""public override $csString BaboonAdtTypeIdentifier() => $csType.BaboonAdtTypeIdentifierValue;
-               |public override $csTpe BaboonAdtType() => typeof(${trans.asCsType(id, domain, evo)});
+               |public override ${csTpe.fullyQualified} BaboonAdtType() => typeof(${trans.asCsType(id, domain, evo)});
                |""".stripMargin
           )
         case _ => List.empty
