@@ -4,7 +4,7 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, escapeRustModuleName, toSnakeCaseRaw}
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, escapeRustModuleName, escapeRustTypeName, toSnakeCaseRaw}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -180,7 +180,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
             case owner =>
               defn.defn match {
                 case _: Typedef.Dto | _: Typedef.Enum | _: Typedef.Adt =>
-                  val typeName   = defn.id.name.name.capitalize
+                  val typeName   = escapeRustTypeName(defn.id.name.name.capitalize)
                   val moduleName = escapeRustModuleName(toSnakeCaseRaw(defn.id.name.name))
                   val nsParts    = owner.asPseudoPkg.map(s => escapeRustModuleName(s.toLowerCase)).toList
                   val fullPath   = (List("crate") ++ domainParts ++ nsParts ++ List(moduleName) :+ typeName).mkString("::")

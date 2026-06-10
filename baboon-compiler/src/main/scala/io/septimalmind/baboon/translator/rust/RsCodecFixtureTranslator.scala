@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.rust
 
 import io.septimalmind.baboon.CompilerTarget.RsTarget
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{toSnakeCase, toSnakeCaseRaw}
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustTypeName, toSnakeCase, toSnakeCaseRaw}
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
@@ -79,12 +79,12 @@ object RsCodecFixtureTranslator {
 
       val membersGenerators = members.sortBy(_.id.toString).map {
         dto =>
-          val branchName = dto.id.name.name.capitalize
+          val branchName = escapeRustTypeName(dto.id.name.name.capitalize)
           q"$adtName::$branchName(${fixtureFnName(dto.id)}(rnd))"
       }
       val membersGeneratorsJson = members.sortBy(_.id.toString).map {
         dto =>
-          val branchName = dto.id.name.name.capitalize
+          val branchName = escapeRustTypeName(dto.id.name.name.capitalize)
           q"$adtName::$branchName(${fixtureFnNameJson(dto.id)}(rnd))"
       }
 

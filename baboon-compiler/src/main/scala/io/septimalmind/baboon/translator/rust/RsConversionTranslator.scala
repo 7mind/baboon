@@ -2,7 +2,7 @@ package io.septimalmind.baboon.translator.rust
 
 import distage.Id
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustModuleName, toSnakeCase, toSnakeCaseFileName}
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustModuleName, escapeRustTypeName, toSnakeCase, toSnakeCaseFileName}
 import io.septimalmind.baboon.translator.rust.RsValue.RsCrateId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
@@ -119,7 +119,7 @@ class RsConversionTranslator[F[+_, +_]: Error2](
             val cases = c.oldDefn.dataMembers(srcDom).map {
               oldId =>
                 val newId = c.branchMapping.getOrElse(oldId.name.name, oldId)
-                q"""$tin::${oldId.name.name.capitalize}(x) => $tout::${newId.name.name.capitalize}(serde_json::from_value(serde_json::to_value(x).unwrap()).unwrap()),"""
+                q"""$tin::${escapeRustTypeName(oldId.name.name.capitalize)}(x) => $tout::${escapeRustTypeName(newId.name.name.capitalize)}(serde_json::from_value(serde_json::to_value(x).unwrap()).unwrap()),"""
             }
             List(
               RsRenderedConversion(

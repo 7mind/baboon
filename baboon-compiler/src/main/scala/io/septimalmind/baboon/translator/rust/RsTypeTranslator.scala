@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.rust
 
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, escapeRustModuleName, toSnakeCaseRaw}
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, escapeRustModuleName, escapeRustTypeName, toSnakeCaseRaw}
 import io.septimalmind.baboon.translator.rust.RsTypes.*
 import io.septimalmind.baboon.translator.rust.RsValue.{RsCrateId, RsType}
 import io.septimalmind.baboon.typer.model.*
@@ -152,7 +152,7 @@ class RsTypeTranslator(rsTypes: RsTypes) {
         val moduleName = escapeRustModuleName(toSnakeCaseRaw(tid.name.name))
         RsCrateId(NEList.unsafeFrom((crate.parts ++ ownerAsPrefix :+ moduleName).toList))
     }
-    RsType(fullCrate, tid.name.name.capitalize)
+    RsType(fullCrate, escapeRustTypeName(tid.name.name.capitalize))
   }
 
   private def renderOwner(owner: Owner): Seq[String] = {

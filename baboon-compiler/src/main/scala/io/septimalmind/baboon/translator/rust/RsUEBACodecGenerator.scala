@@ -2,7 +2,7 @@ package io.septimalmind.baboon.translator.rust
 
 import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.toSnakeCase
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustTypeName, toSnakeCase}
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
@@ -410,7 +410,7 @@ class RsUEBACodecGenerator(
 
     val encBranches = branches.map {
       case (mid, idx) =>
-        val branchName = mid.name.name.capitalize
+        val branchName = escapeRustTypeName(mid.name.name.capitalize)
         if (target.language.wrappedAdtBranchCodecs) {
           q"""${name.asName}::$branchName(v) => {
              |    v.encode_ueba(ctx, writer)?;
@@ -425,7 +425,7 @@ class RsUEBACodecGenerator(
 
     val decBranches = branches.map {
       case (mid, idx) =>
-        val branchName = mid.name.name.capitalize
+        val branchName = escapeRustTypeName(mid.name.name.capitalize)
         val branchType = trans.asRsType(mid, domain, evo)
         if (target.language.wrappedAdtBranchCodecs) {
           q"""${idx.toString} => {

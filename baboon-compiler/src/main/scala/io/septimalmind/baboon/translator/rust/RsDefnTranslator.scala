@@ -1307,17 +1307,20 @@ object RsDefnTranslator {
       // Generate the ADT enum
       val variants = dataMembers.map {
         mid =>
-          val branchName = mid.name.name.capitalize
-          val branchType = trans.asRsType(mid, domain, evo)
-          q"$branchName(${branchType.asName}),"
+          // wireVariantName: original model name (capitalized) used in serde string literals.
+          // rsVariantName: keyword-escaped Rust identifier used in source code.
+          val wireVariantName = mid.name.name.capitalize
+          val rsVariantName   = escapeRustTypeName(wireVariantName)
+          val branchType      = trans.asRsType(mid, domain, evo)
+          q"$rsVariantName(${branchType.asName}),"
       }
 
       // Custom serde for ADT: serialize as {"BranchName": { ... }}
       val serImpl = if (target.language.wrappedAdtBranchCodecs) {
         val serBranches = dataMembers.map {
           mid =>
-            val branchName = mid.name.name.capitalize
-            q"""${name.asName}::$branchName(v) => v.serialize(serializer),"""
+            val rsVariantName = escapeRustTypeName(mid.name.name.capitalize)
+            q"""${name.asName}::$rsVariantName(v) => v.serialize(serializer),"""
         }
         q"""impl serde::Serialize for ${name.asName} {
            |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -1329,9 +1332,10 @@ object RsDefnTranslator {
       } else {
         val serBranches = dataMembers.map {
           mid =>
-            val branchName = mid.name.name.capitalize
-            q"""${name.asName}::$branchName(v) => {
-               |    map.serialize_entry("$branchName", v)?;
+            val wireVariantName = mid.name.name.capitalize
+            val rsVariantName   = escapeRustTypeName(wireVariantName)
+            q"""${name.asName}::$rsVariantName(v) => {
+               |    map.serialize_entry("$wireVariantName", v)?;
                |}""".stripMargin
         }
         q"""impl serde::Serialize for ${name.asName} {
@@ -1348,17 +1352,20 @@ object RsDefnTranslator {
 
       val deBranches = dataMembers.map {
         mid =>
-          val branchName = mid.name.name.capitalize
-          q""""$branchName" => Ok(${name.asName}::$branchName(map.next_value()?)),"""
+          val wireVariantName = mid.name.name.capitalize
+          val rsVariantName   = escapeRustTypeName(wireVariantName)
+          q""""$wireVariantName" => Ok(${name.asName}::$rsVariantName(map.next_value()?)),"""
       }
 
+      // branchNames for serde error messages use wire names (original model names).
       val branchNames    = dataMembers.map(_.name.name.capitalize)
       val branchNamesLit = branchNames.map(n => s""""$n"""").mkString(", ")
 
       val displayBranches = dataMembers.map {
         mid =>
-          val branchName = mid.name.name.capitalize
-          q"""${name.asName}::$branchName(v) => write!(f, "${name.name}::$branchName({:?})", v),"""
+          val wireVariantName = mid.name.name.capitalize
+          val rsVariantName   = escapeRustTypeName(wireVariantName)
+          q"""${name.asName}::$rsVariantName(v) => write!(f, "${name.name}::$wireVariantName({:?})", v),"""
       }
 
       val adtDocBlock = rsTrees.renderDocs(adtDocs, "")
@@ -1489,6 +1496,7 @@ object RsDefnTranslator {
   }
 
   private val rustKeywords: Set[String] = Set(
+    // strict keywords (current Rust edition)
     "type",
     "self",
     "super",
@@ -1526,12 +1534,35 @@ object RsDefnTranslator {
     "extern",
     "true",
     "false",
+    // reserved keywords (not yet active but rejected by the compiler)
+    "abstract",
+    "become",
+    "box",
+    "do",
+    "final",
+    "macro",
+    "override",
+    "priv",
+    "try",
+    "typeof",
+    "unsized",
+    "virtual",
+    "yield",
   )
+
+  /** Keywords that CANNOT be escaped with the `r#` raw-identifier prefix in Rust.
+    * These are path-segment pseudo-keywords that the compiler treats specially:
+    * `self` (value path component), `super` (parent path), `crate` (crate root),
+    * `Self` (self type alias). Any identifier position using these must rename instead.
+    */
+  private val nonRawEscapable: Set[String] = Set("self", "super", "crate", "Self")
 
   def isRustKeyword(s: String): Boolean = rustKeywords.contains(s)
 
   def escapeRustKeyword(s: String): String = {
-    if (isRustKeyword(s)) s"r#$s" else s
+    if (nonRawEscapable.contains(s)) s"${s}_"
+    else if (isRustKeyword(s)) s"r#$s"
+    else s
   }
 
   /** Escape a Rust keyword for use as a module/file name.
@@ -1539,10 +1570,23 @@ object RsDefnTranslator {
     */
   def escapeRustModuleName(s: String): String = {
     s match {
-      case "in"                    => "input"
-      case kw if isRustKeyword(kw) => s"${kw}_"
-      case other                   => other
+      case "in"                                => "input"
+      case kw if nonRawEscapable.contains(kw) => s"${kw}_"
+      case kw if isRustKeyword(kw)             => s"${kw}_"
+      case other                               => other
     }
+  }
+
+  /** Escape a Rust type/struct/enum/variant name produced by `.capitalize`.
+    * PascalCase names from `.capitalize` will not clash with lowercase Rust keywords
+    * in practice, but we apply the escape for correctness. The `nonRawEscapable`
+    * path-segment keywords (`Self`) capitalized become `Self_` to avoid conflicts
+    * with the built-in `Self` type alias.
+    */
+  def escapeRustTypeName(s: String): String = {
+    if (nonRawEscapable.contains(s)) s"${s}_"
+    else if (isRustKeyword(s)) s"r#$s"
+    else s
   }
 
   def toSnakeCase(s: String): String = {
