@@ -277,20 +277,19 @@ object TsDefnTranslator {
 
       val getters = dto.fields.map {
         f =>
-          val tpe     = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
-          val getterN = typeTranslator.escapeTsKeyword(f.name.name)
+          val tpe  = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
           val getter =
-            q"""public get $getterN(): $tpe {
+            q"""public get ${f.name.name}(): $tpe {
                |    return this._${f.name.name};
                |}""".stripMargin
           prependDocs(f.docs, getter)
       }
 
-      val constrcutorParams = dto.fields.map(f => q"${typeTranslator.escapeTsKeyword(f.name.name)}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
+      val constrcutorParams = dto.fields.map(f => q"${f.name.name}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
 
       val constructorInside = fieldsNameAndType.map {
         case (n, _) =>
-          q"this._${n.name} = ${typeTranslator.escapeTsKeyword(n.name)}"
+          q"this._${n.name} = ${n.name}"
       }.joinN()
 
       val implementsClause = if (parents.nonEmpty) q"implements ${parents.map(tpe => q"$tpe").join(", ")}" else q""
@@ -419,13 +418,18 @@ object TsDefnTranslator {
     }
 
     private def makeEnumRepr(enum: Typedef.Enum): DefnRepr = {
-      val enumName        = enum.id.name.name
+      // D9: escape through escapeTsKeyword so a model enum whose name matches a TS reserved word
+      // does not produce invalid TS. Identity for PascalCase names — existing fixtures byte-identical.
+      val enumName        = typeTranslator.escapeTsKeyword(enum.id.name.name)
       val lowercaseValues = target.language.enumLowercaseValues
       val branches = enum.members.map {
         m =>
           val pascal = EnumWireStyle.wireName(m.name)
           val value  = if (lowercaseValues) pascal.toLowerCase else pascal
-          val ident  = if (lowercaseValues) m.name else pascal
+          // D9: escape ident (the TS-side enum member identifier) — critical for lowercase mode where
+          // the member name is used verbatim and can coincide with a TS keyword (e.g. `type`, `in`).
+          // Wire values remain the original name so JSON round-trips are unaffected.
+          val ident  = if (lowercaseValues) typeTranslator.escapeTsKeyword(m.name) else pascal
           q"$ident = \"$value\""
       }.toSeq
       val pascalNames     = enum.members.map(m => EnumWireStyle.wireName(m.name))

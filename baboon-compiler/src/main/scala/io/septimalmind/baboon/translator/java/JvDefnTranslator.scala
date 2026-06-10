@@ -491,7 +491,7 @@ object JvDefnTranslator {
            |
            |  ${staticMetaFields.joinN().shift(2).trim}
            |
-           |  public static ${name.asName} parse(String s) {
+           |  public static ${name.asName} parse(${jvString.fullyQualified} s) {
            |    return switch (s) {
            |      ${parseCases.joinN().shift(6).trim}
            |      default -> throw new IllegalArgumentException("Unknown enum value: " + s);

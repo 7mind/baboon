@@ -133,9 +133,12 @@ class TsTypeTranslator(target: TsTarget) {
     // barrel-level collisions between same-named branches of different ADTs (and between a branch
     // and a top-level type). Branches stay inline in the ADT file; only the TS symbol changes — the
     // on-wire branch name (JSON envelope key, type identifier, UEBA tag) is unaffected.
+    // D9: route through escapeTsKeyword so a model type whose name (after capitalize) matches a TS
+    // reserved word does not produce invalid TS. Identity for all PascalCase names since TS keywords
+    // are lowercase — so existing fixtures remain byte-identical.
     val symbolName = tid.owner match {
-      case Owner.Adt(adtId) => s"${adtId.name.name.capitalize}_${tid.name.name.capitalize}"
-      case _                => tid.name.name.capitalize
+      case Owner.Adt(adtId) => escapeTsKeyword(s"${adtId.name.name.capitalize}_${tid.name.name.capitalize}")
+      case _                => escapeTsKeyword(tid.name.name.capitalize)
     }
     TsType(module, symbolName, typeOnly = isTypeOnly)
   }
@@ -312,7 +315,7 @@ class TsTypeTranslator(target: TsTarget) {
       case "break" | "case" | "catch" | "continue" | "debugger" | "default" | "delete" | "do" | "else" | "finally" | "for" | "function" | "if" | "in" | "instanceof" |
           "new" | "return" | "switch" | "this" | "throw" | "try" | "typeof" | "var" | "void" | "while" | "with" | "class" | "const" | "enum" | "export" | "extends" |
           "import" | "super" | "implements" | "interface" | "let" | "package" | "private" | "protected" | "public" | "static" | "yield" | "await" | "async" | "of" |
-          "type" | "from" | "as" | "is" | "true" | "false" | "null" | "undefined" =>
+          "type" | "from" | "as" | "is" =>
         s"${s}_"
       case _ => s
     }
