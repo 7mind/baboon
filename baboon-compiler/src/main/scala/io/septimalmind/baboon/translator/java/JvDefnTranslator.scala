@@ -422,13 +422,13 @@ object JvDefnTranslator {
           if (dto.isIdentifier) identifierToStringOverride
           else
             q"""@Override
-               |public String toString() {
+               |public ${jvString.fullyQualified} toString() {
                |  return "${name.asName}()";
                |}""".stripMargin
 
         q"""
            |@Override
-           |public boolean equals(Object other) {
+           |public boolean equals(${jvObject.fullyQualified} other) {
            |  return other instanceof ${name.asName};
            |}
            |
@@ -745,7 +745,7 @@ object JvDefnTranslator {
         else fieldExprs.toSeq.join(""" + ":" + """)
 
       q"""@Override
-         |public String toString() {
+         |public ${jvString.fullyQualified} toString() {
          |  return "$header" + $joinedFields;
          |}""".stripMargin
     }
