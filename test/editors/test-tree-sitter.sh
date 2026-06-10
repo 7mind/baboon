@@ -43,7 +43,7 @@ failed_files=()
 for f in "${BABOON_FILES[@]}"; do
   total=$((total + 1))
   rel="${f#"$PROJECT_ROOT"/}"
-  output=$(cd "$GRAMMAR_DIR" && tree-sitter parse "$f" 2>&1)
+  output=$(cd "$GRAMMAR_DIR" && tree-sitter parse "$f" 2>&1) || true
   if echo "$output" | grep -q "ERROR"; then
     errors=$((errors + 1))
     failed_files+=("$rel")
