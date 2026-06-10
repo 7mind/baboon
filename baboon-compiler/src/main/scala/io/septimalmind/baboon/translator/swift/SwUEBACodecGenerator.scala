@@ -151,7 +151,7 @@ class SwUEBACodecGenerator(
     val branches = adt.dataMembers(domain).zipWithIndex.toList.map {
       case (m, idx) =>
         val branchName = m.name.name
-        val caseName   = branchName.head.toLower.toString + branchName.tail
+        val caseName   = trans.escapeSwiftKeyword(branchName.head.toLower.toString + branchName.tail)
 
         val adtRef = trans.toSwTypeRefKeepForeigns(m, domain, evo)
         val cName  = codecName(adtRef)
@@ -194,14 +194,16 @@ class SwUEBACodecGenerator(
   private def genEnumBodies(name: SwType, e: Typedef.Enum): (TextTree[SwValue], TextTree[SwValue]) = {
     val encBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        val pascal = EnumWireStyle.wireName(m.name)
-        q"case .$pascal: writer.writeU8(${idx.toString})"
+        val pascal        = EnumWireStyle.wireName(m.name)
+        val escapedPascal = trans.escapeSwiftKeyword(pascal)
+        q"case .$escapedPascal: writer.writeU8(${idx.toString})"
     }
 
     val decBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        val pascal = EnumWireStyle.wireName(m.name)
-        q"case ${idx.toString}: return ${name.asDeclName}.$pascal"
+        val pascal        = EnumWireStyle.wireName(m.name)
+        val escapedPascal = trans.escapeSwiftKeyword(pascal)
+        q"case ${idx.toString}: return .$escapedPascal"
     }
 
     (

@@ -110,7 +110,7 @@ class SwJsonCodecGenerator(
     val branches = adt.dataMembers(domain).map {
       m =>
         val branchName = m.name.name
-        val caseName   = branchName.head.toLower.toString + branchName.tail
+        val caseName   = trans.escapeSwiftKeyword(branchName.head.toLower.toString + branchName.tail)
         val fqBranch   = trans.toSwTypeRefKeepForeigns(m, domain, evo)
 
         val routedBranchEncoder = q"${codecName(fqBranch)}.instance.encode(ctx, branchVal)"

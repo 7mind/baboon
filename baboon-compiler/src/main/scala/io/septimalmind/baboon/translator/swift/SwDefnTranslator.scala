@@ -471,16 +471,24 @@ object SwDefnTranslator {
       } else q""
 
       val initDecl = if (hasFields) {
+        // When a field name is `self`, the init parameter named `self` shadows the implicit
+        // `self` reference inside the init body, making `self.<field> = <param>` fail to
+        // type-check (`self` resolves to the parameter, a String, not the struct instance).
+        // Fix: for any parameter whose escaped name is `` `self` ``, emit a renamed internal
+        // parameter (prefix `_`) while keeping the same external label, e.g.:
+        //   `self` _self: String   ← caller still writes `.init(self: ...)`, body uses `_self`
         val initParams = dto.fields.map {
           f =>
-            val t       = trans.asSwRef(f.tpe, domain, evo)
-            val escaped = trans.escapeSwiftKeyword(f.name.name)
-            q"$escaped: $t"
+            val t          = trans.asSwRef(f.tpe, domain, evo)
+            val escaped    = trans.escapeSwiftKeyword(f.name.name)
+            val internalId = if (f.name.name == "self") q"_self" else q"$escaped"
+            if (f.name.name == "self") q"$escaped $internalId: $t" else q"$escaped: $t"
         }
         val initBody = dto.fields.map {
           f =>
-            val escaped = trans.escapeSwiftKeyword(f.name.name)
-            q"self.$escaped = $escaped"
+            val escaped    = trans.escapeSwiftKeyword(f.name.name)
+            val internalId = if (f.name.name == "self") q"_self" else q"$escaped"
+            q"self.$escaped = $internalId"
         }
         q"""public init(
            |    ${initParams.join(",\n").shift(4).trim}
@@ -823,8 +831,9 @@ object SwDefnTranslator {
     ): DefnRepr = {
       val cases = e.members.map {
         m =>
-          val pascal = EnumWireStyle.wireName(m.name)
-          q"""case $pascal = "$pascal""""
+          val pascal        = EnumWireStyle.wireName(m.name)
+          val escapedPascal = trans.escapeSwiftKeyword(pascal)
+          q"""case $escapedPascal = "$pascal""""
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
@@ -889,7 +898,7 @@ object SwDefnTranslator {
       val enumCases = dataMembers.map {
         mid =>
           val memberName = mid.name.name
-          val caseName   = memberName.head.toLower.toString + memberName.tail
+          val caseName   = trans.escapeSwiftKeyword(memberName.head.toLower.toString + memberName.tail)
           val memberRef  = trans.toSwTypeRefKeepForeigns(mid, domain, evo)
           q"case $caseName(${memberRef.asDeclName})"
       }.toList
