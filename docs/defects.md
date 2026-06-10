@@ -2,7 +2,7 @@
 ledger: defects
 counters:
   milestone: 0
-  item: 8
+  item: 9
 archives: []
 ---
 
@@ -96,6 +96,18 @@ archives: []
 - dependsOn: ["T17"]
 - fix: "T17 (merged e33a1b43): all 12 impl.<method>() service-wiring call-site receivers in KtServiceWiringTranslator now route through escapeKtKeyword (symmetric with T6's escaped declaration); wire-name string literals left raw. 602 green, byte-identical for existing fixtures."
 
+### D9 — open
+
+- createdAt: 2026-06-10T10:31:57.558Z
+- updatedAt: 2026-06-10T10:31:57.558Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: TypeScript type/class/enum NAMES + enum-member names not run through escapeTsKeyword (latent keyword-collision)
+- severity: low
+- description: "Filed by T11 reviewer. TsDefnTranslator emits class/type/interface names, enum name, and enum-member identifiers directly from the model name without escapeTsKeyword (T11 wired only field-level binding positions). LATENT: cannot produce invalid TS for current models — Baboon type names + enum members are PascalCase by convention (EnumWireStyle.wireName = capitalize; reserved-words-ok uses PascalCase), and all TS reserved words are lowercase, so no collision. A model with a lowercase-keyword TYPE or enum-member name would emit invalid TS. Default disposition: FIX (defensive hardening, same class as D8). NOT exercised by reserved-words-ok."
+- suggestedFix: Route the class/type/enum name + lowercase-mode enum `ident` through escapeTsKeyword; keep wire/JSON keys on the original model name (as T11 does for fields).
+- ledgerRefs: ["tasks:T11","goals:G1","defects:D1"]
+
 ## M7
 
 ### D5 — root-caused
@@ -133,7 +145,7 @@ archives: []
 ### D7 — root-caused
 
 - createdAt: 2026-06-09T23:55:52.002Z
-- updatedAt: 2026-06-09T23:55:52.002Z
+- updatedAt: 2026-06-10T08:43:20.575Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: C# `System.Type` shadowed by a model ADT branch/type named `Type` in BaboonAdtType() return type — C# sibling of D3/D5
@@ -142,11 +154,12 @@ archives: []
 - rootCause: "Validated by the T4 worker (probe-confirmed): CSDomainTreeTools.scala:57 `public $csTpe BaboonAdtType() => typeof(...)` and :97 (override variant) emit `csTpe` = System.Type by SHORT name. A model ADT branch named `Type` (nested AvatarItem.Type) shadows System.Type in that scope. Probe: FQ-ing `$csTpe` → `${csTpe.fullyQualified}` (→ System.Type) at both sites makes `dotnet build` of reserved-words-ok succeed."
 - suggestedFix: "At CSDomainTreeTools.scala:57 and :97, render the return type fully-qualified `${csTpe.fullyQualified}` (→ System.Type). This changes 27 existing C# golden fixtures (`Type`→`System.Type` in BaboonAdtType signatures), so it requires a golden-fixture REBASELINE + review (not byte-identical). Together with T4's merged keyword-escaping pass, makes generated C# for reserved-words-ok compile. Mirrors T15 (Class) / T19 (Object) FQ remedy."
 - ledgerRefs: ["tasks:T4","goals:G1","defects:D3"]
+- dependsOn: ["T23","T25"]
 
 ### D8 — open
 
 - createdAt: 2026-06-10T00:11:35.168Z
-- updatedAt: 2026-06-10T00:11:35.168Z
+- updatedAt: 2026-06-10T08:43:21.519Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: Java enum `parse(String s)` bare-String shadow when a model enum/type is named `String` (stdlib-shadowing class)
@@ -154,3 +167,4 @@ archives: []
 - description: "Filed by T19 reviewer. JvDefnTranslator.scala:494 emits `public static <Name> parse(String s)` inside the enum class body with a bare `String` literal. If a model defines an enum (or type) literally named `String`, the generated `public enum String { ... parse(String s) ... }` resolves the bare `String` to the enclosing enum, shadowing java.lang.String → javac error — the symmetric remainder of the D5 stdlib-shadowing fix (T19 fixed the record-body equals/toString sites). NOT exercised by reserved-words-ok (no String-named type). Default disposition: FIX (part of the general stdlib-FQ class)."
 - suggestedFix: "Route the parameter type in the enum `parse` template through `${jvString.fullyQualified}` (mirror T19's record-body fix), and audit any other in-type-body bare Object/String/Class literals outside <T>_*Codec/conversion top-level classes."
 - ledgerRefs: ["tasks:T19","goals:G3","defects:D5"]
+- dependsOn: ["T24","T25"]

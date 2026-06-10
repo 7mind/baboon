@@ -2,7 +2,7 @@
 ledger: tasks
 counters:
   milestone: 0
-  item: 22
+  item: 25
 archives: []
 ---
 
@@ -165,10 +165,10 @@ archives: []
 - completion: "Added JvTypeTranslator.escapeJvKeyword (full JLS set), applied to DTO components, method names, identifier accessor, JSON+UEBA field accessors, UEBA ADT branch capture. JSON wire-key literals + positional UEBA preserved (original model names). Verified javac clean + sbt baboonJVM/test 605 green. NOTE: worker's stale-base emission test + model variant NOT merged (kept T2's canonical model); matrix coverage via T13. Out-of-scope defect D2 filed (renderOwner ADT package segment)."
 - sessionLogs: ["docs/logs/20260609-210918-a55935b64519dbee2.md","docs/logs/20260609-214140-a2cea0e21e7bdf37d.md"]
 
-### T10 — planned
+### T10 — done
 
 - createdAt: 2026-06-09T20:48:49.079Z
-- updatedAt: 2026-06-09T20:53:14.842Z
+- updatedAt: 2026-06-10T10:31:46.424Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Python: RENAME keyword-colliding identifiers and preserve wire keys in the hand-rolled codec"
@@ -177,11 +177,14 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: bba2574c
+- completion: Python keyword RENAME (PEP8 _) via PyKeywords.escapePyKeyword; wire keys preserved (pydantic alias); enum True_/False_. Verified JSON/UEBA round-trip preserves original keys; 602 green.
+- sessionLogs: ["docs/logs/20260610-103112-T10-T11-T12-batch.md"]
 
-### T11 — planned
+### T11 — done
 
 - createdAt: 2026-06-09T20:49:07.245Z
-- updatedAt: 2026-06-09T20:53:16.792Z
+- updatedAt: 2026-06-10T10:31:48.774Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "TypeScript: wire up the dead escapeTsKeyword and preserve wire keys via bracket-string access"
@@ -190,11 +193,14 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: fa834e94
+- completion: "TypeScript: wired dead escapeTsKeyword at binding positions; wire keys original; tsc green. Surfaced low D9 (type/enum-name escape, latent)."
+- sessionLogs: ["docs/logs/20260610-103112-T10-T11-T12-batch.md"]
 
-### T12 — planned
+### T12 — done
 
 - createdAt: 2026-06-09T20:49:17.577Z
-- updatedAt: 2026-06-09T20:53:18.107Z
+- updatedAt: 2026-06-10T10:31:51.605Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Dart: wire existing escapeDartKeyword through member emission and preserve wire keys via explicit map keys"
@@ -203,6 +209,9 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T1","T2"]
 - ledgerRefs: ["goals:G1","defects:D1"]
+- resultCommit: c958f18c
+- completion: "Dart: wired escapeDartKeyword through member emission; wire keys original; +UEBA castedName escape +Object/Type stdlib-shadow rename. dart analyze clean; non-keyword byte-identical."
+- sessionLogs: ["docs/logs/20260610-103112-T10-T11-T12-batch.md"]
 
 ## M5
 
@@ -396,3 +405,57 @@ archives: []
 - suggestedModel: standard
 - dependsOn: ["T19","T20","T21"]
 - ledgerRefs: ["goals:G3","defects:D5","defects:D6"]
+
+## M12
+
+### T23 — planned
+
+- createdAt: 2026-06-10T08:42:52.819Z
+- updatedAt: 2026-06-10T08:42:52.819Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "D7: FQ csTpe at both BaboonAdtType() sites in CSDomainTreeTools + rebaseline ~27 C# golden fixtures"
+- description: |
+    Fix the C# System.Type stdlib-shadow (D7). In baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/csharp/CSDomainTreeTools.scala, change the BaboonAdtType() return type from the SHORT `$csTpe` to the fully-qualified `${csTpe.fullyQualified}` (→ System.Type) at BOTH emission sites: L57 (makeFullMeta arm: `public $csTpe BaboonAdtType() => typeof(...)`) and L97 (makeRefMeta arm: `public override $csTpe BaboonAdtType() => typeof(...)`). This mirrors the proven T15(Class)/T19(Object) `.fullyQualified` remedy; sibling `$csString` already renders FQ in adjacent arms, confirming the member exists on the CSValue ref.
+    
+    BLAST RADIUS — GOLDEN REBASELINE REQUIRED: this changes ~27 existing C# golden fixtures (every `Type` → `System.Type` in a BaboonAdtType signature). The change is NOT byte-identical to the pre-fix baseline. After the source edit, regenerate the affected C# golden outputs and commit the rebaselined fixtures. Identify the golden-fixture set via the existing cs test/gen actions (test-gen-regular-adt / test-gen-wrapped-adt produce the cs outputs; cs golden comparisons live in the cs stub/conv test projects). Diff must show ONLY `Type`→`System.Type` in BaboonAdtType() signatures — any other delta is a regression and must be investigated, not rebaselined.
+    
+    Repo reality: build via mdl; sbt-git cannot build inside a linked git worktree (NoWorkTreeException) so clone to /tmp for the build (e.g. git clone <repo> /tmp/baboon-d7 && build there).
+- acceptance: "(1) CSDomainTreeTools.scala L57 and L97 both render `${csTpe.fullyQualified}` (no remaining bare `$csTpe` in a BaboonAdtType return position). (2) sbt +compile / mdl :build is green (Scala.js exhaustive-match unaffected — no new TyperIssue). (3) The C# golden-fixture rebaseline diff contains ONLY `Type`→`System.Type` substitutions in BaboonAdtType() signatures (~27 fixtures); no other generated-code delta. (4) The existing cs test matrix (test-gen-regular-adt/test-gen-wrapped-adt + test-cs-regular/test-cs-wrapped) is GREEN against the rebaselined fixtures. NOT byte-identical-to-old-baseline — rebaselined-and-green is the bar."
+- suggestedModel: frontier
+- ledgerRefs: ["goals:G4","defects:D7"]
+
+### T24 — planned
+
+- createdAt: 2026-06-10T08:43:04.758Z
+- updatedAt: 2026-06-10T08:43:04.758Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "D8: FQ jvString in the Java enum parse(String) param + audit in-type-body bare Object/String/Class literals"
+- description: |
+    Fix the Java enum String stdlib-shadow (D8). In baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvDefnTranslator.scala:494, the enum class body emits `public static ${name.asName} parse(String s)` with a BARE `String` literal. If a model defines an enum/type literally named `String`, the generated `public enum String { ... parse(String s) ... }` resolves the bare `String` to the enclosing enum, shadowing java.lang.String → javac error. Route the parameter type through `${jvString.fullyQualified}` (java.lang.String), mirroring T19's record-body equals/toString fix.
+    
+    AUDIT (part of the general stdlib-FQ class lesson): scan JvDefnTranslator (and sibling Jv* translators) for OTHER in-type-body bare `Object`/`String`/`Class` literals that a model type could shadow — EXCLUDING the <T>_*Codec / conversion top-level classes (those are not nested inside a model-named type, so no shadow risk, per the D5/T19 scoping). Where an in-type-body bare stdlib literal could be shadowed, FQ it via the corresponding jv* `.fullyQualified` ref. Document any additional sites fixed in the task notes.
+    
+    LATENT: reserved-words-ok has no String-named type, so this is NOT a new green gate — the bar is no-regression. Repo reality: build via mdl; sbt-git cannot build in a linked git worktree → clone to /tmp.
+- acceptance: "(1) JvDefnTranslator.scala:494 renders the parse param as `${jvString.fullyQualified}` (no bare `String` in the enum parse signature). (2) Audit completed: any other in-type-body bare Object/String/Class literal that could be model-shadowed (outside <T>_*Codec/conversion top-level classes) is either FQ'd or explicitly noted as not-shadowable, with the list recorded in the task notes. (3) sbt +compile / mdl :build green. (4) NO-REGRESSION: the full Java test matrix (test-gen-regular-adt/test-gen-wrapped-adt + test-java-regular/test-java-wrapped + test-gen-compat-java/test-manual-java) is GREEN — generated Java byte-identical except the parse-param FQ change (and any audited sites), and all jv tests pass."
+- suggestedModel: standard
+- ledgerRefs: ["goals:G4","defects:D8"]
+
+### T25 — planned
+
+- createdAt: 2026-06-10T08:43:18.706Z
+- updatedAt: 2026-06-10T08:43:18.706Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "Verify: dotnet build of reserved-words-ok C# succeeds (closes D7, unblocks G1's T14) + cs/jv matrices green"
+- description: |
+    End-to-end verification gate for G4 after T23 (D7) and T24 (D8) land. Build the compiler (clone to /tmp — sbt-git cannot build in a linked worktree), generate C# for the reserved-words-ok model (the model with the `data Type {}` ADT branch that triggered D7), and run `dotnet build` on the generated output. Pre-fix this produced 24 errors (16×CS0508 + 8×CS0738) in AvatarItem.cs from System.Type shadowing; post-T23 it must compile cleanly. This closes D7 and unblocks G1's T14 C# green gate.
+    
+    This task does NOT re-do the golden rebaseline (that is part of T23) — it is the integration check that the rebaselined generator actually produces compiling C# for the shadowing model, plus the regression sweep across cs and jv. D8 is latent in reserved-words-ok (no String-named type), so D8's contribution here is the Java no-regression sweep, not a new green observation.
+    
+    On success, the orchestrator/implementer should transition D7 and D8 to resolved (their fix tasks complete).
+- acceptance: "(1) Generated C# for reserved-words-ok compiles: `dotnet build` of the generated output exits 0 with ZERO errors (specifically: none of the prior 24 CS0508/CS0738 errors in AvatarItem.cs). (2) Full cs test matrix green: test-gen-regular-adt + test-gen-wrapped-adt + test-cs-regular + test-cs-wrapped (against T23's rebaselined fixtures). (3) Java no-regression: test-java-regular + test-java-wrapped green (D8 latent — confirms no regression from T24). (4) mdl :build green (Scala.js cross-build unaffected). Build performed from a /tmp clone, not a linked worktree."
+- suggestedModel: standard
+- dependsOn: ["T23","T24"]
+- ledgerRefs: ["goals:G4","defects:D7","defects:D8"]

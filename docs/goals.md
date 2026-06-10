@@ -103,10 +103,10 @@ archives: []
 
 ## M11
 
-### G4 — planning
+### G4 — planned
 
 - createdAt: 2026-06-10T00:12:44.722Z
-- updatedAt: 2026-06-10T00:12:44.722Z
+- updatedAt: 2026-06-10T10:28:20.663Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - title: Remaining stdlib-type-shadowing fixes (D7 C# System.Type; D8 Java enum String)
@@ -119,3 +119,5 @@ archives: []
     
     See defects D7/D8. Both are the SAME class as D3/D5; the general lesson is that stdlib type refs in generated code should be FQ at any in-type-body emission site a model type could shadow.
 - sourceRefs: ["defects:D7","defects:D8"]
+- grounding: "Verified both emission sites in-repo (2026-06-10). D7: CSDomainTreeTools.scala has TWO BaboonAdtType() sites — L57 (makeFullMeta, `public $csTpe BaboonAdtType() => typeof(...)`) and L97 (makeRefMeta, `public override $csTpe BaboonAdtType() => typeof(...)`); both use the SHORT `$csTpe` interpolation (System.Type). FQ remedy: `${csTpe.fullyQualified}` at both, mirroring the proven T15(Class)/T19(Object) `.fullyQualified` member. Sibling `$csString`/`$csType` already render FQ in adjacent arms, confirming the member exists on CSValue refs. D8: JvDefnTranslator.scala:494 emits `public static ${name.asName} parse(String s)` inside the enum class body with a BARE `String` literal; FQ remedy routes the param through `${jvString.fullyQualified}` (java.lang.String). Repo realities: Scala/sbt built via mdl; sbt-git cannot build inside a linked git worktree (NoWorkTreeException) so implement workers must clone to /tmp; reserved-words-ok model (has `data Type {}` ADT branch, no String-named type) is on main. D7 fix changes ~27 existing C# golden fixtures (`Type`→`System.Type` in BaboonAdtType signatures) → NOT byte-identical; requires golden-fixture rebaseline + review. D8 is latent (not exercised by reserved-words-ok) → its verify is a no-regression check, not a new-green gate. D7 fix is the gate that unblocks G1's T14 C# compile."
+- milestones: ["M12"]

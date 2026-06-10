@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 18
+  item: 22
 archives: []
 ---
 
@@ -146,6 +146,42 @@ archives: []
 - ledgerRefs: ["tasks:T7","goals:G1"]
 - sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
 
+### R20 — go-ahead
+
+- createdAt: 2026-06-10T10:31:36.684Z
+- updatedAt: 2026-06-10T10:31:36.684Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T10 — Python keyword rename + wire-key preservation verified end-to-end (JSON wire keys provably original via pydantic alias, UEBA rename-neutral, enum True_/False_); 602 green; non-keyword identity.
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T10","goals:G1"]
+- sessionLogs: ["docs/logs/20260610-103112-T10-T11-T12-batch.md"]
+
+### R21 — go-ahead
+
+- createdAt: 2026-06-10T10:31:39.846Z
+- updatedAt: 2026-06-10T10:31:39.846Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T11 — dead escapeTsKeyword wired at binding positions, wire keys original in all serialization paths, identity for non-keywords; tsc green. Low latent hardening gap filed (D9, TS type/enum-name escape).
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T11","goals:G1"]
+- sessionLogs: ["docs/logs/20260610-103112-T10-T11-T12-batch.md"]
+
+### R22 — go-ahead
+
+- createdAt: 2026-06-10T10:31:43.129Z
+- updatedAt: 2026-06-10T10:31:43.129Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: approve T12 — escapeDartKeyword wired through member emission, wire keys/discriminators original; +2 sound fixes (UEBA castedName, Object/Type stdlib-shadow rename); dart analyze clean; non-keyword byte-identical (A/B-verified).
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T12","goals:G1"]
+- sessionLogs: ["docs/logs/20260610-103112-T10-T11-T12-batch.md"]
+
 ## M6
 
 ### R9 — go-ahead
@@ -238,3 +274,16 @@ archives: []
 - new_questions: []
 - ledgerRefs: ["tasks:T21","goals:G3"]
 - sessionLogs: ["docs/logs/20260610-001024-T19-T21-T8-T4-T7-batch.md"]
+
+## M11
+
+### R19 — go-ahead
+
+- createdAt: 2026-06-10T10:19:48.102Z
+- updatedAt: 2026-06-10T10:19:48.102Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: G4 plan (T23/T24/T25) is fine-grained, correctly sequenced, testable, grounded, and complete — D7 FQ-csTpe fix verified mechanically sound in-repo; approve.
+- new_questions: []
+- criticism: []
+- ledgerRefs: ["goals:G4"]

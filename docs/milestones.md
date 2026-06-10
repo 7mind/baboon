@@ -2,7 +2,7 @@
 ledger: milestones
 counters:
   milestone: 0
-  item: 11
+  item: 12
 archives: []
 ---
 
@@ -95,3 +95,10 @@ archives: []
 - updatedAt: 2026-06-10T00:12:28.557Z
 - title: "Plan: remaining stdlib-type-shadowing fixes (D7 C# Type; D8 Java enum String)"
 - description: "Defect-seeded plan milestone for the remaining instances of the stdlib-type-shadowing class (same class as D3/D5, surfaced by the reserved-words-ok torture model). D7 (high): C# `System.Type` shadowed by a `data Type {}` branch in BaboonAdtType() return type — blocks G1's T14 C# compile. D8 (low): Java enum `parse(String)` shadow when a model type is named `String`."
+
+### M12 — open
+
+- createdAt: 2026-06-10T08:42:34.649Z
+- updatedAt: 2026-06-10T08:42:34.649Z
+- title: "G4: stdlib-type-shadowing remainder (D7 C# System.Type, D8 Java enum String)"
+- description: "Work milestone for plan-flow goal G4. Third/final wave of the stdlib-type-shadowing fix class (after D3/Class=T15, D5/Object=T19). Two FQ-the-stdlib-ref fixes: D7 (C# System.Type return type of BaboonAdtType, HIGH — gates G1's T14 C# compile, requires golden rebaseline) and D8 (Java enum parse(String) param, low — latent/no-regression). Verify = dotnet build of reserved-words-ok C# succeeds + cs tests green post-rebaseline."

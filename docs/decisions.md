@@ -2,7 +2,7 @@
 ledger: decisions
 counters:
   milestone: 0
-  item: 4
+  item: 5
 archives: []
 ---
 
@@ -56,3 +56,15 @@ archives: []
 - headline: "plan review: approved"
 - rationale: "Reviewer go-ahead (ref review R13): G3 plan fine-grained, correctly sequenced (T22 dependsOn T19/T20/T21), testable, source-grounded, complete; 0 criticisms, 0 new questions, no out-of-scope defects."
 - ledgerRefs: ["goals:G3"]
+
+## M11
+
+### K5 — locked
+
+- createdAt: 2026-06-10T10:28:16.765Z
+- updatedAt: 2026-06-10T10:28:16.765Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- headline: "plan review: approved"
+- rationale: "Reviewer go-ahead (ref review R19): G4 plan (T23/T24/T25) is fine-grained, sequenced, testable, grounded, complete; D7 FQ-csTpe fix verified mechanically sound in-repo. 0 criticisms, 0 new questions."
+- ledgerRefs: ["goals:G4"]

@@ -472,3 +472,32 @@ ledgers:
         mixed: []
         illness-detected: []
         user-action-required: []
+  - name: ideas
+    schema:
+      statusValues:
+        - open
+        - planned
+        - discarded
+        - postponed
+      terminalStatuses:
+        - planned
+        - discarded
+      fields:
+        title:
+          type: string
+          required: true
+        description:
+          type: string
+          required: false
+      idPrefix: I
+      transitions:
+        open:
+          - planned
+          - discarded
+          - postponed
+        postponed:
+          - open
+          - planned
+          - discarded
+        planned: []
+        discarded: []
