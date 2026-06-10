@@ -852,6 +852,14 @@ object KtServiceWiringTranslator {
               val outTypeRef = m.out.map(t => trans.asKtRef(t, domain, evo))
               val retType    = outTypeRef.getOrElse(q"Unit")
 
+              val rawMethodName     = m.name.name
+              val escapedMethodName = KtTypeTranslator.escapeKtKeyword(rawMethodName)
+              // For the Json-suffixed variant, backtick-quoting must encompass the
+              // whole token: `` `objectJson` `` — not `` `object` ``Json (invalid).
+              val escapedJsonMethodName =
+                if (escapedMethodName != rawMethodName) s"`${rawMethodName}Json`"
+                else s"${rawMethodName}Json"
+
               val uebaMethod = if (hasUeba) {
                 val encodeIn = uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"writer", q"arg")
                 val decodeOut = m.out match {
@@ -861,10 +869,10 @@ object KtServiceWiringTranslator {
                   case None => q"return Unit as $retType"
                 }
                 Some(
-                  q"""suspend fun ${m.name.name}(${clientCtxParamDecl}arg: $inTypeRef, $codecCtxName: $baboonCodecContext = $baboonCodecContext.Default): $retType {
+                  q"""suspend fun $escapedMethodName(${clientCtxParamDecl}arg: $inTypeRef, $codecCtxName: $baboonCodecContext = $baboonCodecContext.Default): $retType {
                      |  ${mkWriterSetup("writer").shift(2).trim}
                      |  $encodeIn
-                     |  val resp = transportUeba($clientCtxArgPass"$svcName", "${m.name.name}", ${mkWriterGetBytes("writer")})
+                     |  val resp = transportUeba($clientCtxArgPass"$svcName", "$rawMethodName", ${mkWriterGetBytes("writer")})
                      |  ${decodeOut.shift(2).trim}
                      |}""".stripMargin
                 )
@@ -879,9 +887,9 @@ object KtServiceWiringTranslator {
                   case None => q"return Unit as $retType"
                 }
                 Some(
-                  q"""suspend fun ${m.name.name}Json(${clientCtxParamDecl}arg: $inTypeRef, $codecCtxName: $baboonCodecContext = $baboonCodecContext.Default): $retType {
+                  q"""suspend fun $escapedJsonMethodName(${clientCtxParamDecl}arg: $inTypeRef, $codecCtxName: $baboonCodecContext = $baboonCodecContext.Default): $retType {
                      |  val encoded = $encodeIn.toString()
-                     |  val resp = transportJson($clientCtxArgPass"$svcName", "${m.name.name}", encoded)
+                     |  val resp = transportJson($clientCtxArgPass"$svcName", "$rawMethodName", encoded)
                      |  ${decodeOut.shift(2).trim}
                      |}""".stripMargin
                 )
