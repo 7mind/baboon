@@ -473,10 +473,10 @@ archives: []
 
 ## M14
 
-### T26 — wip
+### T26 — done
 
 - createdAt: 2026-06-10T11:07:09.403Z
-- updatedAt: 2026-06-10T11:11:24.285Z
+- updatedAt: 2026-06-10T11:13:56.511Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Fix D12: make test-tree-sitter.sh parse capture non-fatal so the real-file loop reports every failure"
@@ -484,11 +484,14 @@ archives: []
 - acceptance: "With the deliberately-broken fixture still failing (i.e. before/independent of the D11 fix), running `bash test/editors/test-tree-sitter.sh .` runs the full real-file loop to completion: it prints `FAIL: <rel-path>` for reserved-words-ok/reserved.baboon (and any other failing file), prints the `--- Summary ---` block listing failed files, and exits with code 1 (not aborting silently after the last `OK:` line). Diff is limited to the line-46 capture in test/editors/test-tree-sitter.sh."
 - suggestedModel: fast
 - ledgerRefs: ["defects:D12","goals:G5"]
+- resultCommit: b24e491f
+- completion: "test-tree-sitter.sh:46 capture made non-fatal (`|| true`); loop now reports FAIL + Summary + exit 1 (verified 80/81, reserved.baboon the only failure). D12 fixed."
+- sessionLogs: ["docs/logs/20260610-110836-T26-worker-review.md"]
 
-### T27 — planned
+### T27 — wip
 
 - createdAt: 2026-06-10T11:07:30.838Z
-- updatedAt: 2026-06-10T11:07:30.838Z
+- updatedAt: 2026-06-10T11:14:00.109Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: "Fix D11: make tree-sitter editor grammar accept keyword-named identifiers (or exclude reserved-words-ok fixture) so test-editors parses all real files"

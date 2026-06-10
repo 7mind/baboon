@@ -203,10 +203,10 @@ archives: []
 - ledgerRefs: ["tasks:T14","goals:G1"]
 - dependsOn: ["T27"]
 
-### D12 — root-caused
+### D12 — resolved
 
 - createdAt: 2026-06-10T11:05:15.652Z
-- updatedAt: 2026-06-10T11:08:03.491Z
+- updatedAt: 2026-06-10T11:13:58.873Z
 - author: "opus-4.8[1m]"
 - session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
 - headline: test/editors/test-tree-sitter.sh set -e + command-substitution silently aborts on first parse failure (masks which file failed)
@@ -216,3 +216,4 @@ archives: []
 - suggestedFix: "Make the parse capture non-fatal: `output=$(cd \"$GRAMMAR_DIR\" && tree-sitter parse \"$f\" 2>&1) || true` (or `set +e` around the loop body), so the loop visits every file, prints `FAIL: <file>` for each, the Summary, and exits 1 at the end based on the error count. This is a real harness bug independent of D11."
 - ledgerRefs: ["tasks:T14","goals:G1"]
 - dependsOn: ["T26"]
+- fix: "T26 (merged b24e491f): appended `|| true` to the tree-sitter parse capture in test/editors/test-tree-sitter.sh:46; the real-file loop now visits every file, prints FAIL/Summary, and exits 1 on error count instead of silently aborting under set -e. Verified: 80/81 + FAIL: reserved.baboon + exit 1."

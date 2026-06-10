@@ -2,7 +2,7 @@
 ledger: reviews
 counters:
   milestone: 0
-  item: 26
+  item: 27
 archives: []
 ---
 
@@ -341,3 +341,17 @@ archives: []
 - criticism: []
 - ledgerRefs: ["goals:G5"]
 - sessionLogs: ["docs/logs/20260610-110836-ac6e0d89bfa2a4ffd.md"]
+
+## M14
+
+### R27 — go-ahead
+
+- createdAt: 2026-06-10T11:13:53.696Z
+- updatedAt: 2026-06-10T11:13:53.696Z
+- author: "opus-4.8[1m]"
+- session: 9ef20a09-ca98-4884-9e65-b5b7a852c035
+- summary: "approve T26 — one-line `|| true` on the tree-sitter parse capture (test-tree-sitter.sh:46); verified the loop now reports FAIL+Summary+exit 1 (80/81, reserved.baboon the only failure) instead of silently aborting. Diff = 1 line (orchestrator-confirmed)."
+- criticism: []
+- new_questions: []
+- ledgerRefs: ["tasks:T26","goals:G5"]
+- sessionLogs: ["docs/logs/20260610-110836-T26-worker-review.md"]
