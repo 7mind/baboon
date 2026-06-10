@@ -15,10 +15,24 @@ if [[ ! -d "$GRAMMAR_DIR" ]]; then
   exit 1
 fi
 
-# Collect all source .baboon files (skip build artifacts)
+# Collect all source .baboon files (skip build artifacts).
+#
+# reserved-words-ok/ is EXCLUDED from the editor real-file scan (D11).
+# That fixture is a codegen torture-test: it deliberately names DTO fields after
+# words that are grammar keywords in the tree-sitter editor grammar (`is`, `in`,
+# `def`, `type`, `import`, `with`, `was`, `data`, …). The Baboon compiler accepts
+# any `idt.symbol` as a field/member name, but the editor grammar sets
+# `word: $ => $.identifier`, so those keyword-shaped names lex as their keyword
+# token and the parser reports ERROR. Re-admitting every keyword at every
+# name-binding position is notoriously conflict-prone in tree-sitter and would
+# destabilize the corpus; the editor grammar is best-effort syntax highlighting,
+# not an authoritative parser, so reserved-words-ok is not a meaningful editing
+# target. It REMAINS in the shared model-dir for codegen coverage (T13) — this
+# exclusion scopes only to the editor real-file scan. Mirrors the D9
+# mcp-stub-ok model-dir isolation precedent.
 mapfile -t BABOON_FILES < <(
   find "$PROJECT_ROOT/baboon-compiler/src/test/resources" "$PROJECT_ROOT/test" \
-    -name '*.baboon' -not -path '*/target/*' 2>/dev/null | sort
+    -name '*.baboon' -not -path '*/target/*' -not -path '*/reserved-words-ok/*' 2>/dev/null | sort
 )
 
 if [[ ${#BABOON_FILES[@]} -eq 0 ]]; then
