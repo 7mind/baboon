@@ -97,10 +97,11 @@ class DocumentSymbolProvider(
   }
 
   private def templateBodyMeta(body: TemplateBody): RawNodeMeta = body.rawDefn match {
-    case RawTemplateDefn.Dto(raw)      => raw.meta
-    case RawTemplateDefn.Adt(raw)      => raw.meta
-    case RawTemplateDefn.Contract(raw) => raw.meta
-    case RawTemplateDefn.Service(raw)  => raw.meta
+    case RawTemplateDefn.Dto(raw)        => raw.meta
+    case RawTemplateDefn.Identifier(raw) => raw.meta
+    case RawTemplateDefn.Adt(raw)        => raw.meta
+    case RawTemplateDefn.Contract(raw)   => raw.meta
+    case RawTemplateDefn.Service(raw)    => raw.meta
   }
 
   private def isInFile(pos: InputPointer, filePath: String): Boolean = {

@@ -17,7 +17,9 @@ case class RawDto(name: RawTypeName, members: Seq[RawDtoMember], derived: Set[Ra
   extends RawDefn
   with RawDtoid
 
-case class RawIdentifier(name: RawTypeName, members: Seq[RawDtoMember], derived: Set[RawMemberMeta], meta: RawNodeMeta) extends RawDefn with RawDtoid
+case class RawIdentifier(name: RawTypeName, members: Seq[RawDtoMember], derived: Set[RawMemberMeta], meta: RawNodeMeta, typeParams: List[RawTypeName])
+  extends RawDefn
+  with RawDtoid
 
 case class RawContract(name: RawTypeName, members: Seq[RawDtoMember], meta: RawNodeMeta, typeParams: List[RawTypeName]) extends RawDefn with RawDtoid
 

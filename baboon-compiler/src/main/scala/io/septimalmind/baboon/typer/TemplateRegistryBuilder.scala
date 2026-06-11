@@ -53,10 +53,11 @@ object TemplateRegistryBuilder {
             case (key, entries) if entries.size > 1 =>
               // brief: emit at the meta of the second definition (the one being dropped from the registry)
               val secondMeta = entries.tail.head._2.rawDefn match {
-                case RawTemplateDefn.Dto(raw)      => raw.meta
-                case RawTemplateDefn.Adt(raw)      => raw.meta
-                case RawTemplateDefn.Contract(raw) => raw.meta
-                case RawTemplateDefn.Service(raw)  => raw.meta
+                case RawTemplateDefn.Dto(raw)        => raw.meta
+                case RawTemplateDefn.Identifier(raw) => raw.meta
+                case RawTemplateDefn.Adt(raw)        => raw.meta
+                case RawTemplateDefn.Contract(raw)   => raw.meta
+                case RawTemplateDefn.Service(raw)    => raw.meta
               }
               val ownerStr = key._2 match {
                 case Owner.Toplevel => "<toplevel>"
@@ -90,6 +91,16 @@ object TemplateRegistryBuilder {
             _ <- validateNoDerived(raw.name, raw.derived, raw.meta)
           } yield {
             val body = TemplateBody(raw.typeParams, RawTemplateDefn.Dto(raw))
+            val key  = (pkg, ownerForCurrent, TypeName(raw.name.name))
+            (List.empty, TemplateRegistry(Map(key -> body)))
+          }
+
+        case RawTLDef.Identifier(_, raw) if raw.typeParams.nonEmpty =>
+          for {
+            _ <- validateTypeParams(raw.typeParams, raw.name, raw.meta)
+            _ <- validateNoDerived(raw.name, raw.derived, raw.meta)
+          } yield {
+            val body = TemplateBody(raw.typeParams, RawTemplateDefn.Identifier(raw))
             val key  = (pkg, ownerForCurrent, TypeName(raw.name.name))
             (List.empty, TemplateRegistry(Map(key -> body)))
           }

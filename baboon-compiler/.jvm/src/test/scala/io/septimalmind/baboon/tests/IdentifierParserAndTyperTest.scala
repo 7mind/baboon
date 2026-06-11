@@ -2,7 +2,7 @@ package io.septimalmind.baboon.tests
 
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.{FSPath, RawDtoMember, RawFieldName, RawTLDef, RawTypeName}
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
 import io.septimalmind.baboon.typer.BaboonTyper
 import io.septimalmind.baboon.typer.model.*
@@ -198,6 +198,138 @@ abstract class IdentifierParserAndTyperTestBase[F[+_, +_]: Error2: TagKK: Baboon
           assert(
             !foo.get.isIdentifier,
             s"expected isIdentifier=false for `data Foo`, got isIdentifier=${foo.get.isIdentifier}",
+          )
+        }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // T49 (Q14 prerequisite): templated `id` — grammar + typer monomorphization
+  // ──────────────────────────────────────────────────────────────────────────
+
+  private def runTyperFor(
+    parser: BaboonParser[F],
+    typer: BaboonTyper[F],
+    content: String,
+    name: String,
+  ): F[Nothing, Either[NEList[BaboonIssue], Domain]] = {
+    val input = makeInput(name, content)
+    parser.parse(input).flatMap(typer.process).map(Right(_): Either[NEList[BaboonIssue], Domain]).catchAll {
+      errs => F.pure(Left(errs): Either[NEList[BaboonIssue], Domain])
+    }
+  }
+
+  "baboon templated id — T49" should {
+
+    // (a) `identifier Foo[T] { v: T }` parses with tps = [T]
+    "parse `id Foo[T] { v: T }` as a templated RawIdentifier with tps = [T]" in {
+      (parser: BaboonParser[F]) =>
+        val input = makeInput(
+          "id-template.baboon",
+          """model test.id.template
+            |
+            |version "1.0.0"
+            |
+            |id Foo[T] { v: T }
+            |""".stripMargin,
+        )
+        for {
+          parsed <- parser.parse(input)
+        } yield {
+          val defs  = parsed.members.defs
+          val idDef = defs.collectFirst { case d: RawTLDef.Identifier => d }
+          assert(idDef.isDefined, s"expected RawTLDef.Identifier in top-level defs, got: $defs")
+          val id = idDef.get
+          assert(id.value.name == RawTypeName("Foo"), s"expected name=Foo, got ${id.value.name}")
+          assert(
+            id.value.typeParams == List(RawTypeName("T")),
+            s"expected typeParams=[T], got ${id.value.typeParams}",
+          )
+        }
+    }
+
+    // (b) non-templated `identifier Bar { v: i32 }` still parses with empty tps (back-compat)
+    "parse non-templated `id Bar { v: i32 }` with empty tps (back-compat)" in {
+      (parser: BaboonParser[F]) =>
+        val input = makeInput(
+          "id-nontemplate.baboon",
+          """model test.id.nontemplate
+            |
+            |version "1.0.0"
+            |
+            |id Bar { v: i32 }
+            |""".stripMargin,
+        )
+        for {
+          parsed <- parser.parse(input)
+        } yield {
+          val defs  = parsed.members.defs
+          val idDef = defs.collectFirst { case d: RawTLDef.Identifier => d }
+          assert(idDef.isDefined, s"expected RawTLDef.Identifier in top-level defs, got: $defs")
+          val id = idDef.get
+          assert(id.value.name == RawTypeName("Bar"), s"expected name=Bar, got ${id.value.name}")
+          assert(
+            id.value.typeParams.isEmpty,
+            s"expected empty typeParams for non-templated id, got ${id.value.typeParams}",
+          )
+        }
+    }
+
+    // (c) use-site `Foo[i32]` monomorphizes to a concrete id whose isIdentifier=true and field v: i32
+    "monomorphize `type FooI = Foo[i32]` to a concrete id (isIdentifier=true, field v: i32)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        val input = makeInput(
+          "id-template-mono.baboon",
+          """model test.id.template.mono
+            |
+            |version "1.0.0"
+            |
+            |id Foo[T] { v: T }
+            |root type FooI = Foo[i32]
+            |""".stripMargin,
+        )
+        for {
+          parsed <- parser.parse(input)
+          domain <- typer.process(parsed)
+        } yield {
+          val dtos = domain.defs.meta.nodes.values.collect {
+            case u: DomainMember.User if u.defn.isInstanceOf[Typedef.Dto] =>
+              u.defn.asInstanceOf[Typedef.Dto]
+          }.toList
+          val fooI = dtos.find(_.id.name.name == "FooI")
+          assert(fooI.isDefined, s"expected monomorphized Typedef.Dto named FooI, found: ${dtos.map(_.id.name.name)}")
+          assert(
+            fooI.get.isIdentifier,
+            s"expected isIdentifier=true for monomorphized templated id, got isIdentifier=${fooI.get.isIdentifier}",
+          )
+          val vField = fooI.get.fields.find(_.name.name == "v")
+          assert(vField.isDefined, s"expected field named v, got: ${fooI.get.fields.map(_.name.name)}")
+          assert(
+            vField.get.tpe.toString.contains("i32"),
+            s"expected field v resolved to i32, got: ${vField.get.tpe}",
+          )
+        }
+    }
+
+    // (d) bare reference to templated `Foo` (no args) raises the same diagnostic as bare templated data
+    "reject a bare reference to a templated id (`type FooI = Foo`) with TemplateNotInstantiated" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        val content =
+          """model test.id.template.bare
+            |
+            |version "1.0.0"
+            |
+            |id Foo[T] { v: T }
+            |type FooI = Foo
+            |""".stripMargin
+        for {
+          outcome <- runTyperFor(parser, typer, content, "id-template-bare.baboon")
+        } yield {
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val tis    = issues.toList.collect { case BaboonIssue.Typer(ti) => ti }
+          assert(
+            tis.exists(_.isInstanceOf[TyperIssue.TemplateNotInstantiated]),
+            s"expected TemplateNotInstantiated for bare templated-id ref, got: $tis",
           )
         }
     }

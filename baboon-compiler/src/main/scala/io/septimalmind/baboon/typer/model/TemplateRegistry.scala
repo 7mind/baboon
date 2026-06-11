@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.typer.model
 
-import io.septimalmind.baboon.parser.model.{RawAdt, RawContract, RawDto, RawService, RawTypeName}
+import io.septimalmind.baboon.parser.model.{RawAdt, RawContract, RawDto, RawIdentifier, RawService, RawTypeName}
 
 /** A raw template body, keyed by the template's own name.
   *
@@ -15,6 +15,7 @@ import io.septimalmind.baboon.parser.model.{RawAdt, RawContract, RawDto, RawServ
 sealed trait RawTemplateDefn
 object RawTemplateDefn {
   case class Dto(raw: RawDto) extends RawTemplateDefn
+  case class Identifier(raw: RawIdentifier) extends RawTemplateDefn
   case class Adt(raw: RawAdt) extends RawTemplateDefn
   case class Contract(raw: RawContract) extends RawTemplateDefn
   case class Service(raw: RawService) extends RawTemplateDefn

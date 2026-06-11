@@ -180,10 +180,11 @@ class HoverProvider(
   private def renderTemplateInfo(canonicalName: String, body: TemplateBody, domain: Domain): String = {
     val params = body.typeParams.map(_.name).mkString(", ")
     val kind = body.rawDefn match {
-      case _: RawTemplateDefn.Dto      => "data"
-      case _: RawTemplateDefn.Adt      => "adt"
-      case _: RawTemplateDefn.Contract => "contract"
-      case _: RawTemplateDefn.Service  => "service"
+      case _: RawTemplateDefn.Dto        => "data"
+      case _: RawTemplateDefn.Identifier => "id"
+      case _: RawTemplateDefn.Adt        => "adt"
+      case _: RawTemplateDefn.Contract   => "contract"
+      case _: RawTemplateDefn.Service    => "service"
     }
     s"```baboon\n$kind $canonicalName[$params] { … }\n```\n\n*Template — instantiate via `type Alias = $canonicalName[…]`*\n\n---\n*Package: ${domain.id}*"
   }

@@ -13,7 +13,8 @@ import org.scalatest.wordspec.AnyWordSpec
   *   and the body, surfacing the type-param list as `typeParams` on the raw AST node.
   * - Declarations without the clause continue to produce `typeParams == Nil` (backward compat).
   * - `data X[] { … }` fails to parse (empty bracket clause forbidden).
-  * - `id Foo[T] { … }` fails to parse (identifiers are not generifiable per spec §6.7).
+  * - `id Foo[T] { … }` parses with `typeParams == [T]` — T49 (Q14 prerequisite) makes `id`
+  *   templatable, reversing the prior §6.7 exclusion (templated `id` monomorphizes like `data`).
   *
   * Does NOT exercise the typer. Template-body contents (field refs to `T`) are not validated here.
   */
@@ -72,15 +73,6 @@ final class TemplateHeadParserTest extends AnyWordSpec {
   private def assertDtoFails(source: String): Unit = {
     val c = ctx(source)
     fastparse.parse(c.content, c.defDto.dtoEnclosed(_)) match {
-      case _: Parsed.Failure => ()
-      case Parsed.Success(v, idx) =>
-        fail(s"expected parse failure for [$source], but succeeded: $v (consumed $idx)")
-    }
-  }
-
-  private def assertIdentifierFails(source: String): Unit = {
-    val c = ctx(source)
-    fastparse.parse(c.content, c.defDto.identifierEnclosed(_)) match {
       case _: Parsed.Failure => ()
       case Parsed.Success(v, idx) =>
         fail(s"expected parse failure for [$source], but succeeded: $v (consumed $idx)")
@@ -169,12 +161,33 @@ final class TemplateHeadParserTest extends AnyWordSpec {
       assertDtoFails("data X[] { f: i32 }")
     }
 
-    // ─── negative: id Foo[T] { … } must fail — §6.7 identifiers excluded ──────
+    // ─── positive: id Foo[T] { … } now parses — T49 (Q14 prerequisite) ────────
 
-    "reject id Foo[T] { … } — identifiers are not generifiable (spec §6.7)" in {
-      // The identifierEnclosed rule does not parse a templateHead clause, so [T] is not consumed
-      // before { and the parse fails.
-      assertIdentifierFails("id Foo[T] { f: i32 }")
+    "parse id Foo[T] { f: i32 } with single type param (T49 — templated id)" in {
+      // T49 (Q14 prerequisite) reverses the prior §6.7 exclusion: `identifierEnclosed` now
+      // accepts an optional templateHead so a templated `id` monomorphizes exactly like a
+      // templated `data`. The bracketed `[T]` is consumed into typeParams.
+      val c = ctx("id Foo[T] { f: i32 }")
+      fastparse.parse(c.content, c.defDto.identifierEnclosed(_)) match {
+        case Parsed.Success(v, idx) =>
+          assert(idx == "id Foo[T] { f: i32 }".length, s"parser left unconsumed input: [${"id Foo[T] { f: i32 }".drop(idx)}]")
+          assert(v.name.name == "Foo")
+          assert(v.typeParams == List(RawTypeName("T")), s"expected typeParams=[T], got ${v.typeParams}")
+        case f: Parsed.Failure =>
+          fail(s"expected parse success for [id Foo[T] { f: i32 }], got: ${f.msg}")
+      }
+    }
+
+    "parse id Bar { f: i32 } without template head (typeParams == Nil) — T49 back-compat" in {
+      val c = ctx("id Bar { f: i32 }")
+      fastparse.parse(c.content, c.defDto.identifierEnclosed(_)) match {
+        case Parsed.Success(v, idx) =>
+          assert(idx == "id Bar { f: i32 }".length, s"parser left unconsumed input: [${"id Bar { f: i32 }".drop(idx)}]")
+          assert(v.name.name == "Bar")
+          assert(v.typeParams.isEmpty, s"expected empty typeParams, got ${v.typeParams}")
+        case f: Parsed.Failure =>
+          fail(s"expected parse success for [id Bar { f: i32 }], got: ${f.msg}")
+      }
     }
 
     // ─── negative: non-bare-identifier in bracket clause must fail (spec §2.2) ─

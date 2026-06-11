@@ -799,10 +799,11 @@ object TemplateInstantiator {
             // verbatim from the template body via the substitution walk.
             // We compute the merged meta once and reuse it for every variant.
             val templateMeta = body.rawDefn match {
-              case RawTemplateDefn.Dto(r)      => r.meta
-              case RawTemplateDefn.Adt(r)      => r.meta
-              case RawTemplateDefn.Contract(r) => r.meta
-              case RawTemplateDefn.Service(r)  => r.meta
+              case RawTemplateDefn.Dto(r)        => r.meta
+              case RawTemplateDefn.Identifier(r) => r.meta
+              case RawTemplateDefn.Adt(r)        => r.meta
+              case RawTemplateDefn.Contract(r)   => r.meta
+              case RawTemplateDefn.Service(r)    => r.meta
             }
             val mergedMeta = TemplateInstantiator.mergeAliasAndTemplateMeta(alias.meta, templateMeta)
 
@@ -816,6 +817,28 @@ object TemplateInstantiator {
                   rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
                   RawTLDef.DTO(
+                    root,
+                    raw.copy(
+                      name       = alias.name,
+                      members    = rewrittenMembers,
+                      derived    = alias.derived,
+                      meta       = mergedMeta,
+                      typeParams = Nil,
+                    ),
+                  )
+                }
+
+              case RawTemplateDefn.Identifier(raw) =>
+                // T49 (Q14 prerequisite): a templated `id` monomorphizes exactly like a templated
+                // `data`, but synthesizes a concrete `RawTLDef.Identifier` so the downstream typer
+                // produces `Typedef.Dto(isIdentifier=true)` (backend-invariant identifier shape).
+                // Body-side derived is rejected at registry-build time (TemplateBodyCarriesDerived,
+                // spec §5.3). By the time we reach this point the invariant holds.
+                assert(raw.derived.isEmpty, s"template body '${raw.name.name}' carries derived — should have been rejected by TemplateRegistryBuilder")
+                for {
+                  rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta, pkg)
+                } yield {
+                  RawTLDef.Identifier(
                     root,
                     raw.copy(
                       name       = alias.name,
