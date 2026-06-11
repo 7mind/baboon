@@ -347,6 +347,40 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
             symbolMap.get("Page").foreach(kind => assert(kind == SymbolKind.Class, s"Template 'Page' should have kind Class, got $kind"))
         }
     }
+
+    // T35 / D15-item-6: regression for wrong-domain symbol construction.
+    // DocumentSymbolProvider used to pass the FIRST domain's version (via `.head`) to every
+    // createSymbol call, regardless of which domain the member actually belongs to.
+    // For a file in a non-first domain that defines an ADT, this caused the branch children
+    // to be resolved against the wrong domain's node map, yielding empty children.
+    // Fix: allTypes now carries (domain, member) pairs; each member gets ITS OWN domain.
+    "T35: ADT in non-first domain yields its branch children (wrong-domain regression)" in {
+      // m30.sc.docs is a separate lineage from testpkg.pkg0 / my.ok.* / my.lsp.* — when the
+      // whole corpus is loaded the family has 15+ lineages.  The pre-fix `.head` routes every
+      // createSymbol call to the FIRST lineage's domain, so DocResult's branch TypeIds
+      // (pkg=m30.sc.docs) are absent from that domain's node map and children come back empty.
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m30-sc-docs/m30_sc_docs.baboon") {
+          (_, wsState, uri) =>
+            val symbolProvider = new DocumentSymbolProvider(wsState, positionConverter, pathOps, logger)
+            val symbols        = symbolProvider.getSymbols(uri)
+
+            val symbolMap = symbols.map(s => s.name -> s).toMap
+            assert(symbolMap.contains("DocResult"), s"Should include DocResult ADT, got: ${symbolMap.keySet}")
+
+            val docResult = symbolMap("DocResult")
+            val children  = docResult.children.getOrElse(Seq.empty)
+            val childNames = children.map(_.name).toSet
+            assert(
+              childNames.contains("DocOk"),
+              s"DocResult ADT should have child 'DocOk'; got children: $childNames — if empty, the wrong domain was used (D15/T35 regression)",
+            )
+            assert(
+              childNames.contains("DocErr"),
+              s"DocResult ADT should have child 'DocErr'; got children: $childNames — if empty, the wrong domain was used (D15/T35 regression)",
+            )
+        }
+    }
   }
 
   "hover provider (m29 templates)" should {

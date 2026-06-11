@@ -31,22 +31,25 @@ class DocumentSymbolProvider(
         logger.message(LspLogging.Context, "getSymbols: NO FAMILY - compilation failed or not run")
         Seq.empty
       case Some(family) =>
+        // Carry the owning domain alongside each member so createSymbol can look up
+        // ADT branch nodes in the correct domain (D15/T35: the old code passed .head
+        // for every member, routing branch lookups to the wrong domain's node map).
         val allTypes = family.domains.toMap.values.flatMap {
           lineage =>
             lineage.versions.toMap.values.flatMap {
               domain =>
-                domain.defs.meta.nodes.values.collect { case u: DomainMember.User => u }
+                domain.defs.meta.nodes.values.collect { case u: DomainMember.User => (domain, u) }
             }
         }.toSeq
         logger.message(LspLogging.Context, s"getSymbols: found ${allTypes.size} total types in family")
 
-        val inFile = allTypes.filter(u => isInFile(u.meta.pos, filePath))
+        val inFile = allTypes.filter { case (_, u) => isInFile(u.meta.pos, filePath) }
         logger.message(LspLogging.Context, s"getSymbols: ${inFile.size} types in file $filePath")
 
         if (inFile.isEmpty && allTypes.nonEmpty) {
           // Debug: show first few type paths
           allTypes.take(3).foreach {
-            u =>
+            case (_, u) =>
               u.meta.pos match {
                 case fk: InputPointer.FileKnown =>
                   logger.message(LspLogging.Context, s"getSymbols: type ${u.id.name.name} is in ${fk.file.asString}")
@@ -88,7 +91,7 @@ class DocumentSymbolProvider(
             }
         }.toSeq
 
-        val typeSymbols = inFile.map(u => createSymbol(u, family.domains.toMap.values.flatMap(_.versions.toMap.values).head))
+        val typeSymbols = inFile.map { case (domain, u) => createSymbol(u, domain) }
         (typeSymbols ++ aliasSymbols ++ templateSymbols).sortBy(_.name)
     }
   }
