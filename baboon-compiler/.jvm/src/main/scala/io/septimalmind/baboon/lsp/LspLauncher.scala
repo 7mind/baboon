@@ -45,7 +45,7 @@ class LspLauncher(
   }
 
   @tailrec
-  private def runMessageLoop(transport: LspTransport): Unit = {
+  final private[lsp] def runMessageLoop(transport: LspTransport): Unit = {
     transport.readMessage() match {
       case Some(json) =>
         try {
