@@ -5,7 +5,7 @@ import io.septimalmind.baboon.lsp.protocol.{Position, SymbolKind}
 import io.septimalmind.baboon.lsp.state._
 import io.septimalmind.baboon.lsp.util.{JvmPathOps, PositionConverter}
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.model.FSPath
+import io.septimalmind.baboon.parser.model.{FSPath, InputPointer}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.tests.BaboonTest
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
@@ -972,6 +972,70 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
                 }
             }
             assert(uris.nonEmpty, "Corpus should contain at least one file")
+        }
+    }
+
+    // T48 / D17: corpus-order-independent wrong-domain regression guard.
+    // For every ADT with branches in the corpus, the DocumentSymbolProvider must emit a
+    // SymbolKind.Interface symbol with non-empty children.  The pre-T35 bug routed every
+    // createSymbol call to the FIRST lineage's domain, so ADTs in non-first domains returned
+    // empty children (branch TypeIds absent from the wrong domain's node map).
+    //
+    // The assertion is keyed on SymbolKind (not just bare name) so that files containing
+    // same-named DTOs and ADTs (e.g. pkg03.baboon's three `Clash` symbols) do not produce
+    // false positives: only Interface-kind symbols are considered for the children check.
+    "T48: every ADT with branches resolves non-empty document-symbol children across all corpus domains" in {
+      (loader: BaboonLoader[F]) =>
+        withLspStateAllFiles(loader) {
+          (_, wsState, uris) =>
+            val symbolProvider = new DocumentSymbolProvider(wsState, positionConverter, pathOps, logger)
+            val family         = wsState.getFamily.getOrElse(throw new AssertionError("family must be present after successful load"))
+
+            // Enumerate every (normalised-file-path, simple-ADT-name) pair from the family.
+            // NEList[TypeId.User] is never empty, so every Typedef.Adt has at least one member.
+            // We iterate from the family — not from a HashMap — so the result is order-independent.
+            val adtsByFile: Set[(String, String)] =
+              (for {
+                lineage <- family.domains.toMap.values
+                domain  <- lineage.versions.toMap.values
+                node    <- domain.defs.meta.nodes.values
+                u <- node match {
+                  case u: DomainMember.User => Seq(u)
+                  case _                    => Seq.empty
+                }
+                if u.defn.isInstanceOf[Typedef.Adt]
+                filePath <- u.meta.pos match {
+                  case fk: InputPointer.FileKnown => Seq(pathOps.normalizePath(fk.file.asString))
+                  case _                          => Seq.empty
+                }
+              } yield filePath -> u.id.name.name).toSet
+
+            assert(adtsByFile.nonEmpty, "Corpus must contain at least one ADT")
+
+            // Resolve document symbols once per URI.
+            val symbolsByUri =
+              uris.map(uri => uri -> symbolProvider.getSymbols(uri)).toMap
+
+            // For each (filePath, adtName), locate the corresponding URI then assert that
+            // among Interface-kind symbols with that name at least one has non-empty children.
+            // Filtering by SymbolKind.Interface (the kind assigned to Typedef.Adt by createSymbol)
+            // excludes same-named DTOs (SymbolKind.Class) from the lookup — addressing the
+            // pkg03.baboon `Clash` collision that caused the round-1 false positive.
+            adtsByFile.foreach {
+              case (filePath, adtName) =>
+                val uriOpt = uris.find(uri => pathOps.uriToPathSafe(uri).exists(p => pathOps.normalizePath(p) == filePath))
+                uriOpt.foreach {
+                  uri =>
+                    val allSymbols       = symbolsByUri.getOrElse(uri, Seq.empty)
+                    val interfaceMatches = allSymbols.filter(s => s.kind == SymbolKind.Interface && s.name == adtName)
+                    assert(
+                      interfaceMatches.exists(s => s.children.isDefined && s.children.get.nonEmpty),
+                      s"ADT '$adtName' in $uri must have non-empty branch children " +
+                        s"(SymbolKind.Interface); matching Interface symbols: $interfaceMatches — " +
+                        s"empty children indicates wrong-domain lookup (D15/T35 regression)",
+                    )
+                }
+            }
         }
     }
   }
