@@ -14,7 +14,4 @@ trait InputProvider {
 
   /** Convert a file path to a URI string */
   def pathToUri(path: String): String
-
-  /** Convert a URI string to a file path */
-  def uriToPath(uri: String): String
 }

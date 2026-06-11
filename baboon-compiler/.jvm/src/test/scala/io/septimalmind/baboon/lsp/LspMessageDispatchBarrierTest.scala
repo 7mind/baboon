@@ -64,7 +64,6 @@ class LspMessageDispatchBarrierTest extends AnyWordSpec with Matchers {
   private val noopInputProvider: InputProvider = new InputProvider {
     def getWorkspaceInputs: Seq[BaboonParser.Input] = Seq.empty
     def pathToUri(path: String): String             = path
-    def uriToPath(uri: String): String              = uri
   }
 
   /** Build a minimal BaboonLanguageServer. The hoverProvider is provided by the caller

@@ -63,7 +63,6 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
       val inputProvider = new InputProvider {
         def getWorkspaceInputs: Seq[BaboonParser.Input] = inputs
         def pathToUri(path: String): String             = pathOps.pathToUri(path)
-        def uriToPath(uri: String): String              = pathOps.uriToPath(uri)
       }
       val wsState = new WorkspaceState(docState, compiler, inputProvider, pathOps, logger)
       wsState.recompile()
@@ -110,7 +109,6 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
       val inputProvider = new InputProvider {
         def getWorkspaceInputs: Seq[BaboonParser.Input] = inputs
         def pathToUri(path: String): String             = pathOps.pathToUri(path)
-        def uriToPath(uri: String): String              = pathOps.uriToPath(uri)
       }
       val wsState = new WorkspaceState(docState, compiler, inputProvider, pathOps, logger)
       wsState.recompile()

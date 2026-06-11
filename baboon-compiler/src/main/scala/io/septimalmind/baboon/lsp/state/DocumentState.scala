@@ -40,10 +40,6 @@ class DocumentState(pathOps: PathOps) {
     documents.view.mapValues(_.content).toMap
   }
 
-  def uriToPath(uri: String): String = {
-    pathOps.uriToPath(uri)
-  }
-
   def pathToUri(path: String): String = {
     pathOps.pathToUri(path)
   }

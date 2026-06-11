@@ -32,9 +32,5 @@ class PositionConverter(pathOps: PathOps) {
     pathOps.pathToUri(pathOps.normalizePath(path))
   }
 
-  def uriToPath(uri: String): String = {
-    pathOps.uriToPath(uri)
-  }
-
   def defaultRange: Range = Range(Position(0, 0), Position(0, 1))
 }

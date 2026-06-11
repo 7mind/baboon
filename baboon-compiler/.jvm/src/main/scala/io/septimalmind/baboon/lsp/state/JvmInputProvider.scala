@@ -43,6 +43,4 @@ class JvmInputProvider(
   }
 
   override def pathToUri(path: String): String = pathOps.pathToUri(path)
-
-  override def uriToPath(uri: String): String = pathOps.uriToPath(uri)
 }
