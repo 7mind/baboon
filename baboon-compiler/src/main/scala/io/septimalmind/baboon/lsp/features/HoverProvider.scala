@@ -39,19 +39,23 @@ class HoverProvider(
   private def getWordAtPosition(uri: String, position: Position): Option[String] = {
     documentState.getContent(uri).flatMap {
       content =>
-        val lines = content.split("\n", -1)
-        if (position.line < lines.length) {
-          val line = lines(position.line)
-          val col  = position.character
-          if (col <= line.length) {
-            val wordChars = (c: Char) => c.isLetterOrDigit || c == '_'
-            var start     = col
-            while (start > 0 && wordChars(line.charAt(start - 1))) start -= 1
-            var end = col
-            while (end < line.length && wordChars(line.charAt(end))) end += 1
-            if (start < end) Some(line.substring(start, end)) else None
+        if (position.line < 0 || position.character < 0) {
+          None
+        } else {
+          val lines = content.split("\n", -1)
+          if (position.line < lines.length) {
+            val line = lines(position.line)
+            val col  = position.character
+            if (col <= line.length) {
+              val wordChars = (c: Char) => c.isLetterOrDigit || c == '_'
+              var start     = col
+              while (start > 0 && wordChars(line.charAt(start - 1))) start -= 1
+              var end = col
+              while (end < line.length && wordChars(line.charAt(end))) end += 1
+              if (start < end) Some(line.substring(start, end)) else None
+            } else None
           } else None
-        } else None
+        }
     }
   }
 
@@ -67,30 +71,34 @@ class HoverProvider(
   private def enclosingTemplateName(uri: String, position: Position): Option[String] = {
     documentState.getContent(uri).flatMap {
       content =>
-        val lines = content.split("\n", -1)
-        // Regex that matches a template declaration header on a single line.
-        val templateHeaderRe = """^\s*(?:root\s+)?(?:data|adt|contract|service)\s+(\w+)\s*\[""".r
-        // Walk from the cursor line upward to find the line that opens the *immediate* enclosing
-        // block (the first unmatched `{` above the cursor).  `depth` counts `}` seen so far that are
-        // still awaiting a matching `{`.  A line whose `{` count exceeds `depth` opens an unmatched
-        // brace that encloses the cursor — that is the cursor's direct enclosing declaration.  We
-        // must NOT scan past it into sibling scopes (e.g. a preceding template whose body has
-        // already closed), which is the bug the brace tracking fixes.
-        var lineIdx = position.line
-        var depth   = 0 // count of `}` below us still needing a matching `{`
-        while (lineIdx >= 0) {
-          val line   = lines(lineIdx)
-          val opens  = line.count(_ == '{')
-          val closes = line.count(_ == '}')
-          depth += closes
-          if (opens > depth) {
-            // This line opens the block directly containing the cursor.
-            return templateHeaderRe.findFirstMatchIn(line).map(_.group(1))
+        if (position.line < 0) {
+          None
+        } else {
+          val lines = content.split("\n", -1)
+          // Regex that matches a template declaration header on a single line.
+          val templateHeaderRe = """^\s*(?:root\s+)?(?:data|adt|contract|service)\s+(\w+)\s*\[""".r
+          // Walk from the cursor line upward to find the line that opens the *immediate* enclosing
+          // block (the first unmatched `{` above the cursor).  `depth` counts `}` seen so far that are
+          // still awaiting a matching `{`.  A line whose `{` count exceeds `depth` opens an unmatched
+          // brace that encloses the cursor — that is the cursor's direct enclosing declaration.  We
+          // must NOT scan past it into sibling scopes (e.g. a preceding template whose body has
+          // already closed), which is the bug the brace tracking fixes.
+          var lineIdx = position.line
+          var depth   = 0 // count of `}` below us still needing a matching `{`
+          while (lineIdx >= 0) {
+            val line   = lines(lineIdx)
+            val opens  = line.count(_ == '{')
+            val closes = line.count(_ == '}')
+            depth += closes
+            if (opens > depth) {
+              // This line opens the block directly containing the cursor.
+              return templateHeaderRe.findFirstMatchIn(line).map(_.group(1))
+            }
+            depth -= opens
+            lineIdx -= 1
           }
-          depth -= opens
-          lineIdx -= 1
+          None
         }
-        None
     }
   }
 

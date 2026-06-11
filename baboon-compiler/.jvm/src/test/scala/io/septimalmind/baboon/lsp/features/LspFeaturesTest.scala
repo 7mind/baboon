@@ -177,6 +177,36 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
             assert(result.get.contents.value.contains("lst[str]"), s"Hover should contain 'lst[str]': ${result.get.contents.value}")
         }
     }
+
+    "reject negative line in hover position" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "pkg0/pkg01.baboon") {
+          (docState, wsState, uri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+            val result = hover.getHover(uri, Position(-1, 0))
+            assert(result.isEmpty, "Hover at negative line should return None without throwing")
+        }
+    }
+
+    "reject negative character in hover position" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "pkg0/pkg01.baboon") {
+          (docState, wsState, uri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+            val result = hover.getHover(uri, Position(0, -1))
+            assert(result.isEmpty, "Hover at negative character should return None without throwing")
+        }
+    }
+
+    "reject both negative line and character in hover position" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "pkg0/pkg01.baboon") {
+          (docState, wsState, uri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+            val result = hover.getHover(uri, Position(-1, -1))
+            assert(result.isEmpty, "Hover at negative line and character should return None without throwing")
+        }
+    }
   }
 
   "completion provider" should {
