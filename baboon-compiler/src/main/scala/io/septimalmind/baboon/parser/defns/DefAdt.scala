@@ -4,7 +4,7 @@ import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{kw, struct}
 import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
-import io.septimalmind.baboon.parser.model.{RawAdt, RawAdtMember, RawAdtMemberContract, RawAdtMemberDto, RawTypeName}
+import io.septimalmind.baboon.parser.model.{RawAdt, RawAdtMember, RawAdtMemberContract, RawAdtMemberDto, RawDtoMember, RawTypeName}
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
 class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract: DefContract) {
@@ -51,11 +51,19 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
     }
   }
 
-  def adt[$: P]: P[Seq[Either[ContractRef, RawAdtMember]]] = {
+  // Three-way tag for adt body members (T37):
+  //   Right(m)          — a branch DTO/contract or structural +/-/^
+  //   Left(Left(ref))   — `is <ContractRef>` clause
+  //   Left(Right(extr)) — `has (mirror|contract) <Name>` clause
+  private type AdtEntry = Either[Either[ContractRef, RawDtoMember.ExtractionDef], RawAdtMember]
+
+  def adt[$: P]: P[Seq[AdtEntry]] = {
     import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(
       (adtIncludeDef | adtExcludeDef | adtIntersectDef | adtMember | adtMemberContract)
-        .map(m => Right(m)) | defDto.extendedContractRef.map(ref => Left(ref))
+        .map(m => Right(m): AdtEntry) |
+      defDto.extendedContractRef.map(ref => Left(Left(ref)): AdtEntry) |
+      defDto.extendedExtractionDef.map(extr => Left(Right(extr)): AdtEntry)
     ).rep()
   }
 
@@ -64,9 +72,10 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
     P(meta.member(kw.adt, defDto.templateHead.? ~ meta.derived ~ struct.enclosed(adt))).map {
       case (meta, name, (tps, derived, members)) =>
         val typeMembers     = members.collect { case Right(m) => m }
-        val contractMembers = members.collect { case Left(m) => m }
+        val contractMembers = members.collect { case Left(Left(m)) => m }
+        val extractions     = members.collect { case Left(Right(e)) => e }
 
-        model.RawAdt(RawTypeName(name), typeMembers, contractMembers, derived, meta, tps.getOrElse(Nil))
+        model.RawAdt(RawTypeName(name), typeMembers, contractMembers, extractions, derived, meta, tps.getOrElse(Nil))
     }
   }
 

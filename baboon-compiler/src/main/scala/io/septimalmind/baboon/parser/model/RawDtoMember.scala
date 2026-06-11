@@ -2,6 +2,13 @@ package io.septimalmind.baboon.parser.model
 
 import izumi.fundamentals.collections.nonempty.NEList
 
+/** Kind discriminant for `has (mirror|contract) <Name>` extraction clauses (T37). */
+sealed trait ExtractionKind
+object ExtractionKind {
+  case object Mirror   extends ExtractionKind
+  case object Contract extends ExtractionKind
+}
+
 sealed trait RawDtoMember
 
 object RawDtoMember {
@@ -54,5 +61,15 @@ object RawDtoMember {
     *   playbook), which is cheaper than synthesising a DomainMember + later strip pass.
     */
   case class IntersectionFields(fields: Seq[RawDtoMember.FieldDef], meta: RawNodeMeta) extends RawDtoMember
+
+  /** T37: parser-produced carrier for `has (mirror|contract) <Name>` extraction clauses.
+    *
+    * Grammar: `has (mirror | contract) <bare-identifier>` — no scoped/qualified names, no type args.
+    * The parser accepts this clause in any dto-shaped body (data, id, contract, adt arms).
+    * Host validation (templated-id-only vs non-templated-id-invalid, etc.) is deferred to T38.
+    *
+    * Until T38 lands the translator sees this as a no-op (explicit arm, never unhandled).
+    */
+  case class ExtractionDef(kind: ExtractionKind, name: RawTypeName, meta: RawNodeMeta) extends RawDtoMember
 
 }

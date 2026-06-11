@@ -4,7 +4,7 @@ import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{DefDocs, idt, kw, struct}
 import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
-import io.septimalmind.baboon.parser.model.{RawContractRef, RawDocComment, RawDocs, RawDto, RawDtoMember, RawField, RawFieldName, RawIdentifier, RawTypeName, RawTypeRef, ScopedRef}
+import io.septimalmind.baboon.parser.model.{ExtractionKind, RawContractRef, RawDocComment, RawDocs, RawDto, RawDtoMember, RawField, RawFieldName, RawIdentifier, RawTypeName, RawTypeRef, ScopedRef}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
@@ -137,6 +137,27 @@ class DefDto(context: ParserContext, meta: DefMeta, docs: DefDocs) {
     "-" ~ fieldDef
   }
 
+  /** Parses `has (mirror | contract) <bare-identifier>` (T37).
+    *
+    * Grammar (BaboonWhitespace):  `has` keyword — then `mirror` or `contract` keyword — then a
+    * bare symbol (no dot-qualified path, no type args).
+    *
+    * D15 discipline: this alternative does NOT use `/~` (cut) after `kw.has`, so that a field
+    * named `has` (e.g. `has: i32`) still backtracks cleanly to `fieldDef`. The order in
+    * `dtoMember` places the `meta.withMeta(extractionDef)` branch before `fieldDef` so it is
+    * tried first, but the absence of a cut means failure inside `extractionDef` reverts the
+    * cursor to before `has`. Fields named `mirror` or `contract` are unaffected — `fieldDef`
+    * does not restrict `fieldName` to non-keywords.
+    */
+  private def extractionDefCore[$: P]: P[(ExtractionKind, RawTypeName)] = {
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
+    kw.has ~ (kw.mirror.map(_ => ExtractionKind.Mirror: ExtractionKind) | kw.contract.map(_ => ExtractionKind.Contract: ExtractionKind)) ~ idt.symbol.map(RawTypeName.apply)
+  }
+
+  def extendedExtractionDef[$: P]: P[RawDtoMember.ExtractionDef] = {
+    meta.withMeta(extractionDefCore).map { case (m, (kind, name)) => RawDtoMember.ExtractionDef(kind, name, m) }
+  }
+
   // Field-definition branch with optional postfix `//!` doc capture.
   //
   // The connection between `fieldDef` and `suffixDoc` runs under `NoWhitespace`
@@ -173,7 +194,7 @@ class DefDto(context: ParserContext, meta: DefMeta, docs: DefDocs) {
     } | P(meta.withMeta(intersectionDef)).map {
       case (meta, (parent, args)) =>
         model.RawDtoMember.IntersectionDef(parent, meta, args)
-    } | extendedContractRef
+    } | extendedContractRef | extendedExtractionDef
   }
 
   def dto[$: P]: P[Seq[RawDtoMember]] = {

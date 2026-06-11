@@ -478,6 +478,9 @@ object BaboonFamilyManager {
           // PR-33.2 (M33): typer-synthesized intersection-limiter; never appears in user-authored
           // sources, so its files-from-meta contribution is just the synthesized meta.
           filesFromMeta(meta)
+        case io.septimalmind.baboon.parser.model.RawDtoMember.ExtractionDef(_, _, meta) =>
+          // T37: parser-produced `has (mirror|contract) <Name>` clause; carries its parse-site meta.
+          filesFromMeta(meta)
       }
     }
 
@@ -521,8 +524,9 @@ object BaboonFamilyManager {
         case enum: io.septimalmind.baboon.parser.model.RawEnum =>
           filesFromMeta(enum.meta) ++ enum.members.flatMap(m => filesFromMeta(m.meta)).toSet
         case adt: io.septimalmind.baboon.parser.model.RawAdt =>
-          val contractFiles = adt.contracts.flatMap(c => filesFromMeta(c.meta)).toSet
-          filesFromMeta(adt.meta) ++ contractFiles ++ adt.members.flatMap(filesFromAdtMember).toSet
+          val contractFiles   = adt.contracts.flatMap(c => filesFromMeta(c.meta)).toSet
+          val extractionFiles = adt.extractions.flatMap(e => filesFromMeta(e.meta)).toSet
+          filesFromMeta(adt.meta) ++ contractFiles ++ extractionFiles ++ adt.members.flatMap(filesFromAdtMember).toSet
         case foreign: io.septimalmind.baboon.parser.model.RawForeign =>
           filesFromMeta(foreign.meta)
         case namespace: io.septimalmind.baboon.parser.model.RawNamespace =>

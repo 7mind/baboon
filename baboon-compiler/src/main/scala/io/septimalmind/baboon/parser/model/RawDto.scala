@@ -29,6 +29,7 @@ case class RawAdt(
   name: RawTypeName,
   members: Seq[RawAdtMember],
   contracts: Seq[ContractRef],
+  extractions: Seq[RawDtoMember.ExtractionDef],
   derived: Set[RawMemberMeta],
   meta: RawNodeMeta,
   typeParams: List[RawTypeName],
