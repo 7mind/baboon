@@ -18,7 +18,12 @@ class DocumentSymbolProvider(
 ) {
 
   def getSymbols(uri: String): Seq[DocumentSymbol] = {
-    val filePath = positionConverter.uriToPath(uri)
+    val filePathOpt = pathOps.uriToPathSafe(uri)
+    if (filePathOpt.isEmpty) {
+      logger.message(LspLogging.Context, s"getSymbols: unconvertible URI (malformed or non-file scheme), returning empty: uri=$uri")
+      return Seq.empty
+    }
+    val filePath = filePathOpt.get
     logger.message(LspLogging.Context, s"getSymbols: uri=$uri, filePath=$filePath")
 
     workspaceState.getFamily match {

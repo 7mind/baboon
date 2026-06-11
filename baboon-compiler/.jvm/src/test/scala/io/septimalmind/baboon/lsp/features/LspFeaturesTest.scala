@@ -913,4 +913,80 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
         }
     }
   }
+
+  // T33: guard URI-to-path conversion at LSP request boundaries
+  "URI guard (T33/D15-5a)" should {
+    // Providers must not throw for untitled:, malformed, or non-file URIs.
+    // documentSymbol must return empty (it calls uriToPath directly).
+    // hover and definition return None/empty because they look up content by URI key — safe.
+    // completion returns workspace-level keyword/type completions even for unknown URIs
+    // (correct behaviour — no uriToPath call) so we only assert NO throw for completion.
+
+    def checkNoThrow(
+      docState: DocumentState,
+      wsState: WorkspaceState,
+      uri: String,
+      label: String,
+    ): Unit = {
+      val hover      = new HoverProvider(docState, wsState, logger)
+      val defs       = new DefinitionProvider(docState, wsState, positionConverter)
+      val completion = new CompletionProvider(docState, wsState, logger)
+      val symbols    = new DocumentSymbolProvider(wsState, positionConverter, pathOps, logger)
+
+      val pos = Position(0, 0)
+
+      // documentSymbol: guard intercepts uriToPath — must return empty Seq, not throw.
+      val symResult = symbols.getSymbols(uri)
+      assert(symResult.isEmpty, s"documentSymbol($label): expected empty Seq, got $symResult")
+
+      // hover and definition: content lookup by URI key returns None safely — must return None/empty.
+      val hoverResult = hover.getHover(uri, pos)
+      assert(hoverResult.isEmpty, s"hover($label): expected None, got $hoverResult")
+
+      val defResult = defs.findDefinition(uri, pos)
+      assert(defResult.isEmpty, s"definition($label): expected empty Seq, got $defResult")
+
+      // completion: no uriToPath call; content lookup returns None; returns workspace completions.
+      // Assert only no-throw (invoking getCompletions must not propagate any exception).
+      completion.getCompletions(uri, pos) // no assertion on result, only no-throw
+    }
+
+    "return empty results for untitled: URIs without throwing" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "pkg0/pkg01.baboon") {
+          (docState, wsState, _) =>
+            checkNoThrow(docState, wsState, "untitled:Untitled-1", "untitled:")
+        }
+    }
+
+    "return empty results for syntactically malformed URIs without throwing" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "pkg0/pkg01.baboon") {
+          (docState, wsState, _) =>
+            // file://%zz is syntactically invalid (bad percent-encoding)
+            checkNoThrow(docState, wsState, "file://%zz", "malformed")
+        }
+    }
+
+    "return empty results for non-file scheme URIs without throwing" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "pkg0/pkg01.baboon") {
+          (docState, wsState, _) =>
+            checkNoThrow(docState, wsState, "vscode-userdata:/settings.json", "vscode-userdata:")
+        }
+    }
+
+    // Additional assertion: documentSymbol with an untitled URI returns a well-formed empty array
+    // (not an error response) — the guard must complete the method call normally, yielding Seq.empty.
+    "documentSymbol returns well-formed empty Seq (not a throw) for untitled: URI" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "pkg0/pkg01.baboon") {
+          (_, wsState, _) =>
+            val symbols = new DocumentSymbolProvider(wsState, positionConverter, pathOps, logger)
+            val result  = symbols.getSymbols("untitled:Untitled-1")
+            // Seq.empty is a well-formed result; an exception would have propagated.
+            assert(result == Seq.empty, s"Expected Seq.empty for untitled URI, got $result")
+        }
+    }
+  }
 }
