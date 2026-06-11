@@ -212,3 +212,8 @@ pubspec.lock
 
 .worktrees/
 .codegraph/
+
+# cq git-object ledger backend (managed) — do not edit
+docs/*.md
+docs/ledgers.yaml
+docs/.locks/
