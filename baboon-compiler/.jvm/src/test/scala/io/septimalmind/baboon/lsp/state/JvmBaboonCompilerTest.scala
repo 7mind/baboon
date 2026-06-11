@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, ParserIssue}
 import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model._
+import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.Error2
 import izumi.functional.bio.impl.BioEither
 import izumi.functional.quasi.QuasiIORunner
@@ -25,7 +26,7 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
     "forward previous family and mark all inputs as unparsed" in {
       val manager  = new RecordingManager[EitherF]
       val runner   = new EitherRunner
-      val compiler = new JvmBaboonCompiler[EitherF](manager, runner)
+      val compiler = new JvmBaboonCompiler[EitherF](manager, runner, BLogger.Noop)
 
       val inputA = BaboonParser.Input(path("a.baboon"), "content-a")
       val inputB = BaboonParser.Input(path("b.baboon"), "content-b")
@@ -38,6 +39,39 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
       val emptyFamily = makeFamily()
       compiler.reload(inputs, Some(emptyFamily))
       manager.lastPrevious shouldBe Some(emptyFamily)
+    }
+
+    "deduplicate inputs with the same path without throwing AssertionError" in {
+      val manager  = new RecordingManager[EitherF]
+      val runner   = new EitherRunner
+      val compiler = new JvmBaboonCompiler[EitherF](manager, runner, BLogger.Noop)
+
+      val inputA     = BaboonParser.Input(path("a.baboon"), "content-a")
+      val inputB     = BaboonParser.Input(path("b.baboon"), "content-b")
+      val inputADup  = BaboonParser.Input(path("a.baboon"), "content-a")  // exact duplicate
+      val inputs     = Seq(inputA, inputB, inputADup)
+
+      // Must not throw AssertionError; manager should receive exactly one entry per distinct path
+      noException should be thrownBy compiler.reload(inputs, None)
+      manager.lastReloadInputs.map(pathOf) shouldBe List(path("a.baboon"), path("b.baboon"))
+    }
+
+    "keep the first occurrence when duplicate paths have differing content" in {
+      val manager  = new RecordingManager[EitherF]
+      val runner   = new EitherRunner
+      val compiler = new JvmBaboonCompiler[EitherF](manager, runner, BLogger.Noop)
+
+      val inputA        = BaboonParser.Input(path("a.baboon"), "content-a")
+      val inputADiffing = BaboonParser.Input(path("a.baboon"), "content-a-modified")
+      val inputs        = Seq(inputA, inputADiffing)
+
+      noException should be thrownBy compiler.reload(inputs, None)
+      // First occurrence wins; content-a is kept
+      manager.lastReloadInputs.size shouldBe 1
+      manager.lastReloadInputs.head match {
+        case BaboonParser.ReloadInput.Unparsed(_, content) => content shouldBe "content-a"
+        case _                                              => fail("Expected Unparsed")
+      }
     }
   }
 

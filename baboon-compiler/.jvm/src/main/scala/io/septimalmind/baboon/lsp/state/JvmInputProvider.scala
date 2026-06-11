@@ -15,7 +15,7 @@ class JvmInputProvider(
 ) extends InputProvider {
 
   override def getWorkspaceInputs: Seq[BaboonParser.Input] = {
-    modelDirs.toSeq.flatMap {
+    val allInputs = modelDirs.toSeq.flatMap {
       folder =>
         if (Files.exists(folder)) {
           IzFiles
@@ -23,7 +23,7 @@ class JvmInputProvider(
             .filter(_.toFile.getName.endsWith(".baboon"))
             .flatMap {
               file =>
-                val path = file.toAbsolutePath
+                val path = file.toAbsolutePath.normalize()
                 scala.util.Try {
                   val content = IzFiles.readString(file.toFile)
                   BaboonParser.Input(
@@ -36,6 +36,10 @@ class JvmInputProvider(
           Seq.empty
         }
     }
+    // Dedup across dirs: keep the first occurrence of each normalized path.
+    // Overlapping or nested --model-dir args may yield the same file multiple times.
+    val seen = scala.collection.mutable.LinkedHashSet.empty[String]
+    allInputs.filter(input => seen.add(input.path.asString))
   }
 
   override def pathToUri(path: String): String = pathOps.pathToUri(path)
