@@ -22,17 +22,16 @@ version "2.0.0"
 
 pragma scala.service.result.type = "scala.util.Either"
 pragma scala.service.result.pattern = "[$error, $success]"
-pragma scala.service.result.hkt = "true"
+pragma rust.service.result.no-errors = "true"
 
 include "shared.bmo"
 
 root data Invoice { ... }
 ```
 
-- Keys are dotted identifiers (each segment matches `[A-Za-z_][A-Za-z0-9_]*`); values are quoted strings.
+- Keys are dotted; each segment is a chain of identifier words joined by single hyphens (`[A-Za-z_][A-Za-z0-9_]*` words, e.g. `no-errors`). Values are quoted strings.
 - Multiple pragmas can appear in any order before `include` and definitions.
 - Pragmas are scoped to the domain (model + version) they appear in.
-- Known limitation: hyphenated keys (currently only `{lang}.service.result.no-errors`) cannot be written as in-file pragmas — the parser rejects `-` in key segments. Set them via the CLI instead: `--service-result-no-errors` or `--pragma "{lang}.service.result.no-errors=true"` (tracked as defect D14).
 
 Currently supported pragmas control service method return type rendering and service context parameters. See the [Services](#services) section for details. The same keys can be set from the CLI with `--pragma key=value`, which overrides in-file pragmas.
 
@@ -694,7 +693,7 @@ All pragma keys follow the pattern `{lang}.service.result.*` where `{lang}` is `
 
 | Pragma key | Value | Description |
 |-----------|-------|-------------|
-| `{lang}.service.result.no-errors` | `"true"` / `"false"` | When true, methods return just the output type. **CLI-only** (`--service-result-no-errors` or `--pragma`): the in-file pragma parser rejects hyphenated keys (defect D14) |
+| `{lang}.service.result.no-errors` | `"true"` / `"false"` | When true, methods return just the output type |
 | `{lang}.service.result.type` | e.g. `"Result"` | Wrapper type name (fully qualified if needed) |
 | `{lang}.service.result.pattern` | e.g. `"<$success, $error>"` | Type parameter pattern; `$success` and `$error` are expanded |
 | `{lang}.service.result.hkt` | `"true"` / `"false"` | Enable higher-kinded type parameter (Scala and Kotlin) |
@@ -731,15 +730,11 @@ trait BillingApi[F[+_, +_]] {
 
 #### Example: error-free Python services
 
-`no-errors` is set from the CLI (the in-file pragma form is currently rejected by the parser — see the table note above):
-
-```bash
-baboon --model-dir ./models :python --output ./out/py --service-result-no-errors=true
-```
-
 ```baboon
 model acme.billing
 version "1.0.0"
+
+pragma python.service.result.no-errors = "true"
 
 root service BillingApi {
   def CreateInvoice (

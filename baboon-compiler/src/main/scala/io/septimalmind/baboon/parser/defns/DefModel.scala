@@ -27,7 +27,17 @@ class DefModel(
 
   def pragmaKey[$: P]: P[String] = {
     import fastparse.NoWhitespace.noWhitespaceImplicit
-    P(idt.symbol.rep(sep = fastparse.LiteralStr("."), min = 1).!).map(_.trim)
+    P(pragmaKeySegment.rep(sep = fastparse.LiteralStr("."), min = 1).!).map(_.trim)
+  }
+
+  // A pragma-key segment is a chain of identifier words joined by single hyphens
+  // (e.g. `no-errors`): the canonical resolver key `{lang}.service.result.no-errors`
+  // must be expressible in-file (D14). Hyphens are pragma-key-local — general
+  // identifiers (idt.symbol) do not accept them. Leading/trailing/double hyphens
+  // stay rejected because every `-` must be followed by a full identifier word.
+  private def pragmaKeySegment[$: P]: P[Unit] = {
+    import fastparse.NoWhitespace.noWhitespaceImplicit
+    P(idt.symbol ~ (fastparse.LiteralStr("-") ~ idt.symbol).rep).map(_ => ())
   }
 
   def model[$: P]: P[RawDomain] = {
