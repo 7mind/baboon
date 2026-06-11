@@ -48,11 +48,17 @@ class LspLauncher(
   private def runMessageLoop(transport: LspTransport): Unit = {
     transport.readMessage() match {
       case Some(json) =>
-        JsonRpcMessage.parseMessage(json) match {
-          case Right(msg) =>
-            server.handleMessage(msg)
-          case Left(error) =>
-            logger.message(LspLogging.Context, s"Failed to parse JSON-RPC message: $error")
+        try {
+          JsonRpcMessage.parseMessage(json) match {
+            case Right(msg) =>
+              server.handleMessage(msg)
+            case Left(error) =>
+              logger.message(LspLogging.Context, s"Failed to parse JSON-RPC message: $error")
+          }
+        } catch {
+          case t: VirtualMachineError => throw t
+          case t: Throwable =>
+            logger.message(LspLogging.Context, s"Unhandled exception from message dispatch: ${t.getClass.getName}: ${t.getMessage}")
         }
         runMessageLoop(transport)
 

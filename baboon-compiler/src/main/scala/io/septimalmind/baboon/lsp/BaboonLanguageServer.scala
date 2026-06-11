@@ -5,6 +5,7 @@ import io.circe.syntax._
 import io.septimalmind.baboon.lsp.features._
 import io.septimalmind.baboon.lsp.protocol._
 import io.septimalmind.baboon.lsp.state._
+import io.septimalmind.baboon.util.BLogger
 
 class BaboonLanguageServer(
   documentState: DocumentState,
@@ -15,6 +16,7 @@ class BaboonLanguageServer(
   completionProvider: CompletionProvider,
   documentSymbolProvider: DocumentSymbolProvider,
   exitCallback: () => Unit,
+  logger: BLogger,
 ) {
 
   private var transport: LspTransport = _
@@ -25,16 +27,32 @@ class BaboonLanguageServer(
 
   def handleMessage(msg: JsonRpcMessage): Unit = msg match {
     case JsonRpcMessage.Request(id, method, params) =>
-      val result = handleRequest(method, params)
-      result match {
-        case Right(json) =>
-          transport.writeMessage(JsonRpcMessage.encodeResponse(id, json))
-        case Left(error) =>
+      try {
+        val result = handleRequest(method, params)
+        result match {
+          case Right(json) =>
+            transport.writeMessage(JsonRpcMessage.encodeResponse(id, json))
+          case Left(error) =>
+            transport.writeMessage(JsonRpcMessage.encodeError(id, error))
+        }
+      } catch {
+        case t: VirtualMachineError => throw t
+        case t: Throwable =>
+          val errorMsg = s"${t.getClass.getName}: ${t.getMessage}"
+          logger.message(LspLogging.Context, s"Uncaught exception in request handler for '$method': $errorMsg")
+          val error = JsonRpcMessage.ResponseError(JsonRpcMessage.ErrorCodes.InternalError, errorMsg)
           transport.writeMessage(JsonRpcMessage.encodeError(id, error))
       }
 
     case JsonRpcMessage.Notification(method, params) =>
-      handleNotification(method, params)
+      try {
+        handleNotification(method, params)
+      } catch {
+        case t: VirtualMachineError => throw t
+        case t: Throwable =>
+          logger.message(LspLogging.Context, s"Uncaught exception in notification handler for '$method': ${t.getClass.getName}: ${t.getMessage}")
+        // Notifications must not produce a response — log and continue.
+      }
 
     case _: JsonRpcMessage.Response =>
       // We don't expect responses from the client in this simple implementation
