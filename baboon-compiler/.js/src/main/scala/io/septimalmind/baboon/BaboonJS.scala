@@ -1647,6 +1647,9 @@ object BaboonJS {
       case NotATemplate(_, _, meta)                             => Some(meta.pos)
       case TemplateBodyCarriesDerived(_, meta)                  => Some(meta.pos)
       case TemplateBodyNotFlatForRemoval(_, _, _, _, meta)      => Some(meta.pos)
+      case ExtractionHostInvalid(_, _, meta)                    => Some(meta.pos)
+      case ExtractionNameCollision(_, _, meta)                  => Some(meta.pos)
+      case ExtractionEmpty(_, _, meta)                          => Some(meta.pos)
     }
   }
 

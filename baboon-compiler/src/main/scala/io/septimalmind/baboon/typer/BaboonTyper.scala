@@ -440,12 +440,22 @@ object BaboonTyper {
         // decision #4). Aliases NOT pointing at a template pass through unchanged.
         instantiatedMembers <- templateInstantiator.instantiate(pkg, expandedMembers, templateRegistry)
 
+        // T38 (auto-extracted-contracts): synthesize one sibling `RawContract` per `has` clause on a
+        // TEMPLATED data/id/adt host, BETWEEN `instantiate` and the second `buildScopes`, so the
+        // synthesized contracts are first-class everywhere downstream (scope tree, `is B` refs,
+        // toposort hard-deps, LSP, evolution) with zero special cases. Each contract's body is the
+        // host's param-free resolved field set (sentinel-substitution drops template-dependent
+        // members). Returns the augmented member list plus the synthesized contracts' coordinates
+        // for the post-translation emptiness check.
+        synthResult <- synthesizeExtractions(pkg, instantiatedMembers, templateRegistry)
+        (membersWithExtractions, synthesizedExtractions) = synthResult
+
         // Re-build the scope tree over the rewritten defns so that re-emitted branches are
         // registered as nested scopes under the receiving ADT (otherwise
         // `convertAdt` → `scopeSupport.resolveUserTypeId` would fail to find the synthesized
         // branch DTOs). After this point the `RawAdtMember.{Include, Exclude, Intersect}`
         // arms have been desugared and the standard pipeline runs unchanged.
-        scopes   <- builder.buildScopes(pkg, instantiatedMembers, meta)
+        scopes   <- builder.buildScopes(pkg, membersWithExtractions, meta)
         flattened = flattenScopes(scopes)
         renames  <- computeRenames(pkg, flattened)
         ordered  <- order(pkg, flattened, meta)
@@ -464,6 +474,19 @@ object BaboonTyper {
             }
         }
 
+        // T38: empty-extraction check (post-translation). Raw-level emptiness is insufficient
+        // (e.g. `+ EmptyDto` resolves empty), so verify each synthesized contract's RESOLVED field
+        // set is non-empty using the translated `out` map.
+        _ <- F.traverseAccumErrors_(synthesizedExtractions) {
+          ext =>
+            out.get(ext.id) match {
+              case Some(DomainMember.User(_, c: Typedef.Contract, _, _)) if c.fields.isEmpty =>
+                F.fail(BaboonIssue.of(TyperIssue.ExtractionEmpty(ext.name, ext.hostName, ext.meta)))
+              case _ =>
+                F.unit
+            }
+        }
+
         indexed <- F.fromEither {
           (initial.map(m => (m.id, m)) ++ out.toSeq)
             .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueTypedefs(e, meta)))
@@ -476,6 +499,275 @@ object BaboonTyper {
         TyperOutput(indexed.values.toList, renames, aliases.toList, templateRegistry)
       }
     }
+
+    // ─── T38: auto-extracted-contracts synthesis pass ─────────────────────────
+
+    /** Coordinates of one synthesized extraction contract, used for the post-translation
+      * emptiness check. `id` is the contract's resolved `TypeId.User`; `name`/`hostName`/`meta`
+      * feed the `ExtractionEmpty` diagnostic.
+      */
+    private case class SynthesizedExtraction(id: TypeId.User, name: String, hostName: String, meta: RawNodeMeta)
+
+    /** One pending extraction collected from a templated host, before contract synthesis. */
+    private case class PendingExtraction(
+      owner: Owner,
+      hostName: String,
+      typeParams: List[RawTypeName],
+      structuralMembers: Seq[RawDtoMember],
+      clause: RawDtoMember.ExtractionDef,
+    )
+
+    /** Synthesize one sibling `RawContract` per `has` clause carried by a TEMPLATED data/id/adt
+      * host. See the `runTyper` call-site comment for placement rationale (Q7/Q9). Returns the
+      * augmented member list (originals + injected contracts) and the synthesized contracts'
+      * coordinates for the post-translation emptiness check.
+      *
+      * No-op guarantee (Q12): a model with zero `has` clauses anywhere returns `members` UNCHANGED
+      * and an empty coordinate list.
+      */
+    private def synthesizeExtractions(
+      pkg: Pkg,
+      members: Seq[RawTLDef],
+      registry: TemplateRegistry,
+    ): F[NEList[BaboonIssue], (Seq[RawTLDef], List[SynthesizedExtraction])] = {
+      // Fast no-op: no extraction clause anywhere (neither in the registry bodies nor in the
+      // non-template member list). Return members byte-identical.
+      val registryHasExtractions = registry.templates.values.exists(b => templateBodyHasExtraction(b))
+      val membersHaveExtractions = members.exists(rawTLDefHasExtraction)
+      if (!registryHasExtractions && !membersHaveExtractions) {
+        F.pure((members, List.empty))
+      } else {
+        for {
+          // (1) Host-gating: ANY `has` clause on a non-template member (or inside an ADT branch) is
+          // host-invalid — the feature extracts NON-template fields and presupposes template params.
+          _ <- F.traverseAccumErrors_(members)(m => gateNonTemplateMember(m))
+          // (2) Host-gating + collection over the registry: templated data/id/adt are valid hosts;
+          // a templated contract or any extraction inside a templated ADT branch is invalid.
+          pendings <- collectPendingExtractions(registry)
+          // (3) Collision check, then synthesize + inject one RawContract per pending extraction.
+          existingCoords = collectTypeCoords(members) ++ registry.templates.keys.map { case (_, o, n) => (o, n.name) }.toSet
+          result <- buildAndInject(pkg, members, pendings, existingCoords, registry)
+        } yield result
+      }
+    }
+
+    private def templateBodyHasExtraction(body: TemplateBody): Boolean = body.rawDefn match {
+      case RawTemplateDefn.Dto(raw)        => raw.members.exists(_.isInstanceOf[RawDtoMember.ExtractionDef])
+      case RawTemplateDefn.Identifier(raw) => raw.members.exists(_.isInstanceOf[RawDtoMember.ExtractionDef])
+      case RawTemplateDefn.Adt(raw) =>
+        raw.extractions.nonEmpty || raw.members.exists(adtBranchHasExtraction)
+      case RawTemplateDefn.Contract(raw) => raw.members.exists(_.isInstanceOf[RawDtoMember.ExtractionDef])
+      case RawTemplateDefn.Service(_)    => false
+    }
+
+    private def adtBranchHasExtraction(m: RawAdtMember): Boolean = m match {
+      case b: RawAdtMemberDto      => b.dto.members.exists(_.isInstanceOf[RawDtoMember.ExtractionDef])
+      case b: RawAdtMemberContract => b.contract.members.exists(_.isInstanceOf[RawDtoMember.ExtractionDef])
+      case _                       => false
+    }
+
+    /** True iff a non-template `RawTLDef` carries a `has` clause anywhere reachable (its own body,
+      * an ADT's extractions / branch bodies, or a nested namespace's children). Used by the no-op
+      * fast-path scan.
+      */
+    private def rawTLDefHasExtraction(tldef: RawTLDef): Boolean = tldef match {
+      case RawTLDef.DTO(_, raw)        => raw.members.exists(_.isInstanceOf[RawDtoMember.ExtractionDef])
+      case RawTLDef.Identifier(_, raw) => raw.members.exists(_.isInstanceOf[RawDtoMember.ExtractionDef])
+      case RawTLDef.Contract(_, raw)   => raw.members.exists(_.isInstanceOf[RawDtoMember.ExtractionDef])
+      case RawTLDef.ADT(_, raw)        => raw.extractions.nonEmpty || raw.members.exists(adtBranchHasExtraction)
+      case RawTLDef.Namespace(ns)      => ns.defns.exists(rawTLDefHasExtraction)
+      case _                           => false
+    }
+
+    /** Host-gating for non-template members: every `has` clause reachable here is invalid, because
+      * the synthesis input must be a TEMPLATED data/id/adt. Emits `ExtractionHostInvalid` per stray
+      * clause, with a host-description appropriate to the carrier.
+      */
+    private def gateNonTemplateMember(tldef: RawTLDef): F[NEList[BaboonIssue], Unit] = {
+      tldef match {
+        case RawTLDef.DTO(_, raw) =>
+          failExtractionsIn(raw.members, raw.name.name, "a non-templated data")
+        case RawTLDef.Identifier(_, raw) =>
+          failExtractionsIn(raw.members, raw.name.name, "a non-templated id")
+        case RawTLDef.Contract(_, raw) =>
+          failExtractionsIn(raw.members, raw.name.name, "a contract body")
+        case RawTLDef.ADT(_, raw) =>
+          val adtLevel: F[NEList[BaboonIssue], Unit] = NEList.from(raw.extractions.toList) match {
+            case Some(extrs) => F.fail(extrs.map(e => BaboonIssue.Typer(TyperIssue.ExtractionHostInvalid(raw.name.name, "a non-templated adt", e.meta))))
+            case None        => F.unit
+          }
+          for {
+            _ <- adtLevel
+            _ <- F.traverseAccumErrors_(raw.members)(gateAdtBranch)
+          } yield ()
+        case RawTLDef.Namespace(ns) =>
+          F.traverseAccumErrors_(ns.defns)(gateNonTemplateMember)
+        case _ =>
+          F.unit
+      }
+    }
+
+    private def gateAdtBranch(m: RawAdtMember): F[NEList[BaboonIssue], Unit] = m match {
+      case b: RawAdtMemberDto      => failExtractionsIn(b.dto.members, b.dto.name.name, "an ADT branch")
+      case b: RawAdtMemberContract => failExtractionsIn(b.contract.members, b.contract.name.name, "an ADT branch")
+      case _                       => F.unit
+    }
+
+    private def failExtractionsIn(members: Seq[RawDtoMember], hostName: String, descr: String): F[NEList[BaboonIssue], Unit] = {
+      val extrs = members.collect { case e: RawDtoMember.ExtractionDef => e }
+      NEList.from(extrs.toList) match {
+        case Some(es) => F.fail(es.map(e => BaboonIssue.Typer(TyperIssue.ExtractionHostInvalid(hostName, descr, e.meta))))
+        case None     => F.unit
+      }
+    }
+
+    /** Collect pending extractions from the registry. Templated data/id are hosts whose extraction
+      * input is their member list; a templated ADT's extraction input is its ADT-level `is` refs
+      * (`contracts`), rendered as `ContractRef` members. Templated contracts and extractions inside
+      * a templated ADT branch are host-invalid.
+      */
+    private def collectPendingExtractions(
+      registry: TemplateRegistry,
+    ): F[NEList[BaboonIssue], Seq[PendingExtraction]] = {
+      F.flatTraverseAccumErrors(registry.templates.toList) {
+        case ((_, owner, _), body) =>
+          body.rawDefn match {
+            case RawTemplateDefn.Dto(raw) =>
+              val clauses = raw.members.collect { case e: RawDtoMember.ExtractionDef => e }
+              F.pure(clauses.toList.map(c => PendingExtraction(owner, raw.name.name, body.typeParams, raw.members, c)))
+            case RawTemplateDefn.Identifier(raw) =>
+              val clauses = raw.members.collect { case e: RawDtoMember.ExtractionDef => e }
+              F.pure(clauses.toList.map(c => PendingExtraction(owner, raw.name.name, body.typeParams, raw.members, c)))
+            case RawTemplateDefn.Adt(raw) =>
+              // ADT-level extraction input is the ADT's `is` contract refs; branches are not hosts.
+              val branchExtrs = raw.members.flatMap {
+                case b: RawAdtMemberDto      => b.dto.members.collect { case e: RawDtoMember.ExtractionDef => e }
+                case b: RawAdtMemberContract => b.contract.members.collect { case e: RawDtoMember.ExtractionDef => e }
+                case _                       => Seq.empty
+              }
+              NEList.from(branchExtrs.toList) match {
+                case Some(es) =>
+                  F.fail(es.map(e => BaboonIssue.Typer(TyperIssue.ExtractionHostInvalid(raw.name.name, "an ADT branch", e.meta))))
+                case None =>
+                  val input = raw.contracts.map(c => c: RawDtoMember)
+                  F.pure(raw.extractions.toList.map(c => PendingExtraction(owner, raw.name.name, body.typeParams, input, c)))
+              }
+            case RawTemplateDefn.Contract(raw) =>
+              val clauses = raw.members.collect { case e: RawDtoMember.ExtractionDef => e }
+              NEList.from(clauses.toList) match {
+                case Some(es) => F.fail(es.map(e => BaboonIssue.Typer(TyperIssue.ExtractionHostInvalid(raw.name.name, "a contract body", e.meta))))
+                case None     => F.pure(List.empty)
+              }
+            case RawTemplateDefn.Service(_) =>
+              F.pure(List.empty)
+          }
+      }
+    }
+
+    /** Collect `(Owner, typeName)` coordinates for every user-declared type in the member tree,
+      * for the extraction-name-collision check.
+      */
+    private def collectTypeCoords(members: Seq[RawTLDef]): Set[(Owner, String)] = {
+      def go(tldef: RawTLDef, owner: Owner): Set[(Owner, String)] = tldef match {
+        case RawTLDef.Namespace(ns) =>
+          val nextOwner = owner match {
+            case Owner.Toplevel => Owner.Ns(List(TypeName(ns.name.name)))
+            case Owner.Ns(path) => Owner.Ns(path.toList :+ TypeName(ns.name.name))
+            case adt: Owner.Adt => throw new IllegalStateException(s"Namespace inside an ADT scope is structurally impossible; got $adt")
+          }
+          ns.defns.flatMap(d => go(d, nextOwner)).toSet
+        case other =>
+          Set((owner, other.value.name.name))
+      }
+      members.flatMap(m => go(m, Owner.Toplevel)).toSet
+    }
+
+    /** Build a `RawContract` per pending extraction, check for name collisions, and inject each
+      * contract at its host owner's level in the member tree. Returns the augmented member list and
+      * the synthesized coordinates.
+      */
+    private def buildAndInject(
+      pkg: Pkg,
+      members: Seq[RawTLDef],
+      pendings: Seq[PendingExtraction],
+      existingCoords: Set[(Owner, String)],
+      registry: TemplateRegistry,
+    ): F[NEList[BaboonIssue], (Seq[RawTLDef], List[SynthesizedExtraction])] = {
+      val synthCoords = scala.collection.mutable.Set.empty[(Owner, String)]
+      F.flatTraverseAccumErrors(pendings) {
+        p =>
+          val coord = (p.owner, p.clause.name.name)
+          val collides = existingCoords.contains(coord) || synthCoords.contains(coord)
+          if (collides) {
+            F.fail(BaboonIssue.of(TyperIssue.ExtractionNameCollision(p.clause.name.name, p.hostName, p.clause.meta)))
+          } else {
+            synthCoords.add(coord)
+            templateInstantiator
+              .resolveExtractionBody(pkg, p.owner, p.hostName, p.typeParams, p.structuralMembers, registry, p.clause.meta)
+              .map {
+                resolvedMembers =>
+                  val contract = RawContract(
+                    name       = p.clause.name,
+                    members    = resolvedMembers,
+                    meta       = p.clause.meta,
+                    typeParams = Nil,
+                  )
+                  val tldef = RawTLDef.Contract(root = false, contract)
+                  val id    = TypeId.User(pkg, p.owner, TypeName(p.clause.name.name))
+                  List((p.owner, tldef, SynthesizedExtraction(id, p.clause.name.name, p.hostName, p.clause.meta)))
+              }
+          }
+      }.map {
+        built =>
+          val byOwner = built.groupBy(_._1).view.mapValues(_.map(_._2).toList).toMap
+          val coords  = built.map(_._3).toList
+          val injected = injectByOwner(members, byOwner, Owner.Toplevel)
+          (injected, coords)
+      }
+    }
+
+    /** Inject synthesized contract TLDefs at their host-owner level. Top-level contracts append to
+      * the root member list; namespaced contracts descend into (or create) the matching namespace.
+      */
+    private def injectByOwner(
+      members: Seq[RawTLDef],
+      byOwner: Map[Owner, List[RawTLDef]],
+      currentOwner: Owner,
+    ): Seq[RawTLDef] = {
+      val here = byOwner.getOrElse(currentOwner, List.empty)
+      // Descend into existing namespaces.
+      val rewritten = members.map {
+        case nsTL @ RawTLDef.Namespace(ns) =>
+          val nextOwner = currentOwner match {
+            case Owner.Toplevel => Owner.Ns(List(TypeName(ns.name.name)))
+            case Owner.Ns(path) => Owner.Ns(path.toList :+ TypeName(ns.name.name))
+            case adt: Owner.Adt => throw new IllegalStateException(s"Namespace inside an ADT scope is structurally impossible; got $adt")
+          }
+          nsTL.copy(value = ns.copy(defns = injectByOwner(ns.defns, byOwner, nextOwner)))
+        case other => other
+      }
+      // Owners that target a namespace not present among the current children must be created.
+      val existingNsNames = members.collect { case RawTLDef.Namespace(ns) => ns.name.name }.toSet
+      val missingNsContracts = byOwner.keys.collect {
+        case o @ Owner.Ns(path) if isDirectChildOf(currentOwner, o) && !existingNsNames.contains(path.last.name) =>
+          o
+      }.toList
+      val createdNamespaces: Seq[RawTLDef] = missingNsContracts.map {
+        o =>
+          val nsName = o.asInstanceOf[Owner.Ns].path.last.name
+          RawTLDef.Namespace(RawNamespace(RawTypeName(nsName), injectByOwner(Seq.empty, byOwner, o), emptyMeta))
+      }
+      rewritten ++ here ++ createdNamespaces
+    }
+
+    /** True iff `child` is `parent` extended by exactly one namespace segment. */
+    private def isDirectChildOf(parent: Owner, child: Owner): Boolean = (parent, child) match {
+      case (Owner.Toplevel, Owner.Ns(path)) => path.size == 1
+      case (Owner.Ns(pp), Owner.Ns(cp))     => cp.size == pp.size + 1 && cp.toList.startsWith(pp.toList)
+      case _                                 => false
+    }
+
+    private val emptyMeta: RawNodeMeta = RawNodeMeta(InputPointer.Undefined)
 
     private def order(
       pkg: Pkg,

@@ -135,6 +135,12 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
           Some(meta),
           s"Template '$tname' cannot be used under '$op' on '$recv': substituted body contains non-field member ($offending). Restrict the template body to fields when used under '-' or '^'.",
         )
+      case ExtractionHostInvalid(host, descr, meta) =>
+        (Some(meta), s"Invalid extraction host '$host': a `has (mirror|contract) …` clause is only allowed on a templated data/id/adt, but '$host' is $descr")
+      case ExtractionNameCollision(name, host, meta) =>
+        (Some(meta), s"Extraction '$name' on host '$host' collides with an existing type, template, or another extraction")
+      case ExtractionEmpty(name, host, meta) =>
+        (Some(meta), s"Extraction '$name' on host '$host' resolves to an empty field set")
       case DagError(e, meta)                    => (Some(meta), s"DAG error: $e")
       case ScalarExpected(id, meta)             => (Some(meta), s"Scalar expected: ${id.name.name}")
       case CollectionExpected(id, meta)         => (Some(meta), s"Collection expected: ${id.name.name}")

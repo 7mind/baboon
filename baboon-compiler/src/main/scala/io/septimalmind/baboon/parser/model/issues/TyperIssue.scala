@@ -277,6 +277,47 @@ object TyperIssue {
     meta: RawNodeMeta,
   ) extends TyperIssue
 
+  /** T38 (auto-extracted-contracts): a `has (mirror|contract) <Name>` extraction clause appears on
+    * an invalid host. Valid hosts are TEMPLATED `data`, TEMPLATED `id`, and TEMPLATED `adt`
+    * (ADT-level) ONLY. A `has` clause on a non-templated `id`, on any other non-template
+    * declaration, in a `contract` body, or on an ADT branch is rejected.
+    *
+    * `hostName`        — the declaration carrying the offending `has` clause.
+    * `hostDescription` — a short phrase describing why the host is invalid (e.g.
+    *                     `"a non-templated id"`, `"a contract body"`, `"an ADT branch"`).
+    */
+  case class ExtractionHostInvalid(
+    hostName: String,
+    hostDescription: String,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
+  /** T38 (auto-extracted-contracts): the name of a synthesized extraction contract collides with an
+    * existing type, a template name, or another extraction's name. There is no structural merging;
+    * a name collision is always an error.
+    *
+    * `extractionName` — the `<Name>` requested by the `has` clause.
+    * `hostName`       — the templated host that declared the extraction.
+    */
+  case class ExtractionNameCollision(
+    extractionName: String,
+    hostName: String,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
+  /** T38 (auto-extracted-contracts): the RESOLVED field set of a synthesized extraction contract is
+    * empty. The emptiness check runs post-translation because raw-level emptiness is insufficient:
+    * a structural member like `+ EmptyDto` could resolve to an empty field set.
+    *
+    * `extractionName` — the name of the empty synthesized contract.
+    * `hostName`       — the templated host that declared the extraction.
+    */
+  case class ExtractionEmpty(
+    extractionName: String,
+    hostName: String,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
   implicit val todoPrinter: IssuePrinter[TodoTyperIssue] =
     (issue: TodoTyperIssue) => {
       issue.descr
@@ -758,6 +799,27 @@ object TyperIssue {
       }
       s"""${extractLocation(issue.meta)}
          |Template '${issue.templateName}' cannot be used under the $opGloss operator on '${issue.receivingName}': $detail.
+         |""".stripMargin
+    }
+
+  implicit val extractionHostInvalidPrinter: IssuePrinter[ExtractionHostInvalid] =
+    (issue: ExtractionHostInvalid) => {
+      s"""${extractLocation(issue.meta)}
+         |Invalid extraction host '${issue.hostName}': a `has (mirror|contract) …` clause is only allowed on a templated `data`, templated `id`, or templated `adt`, but '${issue.hostName}' is ${issue.hostDescription}.
+         |""".stripMargin
+    }
+
+  implicit val extractionNameCollisionPrinter: IssuePrinter[ExtractionNameCollision] =
+    (issue: ExtractionNameCollision) => {
+      s"""${extractLocation(issue.meta)}
+         |Extraction '${issue.extractionName}' on host '${issue.hostName}' collides with an existing type, template, or another extraction of the same name — extraction names must be pairwise-distinct and must not shadow any existing declaration.
+         |""".stripMargin
+    }
+
+  implicit val extractionEmptyPrinter: IssuePrinter[ExtractionEmpty] =
+    (issue: ExtractionEmpty) => {
+      s"""${extractLocation(issue.meta)}
+         |Extraction '${issue.extractionName}' on host '${issue.hostName}' resolves to an empty field set — a `has (mirror|contract) …` extraction must contribute at least one param-free field.
          |""".stripMargin
     }
 

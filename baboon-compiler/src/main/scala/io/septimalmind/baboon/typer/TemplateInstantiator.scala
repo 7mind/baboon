@@ -55,6 +55,29 @@ trait TemplateInstantiator[F[+_, +_]] {
     members: Seq[RawTLDef],
     registry: TemplateRegistry,
   ): F[NEList[BaboonIssue], Unit]
+
+  /** T38 (auto-extracted-contracts): resolve the param-free field set of a templated host body.
+    *
+    * Substitutes every declared type parameter with a unique sentinel `RawTypeRef.Simple`, runs the
+    * same substitution + structural-arm lowering machinery used by `instantiate` (so template-arm
+    * parents like `+ Pair[T, i32]` are lowered to individual spliced fields), then DROPS every
+    * member whose type transitively mentions a sentinel (e.g. `data: T`, `xs: lst[T]`,
+    * `m: map[str, T]`, the through-parent `first: T`). The `ExtractionDef` carrier members are also
+    * dropped. Param-free structural members (`+`/`-`/`^` to concrete types, `is C` refs) and
+    * sentinel-free spliced fields survive verbatim.
+    *
+    * The resulting member list is injected as the body of a synthesized sibling `RawContract` by
+    * `BaboonTyper.synthesizeExtractions`.
+    */
+  def resolveExtractionBody(
+    pkg: Pkg,
+    ownerForCurrent: Owner,
+    hostName: String,
+    typeParams: List[RawTypeName],
+    members: Seq[RawDtoMember],
+    registry: TemplateRegistry,
+    meta: RawNodeMeta,
+  ): F[NEList[BaboonIssue], Seq[RawDtoMember]]
 }
 
 object TemplateInstantiator {
@@ -192,6 +215,76 @@ object TemplateInstantiator {
           F.fail(BaboonIssue.of(TyperIssue.TemplateNotInstantiated(i.parent.path.last.name, receivingName, i.meta)))
         case _ =>
           F.unit
+      }
+    }
+
+    // ─── T38: extraction-body resolution (sentinel substitution) ──────────────
+
+    /** A type-param placeholder is rewritten to this sentinel ref so that any member whose type
+      * transitively depends on a template parameter becomes detectable by name after substitution
+      * and arm-lowering. The prefix is intentionally syntactically un-writable in `.baboon` source
+      * (a leading `$`), so it can never collide with a user-declared type name.
+      */
+    private val extractionSentinelPrefix: String = "$$extractionSentinel$$"
+
+    private def sentinelNameFor(param: String): String = s"$extractionSentinelPrefix$param"
+
+    /** True iff the given `RawTypeRef` mentions an extraction sentinel anywhere in its tree
+      * (head, constructor params, or `any[…]` underlying).
+      */
+    private def mentionsSentinel(ref: RawTypeRef): Boolean = ref match {
+      case RawTypeRef.Simple(name, _) =>
+        name.name.startsWith(extractionSentinelPrefix)
+      case RawTypeRef.Constructor(name, params, _) =>
+        name.name.startsWith(extractionSentinelPrefix) || params.toList.exists(mentionsSentinel)
+      case RawTypeRef.AnyRef(_, underlying) =>
+        underlying.exists(mentionsSentinel)
+    }
+
+    /** True iff a `RawDtoMember` carries a sentinel-mentioning type and must therefore be dropped
+      * from the extracted body (it depended on a template parameter).
+      */
+    private def memberMentionsSentinel(member: RawDtoMember): Boolean = member match {
+      case RawDtoMember.FieldDef(field, _)            => mentionsSentinel(field.tpe)
+      case RawDtoMember.TemplateArmFieldDef(field, _) => mentionsSentinel(field.tpe)
+      case RawDtoMember.UnfieldDef(field, _)          => mentionsSentinel(field.tpe)
+      case RawDtoMember.ParentDef(_, _, args)         => args.exists(_.toList.exists(mentionsSentinel))
+      case RawDtoMember.UnparentDef(_, _, args)       => args.exists(_.toList.exists(mentionsSentinel))
+      case RawDtoMember.IntersectionDef(_, _, args)   => args.exists(_.toList.exists(mentionsSentinel))
+      case _                                          => false
+    }
+
+    override def resolveExtractionBody(
+      pkg: Pkg,
+      ownerForCurrent: Owner,
+      hostName: String,
+      typeParams: List[RawTypeName],
+      members: Seq[RawDtoMember],
+      registry: TemplateRegistry,
+      meta: RawNodeMeta,
+    ): F[NEList[BaboonIssue], Seq[RawDtoMember]] = {
+      // Substitute each template parameter with a unique sentinel ref.
+      val substMap: Map[String, RawTypeRef] =
+        typeParams.map(p => p.name -> (RawTypeRef.Simple(RawTypeName(sentinelNameFor(p.name)), Nil): RawTypeRef)).toMap
+
+      // Drop the extraction-carrier members before substitution — they never contribute fields.
+      val structuralMembers = members.filterNot(_.isInstanceOf[RawDtoMember.ExtractionDef])
+
+      for {
+        substituted <- substituteMembers(structuralMembers, substMap, hostName, registry, meta, pkg)
+        // Reuse the same arm-lowering machinery as `instantiate` so template-arm parents
+        // (`+ Pair[T, i32]`) are lowered to individual spliced fields.
+        lowered <- lowerStructuralArmsInMembers(pkg, substituted, registry, ownerForCurrent, hostName, depth = 0, cycleSet = Set.empty)
+      } yield {
+        // Drop every member whose type transitively mentions a sentinel; for IntersectionFields,
+        // filter sentinel-mentioning inner fields (drop the node entirely if nothing survives).
+        lowered.flatMap {
+          case ifs: RawDtoMember.IntersectionFields =>
+            val kept = ifs.fields.filterNot(f => mentionsSentinel(f.field.tpe))
+            if (kept.isEmpty) None else Some(ifs.copy(fields = kept))
+          case other if memberMentionsSentinel(other) => None
+          case other                                   => Some(other)
+        }
       }
     }
 
@@ -860,11 +953,15 @@ object TemplateInstantiator {
                   RawTLDef.ADT(
                     root,
                     raw.copy(
-                      name       = alias.name,
-                      members    = rewrittenAdtMembers,
-                      derived    = alias.derived,
-                      meta       = mergedMeta,
-                      typeParams = Nil,
+                      name        = alias.name,
+                      members     = rewrittenAdtMembers,
+                      // T38: clear the ADT-level extraction clauses on the monomorphised concrete
+                      // ADT; T38's synthesis pass has already consumed them to produce the sibling
+                      // contract. Leaving them would trip the later host-gating scan.
+                      extractions = Nil,
+                      derived     = alias.derived,
+                      meta        = mergedMeta,
+                      typeParams  = Nil,
                     ),
                   )
                 }
@@ -905,7 +1002,14 @@ object TemplateInstantiator {
 
     // ─── substitution helpers ─────────────────────────────────────────────────
 
-    /** Substitute all `RawDtoMember` field types in a DTO/Contract member list. */
+    /** Substitute all `RawDtoMember` field types in a DTO/Contract member list.
+      *
+      * T38: `RawDtoMember.ExtractionDef` carriers are DROPPED here. On a normal template
+      * instantiation the extraction clause has already been consumed by T38's synthesis pass to
+      * produce the sibling contract, so it must not leak onto the monomorphised concrete type (where
+      * a later host-gating scan would otherwise mistake it for a `has` clause on a non-template).
+      * `resolveExtractionBody` strips its own ExtractionDefs up-front, so the drop is idempotent.
+      */
     private def substituteMembers(
       members: Seq[RawDtoMember],
       substMap: Map[String, RawTypeRef],
@@ -914,7 +1018,8 @@ object TemplateInstantiator {
       meta: RawNodeMeta,
       pkg: Pkg,
     ): F[NEList[BaboonIssue], Seq[RawDtoMember]] = {
-      F.traverseAccumErrors(members)(m => substituteDtoMember(m, substMap, templateName, registry, meta, pkg))
+      val withoutExtractions = members.filterNot(_.isInstanceOf[RawDtoMember.ExtractionDef])
+      F.traverseAccumErrors(withoutExtractions)(m => substituteDtoMember(m, substMap, templateName, registry, meta, pkg))
     }
 
     private def substituteDtoMember(
