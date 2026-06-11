@@ -20,7 +20,7 @@ class LspLauncher(
   }
 
   private def launchStdio(): Unit = {
-    val transport = new JsonRpcTransport(System.in, System.out)
+    val transport = new JsonRpcTransport(System.in, System.out, logger)
     server.setTransport(transport)
     runMessageLoop(transport)
   }
@@ -32,7 +32,7 @@ class LspLauncher(
     val socket = serverSocket.accept()
     logger.message(LspLogging.Context, "Client connected")
 
-    val transport = new JsonRpcTransport(socket.getInputStream, socket.getOutputStream)
+    val transport = new JsonRpcTransport(socket.getInputStream, socket.getOutputStream, logger)
     server.setTransport(transport)
 
     try {
