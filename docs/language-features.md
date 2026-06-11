@@ -22,18 +22,19 @@ version "2.0.0"
 
 pragma scala.service.result.type = "scala.util.Either"
 pragma scala.service.result.pattern = "[$error, $success]"
-pragma rust.service.result.no-errors = "true"
+pragma scala.service.result.hkt = "true"
 
-include "./shared.baboon"
+include "shared.bmo"
 
 root data Invoice { ... }
 ```
 
-- Keys are dotted identifiers; values are quoted strings.
+- Keys are dotted identifiers (each segment matches `[A-Za-z_][A-Za-z0-9_]*`); values are quoted strings.
 - Multiple pragmas can appear in any order before `include` and definitions.
 - Pragmas are scoped to the domain (model + version) they appear in.
+- Known limitation: hyphenated keys (currently only `{lang}.service.result.no-errors`) cannot be written as in-file pragmas — the parser rejects `-` in key segments. Set them via the CLI instead: `--service-result-no-errors` or `--pragma "{lang}.service.result.no-errors=true"` (tracked as defect D14).
 
-Currently supported pragmas control service method return type rendering. See the [Services](#services) section for details.
+Currently supported pragmas control service method return type rendering and service context parameters. See the [Services](#services) section for details. The same keys can be set from the CLI with `--pragma key=value`, which overrides in-file pragmas.
 
 ## Root reachability, includes, and namespaces
 
@@ -43,7 +44,7 @@ Baboon only emits types that are transitively reachable from `root` declarations
 model acme.checkout
 version "2.3.0"
 
-include "./shared-addresses.baboon"
+include "shared-addresses.bmo"
 
 ns orders {
   root data OrderId {
@@ -58,7 +59,7 @@ ns orders {
 root data Order {
   id: orders.OrderId
   lines: lst[orders.OrderLine]
-  shipping: ShippingAddress  // pulled from shared-addresses.baboon via include
+  shipping: ShippingAddress  // pulled from shared-addresses.bmo via include
 }
 ```
 
@@ -70,6 +71,11 @@ Plain records are declared with `data` blocks. Derived typeclasses (e.g., codecs
 Fields are whitespace-separated (no commas).
 
 ```baboon
+adt Adt0 {
+  data Branch1 { i: i08 }
+  data Branch2 { s: str }
+}
+
 root data TransferOpt: derived[json], derived[ueba] {
   u: uid
   ol: opt[lst[Adt0]]
@@ -77,7 +83,15 @@ root data TransferOpt: derived[json], derived[ueba] {
 }
 ```
 
-`TransferOpt` comes directly from `test/conv-test/pkg02.baboon` and illustrates optional values, lists, and maps used together.
+`TransferOpt` is adapted from `test/conv-test/pkg02.baboon` and illustrates optional values, lists, and maps used together.
+
+`struct` is accepted as a synonym for `data`:
+
+```baboon
+struct Wrapper { v: str }
+```
+
+Anywhere a `{ ... }` body appears (`data`, `adt`, `enum`, `contract`, `service`, `foreign`, `ns`), parentheses `( ... )` are accepted as an equivalent block delimiter.
 
 ## Identifier types (`id`)
 
@@ -220,6 +234,23 @@ root adt PaymentMethod {
 
 This mirrors the `PaymentMethod` evolution in `pkg01.baboon` → `pkg02.baboon`, where constructor `BankTransfer` is added. Baboon will generate evolution stubs for manual migrations where data cannot be derived automatically.
 
+ADTs accept `derived[...]` annotations like records (`adt PaymentMethod : derived[json] { ... }`), and an ADT body may carry contract requirements that apply to every branch (see [Nominal contracts](#nominal-contracts)):
+
+```baboon
+contract Timestamped { at: tsu }
+
+root adt Event {
+  is Timestamped          // every branch receives/implements `at: tsu`
+  contract Audited {      // contracts can also be declared inline, scoped to the ADT
+    actor: str
+  }
+  data Created { name: str }
+  data Deleted { is Audited reason: str }
+}
+```
+
+The generated ADT representation extends the contract interface (e.g. the Scala sealed trait extends `Timestamped`), and contract fields are materialized in every branch.
+
 ## Structural inheritance with set algebra
 
 Records can reuse and reshape fields via addition (`+`), removals (`-`), and intersections (`^`).
@@ -256,18 +287,22 @@ data MinimalAddress {
 
 Structural operations are resolved as set operations during typing, keeping definitions declarative instead of conditional.
 
+Structural arms in `data` and `contract` bodies also accept template instantiations (`+ Page[i32]`, `- Stats[i32]`, `^ Page[i32]`) — see [Structural arms with template instantiation](#structural-arms-with-template-instantiation-data--contract-bodies).
+
 ## Nominal contracts
 
-Contracts act like interfaces: they define fields that must appear in implementors.
+Contracts act like interfaces: they define fields that must appear in implementors. A contract is attached with an `is ContractName` declaration **inside the body** of the implementing type (it is a member-position declaration, not part of the header):
 
 ```baboon
 contract Identified { id: uid }
 
-root data User is Identified {
+root data User {
+  is Identified
   name: str
 }
 
-root adt InvoiceEvent is Identified {
+root adt InvoiceEvent {
+  is Identified
   data Issued {
     + User
     total: f64
@@ -275,21 +310,39 @@ root adt InvoiceEvent is Identified {
 }
 ```
 
-The compiler enforces that every `data` inside `InvoiceEvent` and the `User` record contain `id`. This is nominal inheritance, distinct from structural reuse via `+/-/^`.
+The compiler enforces that every `data` inside `InvoiceEvent` and the `User` record contain `id`; the generated types implement the contract's interface. This is nominal inheritance, distinct from structural reuse via `+/-/^`.
+
+Contracts compose: a contract body may itself contain `is OtherContract` declarations as well as structural arms (`+`, `-`, `^`), and contracts may be declared inline inside an ADT body for branch-local requirements.
 
 ## Enums (choices)
 
-Enums (declared as `enum`) carry ordered, integer-backed members. Explicit numeric values are optional.
+Enums (declared as `enum`) carry ordered, integer-backed members. Explicit numeric values are optional, but **all-or-none**: either every member carries a constant or no member does (a mix is a typer error).
 
 ```baboon
 enum PaymentStatus {
-  Pending
+  Pending = 1
   Settled = 10
-  Failed
+  Failed  = -2
+}
+
+enum Direction {
+  North
+  South
 }
 ```
 
-Only integer constants are allowed for explicit discriminators.
+Only integer constants (negative values included) are allowed for explicit discriminators. Enums accept `derived[...]` annotations like other types.
+
+A member can be renamed across versions while keeping evolution derivable by annotating it with `was`:
+
+```baboon
+enum Color {
+  Red
+  Emerald : was[Green]   // renamed from Green in the previous version
+}
+```
+
+See [Rename tracking](#rename-tracking-was).
 
 ## Foreign types
 
@@ -297,13 +350,28 @@ Declare foreign types when the type is defined outside Baboon. You must register
 
 ```baboon
 foreign Money: derived[json], derived[ueba] {
-  cs = "System.Decimal" with { format = "G29" }
-  sc = "scala.math.BigDecimal" with { scale = "2" }
+  cs    = "System.Decimal" with { "format" = "G29" }
+  scala = "scala.math.BigDecimal" with { "scale" = "2" }
 }
 ```
 
-- Each entry maps a language tag (`cs`, `sc`, `ts`, `kt`, `jv`, etc.) to a fully qualified type name.
-- Optional `with { key = "value" }` attributes are implementation hints for the backend.
+- Each entry maps a language tag to a fully qualified native type name. Valid tags: `scala`, `cs`, `py`, `rust`, `typescript`, `kotlin`, `java`, `dart`, `swift`, plus the special `rt` entry below.
+- Optional `with { "key" = "value" }` attributes are implementation hints for the backend; both keys and values are quoted strings.
+
+Two additional entry forms:
+
+```baboon
+data StrWrapper : derived[json], derived[ueba] { v: str }
+
+foreign ObscureInt : derived[json], derived[ueba] {
+  rt = i32                       // wire-level Baboon equivalent
+  cs = "System.Int32"
+  typescript = StrWrapper        // per-language fallback to a generated Baboon type
+}
+```
+
+- `rt = <baboon type>` declares the foreign's **runtime/wire mapping** — the Baboon type the value is represented as on the wire. Schema-only backends (GraphQL, OpenAPI, MCP input schemas) render the foreign as that type, and codec machinery delegates through the mapped type's codec where the backend supports it.
+- `<lang> = <BaboonTypeRef>` (an unquoted type reference instead of a string) makes that language use the referenced generated Baboon type directly — including its codecs — instead of a hand-wired native type.
 
 ## Type aliases
 
@@ -378,7 +446,7 @@ Type-parameter names are bare identifiers (single-letter `T` is conventional but
 Concrete types are produced by type aliases:
 
 ```baboon
-data Item { name: str; price: f64 }
+data Item { name: str price: f64 }
 
 root type IntPage   = Page[i32]
 root type StrPage   = Page[str]
@@ -391,10 +459,10 @@ Locked decision: **the alias's name is the materialised type's identity** — ge
 
 ### Codec annotations propagate from the alias
 
-`derived[…]` is written **only on the alias**, not on the template body, and propagates to the materialised type:
+`derived[…]` is written **only on the alias**, not on the template body, and propagates to the materialised type. The annotation follows the alias target:
 
 ```baboon
-root type IntPage : derived[json], derived[ueba] = Page[i32]
+root type IntPage = Page[i32] : derived[json], derived[ueba]
 ```
 
 Each alias's derivation set is independent; you can derive different codecs for `IntPage` vs `StrPage` even when both instantiate `Page`.
@@ -417,9 +485,31 @@ ns bar {
 
 Cross-**package** instantiation (template declared in a different `.baboon` file) is out of scope.
 
+### Structural arms with template instantiation (`data` / `contract` bodies)
+
+The structural-composition operators `+`, `-`, `^` accept a template instantiation as the arm head inside `data` and `contract` bodies (shipped in M33; full rules in [spec §9](spec/generics.md)):
+
+```baboon
+data Page[T]  { items: lst[T] total: u32 }
+data Stats[T] { sum: T nObservations: u32 }
+
+root data IntPageWithStats : derived[json], derived[ueba] {
+  + Page[i32]            // inline-substituted fields: items: lst[i32], total: u32
+  + Stats[i32]
+}
+
+root data PageOnly : derived[json], derived[ueba] {
+  + Page[i32]
+  + Stats[i32]
+  ^ Page[i32]            // intersect back down to Page's fields
+}
+```
+
+The template body is substituted inline — no concrete `Page` type is materialised by a structural arm. Template bodies may themselves use structural arms; substitution recurses. `adt`-body arms (`+`/`-`/`^` on ADT branch sets) do **not** accept template instantiation.
+
 ### Forbidden positions (with diagnostics)
 
-The compiler rejects template references in any non-alias position. Each form below produces a precise diagnostic; see the negative test matrix in [the spec](spec/generics.md#25-forbidden-positions).
+The compiler rejects template references in any other non-alias position. Each form below produces a precise diagnostic; see the negative test matrix in [the spec](spec/generics.md#25-forbidden-positions).
 
 - Field-position instantiation (`field: Page[i32]`) — forbidden; instantiate via an alias and reference the alias.
 - Nested instantiation in alias args (`type Y = Page[Result[i32, str]]`) — forbidden; introduce intermediate aliases.
@@ -439,7 +529,7 @@ Out-of-scope items (see [spec §6](spec/generics.md) for the full list):
 - Where-clauses / type-class bounds (`X[T : SomeContract]`)
 - Defaulted type parameters (`X[T = i32]`)
 - Templated `id` declarations
-- Templates on ADT inheritance arms (`+ Foo[T]`, `- Foo[T]`, `^ Foo[T]`)
+- Templates on **ADT-body** inheritance arms (`+ Foo[T]` between ADT branches; `data`/`contract` structural arms *are* supported, see above)
 - Cross-package template instantiation
 - Per-language reified generics in emitted source
 
@@ -523,6 +613,26 @@ Both wires are byte-canonical across all 9 generated languages: the same fixture
 
 `any` field changes are **breaking**: changing the variant (A → B, D1 → D2 etc.), changing the underlying type for D1/D2/D3, or adding/removing an `any` field all require an explicit migration stub. The compiler does not auto-derive transformations for `any`-bearing fields — too much depends on runtime payload data the typer can't see.
 
+## Doc comments
+
+Baboon preserves doc comments into generated source (M30; full spec in [docs/spec/docstrings.md](spec/docstrings.md)). Two forms exist:
+
+- **Prefix doc** `/** ... */` — binds to the immediately following declaration: any type declaration (`data`, `adt`, `enum`, `contract`, `service`, `foreign`, `type` alias), a service `def`, or a field.
+- **Postfix line doc** `//!` — binds to the field defined on the same line.
+
+```baboon
+/** A catalogue item. */
+data Item {
+  /** Display name of the item. */
+  name:  str
+  price: f64    //! unit price in store currency
+}
+```
+
+Doc comments are source-level only: they do not affect wire formats, evolution diffs, or schema digests. Every backend re-emits them idiomatically (C# `///`, Scala/Kotlin/Java `/** */`, Python docstrings, Rust `///`, TypeScript/Dart `///`/JSDoc, Swift `///`, GraphQL SDL descriptions, OpenAPI `description` fields), and the LSP surfaces them on hover.
+
+Plain `// ...` and `/* ... */` comments are ignored by the compiler and not preserved.
+
 ## Derivations and codegen
 
 Attach derivations on any type to request generated typeclass instances:
@@ -531,7 +641,7 @@ Attach derivations on any type to request generated typeclass instances:
 root data AllBasicTypes: derived[json], derived[ueba] { ... }
 ```
 
-The compiler currently ships JSON and UEBA codec derivation. Additional derivations can be added with the same `derived[...]` syntax. Baboon will produce C#, Scala, Rust, TypeScript, Python, Kotlin, Java, and Dart code from the same model and aggressively deduplicates shared shapes in generated C#.
+The compiler currently ships JSON and UEBA codec derivation. Additional derivations can be added with the same `derived[...]` syntax. Baboon will produce C#, Scala, Rust, TypeScript, Python, Kotlin, Java, Dart, and Swift code from the same model (plus schema-only GraphQL SDL and OpenAPI 3.1 outputs) and aggressively deduplicates shared shapes in generated C#.
 
 ## Services
 
@@ -547,9 +657,18 @@ root service BillingApi {
 }
 ```
 
-Service definitions are scoped like other members and can live inside namespaces (`ns` blocks). Method bodies accept `in`, `out`, and optional `err` markers, or inline DTO/ADT/enum definitions using the same braces/parentheses form.
+A shorthand signature form is equivalent — `(In): Out` with an optional `!! Err` error type:
 
-Currently, service support is limited: Baboon does not provide transport runtime and does not generate all the necessary metadata.
+```baboon
+root service BillingApiShort {
+  def CreateInvoice (CreateInvoiceRequest): InvoiceId !! InvoiceError
+  def Ping (PingRequest): PingResponse
+}
+```
+
+Service definitions are scoped like other members and can live inside namespaces (`ns` blocks). Method bodies accept `in`, `out`, and optional `err` markers, or inline DTO/ADT/enum definitions using the same braces/parentheses form. Services can also be [templates](#templates-generics) (`service Crud[K, V] { ... }`).
+
+Per-language flags additionally generate service plumbing: RPC client/server wiring, async method variants (`--cs-async-services`, `--py-async-services`, `--rs-async-services`, `--ts-async-services`, `--jv-async-services`, `--sw-async-services`), and optional [MCP servers](cli-reference.md#mcp-servers) exposing each service's methods as MCP tools (`--<lang>-generate-mcp-server`).
 
 ### Configurable service return types
 
@@ -559,25 +678,26 @@ By default each backend wraps service method return types in a language-idiomati
 |---------|-------------------|--------------------------|
 | Scala | `scala.util.Either[Err, Out]` | `Out` directly |
 | Rust | `Result<Out, Err>` | `Out` directly |
+| Kotlin | `Either<Err, Out>` | `Out` directly |
 | C# | `Out` (no error wrapping) | `Out` directly |
 | Python | `Out` (no error wrapping) | `Out` directly |
 | TypeScript | `Out` (no error wrapping) | `Out` directly |
-| Kotlin | `Out` (no error wrapping) | `Out` directly |
 | Java | `Out` (no error wrapping) | `Out` directly |
 | Dart | `Out` (no error wrapping) | `Out` directly |
+| Swift | `Out` (no error wrapping) | `Out` directly |
 
 You can override these defaults using pragmas in `.baboon` files or CLI flags.
 
 #### Pragma keys
 
-All pragma keys follow the pattern `{lang}.service.result.*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, `java`, or `dart`.
+All pragma keys follow the pattern `{lang}.service.result.*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, `java`, `dart`, or `swift`.
 
 | Pragma key | Value | Description |
 |-----------|-------|-------------|
-| `{lang}.service.result.no-errors` | `"true"` / `"false"` | When true, methods return just the output type |
+| `{lang}.service.result.no-errors` | `"true"` / `"false"` | When true, methods return just the output type. **CLI-only** (`--service-result-no-errors` or `--pragma`): the in-file pragma parser rejects hyphenated keys (defect D14) |
 | `{lang}.service.result.type` | e.g. `"Result"` | Wrapper type name (fully qualified if needed) |
 | `{lang}.service.result.pattern` | e.g. `"<$success, $error>"` | Type parameter pattern; `$success` and `$error` are expanded |
-| `{lang}.service.result.hkt` | `"true"` / `"false"` | Enable higher-kinded type parameter (Scala only) |
+| `{lang}.service.result.hkt` | `"true"` / `"false"` | Enable higher-kinded type parameter (Scala and Kotlin) |
 | `{lang}.service.result.hkt.name` | e.g. `"F"` | HKT type parameter name (default `F`) |
 | `{lang}.service.result.hkt.signature` | e.g. `"[+_, +_]"` | HKT type parameter bounds (default `[+_, +_]`) |
 
@@ -611,11 +731,15 @@ trait BillingApi[F[+_, +_]] {
 
 #### Example: error-free Python services
 
+`no-errors` is set from the CLI (the in-file pragma form is currently rejected by the parser — see the table note above):
+
+```bash
+baboon --model-dir ./models :python --output ./out/py --service-result-no-errors=true
+```
+
 ```baboon
 model acme.billing
 version "1.0.0"
-
-pragma python.service.result.no-errors = "true"
 
 root service BillingApi {
   def CreateInvoice (
@@ -643,7 +767,7 @@ The same settings are available as CLI flags per backend. CLI flags override `.b
 baboon \
   --model-dir ./models \
   :scala \
-    --service-result-hkt true \
+    --service-result-hkt=true \
     --service-result-hkt-name F \
     --service-result-hkt-signature "[+_, +_]" \
     --service-result-pattern "[\$error, \$success]" \
@@ -651,7 +775,7 @@ baboon \
   :rust \
     --service-result-type "anyhow::Result" \
     --service-result-pattern "<\$success>" \
-    --service-result-no-errors true \
+    --service-result-no-errors=true \
     --output ./output/rust
 ```
 
@@ -675,7 +799,7 @@ Three modes are supported:
 
 #### Pragma keys
 
-All pragma keys follow the pattern `{lang}.service.context*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, `java`, or `dart`.
+All pragma keys follow the pattern `{lang}.service.context*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, `java`, `dart`, or `swift`.
 
 | Pragma key | Value | Description |
 |-----------|-------|-------------|
@@ -795,17 +919,45 @@ import "1.0.0" { * } without { LegacyId DebugStub }
 model acme.checkout
 version "2.3.0"
 
-include "./shared-addresses.baboon"
+include "shared-addresses.bmo"
 
 root data Order { shipping: ShippingAddress }
 ```
 
-- Paths are resolved relative to provided model directories; includes are resolved recursively.
+- Paths are resolved relative to provided model directories (`--model-dir`); includes are resolved recursively.
 - Because the header comes from the current file, the included content inherits the same `model` and `version`.
+- Give include files an extension other than `.baboon` (conventionally `.bmo`): `--model-dir` picks up every `*.baboon` file as a standalone model, and an include fragment has no `model`/`version` header, so it would fail to parse on its own.
+
+## Rename tracking (`was`)
+
+Renames are normally indistinguishable from remove-plus-add, which breaks automatic conversion derivation. The `was` keyword records the previous name so the evolution engine treats the change as a rename and derives the conversion:
+
+```baboon
+// version "2.0.0"; version "1.0.0" had: data Account { login: str }, data OldName { x: i32 }, enum Color { Red Green }
+
+root data Account {
+  username: str was login          // field rename
+}
+
+root data NewName : was[OldName] {  // type rename (namespace paths allowed: was[outer.OldName])
+  x: i32
+}
+
+enum Color {
+  Red
+  Emerald : was[Green]             // enum member rename
+}
+```
+
+- **Field rename**: `newName: Type was oldName` inside `data`/`id`/`contract` bodies.
+- **Type rename**: a `was[OldType]` annotation in the type's `:` annotation list (combinable with `derived[...]`). The old name may include a namespace path.
+- **Enum member rename**: `NewMember : was[OldMember]`.
+
+The comparator validates each marker against the previous version (a `was` pointing at a name that never existed is an evolution error) and derives the corresponding conversions instead of emitting manual stubs.
 
 ## Evolution workflow
 
-Versioned files can be diffed by Baboon to emit migration code. When a change is obviously compatible (e.g., adding `data BankTransfer` to an ADT in the example above), Baboon derives conversions. Breaking changes (e.g., removing required fields) produce explicit stubs so you fail fast and implement the conversion manually.
+Versioned files can be diffed by Baboon to emit migration code. When a change is obviously compatible (e.g., adding `data BankTransfer` to an ADT in the example above), Baboon derives conversions. Breaking changes (e.g., removing required fields) produce explicit stubs so you fail fast and implement the conversion manually. Renames stay derivable when annotated with [`was`](#rename-tracking-was).
 
 ## Code generation targets
 
@@ -814,8 +966,13 @@ Versioned files can be diffed by Baboon to emit migration code. When a change is
 - **Rust** — native structs/enums with serde derive, custom UEBA binary codecs, and evolution converters.
 - **Python** — dataclasses with custom JSON codecs.
 - **TypeScript** — classes with function-based JSON and UEBA codecs, and evolution converters.
-- **Kotlin** — data classes with Jackson JSON codecs, UEBA binary codecs, and evolution converters.
+- **Kotlin** — data classes with Jackson JSON codecs, UEBA binary codecs, and evolution converters (JVM or Multiplatform via `--kt-multiplatform`).
 - **Java** — records/classes with Jackson JSON codecs, UEBA binary codecs, and evolution converters.
 - **Dart** — classes with dart:convert JSON codecs, UEBA binary codecs, and evolution converters.
+- **Swift** — structs/enums with JSONSerialization JSON codecs, UEBA binary codecs, and evolution converters.
+- **GraphQL** — SDL schema files (type definitions only, no codecs).
+- **OpenAPI** — OpenAPI 3.1 component schemas (no codecs).
+
+The full list of global and per-target compiler options lives in [docs/cli-reference.md](cli-reference.md).
 
 Invoke `mdl :build :mkdist` to generate and package all targets through the existing mudyla pipelines.

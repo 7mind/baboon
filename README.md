@@ -39,6 +39,10 @@ Generates:
   - **Dart**
   - **Swift**
 
+Schema-only output formats (type definitions, no codecs):
+  - **GraphQL SDL**
+  - **OpenAPI 3.1**
+
 ## Highlights
 
 - Automatic codec derivation for [JSON](docs/json-codecs.md) and [UEBA](docs/ueba-format.md) (Ultra-Efficient Binary Aggregate, a custom tagless binary format)
@@ -47,6 +51,8 @@ Generates:
 - Algebraic data types (`adt`), DTOs (`data`) and enums.
 - First-class [identifier types](docs/language-features.md#identifier-types-id) (`id` keyword) with parseable canonical repr (`<Name>:<ver>#field:value:...`) and free `id`↔`data` conversion when shapes match.
 - [ADT branch inheritance and subtraction](docs/language-features.md#adt-branch-inheritance-and-subtraction) (`+`, `^`, `-`) for cross-ADT branch reuse.
+- [Rename tracking](docs/language-features.md#rename-tracking-was) (`was`) for fields, types, and enum members — renames stay automatically convertible instead of breaking evolution.
+- [Doc comments](docs/language-features.md#doc-comments) (`/** … */`, `//!`) preserved into every backend as idiomatic doc comments (and GraphQL/OpenAPI descriptions) without affecting wire formats or schema digests.
 - Cross-language wire-form parity verified by per-backend conv-test matrix: byte-identical JSON and UEBA fixtures across all 9 generated backends.
 - [Polymorphic `any` fields](docs/language-features.md#polymorphic-any-fields) — opaque envelope for runtime-typed payloads with byte-canonical cross-language wire format.
 - [User-defined templates](docs/language-features.md#templates-generics) (`data Page[T] { ... }`, `adt Result[T, E] { ... }`, `contract Acked[T] { ... }`, `service Crud[K, V] { ... }`) instantiated through type aliases (`type IntPage = Page[i32]`); monomorphised at compile time so codegen never sees a generic — every backend emits a concrete type. Same-package cross-namespace instantiation supported (`type Y = ns.Foo[i32]`). See [docs/spec/generics.md](docs/spec/generics.md) for the full spec.
@@ -54,6 +60,8 @@ Generates:
 - Basic form of nominal inheritance (`contract`)
 - Namespaces, includes, and imports
 - Collections (`opt`, `lst`, `set`, `map`) and timestamps/UID primitives
+- Schema-only backends: GraphQL SDL and OpenAPI 3.1 component schemas from the same model.
+- Optional [MCP server generation](docs/cli-reference.md#mcp-servers): every `service` can be exposed as a Model Context Protocol server in all 9 languages (`--<lang>-generate-mcp-server`).
 - Deduplicated C# output (reuses as much code as possible to lower binary footprint)
 - Interactive Explorer: REPL-style shell for browsing types, evolution, and debugging codecs.
 - LSP support
@@ -128,8 +136,8 @@ See [docs/explorer-mode.md](docs/explorer-mode.md) for a full command reference.
 ## Limitations
 
 1. Nominal inheritance support is limited to trait model
-2. Templates are monomorphised — no per-language reified generics in emitted source. Higher-kinded templates, variance annotations, where-clauses/bounds, and templates on `id` declarations or ADT inheritance arms are out of scope. Cross-package template instantiation (template declared in a different `.baboon` file) is also out of scope; same-package cross-namespace works. See [docs/spec/generics.md §6](docs/spec/generics.md) for the full deferred-items list.
-3. (*) Comments are not preserved in the transpiler output
+2. Templates are monomorphised — no per-language reified generics in emitted source. Higher-kinded templates, variance annotations, where-clauses/bounds, and templates on `id` declarations or ADT-body inheritance arms are out of scope (structural arms in `data`/`contract` bodies *do* accept template instantiation, e.g. `+ Page[i32]`). Cross-package template instantiation (template declared in a different `.baboon` file) is also out of scope; same-package cross-namespace works. See [docs/spec/generics.md §6](docs/spec/generics.md) for the full deferred-items list.
+3. (*) Plain comments (`//`, `/* */`) are not preserved in the transpiler output; [doc comments](docs/language-features.md#doc-comments) (`/** */`, `//!`) are
 4. (*) No structural inheritance information is preserved in the transpiler output
 5. (*) Only integer constants may be associated with enum members
 6. No newtypes (type aliases are supported, newtypes are not)
@@ -139,11 +147,15 @@ Points marked with (*) will/may be improved in the future.
 
 ## CLI
 
-The `baboon` CLI supports multiple commands for compilation, exploration, and IDE integration:
+The CLI is multi-modal: global options (model inputs, lockfile, evolution metadata) followed by one or more `:target` sections, each with its own options. All targets in one invocation share a single parsed model.
 
 - `:cs`, `:scala`, `:python`, `:rust`, `:typescript`, `:kotlin`, `:java`, `:dart`, `:swift` - Code generation for target languages
+- `:graphql`, `:openapi` - Schema-only outputs (GraphQL SDL, OpenAPI 3.1 component schemas)
 - `:explore` - Launch [Interactive Explorer](docs/explorer-mode.md)
 - `:lsp` - Start [LSP Server](docs/lsp-integration.md)
+- `:scheme` - Emit a cleaned-up single `.baboon` file for a domain version
+
+**Full option reference (global and per-target): [docs/cli-reference.md](docs/cli-reference.md)**, or run `baboon --help`.
 
 See build configuration in [.mdl/defs/actions.md](.mdl/defs/actions.md) and test configuration in [.mdl/defs/tests.md](.mdl/defs/tests.md).
 
@@ -166,6 +178,8 @@ For every foreign type:
 Make sure your foreign types are NOT primitive types or other generated types. It's a funny idea, but it will explode in runtime.
 
 Foreign types may hold any position in generics but it's up to you to ensure correctness.
+
+A foreign block may declare a wire-level Baboon equivalent with `rt = <baboon type>` (e.g. `rt = i32`). Schema-only backends (GraphQL, OpenAPI, MCP input schemas) render the foreign as that type, and codec machinery delegates through it where the backend supports it. See [Foreign types in the language guide](docs/language-features.md#foreign-types) for the full entry syntax.
 
 ## Development
 
