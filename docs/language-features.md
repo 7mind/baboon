@@ -313,6 +313,108 @@ The compiler enforces that every `data` inside `InvoiceEvent` and the `User` rec
 
 Contracts compose: a contract body may itself contain `is OtherContract` declarations as well as structural arms (`+`, `-`, `^`), and contracts may be declared inline inside an ADT body for branch-local requirements.
 
+## Extracted contracts (`has mirror` / `has contract`)
+
+Templated `data`, `adt`, and `id` hosts can synthesise a sibling contract that captures their parameter-free field surface, without requiring callers to duplicate the field list manually. The clause appears **inside the host body** alongside ordinary field declarations.
+
+### Syntax
+
+```baboon
+data Page[T] {
+  total: u32        // param-free field — eligible for extraction
+  items: lst[T]     // T-dependent field — excluded from extracted contract
+  has mirror  IPage         // mirror variant: standalone contract, no host relationship
+  has contract IPageContract // contract variant: extracted + every instantiation implements it
+}
+```
+
+Both clauses may coexist on the same host. Multiple `has mirror` and `has contract` clauses are permitted.
+
+### `has mirror B`
+
+Synthesises a sibling `contract B` that enumerates the host's parameter-free fields (own fields and those contributed via structural arms whose type arguments are fully concrete). `B` is a standalone type — it has **no relationship** to the host's instantiated types. Use it when you want to describe the common subset of fields without constraining the host's generated interfaces.
+
+```baboon
+data Payload[T] {
+  label: str    // param-free
+  value: T      // param-dependent — excluded from IMirroredPayload
+  has mirror IMirroredPayload
+}
+
+root type IntPayload = Payload[i32] : derived[json], derived[ueba]
+root type StrPayload = Payload[str] : derived[json], derived[ueba]
+
+// IMirroredPayload is synthesised as: contract IMirroredPayload { label: str }
+// IntPayload and StrPayload do NOT implement IMirroredPayload automatically.
+// A third type can explicitly opt in: data Probe[T] { is IMirroredPayload }
+```
+
+### `has contract B`
+
+Works identically to `has mirror B` for the synthesised contract, but additionally wires an implicit `is B` onto every instantiation of the host. The generated concrete types (from all type-alias instantiations of the host) implement `B`'s interface in all 9 target languages.
+
+```baboon
+data Box[T] {
+  count: i32    // param-free — contributed to IBox
+  item:  T      // excluded
+  has contract IBox
+}
+
+root type IntBox = Box[i32] : derived[json], derived[ueba]
+root type StrBox = Box[str] : derived[json], derived[ueba]
+
+// IBox is synthesised as: contract IBox { count: i32 }
+// IntBox and StrBox both implement IBox (implicit is IBox injected by the lowering pass).
+```
+
+### Through-parent contributions
+
+Structural arms (`+ SomeTemplate[T, Concrete]`) contribute their parameter-free fields to the extracted contract when the arm's concrete type arguments are all non-param:
+
+```baboon
+data Base { base_field: i32 }
+data Pair[A, B] { first: A  second: B }
+
+data Container[T] {
+  own:  i32
+  item: T
+  + Pair[T, i32]    // second:i32 is param-free → contributed; first:T → excluded
+  + Base            // base_field:i32 → contributed
+  has contract IContainer
+}
+
+// IContainer is synthesised as: contract IContainer { own: i32  second: i32  base_field: i32 }
+```
+
+### ADT and `id` hosts
+
+The clause is equally valid in `adt` and `id` template bodies:
+
+```baboon
+contract ResultBase { tag: str }
+
+adt Result[T] {
+  is ResultBase        // all branches get tag:str; ResultBase contributes to IResult
+  has contract IResult
+  data Ok  { result: T }
+  data Err { msg: str  }
+}
+
+id Key[T] {
+  has contract IKey
+  key: i64    // param-free
+  v:   T      // excluded
+}
+```
+
+### Restrictions
+
+- `has mirror` / `has contract` are only valid inside templated (`[T, …]`) hosts. A non-template `data`, `adt`, or `id` should use a plain `contract` + `is` instead.
+- The synthesised contract name `B` must not already exist in the same namespace.
+- The extracted contract is never emitted as a `root` type itself; it is always reachable through the host's instantiations or explicit `is B` references.
+
+Shipped: G6 / T37–T45.
+
 ## Enums (choices)
 
 Enums (declared as `enum`) carry ordered, integer-backed members. Explicit numeric values are optional, but **all-or-none**: either every member carries a constant or no member does (a mix is a typer error).

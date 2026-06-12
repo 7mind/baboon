@@ -162,6 +162,7 @@ Baboon files support:
 - **Collections**: Lists, sets, dictionaries, options
 - **Annotations**: `@root` (entry points); `: derived[json]`, `: derived[ueba]` (request codecs)
 - **Evolution**: Automatic schema migration where possible
+- **Extracted contracts** (`has mirror` / `has contract`): Inside a templated `data`, `adt`, or `id` body, a `has mirror B` clause synthesises a standalone sibling contract `B` that enumerates the host's parameter-free fields — `B` has no relationship to the host's instantiated types. A `has contract B` clause does the same but additionally wires every instantiation of the host to implement `B` (implicit `is B`). `B` enumerates the host's parameter-free fields collected from own fields and structural-inheritance arms. Multiple `has` clauses are permitted on one host.
 
 ### Key Design Patterns
 
