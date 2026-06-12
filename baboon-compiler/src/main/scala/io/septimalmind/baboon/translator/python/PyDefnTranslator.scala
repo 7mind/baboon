@@ -314,11 +314,14 @@ object PyDefnTranslator {
             List.empty,
           )
         case adt: Typedef.Adt =>
-          val contracts       = adt.contracts.map(c => typeTranslator.asPyType(c, domain, evolution, fileTools.definitionsBasePkg))
-          val defaultParents  = contracts ++ List(pydanticBaseModel)
-          val genMarkerParent = if (adt.contracts.isEmpty) List(genMarker) else Nil
-          val allParents      = defaultParents ++ genMarkerParent
-          val parents         = mkParents(allParents)
+          val adtContractDefs    = adt.contracts.flatMap(domain.defs.meta.nodes.get).collect { case u: DomainMember.User => u }
+          val adtSuperclasses    = baboonEnquiries.collectParents(domain, adtContractDefs).toSet
+          val uniqueAdtContracts = adt.contracts.filterNot(c => adtSuperclasses.contains(c))
+          val contracts          = uniqueAdtContracts.map(c => typeTranslator.asPyType(c, domain, evolution, fileTools.definitionsBasePkg))
+          val defaultParents     = contracts ++ List(pydanticBaseModel)
+          val genMarkerParent    = if (adt.contracts.isEmpty) List(genMarker) else Nil
+          val allParents         = defaultParents ++ genMarkerParent
+          val parents            = mkParents(allParents)
 
           val memberTrees = adt.members.map(
             mid =>

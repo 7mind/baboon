@@ -223,66 +223,50 @@ class IKeyContractTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # IResult (contract) — Req 3: ADT host
 #
-# NOTE: The generated IntResult.py has an MRO conflict:
-#   class IntResult(ResultBase, IResult, BaseModel)
-# fails because IResult already inherits ResultBase (Python C3 requires
-# subclasses before their parents).  This is a compiler defect in the Python
-# backend — not a test defect.  To exercise IResult's interface without
-# importing the broken IntResult module, we create a local minimal probe that
-# implements IResult directly.
+# The compiler fix (D20/T50) elides redundant supertype entries from the ADT
+# host base list.  For IntResult (is ResultBase + has contract IResult where
+# IResult inherits ResultBase), the emitted class is now:
+#   class IntResult(IResult, BaseModel)
+# which is C3-consistent.  The test imports IntResult DIRECTLY to confirm the
+# import raises no TypeError.
 # ---------------------------------------------------------------------------
 
 class IResultContractTests(unittest.TestCase):
     """Req 3: Result[T] has-contract IResult; IResult inherits ResultBase.tag.
 
-    IntResult.py has an MRO conflict in the generated Python (ResultBase
-    appears before IResult which inherits it).  The tests below verify IResult
-    conformance using a local probe class to stay independent of that defect.
+    After the D20 fix the generated IntResult.py is importable directly.
+    These tests verify IResult conformance and that IntResult can be imported
+    without a TypeError (no local-probe workaround needed).
     """
 
     def _imports(self):
         from BaboonDefinitions.Generated.my.ok.extracted.contracts.IResult import IResult
         from BaboonDefinitions.Generated.my.ok.extracted.contracts.ResultBase import ResultBase
-        return IResult, ResultBase
+        from BaboonDefinitions.Generated.my.ok.extracted.contracts.IntResult import IntResult
+        return IResult, ResultBase, IntResult
 
-    def _make_probe(self, tag_val: str):
-        """Return a minimal local IResult implementor with the given tag.
-
-        BaboonGeneratedLatest requires four class-level abstract attributes;
-        supply stub values so the ABC can be instantiated.
-        """
-        from BaboonDefinitions.Generated.my.ok.extracted.contracts.IResult import IResult
-
-        class _Probe(IResult):
-            baboon_domain_version: str = "1.0.0"  # type: ignore[assignment]
-            baboon_domain_identifier: str = "test.probe"  # type: ignore[assignment]
-            baboon_type_identifier: str = "test.probe/#IResultProbe"  # type: ignore[assignment]
-            baboon_same_in_versions: list = ["1.0.0"]  # type: ignore[assignment]
-
-            @property
-            def tag(self) -> str:  # type: ignore[override]
-                return tag_val
-
-        return _Probe()
+    def test_intresult_is_importable(self):
+        """D20 regression: importing IntResult must not raise TypeError (MRO conflict)."""
+        from BaboonDefinitions.Generated.my.ok.extracted.contracts.IntResult import IntResult
+        _require(IntResult is not None, "IntResult must be importable without TypeError")
 
     def test_iresult_is_subtype_of_result_base(self):
-        IResult, ResultBase = self._imports()
+        IResult, ResultBase, _ = self._imports()
         _require(issubclass(IResult, ResultBase),
                  "IResult must be a subtype of ResultBase (via `is ResultBase` on ADT)")
 
-    def test_iresult_probe_is_instance_of_iresult(self):
-        IResult, _ = self._imports()
-        obj = self._make_probe("ok")
-        _require(isinstance(obj, IResult), "probe must be an instance of IResult")
+    def test_intresult_is_subtype_of_iresult(self):
+        IResult, _, IntResult = self._imports()
+        _require(issubclass(IntResult, IResult),
+                 "IntResult must be a subtype of IResult (has contract IResult)")
 
-    def test_tag_readable_via_iresult_typed_ref(self):
-        IResult, _ = self._imports()
-        typed: IResult = self._make_probe("success")
-        _require(typed.tag == "success",  # type: ignore[operator]
-                 "tag read through IResult-typed reference must return 'success'")
+    def test_intresult_is_subtype_of_result_base(self):
+        _, ResultBase, IntResult = self._imports()
+        _require(issubclass(IntResult, ResultBase),
+                 "IntResult must be a subtype of ResultBase (transitively via IResult)")
 
     def test_iresult_member_set(self):
-        IResult, _ = self._imports()
+        IResult, _, _ = self._imports()
         names = _abstract_method_names(IResult)
         # IResult inherits 'tag' from ResultBase; it appears as abstract on IResult
         # because ResultBase.tag is abstract.
