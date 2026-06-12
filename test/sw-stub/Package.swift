@@ -173,13 +173,24 @@ let package = Package(
             path: "Sources/RecursiveTree"
         ),
 
+        // ----- my.ok.extracted.contracts (T42/T45 extracted-contracts fixture) -----------------
+        // Covers has-mirror / has-contract extraction: IMirroredPayload, IBox, IResult, IKey,
+        // ITagMirror, ITagged, IContainer.  Hand-written shape assertions live in
+        // Tests/RuntimeTests/ExtractedContractsTests.swift (T45).
+        .target(
+            name: "MyOkExtractedContracts",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkExtractedContracts"
+        ),
+
         // ----- Hand-written runtime tests -------------------------------------------------------
         // AnyMetaCodecTests / AnyRoundTripTests / IdentifierReprTests live under
         // Tests/RuntimeTests/ to keep the codegen-owned Tests/BaboonTests/ tree pristine.
         // AnyRoundTripTests imports MyOk; IdentifierReprTests imports IdentifierOk.
+        // ExtractedContractsTests imports MyOkExtractedContracts (T45).
         .testTarget(
             name: "RuntimeTests",
-            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0", "RecursiveTree"],
+            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0", "RecursiveTree", "MyOkExtractedContracts"],
             path: "Tests/RuntimeTests"
         ),
 
@@ -278,6 +289,11 @@ let package = Package(
             name: "TestpkgPkg0Tests",
             dependencies: ["BaboonRuntime", "TestpkgPkg0"],
             path: "Tests/BaboonTests/TestpkgPkg0"
+        ),
+        .testTarget(
+            name: "MyOkExtractedContractsTests",
+            dependencies: ["BaboonRuntime", "MyOkExtractedContracts"],
+            path: "Tests/BaboonTests/MyOkExtractedContracts"
         ),
     ]
 )
