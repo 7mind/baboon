@@ -37,11 +37,30 @@ import izumi.fundamentals.collections.nonempty.NEList
   * pattern.
   */
 trait TemplateInstantiator[F[+_, +_]] {
+
+  /** T40 (auto-extracted-contracts): instantiate alias-over-template members AND lower each
+    * host instantiation's `has` clause per the Q8/Q10 host↔B wiring:
+    *
+    *   - `contract` variant: the materialised concrete host gains a synthetic `is B` (a
+    *     `RawDtoMember.ContractRef` for data/id, an ADT-level contract ref for adt) so B lands in
+    *     the host's `Typedef.{Dto,Adt}.contracts`. Every monomorphisation `A[X]`/`A[Y]` of one
+    *     host references the SINGLE shared sibling B (synthesized later by
+    *     `BaboonTyper.synthesizeExtractions`). This also feeds the @root GC for free, since
+    *     `contracts` is a hard dependency edge.
+    *
+    *   - `mirror` variant: NO model-level relationship — `contracts` lists stay clean (all 9
+    *     backends see B as a plain standalone contract). The GC reachability edge
+    *     host-instantiation→B is carried OUT-OF-BAND as a `MirrorExtractionEdge` and consulted by
+    *     the dependency collector (`BaboonTyper.buildDependencies`).
+    *
+    * Returns the rewritten member list AND the list of mirror reachability edges (empty unless a
+    * `has mirror` clause was lowered).
+    */
   def instantiate(
     pkg: Pkg,
     members: Seq[RawTLDef],
     registry: TemplateRegistry,
-  ): F[NEList[BaboonIssue], Seq[RawTLDef]]
+  ): F[NEList[BaboonIssue], (Seq[RawTLDef], List[TemplateInstantiator.MirrorExtractionEdge])]
 
   /** PR-33.2-D05: pre-toposort validation. Walks every DTO/Identifier/Contract/ADT member list
     * and emits `TyperIssue.TemplateNotInstantiated` for any `+/-/^ Foo` arm whose head names a
@@ -81,6 +100,15 @@ trait TemplateInstantiator[F[+_, +_]] {
 }
 
 object TemplateInstantiator {
+
+  /** T40 (auto-extracted-contracts): an out-of-band reachability edge `host → contract` produced
+    * when a host instantiation's `has mirror B` clause is lowered. Unlike the `contract` variant
+    * (which materialises an `is B` and thus a `Typedef.contracts` hard-dep), the `mirror` variant
+    * must NOT touch any `contracts` list (load-bearing for all 9 backends). The dependency
+    * collector (`BaboonTyper.buildDependencies`) consults these edges so B is GC-reachable iff its
+    * host instantiation is, without any model-level relationship surfacing to the backends.
+    */
+  final case class MirrorExtractionEdge(host: TypeId.User, contract: TypeId.User)
 
   /** Merge alias-side and template-body-side `RawNodeMeta` to produce the
     * synthesized concrete type's meta per spec §6 (Q1 lock).
@@ -157,7 +185,7 @@ object TemplateInstantiator {
       pkg: Pkg,
       members: Seq[RawTLDef],
       registry: TemplateRegistry,
-    ): F[NEList[BaboonIssue], Seq[RawTLDef]] = {
+    ): F[NEList[BaboonIssue], (Seq[RawTLDef], List[TemplateInstantiator.MirrorExtractionEdge])] = {
       instantiateRecursive(pkg, members, registry, ownerForCurrent = Owner.Toplevel, nsPath = List.empty)
     }
 
@@ -294,15 +322,19 @@ object TemplateInstantiator {
       registry: TemplateRegistry,
       ownerForCurrent: Owner,
       nsPath: List[TypeName],
-    ): F[NEList[BaboonIssue], Seq[RawTLDef]] = {
+    ): F[NEList[BaboonIssue], (Seq[RawTLDef], List[TemplateInstantiator.MirrorExtractionEdge])] = {
       for {
         // Pass 1 (PR-29.5): replace alias-over-template members with concrete RawTLDef nodes.
-        afterAlias <- F.traverseAccumErrors(members)(m => processMember(pkg, m, registry, ownerForCurrent, nsPath)).map(_.flatten)
+        // T40: `processMember` ALSO lowers each host instantiation's `has` clause, returning any
+        // `mirror`-variant reachability edges alongside the rewritten member list.
+        aliasResults <- F.traverseAccumErrors(members)(m => processMember(pkg, m, registry, ownerForCurrent, nsPath))
+        afterAlias    = aliasResults.flatMap(_._1)
+        mirrorEdges   = aliasResults.flatMap(_._2).toList
         // Pass 2 (PR-33.2 / M33): lower `+/-/^ Template[Args]` structural arms inside DTO/
         // Contract/Identifier/ADT bodies via inline substitution (Approach M1 for `+`/`-`,
         // M3 for `^`). Decision documented in RawDtoMember.IntersectionFields scaladoc.
         afterStructural <- F.traverseAccumErrors(afterAlias)(m => lowerStructuralArmsInTLDef(pkg, m, registry, ownerForCurrent))
-      } yield afterStructural
+      } yield (afterStructural, mirrorEdges)
     }
 
     // ─── PR-33.2 / M33: structural-arm lowering ───────────────────────────────
@@ -745,7 +777,7 @@ object TemplateInstantiator {
       registry: TemplateRegistry,
       ownerForCurrent: Owner,
       nsPath: List[TypeName],
-    ): F[NEList[BaboonIssue], List[RawTLDef]] = {
+    ): F[NEList[BaboonIssue], (List[RawTLDef], List[TemplateInstantiator.MirrorExtractionEdge])] = {
       member match {
 
         case aliasTL @ RawTLDef.Alias(root, alias) =>
@@ -756,7 +788,11 @@ object TemplateInstantiator {
               val key = resolveTemplateKey(pkg, ownerForCurrent, ctor)
               registry.templates.get(key) match {
                 case Some(body) =>
-                  instantiateAlias(pkg, root, alias, body, registry, key, ownerForCurrent).map(List(_))
+                  // T40: `instantiateAlias` returns the concrete RawTLDef AND any mirror-variant
+                  // reachability edges from lowering the host's `has` clause.
+                  instantiateAlias(pkg, root, alias, body, registry, key, ownerForCurrent).map {
+                    case (tldef, edges) => (List(tldef), edges)
+                  }
                 case None =>
                   // Constructor whose head doesn't hit the registry.
                   // If the head is a builtin collection (lst, set, opt, map) or `any`, pass
@@ -766,7 +802,7 @@ object TemplateInstantiator {
                   // Derived from TypeId.Builtins canonical constants — single source of truth.
                   val isBuiltin = builtinConstructorNames.contains(headName)
                   if (isBuiltin) {
-                    F.pure(List(aliasTL))
+                    F.pure((List(aliasTL), List.empty))
                   } else {
                     F.fail(
                       BaboonIssue.of(
@@ -808,30 +844,66 @@ object TemplateInstantiator {
                   )
                 case None =>
                   // Not a template — plain alias. Pass through.
-                  F.pure(List(aliasTL))
+                  F.pure((List(aliasTL), List.empty))
               }
             case _ =>
               // AnyRef alias target — not a template instantiation. Pass through.
-              F.pure(List(aliasTL))
+              F.pure((List(aliasTL), List.empty))
           }
 
         case nsTL @ RawTLDef.Namespace(ns) =>
           val nextNsPath = nsPath :+ TypeName(ns.name.name)
           val nextOwner  = Owner.Ns(nextNsPath)
           instantiateRecursive(pkg, ns.defns, registry, nextOwner, nextNsPath).map {
-            rewrittenChildren =>
+            case (rewrittenChildren, edges) =>
               // If all children were templates and were removed, drop the namespace entirely.
               // Keeping an empty namespace would cause ScopeCannotBeEmpty in the scope-build phase.
-              if (rewrittenChildren.isEmpty) Nil
-              else List(nsTL.copy(value = ns.copy(defns = rewrittenChildren)))
+              if (rewrittenChildren.isEmpty) (Nil, edges)
+              else (List(nsTL.copy(value = ns.copy(defns = rewrittenChildren))), edges)
           }
 
         case other =>
-          F.pure(List(other))
+          F.pure((List(other), List.empty))
       }
     }
 
-    /** Instantiate one alias-over-template into the corresponding concrete `RawTLDef`. */
+    /** T40: lower one host instantiation's `has` clauses into (a) synthetic `is B` ContractRefs to
+      * splice into the materialised concrete host (the `contract` variant) and (b) mirror
+      * reachability edges host→B (the `mirror` variant).
+      *
+      * Both B-coordinates are computed from the TEMPLATE's owner (`templateKey._2`), which is where
+      * `BaboonTyper.synthesizeExtractions` places the single shared sibling B; the host
+      * instantiation's id derives from the alias name at `ownerForCurrent`. The ContractRef is a
+      * bare `ScopedRef(B)`: for the unprefixed `A[X]` form (the wired-and-tested path, mirroring
+      * T38's `Probe[T] { is BoxView }` sibling reference) the alias's owner equals the template's
+      * owner, so B resolves as a same-scope sibling in the post-synthesis scope-build.
+      */
+    private def lowerHostExtractions(
+      pkg: Pkg,
+      clauses: Seq[RawDtoMember.ExtractionDef],
+      hostInstantiationName: String,
+      templateOwner: Owner,
+      ownerForCurrent: Owner,
+    ): (List[RawDtoMember.ContractRef], List[TemplateInstantiator.MirrorExtractionEdge]) = {
+      val hostId = TypeId.User(pkg, ownerForCurrent, TypeName(hostInstantiationName))
+      val contractRefs = scala.collection.mutable.ListBuffer.empty[RawDtoMember.ContractRef]
+      val mirrorEdges  = scala.collection.mutable.ListBuffer.empty[TemplateInstantiator.MirrorExtractionEdge]
+      clauses.foreach {
+        c =>
+          val bId = TypeId.User(pkg, templateOwner, TypeName(c.name.name))
+          c.kind match {
+            case ExtractionKind.Contract =>
+              contractRefs += RawDtoMember.ContractRef(RawContractRef(ScopedRef(NEList(c.name))), c.meta)
+            case ExtractionKind.Mirror =>
+              mirrorEdges += TemplateInstantiator.MirrorExtractionEdge(hostId, bId)
+          }
+      }
+      (contractRefs.toList, mirrorEdges.toList)
+    }
+
+    /** Instantiate one alias-over-template into the corresponding concrete `RawTLDef`, AND lower the
+      * host's `has` clauses per T40 (returns mirror reachability edges alongside).
+      */
     private def instantiateAlias(
       pkg: Pkg,
       root: Boolean,
@@ -840,7 +912,7 @@ object TemplateInstantiator {
       registry: TemplateRegistry,
       templateKey: (Pkg, Owner, TypeName),
       ownerForCurrent: Owner,
-    ): F[NEList[BaboonIssue], RawTLDef] = {
+    ): F[NEList[BaboonIssue], (RawTLDef, List[TemplateInstantiator.MirrorExtractionEdge])] = {
       val ctor = alias.target.asInstanceOf[RawTypeRef.Constructor]
       val args = ctor.params.toList
 
@@ -906,18 +978,27 @@ object TemplateInstantiator {
                 // Body-side derived is rejected at registry-build time (TemplateBodyCarriesDerived,
                 // spec §5.3). By the time we reach this point the invariant holds.
                 assert(raw.derived.isEmpty, s"template body '${raw.name.name}' carries derived — should have been rejected by TemplateRegistryBuilder")
+                // T40: lower the host's `has` clauses (carried in the body as ExtractionDef members).
+                val extractionClauses = raw.members.collect { case e: RawDtoMember.ExtractionDef => e }
+                val (contractRefs, mirrorEdges) =
+                  lowerHostExtractions(pkg, extractionClauses, alias.name.name, templateKey._2, ownerForCurrent)
                 for {
                   rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
-                  RawTLDef.DTO(
-                    root,
-                    raw.copy(
-                      name       = alias.name,
-                      members    = rewrittenMembers,
-                      derived    = alias.derived,
-                      meta       = mergedMeta,
-                      typeParams = Nil,
+                  (
+                    RawTLDef.DTO(
+                      root,
+                      raw.copy(
+                        name       = alias.name,
+                        // `substituteMembers` already drops the ExtractionDef carriers; T40 appends
+                        // the lowered `is B` ContractRefs for the `contract` variant.
+                        members    = rewrittenMembers ++ contractRefs,
+                        derived    = alias.derived,
+                        meta       = mergedMeta,
+                        typeParams = Nil,
+                      ),
                     ),
+                    mirrorEdges,
                   )
                 }
 
@@ -928,18 +1009,25 @@ object TemplateInstantiator {
                 // Body-side derived is rejected at registry-build time (TemplateBodyCarriesDerived,
                 // spec §5.3). By the time we reach this point the invariant holds.
                 assert(raw.derived.isEmpty, s"template body '${raw.name.name}' carries derived — should have been rejected by TemplateRegistryBuilder")
+                // T40: lower the host's `has` clauses (carried in the body as ExtractionDef members).
+                val extractionClauses = raw.members.collect { case e: RawDtoMember.ExtractionDef => e }
+                val (contractRefs, mirrorEdges) =
+                  lowerHostExtractions(pkg, extractionClauses, alias.name.name, templateKey._2, ownerForCurrent)
                 for {
                   rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
-                  RawTLDef.Identifier(
-                    root,
-                    raw.copy(
-                      name       = alias.name,
-                      members    = rewrittenMembers,
-                      derived    = alias.derived,
-                      meta       = mergedMeta,
-                      typeParams = Nil,
+                  (
+                    RawTLDef.Identifier(
+                      root,
+                      raw.copy(
+                        name       = alias.name,
+                        members    = rewrittenMembers ++ contractRefs,
+                        derived    = alias.derived,
+                        meta       = mergedMeta,
+                        typeParams = Nil,
+                      ),
                     ),
+                    mirrorEdges,
                   )
                 }
 
@@ -947,37 +1035,54 @@ object TemplateInstantiator {
                 // Body-side derived is rejected at registry-build time (TemplateBodyCarriesDerived,
                 // spec §5.3). By the time we reach this point the invariant holds.
                 assert(raw.derived.isEmpty, s"template body '${raw.name.name}' carries derived — should have been rejected by TemplateRegistryBuilder")
+                // T40: lower the ADT host's ADT-level `has` clauses. The `contract` variant appends
+                // an ADT-level `is B` (RawContractRef into `adt.contracts`) so B absorbs into every
+                // branch exactly like a hand-written ADT-level `is`; the `mirror` variant yields a
+                // reachability edge only.
+                val extractionClauses = raw.extractions
+                val (adtContractRefs, mirrorEdges) =
+                  lowerHostExtractions(pkg, extractionClauses, alias.name.name, templateKey._2, ownerForCurrent)
                 for {
                   rewrittenAdtMembers <- substituteAdtMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
-                  RawTLDef.ADT(
-                    root,
-                    raw.copy(
-                      name        = alias.name,
-                      members     = rewrittenAdtMembers,
-                      // T38: clear the ADT-level extraction clauses on the monomorphised concrete
-                      // ADT; T38's synthesis pass has already consumed them to produce the sibling
-                      // contract. Leaving them would trip the later host-gating scan.
-                      extractions = Nil,
-                      derived     = alias.derived,
-                      meta        = mergedMeta,
-                      typeParams  = Nil,
+                  (
+                    RawTLDef.ADT(
+                      root,
+                      raw.copy(
+                        name        = alias.name,
+                        members     = rewrittenAdtMembers,
+                        // T40: replace the consumed ADT-level extraction clauses with the lowered
+                        // `is B` contract refs (contract variant). T38's synthesis pass already
+                        // produced the sibling contract; clearing `extractions` keeps the later
+                        // host-gating scan happy.
+                        contracts   = raw.contracts ++ adtContractRefs,
+                        extractions = Nil,
+                        derived     = alias.derived,
+                        meta        = mergedMeta,
+                        typeParams  = Nil,
+                      ),
                     ),
+                    mirrorEdges,
                   )
                 }
 
               case RawTemplateDefn.Contract(raw) =>
+                // A templated contract is a host-invalid carrier of `has` (gated in
+                // `BaboonTyper.collectPendingExtractions`); no extraction lowering here.
                 for {
                   rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
-                  RawTLDef.Contract(
-                    root,
-                    raw.copy(
-                      name       = alias.name,
-                      members    = rewrittenMembers,
-                      meta       = mergedMeta,
-                      typeParams = Nil,
+                  (
+                    RawTLDef.Contract(
+                      root,
+                      raw.copy(
+                        name       = alias.name,
+                        members    = rewrittenMembers,
+                        meta       = mergedMeta,
+                        typeParams = Nil,
+                      ),
                     ),
+                    List.empty,
                   )
                 }
 
@@ -985,14 +1090,17 @@ object TemplateInstantiator {
                 for {
                   rewrittenFuncs <- substituteFuncs(raw.defns, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
-                  RawTLDef.Service(
-                    root,
-                    raw.copy(
-                      name       = alias.name,
-                      defns      = rewrittenFuncs,
-                      meta       = mergedMeta,
-                      typeParams = Nil,
+                  (
+                    RawTLDef.Service(
+                      root,
+                      raw.copy(
+                        name       = alias.name,
+                        defns      = rewrittenFuncs,
+                        meta       = mergedMeta,
+                        typeParams = Nil,
+                      ),
                     ),
+                    List.empty,
                   )
                 }
             }

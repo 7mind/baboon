@@ -36,7 +36,16 @@ object BaboonTyper {
     templateInstantiator: TemplateInstantiator[F],
   ) extends BaboonTyper[F] {
 
-    private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User], aliases: List[AliasInfo], templateRegistry: TemplateRegistry)
+    private case class TyperOutput(
+      defs: List[DomainMember],
+      renames: Map[TypeId.User, TypeId.User],
+      aliases: List[AliasInfo],
+      templateRegistry: TemplateRegistry,
+      // T40 (auto-extracted-contracts): out-of-band `mirror`-variant reachability edges
+      // host-instantiation→B, consulted by `buildDependencies` so a `mirror` B is GC-reachable iff
+      // its host instantiation is, WITHOUT surfacing in any `Typedef.contracts` list.
+      mirrorExtractionEdges: List[TemplateInstantiator.MirrorExtractionEdge],
+    )
 
     override def process(
       model: RawDomain
@@ -60,10 +69,19 @@ object BaboonTyper {
           }.toSet
         aliasRoots = indexedDefs.filter { case (k, _) => aliasRootIds.contains(k) }
         roots      = directRoots ++ aliasRoots
+        // T40 (auto-extracted-contracts): `mirror`-variant reachability edges host-instantiation→B,
+        // keyed by host id. These are NOT model-level relationships (no `Typedef.contracts` entry —
+        // load-bearing for all 9 backends); they feed the @root GC only so a `mirror` B survives iff
+        // its host instantiation is reachable. Filtered to ids actually present in `indexedDefs`.
+        mirrorEdgeMap: Map[TypeId, Set[TypeId]] = typed.mirrorExtractionEdges
+          .filter(e => indexedDefs.contains(e.host) && indexedDefs.contains(e.contract))
+          .groupBy(_.host: TypeId)
+          .view.mapValues(_.map(_.contract: TypeId).toSet).toMap
         predecessors <- buildDependencies(
           indexedDefs,
           roots,
           roots.keySet.map(t => (t, None)).toList,
+          mirrorEdgeMap,
         )
         predMatrix = AdjacencyPredList(predecessors)
         graph = DG.fromPred(
@@ -373,10 +391,16 @@ object BaboonTyper {
       defs: Map[TypeId, DomainMember],
       current: Map[TypeId, DomainMember],
       predecessors: List[(TypeId, Option[TypeId])],
+      mirrorEdges: Map[TypeId, Set[TypeId]],
     ): F[NEList[BaboonIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
-          enquiries.fullDepsOfDefn(defn).toList.map(dep => (id, Some(dep)))
+          // T40: union the structural dependencies with any `mirror`-variant extraction edges keyed
+          // by this id, so a `mirror` B is pulled into the reachable closure when its host is, while
+          // never appearing in `Typedef.contracts`.
+          val structuralDeps = enquiries.fullDepsOfDefn(defn)
+          val mirrorDeps     = mirrorEdges.getOrElse(id, Set.empty)
+          (structuralDeps ++ mirrorDeps).toList.map(dep => (id, Some(dep)))
       }
       val nextDeps = nextDepMap.map(_._2).toSet
 
@@ -398,7 +422,7 @@ object BaboonTyper {
             .toMap
         )
       } else {
-        buildDependencies(todo, next, newPredecessors)
+        buildDependencies(todo, next, newPredecessors, mirrorEdges)
       }
     }
 
@@ -438,7 +462,8 @@ object BaboonTyper {
         // `RawTypeRef.Constructor` over a registered template is replaced by the corresponding
         // concrete `RawTLDef.{DTO|ADT|Contract|Service}` keyed by the alias's name (locked
         // decision #4). Aliases NOT pointing at a template pass through unchanged.
-        instantiatedMembers <- templateInstantiator.instantiate(pkg, expandedMembers, templateRegistry)
+        instantiateResult <- templateInstantiator.instantiate(pkg, expandedMembers, templateRegistry)
+        (instantiatedMembers, mirrorExtractionEdges) = instantiateResult
 
         // T38 (auto-extracted-contracts): synthesize one sibling `RawContract` per `has` clause on a
         // TEMPLATED data/id/adt host, BETWEEN `instantiate` and the second `buildScopes`, so the
@@ -475,12 +500,20 @@ object BaboonTyper {
         }
 
         // T38: empty-extraction check (post-translation). Raw-level emptiness is insufficient
-        // (e.g. `+ EmptyDto` resolves empty), so verify each synthesized contract's RESOLVED field
-        // set is non-empty using the translated `out` map.
+        // (e.g. `+ EmptyDto` resolves empty), so verify each synthesized contract's RESOLVED content
+        // is non-empty using the translated `out` map.
+        //
+        // T40: an extraction whose resolved content is purely a contract edge (`is Base`, with no
+        // direct fields) is NON-empty — this is the canonical ADT-host shape, where the ADT's
+        // extraction input is its ADT-level `is` refs (`raw.contracts`) rather than direct fields.
+        // B then carries `Base` as a contract edge (empty `fields`, non-empty `contracts`) and the
+        // instantiated ADT `is B` absorbs Base transitively into its branches. Only a B with BOTH
+        // empty `fields` AND empty `contracts` (e.g. a data host where every member depends on the
+        // template parameter) is genuinely empty.
         _ <- F.traverseAccumErrors_(synthesizedExtractions) {
           ext =>
             out.get(ext.id) match {
-              case Some(DomainMember.User(_, c: Typedef.Contract, _, _)) if c.fields.isEmpty =>
+              case Some(DomainMember.User(_, c: Typedef.Contract, _, _)) if c.fields.isEmpty && c.contracts.isEmpty =>
                 F.fail(BaboonIssue.of(TyperIssue.ExtractionEmpty(ext.name, ext.hostName, ext.meta)))
               case _ =>
                 F.unit
@@ -496,7 +529,7 @@ object BaboonTyper {
             translator(pkg, scope, out).resolveAliasInfo().map(_.get)
         }
       } yield {
-        TyperOutput(indexed.values.toList, renames, aliases.toList, templateRegistry)
+        TyperOutput(indexed.values.toList, renames, aliases.toList, templateRegistry, mirrorExtractionEdges)
       }
     }
 
