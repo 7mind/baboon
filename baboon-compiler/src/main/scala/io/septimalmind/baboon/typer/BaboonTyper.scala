@@ -761,6 +761,10 @@ object BaboonTyper {
 
     /** Inject synthesized contract TLDefs at their host-owner level. Top-level contracts append to
       * the root member list; namespaced contracts descend into (or create) the matching namespace.
+      * Namespaces may be missing from `members` when the template registry builder dropped them
+      * (all children were templates); in that case we create the needed namespace containers so that
+      * multi-level namespace targets (e.g. `Owner.Ns(["some","ns"])` when `some` was dropped) are
+      * still reached.
       */
     private def injectByOwner(
       members: Seq[RawTLDef],
@@ -780,24 +784,32 @@ object BaboonTyper {
         case other => other
       }
       // Owners that target a namespace not present among the current children must be created.
+      // This includes DEEP descendants: if `some.ns` needs a contract but `some` was dropped from
+      // `members` (all its children were templates, removed by TemplateRegistryBuilder), we must
+      // create `some` as a namespace container and recurse into it to handle `some.ns`.
       val existingNsNames = members.collect { case RawTLDef.Namespace(ns) => ns.name.name }.toSet
-      val missingNsContracts = byOwner.keys.collect {
-        case o @ Owner.Ns(path) if isDirectChildOf(currentOwner, o) && !existingNsNames.contains(path.last.name) =>
-          o
-      }.toList
-      val createdNamespaces: Seq[RawTLDef] = missingNsContracts.map {
-        o =>
-          val nsName = o.asInstanceOf[Owner.Ns].path.last.name
-          RawTLDef.Namespace(RawNamespace(RawTypeName(nsName), injectByOwner(Seq.empty, byOwner, o), emptyMeta))
+      val currentPrefix: List[TypeName] = currentOwner match {
+        case Owner.Toplevel => List.empty
+        case Owner.Ns(path) => path.toList
+        case _: Owner.Adt   => List.empty // ADT-owned scopes cannot contain synthesized contracts.
+      }
+      // Collect the next-segment names for ALL byOwner owners that are descendants of currentOwner.
+      val missingChildNames = byOwner.keys.collect {
+        case Owner.Ns(path)
+            if path.toList.startsWith(currentPrefix) && path.size > currentPrefix.size
+              && !existingNsNames.contains(path.toList.drop(currentPrefix.size).head.name) =>
+          path.toList.drop(currentPrefix.size).head.name
+      }.toSet
+      val createdNamespaces: Seq[RawTLDef] = missingChildNames.toList.map {
+        childName =>
+          val childOwner = currentOwner match {
+            case Owner.Toplevel => Owner.Ns(List(TypeName(childName)))
+            case Owner.Ns(path) => Owner.Ns(path.toList :+ TypeName(childName))
+            case adt: Owner.Adt => throw new IllegalStateException(s"Namespace inside an ADT scope is structurally impossible; got $adt")
+          }
+          RawTLDef.Namespace(RawNamespace(RawTypeName(childName), injectByOwner(Seq.empty, byOwner, childOwner), emptyMeta))
       }
       rewritten ++ here ++ createdNamespaces
-    }
-
-    /** True iff `child` is `parent` extended by exactly one namespace segment. */
-    private def isDirectChildOf(parent: Owner, child: Owner): Boolean = (parent, child) match {
-      case (Owner.Toplevel, Owner.Ns(path)) => path.size == 1
-      case (Owner.Ns(pp), Owner.Ns(cp))     => cp.size == pp.size + 1 && cp.toList.startsWith(pp.toList)
-      case _                                 => false
     }
 
     private val emptyMeta: RawNodeMeta = RawNodeMeta(InputPointer.Undefined)

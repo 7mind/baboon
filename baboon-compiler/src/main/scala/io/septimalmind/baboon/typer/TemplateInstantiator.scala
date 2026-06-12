@@ -873,10 +873,11 @@ object TemplateInstantiator {
       *
       * Both B-coordinates are computed from the TEMPLATE's owner (`templateKey._2`), which is where
       * `BaboonTyper.synthesizeExtractions` places the single shared sibling B; the host
-      * instantiation's id derives from the alias name at `ownerForCurrent`. The ContractRef is a
-      * bare `ScopedRef(B)`: for the unprefixed `A[X]` form (the wired-and-tested path, mirroring
-      * T38's `Probe[T] { is BoxView }` sibling reference) the alias's owner equals the template's
-      * owner, so B resolves as a same-scope sibling in the post-synthesis scope-build.
+      * instantiation's id derives from the alias name at `ownerForCurrent`. The ContractRef's
+      * ScopedRef is built from the template owner's namespace path so that cross-namespace prefixed
+      * hosts (`root type X = some.ns.A[i32]` where templateOwner != ownerForCurrent) resolve B at
+      * the template owner's scope. For the unprefixed case (templateOwner == ownerForCurrent ==
+      * Owner.Toplevel) the bare single-segment ScopedRef is preserved, keeping behaviour unchanged.
       */
     private def lowerHostExtractions(
       pkg: Pkg,
@@ -893,7 +894,19 @@ object TemplateInstantiator {
           val bId = TypeId.User(pkg, templateOwner, TypeName(c.name.name))
           c.kind match {
             case ExtractionKind.Contract =>
-              contractRefs += RawDtoMember.ContractRef(RawContractRef(ScopedRef(NEList(c.name))), c.meta)
+              // Build the ScopedRef from the template owner's namespace path so that
+              // cross-namespace prefixed hosts (templateOwner != ownerForCurrent) resolve
+              // B at the template owner's scope, mirroring what the mirror edge does via bId.
+              val bScopedRef: ScopedRef = templateOwner match {
+                case Owner.Toplevel =>
+                  ScopedRef(NEList(c.name))
+                case Owner.Ns(path) =>
+                  ScopedRef(NEList.unsafeFrom(path.map(tn => RawTypeName(tn.name)).toList :+ c.name))
+                case Owner.Adt(_) =>
+                  // Templates cannot be declared inside an ADT scope (enforced in TemplateRegistryBuilder).
+                  ScopedRef(NEList(c.name))
+              }
+              contractRefs += RawDtoMember.ContractRef(RawContractRef(bScopedRef), c.meta)
             case ExtractionKind.Mirror =>
               mirrorEdges += TemplateInstantiator.MirrorExtractionEdge(hostId, bId)
           }

@@ -186,6 +186,33 @@ abstract class T40ExtractionLoweringTestBase[F[+_, +_]: Error2: TagKK: BaboonTes
       |root type IntThird = Third[i32]
       |""".stripMargin
 
+  /** D18 / H14 regression: cross-namespace prefixed-host `has contract`.
+    *
+    * The template Box[T] with `has contract BoxView` lives under namespace `some.ns`.
+    * The alias `root type X = some.ns.Box[i32]` is at toplevel (different owner).
+    * Before the fix, lowerHostExtractions built a bare ScopedRef(BoxView) resolved
+    * relative to ownerForCurrent (toplevel), which fails to find BoxView synthesized
+    * at the template owner (some.ns). After the fix the ScopedRef is prefixed with
+    * the template owner's namespace path, so it resolves correctly.
+    */
+  private val crossNsPrefixedHostContract: String =
+    """model t40.crossns.prefixed
+      |
+      |version "1.0.0"
+      |
+      |ns some {
+      |  ns ns {
+      |    data Box[T] {
+      |      x: i32
+      |      data: T
+      |      has contract BoxView
+      |    }
+      |  }
+      |}
+      |
+      |root type X = some.ns.Box[i32]
+      |""".stripMargin
+
   // ─── tests ──────────────────────────────────────────────────────────────────
 
   "T40 instantiation lowering" should {
@@ -282,6 +309,22 @@ abstract class T40ExtractionLoweringTestBase[F[+_, +_]: Error2: TagKK: BaboonTes
           val bId   = idOf(domain, "BoxView")
           val third = dtoOf(domain, "IntThird")
           assert(third.contracts.contains(bId), s"IntThird must carry BoxView in contracts, got: ${third.contracts}")
+        }
+    }
+
+    "D18 cross-ns prefixed host `has contract`: B resolves to the template-owner-qualified ref" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, crossNsPrefixedHostContract)
+        } yield {
+          val domain = domainOf(outcome)
+          // BoxView is synthesized in some.ns scope (template owner) — must be present.
+          assert(userTypeNames(domain).contains("BoxView"), s"BoxView must be in output (synthesized at some.ns scope), got: ${userTypeNames(domain)}")
+          val bId = idOf(domain, "BoxView")
+          // X is the monomorphisation of some.ns.Box[i32] at toplevel.
+          val x = dtoOf(domain, "X")
+          // The fix: BoxView must appear in X.contracts (previously it misresolved the bare ScopedRef).
+          assert(x.contracts.contains(bId), s"X must carry BoxView in contracts (cross-ns prefixed-host D18), got: ${x.contracts}")
         }
     }
   }
