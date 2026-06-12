@@ -271,6 +271,7 @@ dep action.test-cs-regular
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
+npm run build
 npm test
 popd
 

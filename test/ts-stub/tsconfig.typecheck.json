@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/runtime-tests/**/*.ts",
+    "src/generated/**/*.ts"
+  ]
+}
