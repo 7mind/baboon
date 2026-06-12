@@ -744,13 +744,84 @@ object RsDefnTranslator {
         if (isUserMapKeyEligibleDto(dto)) renderUserMapKeyAdapter(dto, name)
         else q""
 
+      // D21 (T53): emit `impl <Contract> for <Host>` so the host is type-level
+      // associated with every contract it carries (`is C` / `has contract C`).
+      // Without this the host merely duplicates the contract's fields but is NOT
+      // usable AS the trait. See makeContractImpls.
+      val contractImpls: TextTree[RsValue] = makeContractImpls(dto, name)
+
       q"""$structDef
          |
          |$ordImpls$customSerialize
          |
          |$identifierImpls
          |
+         |$contractImpls
+         |
          |$mapKeyAdapter""".stripMargin
+    }
+
+    /** D21 (T53) — for each contract a host DTO carries (`dto.contracts`, which the
+      * typer fills with the full transitive supertrait closure), emit
+      * `impl <Contract> for <Host>` wiring the trait's accessor methods to the
+      * host struct's duplicated fields. This gives the host the trait at the type
+      * level, matching the host↔contract coupling the C#/Scala lanes carry via
+      * `: Contract` / `extends Contract`.
+      *
+      * Constraints handled:
+      *   - ADT-owned contracts are NEVER emitted as standalone traits (the
+      *     `translate` entry skips `Owner.Adt`), so `impl <S2> for <B1>` would
+      *     reference a non-existent trait. We skip any contract whose owner is an
+      *     ADT. The accessible supertrait portion (toplevel/namespaced contracts
+      *     in the same transitive closure) is still emitted.
+      *   - The contract trait declares only its OWN `contract.fields` (NOT the
+      *     transitive parent fields — `makeContractRepr` emits no supertrait
+      *     bound), so each `impl` wires exactly those own fields. The host carries
+      *     them all (field duplication), so every accessor resolves.
+      *   - A field that triggers `needsBox` is stored as `Box<T>` on the host but
+      *     the trait method returns `&T`; we emit `self.field.as_ref()` so the
+      *     reference type matches.
+      *
+      * If a contract's own field is somehow absent from the host (should not
+      * happen — the typer guarantees field duplication), we omit that single
+      * `impl` rather than emit code that fails to compile.
+      */
+    private def makeContractImpls(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
+      val hostFieldNames: Set[String] = dto.fields.map(f => toSnakeCase(f.name.name)).toSet
+
+      val impls: List[TextTree[RsValue]] = dto.contracts.flatMap {
+        cid =>
+          domain.defs.meta.nodes.get(cid) match {
+            case Some(DomainMember.User(_, c: Typedef.Contract, _, _)) =>
+              cid.owner match {
+                // ADT-owned contracts are not emitted as standalone traits — skip.
+                case Owner.Adt(_) => None
+                case _ =>
+                  val contractTpe = trans.asRsType(cid, domain, evo)
+                  // Every own contract field must be a duplicated host field; if
+                  // not, omit this impl rather than emit non-compiling code.
+                  if (c.fields.forall(f => hostFieldNames.contains(toSnakeCase(f.name.name)))) {
+                    val methods = c.fields.map {
+                      f =>
+                        val rsName = toSnakeCase(f.name.name)
+                        val rawT   = trans.asRsRef(f.tpe, domain, evo)
+                        val retT   = if (needsBox(f.tpe)) q"Box<$rawT>" else rawT
+                        val body   = if (needsBox(f.tpe)) q"self.$rsName.as_ref()" else q"&self.$rsName"
+                        q"fn $rsName(&self) -> &$retT { $body }"
+                    }
+                    val body = if (methods.nonEmpty) methods.joinN() else q""
+                    Some(
+                      q"""impl $contractTpe for ${name.asName} {
+                         |    ${body.shift(4).trim}
+                         |}""".stripMargin
+                    )
+                  } else None
+              }
+            case _ => None
+          }
+      }
+
+      if (impls.nonEmpty) impls.joinNN() else q""
     }
 
     /** PR-61 (M19.3) — emit a per-key-type serde adapter module as a sibling of

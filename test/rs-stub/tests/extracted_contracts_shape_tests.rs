@@ -4,25 +4,27 @@
 // emitted by `mdl :build :test-gen-regular-adt`. Running `cargo test` from
 // the source tree may fail with missing symbols; run from the codegen'd copy.
 //
-// Rust idiom for extracted contracts: the compiler emits `pub trait IBox { … }`
-// etc., but does NOT auto-implement those traits on the concrete host types
-// (IntBox, IntTagged, …). The trait definitions capture the interface shape;
-// user code is expected to implement them where coercibility is required.
+// Rust idiom for extracted contracts (D21/T53): the compiler emits
+// `pub trait IBox { … }` AND `impl IBox for IntBox { … }` — every concrete host
+// carrying `is C` / `has contract C` is type-associated with C's trait, wiring
+// the trait accessors to the host's duplicated fields. So a host IS usable AS
+// its contract trait, matching the host↔contract coupling the C#/Scala lanes carry.
 //
 // Coverage:
 //   (a) Contract variant — define a local fixture struct that implements B,
 //       assign it to a B-bound parameter, and read a B-declared member through
 //       the B reference at runtime. Failures panic unconditionally.
 //   (b) Mirror variant — same shape verification for mirror traits (ITagMirror,
-//       IMirroredPayload); document that the host type does NOT auto-implement B.
+//       IMirroredPayload). Mirror hosts (IntPayload) do NOT implement their
+//       mirror trait — mirror carries no model-level host↔trait relationship.
 //   (c) Member-set spot-check — compile-time: every field named in B's trait
 //       declaration must match the names/types used in the `impl` block; any
 //       mismatch causes a compile error.
 //
-// Negative (concrete types do not implement the traits):
-//   The code `fn needs_ibox<T: IBox>(_: T) {}; needs_ibox(IntBox{…})` does NOT
-//   compile because IntBox has no `impl IBox for IntBox`. This is intentionally
-//   left as a comment; the trait's existence is verified by the fixture impls below.
+// Host-coupling guard (D21/T53):
+//   `fn needs_ibox<T: IBox>(_: &T) {}; needs_ibox(&IntBox{…})` compiles ONLY
+//   because the host actually implements the contract trait. It would NOT
+//   compile under the pre-D21 behaviour (no `impl IBox for IntBox`).
 //
 // Runtime checks use explicit panics (not debug_assert!), which are active in
 // all build profiles.
@@ -41,6 +43,12 @@ use baboon_rs_stub::my::ok::extracted::contracts::int_result::{IntResult, Ok as 
 fn read_ibox_count(b: &impl IBox) -> i32 {
     *b.count()
 }
+
+/// D21/T53 host-coupling guard: this monomorphises ONLY for types that actually
+/// implement IBox. Calling it with `&IntBox{..}` (below) compiles iff the host
+/// is type-associated with its contract trait — the pre-D21 behaviour (no
+/// `impl IBox for IntBox`) would make this a hard compile error.
+fn needs_ibox<T: IBox>(_: &T) {}
 
 fn read_ikey_key(b: &impl IKey) -> i64 {
     *b.key()
@@ -120,10 +128,15 @@ fn ibox_contract_variant_fixture_implements_ibox_count_readable() {
 }
 
 #[test]
-fn ibox_contract_variant_intbox_fields_match_ibox_member_names() {
-    // IntBox does NOT auto-implement IBox (Rust idiom — user provides impl).
-    // The concrete type's public fields must match the trait member names/types.
+fn ibox_contract_variant_intbox_implements_ibox() {
+    // D21/T53: IntBox DOES implement IBox (`impl IBox for IntBox` is emitted).
+    // The host-coupling guard `needs_ibox<T: IBox>` compiles ONLY because of
+    // that impl — this is the positive assertion replacing the former negative.
     let host = IntBox { count: 7, item: 42 };
+    needs_ibox(&host); // compiles iff `impl IBox for IntBox` exists
+    // Read the contract member through the trait (not just the raw field).
+    let count_via_b = read_ibox_count(&host);
+    if count_via_b != 7 { panic!("IBox.count via IntBox must equal 7 but was {}", count_via_b); }
     // Verify field names and types at compile + runtime.
     let count: i32 = host.count;
     let item: i32 = host.item;
