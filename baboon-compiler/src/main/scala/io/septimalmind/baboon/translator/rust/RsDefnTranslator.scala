@@ -805,7 +805,12 @@ object RsDefnTranslator {
                       f =>
                         val rsName = toSnakeCase(f.name.name)
                         val rawT   = trans.asRsRef(f.tpe, domain, evo)
-                        val retT   = if (needsBox(f.tpe)) q"Box<$rawT>" else rawT
+                        // D22/T55: the trait accessor always declares `-> &rawT` (never &Box<rawT>).
+                        // When the host stores the field as Box<rawT> (needsBox=true), the accessor
+                        // body uses `self.field.as_ref()` which returns `&rawT` via Deref — exactly
+                        // what the trait signature expects. Declaring `&Box<rawT>` caused E0053
+                        // (return-type mismatch between the trait signature and the impl body).
+                        val retT   = rawT
                         val body   = if (needsBox(f.tpe)) q"self.$rsName.as_ref()" else q"&self.$rsName"
                         q"fn $rsName(&self) -> &$retT { $body }"
                     }

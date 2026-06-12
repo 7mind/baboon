@@ -1,0 +1,48 @@
+// T55 / D22 regression fixture: recursive-DTO contract field.
+//
+// Purpose: trigger the needsBox=true path inside makeContractImpls so that the
+// boxed-contract-field E0053 bug (D22) is caught at compile time.
+//
+// Design:
+//   RecNode is self-referential via `next: opt[RecNode]`, placing it in a type
+//   loop so `isRecursiveTypedef(RecNode) = true`.
+//
+//   Wrapper[T] is a templated host (`has contract` requires a template) with a
+//   param-free field `node: RecNode`. Because `isRecursiveTypedef(RecNode)=true`,
+//   `needsBox(RecNode)=true`, so the generated host struct stores
+//     `pub node: Box<RecNode>`.
+//   The extracted contract `IWrapper` gets `node: RecNode` (param-free field).
+//   Before the D22 fix, makeContractImpls emitted
+//     `fn node(&self) -> &Box<RecNode> { self.node.as_ref() }`
+//   which is E0053: the trait declares `-> &RecNode` but the impl declared
+//   `-> &Box<RecNode>`.  After the fix, `retT = rawT` always, so the impl
+//   emits `-> &RecNode`, matching the trait.  `Box<RecNode>::as_ref()` returns
+//   `&RecNode` (via Deref), so the body is correct.
+//
+// D9 discipline: own isolated namespace (recursive.contract.ok), no cross-
+// namespace references to sibling model families.  Placed inside the shared
+// `--model-dir ./baboon-compiler/src/test/resources/baboon/` so all language
+// lanes compile it; only the Rust lane exercises the boxed-contract branch.
+
+model recursive.contract.ok
+
+version "1.0.0"
+
+// Self-referential DTO — placed in the same namespace as Wrapper to avoid D9
+// cross-namespace reference failures.  `next: opt[RecNode]` makes RecNode part
+// of a type loop → isRecursiveTypedef=true → needsBox(RecNode)=true.
+root data RecNode : derived[json], derived[ueba] {
+  value: i32
+  next:  opt[RecNode]
+}
+
+// Templated host with `has contract` (required by the extractor).
+// The param-free field `node: RecNode` triggers needsBox in makeContractImpls,
+// exercising the boxed-contract-field branch.
+data Wrapper[T] {
+  node:  RecNode
+  extra: T
+  has contract IWrapper
+}
+
+root type IntWrapper = Wrapper[i32] : derived[json], derived[ueba]
