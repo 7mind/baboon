@@ -1,0 +1,155 @@
+// T42 fixture: self-contained extracted-contracts model.
+//
+// Exercises the full has-mirror / has-contract feature set in one isolated
+// namespace so the shared --model-dir scan stays green on all 9 language
+// lanes (D9 lesson: no cross-namespace references into sibling families).
+//
+// Coverage map:
+//   (1) Template data host with has mirror   → Payload[T] / IMirroredPayload
+//   (2) Template data host with has contract → Box[T]     / IBox
+//   (3) ADT template host with has contract  → Result[T]  / IResult
+//   (4) Templated id host with has contract  → Key[T]     / IKey
+//   (5) Multiple clauses on one host         → Tagged[T]  / ITagMirror + ITagged
+//   (6) Through-parent param-free contribution
+//         Container[T] with + Pair[T, i32] + Base
+//         → IContainer gets {own:i32, second:i32, base_field:i32}
+//   (7) @root type referencing mirror B via `is B`
+//         PayloadProbe[T] { is IMirroredPayload } → IntPayloadProbe
+//   (8) ≥2 instantiations of one host sharing the single B
+//         IntBox = Box[i32]  and  StrBox = Box[str]  both carry IBox
+
+model my.ok.extracted.contracts
+
+version "1.0.0"
+
+// ── Supporting concrete contract (for ADT case req 3) ─────────────────────
+
+contract ResultBase {
+  tag: str
+}
+
+// ── Supporting templates for through-parent test (req 6) ──────────────────
+
+// Two-param template: second: B is param-free when B=i32.
+data Pair[A, B] {
+  first:  A
+  second: B
+}
+
+// Concrete parent: contributes base_field:i32 (param-free) to through-parent.
+data Base {
+  base_field: i32
+}
+
+// ── Req 1: template data host with has mirror ──────────────────────────────
+// IMirroredPayload gets: { label: str }
+
+data Payload[T] {
+  label: str
+  value: T
+  has mirror IMirroredPayload
+}
+
+root type IntPayload = Payload[i32] : derived[json], derived[ueba]
+root type StrPayload = Payload[str] : derived[json], derived[ueba]
+
+// Req 7: @root type referencing the mirror B explicitly via `is B`.
+// Must be a templated probe so `is IMirroredPayload` resolves after synthesis.
+data PayloadProbe[T] {
+  is IMirroredPayload
+}
+
+root type IntPayloadProbe = PayloadProbe[i32] : derived[json], derived[ueba]
+
+// ── Req 2 + 8: template data host with has contract (≥2 instantiations) ───
+// IBox gets: { count: i32 }
+
+data Box[T] {
+  count: i32
+  item:  T
+  has contract IBox
+}
+
+root type IntBox = Box[i32] : derived[json], derived[ueba]
+root type StrBox = Box[str] : derived[json], derived[ueba]
+
+// ── Req 3: adt template host with has contract (ADT-level) ─────────────────
+// IResult draws its field set from ResultBase (via the ADT-level `is` ref).
+// IResult gets: { contracts: [ResultBase], fields: [] }
+// Each instantiated branch gets tag:str from ResultBase.
+
+adt Result[T] {
+  is ResultBase
+  has contract IResult
+  data Ok  { result: T }
+  data Err { msg: str  }
+}
+
+root type IntResult = Result[i32] : derived[json], derived[ueba]
+
+// ── Req 4: templated id host with has contract ─────────────────────────────
+// IKey gets: { key: i64 }  (v:T is dropped as sentinel-dependent).
+// IntKey and StrKey both implement IKey.
+
+id Key[T] {
+  has contract IKey
+  key: i64
+  v:   T
+}
+
+root type IntKey = Key[i32] : derived[json], derived[ueba]
+root type StrKey = Key[str] : derived[json], derived[ueba]
+
+// ── Req 5: multiple clauses on one host ────────────────────────────────────
+// ITagMirror gets: { label: str }   (standalone, mirror variant)
+// ITagged    gets: { label: str }   (wired onto each instantiation, contract variant)
+
+data Tagged[T] {
+  label: str
+  extra: T
+  has mirror   ITagMirror
+  has contract ITagged
+}
+
+root type IntTagged = Tagged[i32] : derived[json], derived[ueba]
+
+// ── Req 6: through-parent case ─────────────────────────────────────────────
+// Container[T] inherits from Pair[T, i32] (second:i32 is param-free, first:T dropped)
+// and Base (base_field:i32).
+// IContainer gets: { own:i32, second:i32, base_field:i32 }
+
+data Container[T] {
+  own:  i32
+  item: T
+  + Pair[T, i32]
+  + Base
+  has contract IContainer
+}
+
+root type IntContainer = Container[i32] : derived[json], derived[ueba]
+
+// ── TagMirror probe: pull ITagMirror into @root-reachable set ─────────────
+// ITagMirror is mirror (not wired by T40), so a third-type probe is needed.
+// Must be a templated probe so `is ITagMirror` resolves after synthesis.
+
+data TagMirrorProbe[T] {
+  is ITagMirror
+}
+
+root type IntTagMirrorProbe = TagMirrorProbe[i32] : derived[json], derived[ueba]
+
+// ── Holder: aggregates all @root types for single-fixture readability ─────
+
+root data ExtractedContractsHolder : derived[json], derived[ueba] {
+  intPayload:      IntPayload
+  strPayload:      StrPayload
+  payloadProbe:    IntPayloadProbe
+  intBox:          IntBox
+  strBox:          StrBox
+  intResult:       IntResult
+  intKey:          IntKey
+  strKey:          StrKey
+  intTagged:       IntTagged
+  intContainer:    IntContainer
+  tagMirrorProbe:  IntTagMirrorProbe
+}
