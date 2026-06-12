@@ -294,6 +294,25 @@ _children: list[asyncio.subprocess.Process] = []
 _shutting_down = False
 _lang_locks: dict = {}
 
+# Shared lock that serialises Kotlin and Kotlin-KMP *build* steps relative to
+# each other.  Under a high-parallelism matrix the Kotlin 2.1.0 JVM back-end
+# emits an internal CompilationException ("Couldn't transform method node
+# <init>") when multiple Gradle invocations compete for JVM heap during
+# codegen of generated-main/RequiredConversions (the m29ok fixture, which is
+# particularly heavy on <init> synthesis).  Serialising these two builds
+# eliminates the concurrent Gradle heap contention without forcing the entire
+# acceptance matrix to run sequentially (D23 / T56).
+_kotlin_build_lock: Optional[asyncio.Lock] = None
+
+_KOTLIN_BUILD_LANGS = frozenset({Lang.KOTLIN, Lang.KOTLIN_KMP})
+
+
+def _get_kotlin_build_lock() -> asyncio.Lock:
+    global _kotlin_build_lock
+    if _kotlin_build_lock is None:
+        _kotlin_build_lock = asyncio.Lock()
+    return _kotlin_build_lock
+
 
 def _get_lang_lock(lang: Lang) -> asyncio.Lock:
     """Per-language lock to prevent concurrent operations in the same project dir.
@@ -513,6 +532,22 @@ async def build_language(
     lang: Lang, target_dir: Path, semaphore: asyncio.Semaphore, timeout: int
 ) -> StepResult:
     """Build a single language's conv-test project."""
+    # D23/T56: Kotlin and Kotlin-KMP share JVM-based Gradle infrastructure.
+    # Running their builds concurrently triggers a Kotlin 2.1.0 back-end ICE
+    # ("Couldn't transform method node <init>") under memory pressure.  Acquire
+    # a shared lock for the duration of every Kotlin build to prevent the two
+    # variants from competing simultaneously.  Other language builds are
+    # unaffected and still run in parallel with each other.
+    if lang in _KOTLIN_BUILD_LANGS:
+        async with _get_kotlin_build_lock():
+            return await _build_language_inner(lang, target_dir, semaphore, timeout)
+    return await _build_language_inner(lang, target_dir, semaphore, timeout)
+
+
+async def _build_language_inner(
+    lang: Lang, target_dir: Path, semaphore: asyncio.Semaphore, timeout: int
+) -> StepResult:
+    """Build a single language's conv-test project (inner, lock-free)."""
     config = LANG_CONFIGS[lang]
     cwd = str(target_dir / config.dir_name)
     total_stdout = []
