@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.dart
 
 import io.septimalmind.baboon.CompilerProduct
+import io.septimalmind.baboon.CompilerTarget.DtTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.dart.DtValue.DtType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -41,6 +42,7 @@ object DtDefnTranslator {
   )
 
   class DtDefnTranslatorImpl[F[+_, +_]: Applicative2](
+    target: DtTarget,
     domain: Domain,
     evo: BaboonEvolution,
     dtFiles: DtFileTools,
@@ -579,7 +581,11 @@ object DtDefnTranslator {
         m =>
           val in       = trans.asDtRef(m.sig, domain, evo)
           val out      = m.out.map(trans.asDtRef(_, domain, evo))
-          val retStr   = out.map(o => q"$o").getOrElse(q"void")
+          val baseRet  = out.map(o => q"$o").getOrElse(q"void")
+          // Under `--dt-async-services` the interface method returns `Future<T>`
+          // (`Future<void>` for void), aligning with the always-async Dart
+          // client; when off the bare `T`/`void` keeps output byte-identical.
+          val retStr   = if (target.language.asyncServices) q"Future<$baseRet>" else baseRet
           val dartName = trans.escapeDartKeyword(m.name.name)
           val methodEx = q"$retStr $dartName($ctxMethodParam$in arg);"
           prependDocs(m.docs, methodEx)
