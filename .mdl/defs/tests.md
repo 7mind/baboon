@@ -2312,6 +2312,68 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-jv-wiring-async
+
+Generate ASYNC Java service wiring for the petstore model
+(`--jv-async-services=true`, noErrors flavour, both codec families) into the
+`jv-async` overlay project. This is a RED reproduction lane for D25: the
+generated `PetStore.java` interface declares bare `T` return types even when
+`--jv-async-services=true` is passed (only the client is wrapped in
+`CompletableFuture<T>`; the server interface and `PetStoreWiring.invokeJson`
+remain synchronous). An async server impl returning `CompletableFuture<T>`
+therefore cannot satisfy the generated sync interface — the lane MUST fail with
+a Java compile-time type-mismatch error.
+
+NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
+a RED reproduction gating the Java server-side async fix (T72/T73).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-jv-wiring-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/jv-async"
+
+rsync -a --exclude='target' \
+  ./test/services/jv-async/ "$TEST_DIR/jv-async/"
+
+mkdir -p "$TEST_DIR/jv-async/src/main/java/generated"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore.baboon \
+  --lock-file="$TEST_DIR/baboon-jv-async.lock" \
+  :java \
+  --output "$TEST_DIR/jv-async/src/main/java/generated" \
+  --jv-async-services=true \
+  --service-result-no-errors=true \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-jv-wiring-async
+
+Compile the async Java server impl overlay against the generated
+`--jv-async-services=true` petstore code. This lane is a RED reproduction for
+D25: the generated `PetStore.java` interface declares bare `T` methods; the
+overlay `PetStoreAsyncImpl` returns `CompletableFuture<T>` for each method,
+causing a javac type-mismatch compile error. Expected failure messages:
+  - `return type CompletableFuture<...Out> is not compatible with ...Out`
+  - `method does not override or implement a method from a supertype`
+
+```bash
+TEST_DIR="${action.test-gen-jv-wiring-async.test_dir}"
+pushd "$TEST_DIR/jv-async"
+mvn compile
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-dt-wiring
 
 Generate code for Dart wiring tests in no-errors service-result mode.
