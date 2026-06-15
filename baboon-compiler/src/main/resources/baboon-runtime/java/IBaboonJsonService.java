@@ -8,10 +8,12 @@ package baboon.runtime.shared;
  * shape so the same interface supports the noErrors mode (R = String)
  * and the errors mode (R = container-of-String, e.g.
  * {@code BaboonEither<BaboonWiringError, String>}). Java has no native
- * sync/async polymorphism via type-only mechanisms, so an asynchronous
- * variant would parameterise R as {@code CompletableFuture<String>} —
- * but the current Java backend has no asyncServices flag, so that
- * spelling is not emitted today.
+ * sync/async polymorphism via type-only mechanisms; the --jv-async-services
+ * flag controls whether R is wrapped in {@code CompletableFuture}. In async
+ * mode, R is parameterised as {@code CompletableFuture<String>} (or the
+ * errors-mode container), and both the client interface (invokeJson/invokeUeba
+ * returns) and server dispatch (invokeJson/invokeUeba composition) emit
+ * {@code CompletableFuture} code.
  *
  * The per-domain {@code ${Svc}Wiring.JsonService} nested classes
  * emitted by the generator implement this interface and bake the

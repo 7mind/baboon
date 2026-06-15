@@ -969,14 +969,16 @@ object JvServiceWiringTranslator {
     // abstract/concrete service-context parameter) are baked at construction
     // time so the runtime contract stays uniform.
     //
-    // Java has no native sync/async polymorphism via type-only mechanisms;
-    // the current Java backend has no asyncServices flag. R is therefore
-    // either the bare wire type (String/byte[]) in noErrors mode or the
-    // service-result container in errors mode. Nesting the wrappers inside
-    // ${Svc}Wiring (rather than emitting them as top-level files) keeps the
-    // emission shape compatible with the existing one-output-per-service
-    // dispatcher and matches Java's "helpers nested under the public class"
-    // idiom.
+    // Java has no native sync/async polymorphism via type-only mechanisms.
+    // The --jv-async-services flag controls whether R is wrapped in CompletableFuture.
+    // In sync mode (default), R is either the bare wire type (String/byte[]) in noErrors
+    // mode or the service-result container in errors mode. In async mode, R is wrapped
+    // as CompletableFuture<R>, and both the client interface (invokeJson/invokeUeba
+    // method returns) and server dispatch logic (wraps handler calls in CompletableFuture)
+    // use async. Nesting the wrappers inside ${Svc}Wiring (rather than emitting them as
+    // top-level files) keeps the emission shape compatible with the existing
+    // one-output-per-service dispatcher and matches Java's "helpers nested under the
+    // public class" idiom.
 
     private def generateServiceWrappers(
       service: Typedef.Service,
