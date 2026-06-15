@@ -31,6 +31,29 @@ object DtServiceWiringTranslator {
     evo: BaboonEvolution,
   ) extends DtServiceWiringTranslator {
 
+    // When the Dart `asyncServices` flag is on, the service interface methods
+    // return `Future<T>` (DtDefnTranslator, T80) and the always-async Dart
+    // client already awaits the transport. The server dispatchers
+    // `invokeJson`/`invokeUeba` must therefore `await` the now-`Future` impl
+    // call and become `async`/`Future`-returning themselves. The runtime
+    // `IBaboon*Service<R>.invoke` contract (a static resource) is unchanged —
+    // asyncness is absorbed into the wrapper's `R` type parameter, which
+    // becomes `Future<base>`, so the `invoke` override simply returns the
+    // `Future` produced by the async dispatcher. Every helper below is a no-op
+    // when the flag is off, keeping that output byte-identical to HEAD.
+    private val isAsync: Boolean = target.language.asyncServices
+
+    // `async` modifier on the static dispatcher and on each per-method handler
+    // closure; `await` prefix on the impl call. Empty in sync mode.
+    private val dispatcherAsyncKw: String = if (isAsync) " async" else ""
+    private val awaitKw: String           = if (isAsync) "await " else ""
+
+    // The wrapper's `R` type parameter / the static dispatcher's return type:
+    // `Future<base>` in async mode (preserving the synchronous runtime
+    // `IBaboon*Service.invoke` contract), identity otherwise.
+    private def asyncRetType(base: TextTree[DtValue]): TextTree[DtValue] =
+      if (isAsync) q"Future<$base>" else base
+
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "dart", target.language.serviceResult, target.language.pragmas)
 
@@ -381,7 +404,7 @@ object DtServiceWiringTranslator {
            |  ${methods.shift(2).trim}
            |}""".stripMargin
 
-      val wrappers = generateServiceWrappers(service, noErrorsJsonRetTree, noErrorsUebaRetTree)
+      val wrappers = generateServiceWrappers(service, asyncRetType(noErrorsJsonRetTree), asyncRetType(noErrorsUebaRetTree))
 
       Seq(wiringClass, wrappers).filterNot(_.isEmpty).join("\n\n")
     }
@@ -411,11 +434,11 @@ object DtServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"final result = impl.$dartMethodName(${ctxArgPass}decoded);"
-            case None    => q"impl.$dartMethodName(${ctxArgPass}decoded);"
+            case Some(_) => q"final result = ${awaitKw}impl.$dartMethodName(${ctxArgPass}decoded);"
+            case None    => q"${awaitKw}impl.$dartMethodName(${ctxArgPass}decoded);"
           }
 
-          q"""'${m.name.name}': () {
+          q"""'${m.name.name}': ()$dispatcherAsyncKw {
              |  final wire = $dtJsonDecode(data);
              |  final decoded = $decodeIn;
              |  $callExpr
@@ -423,19 +446,21 @@ object DtServiceWiringTranslator {
              |},""".stripMargin
       }.join("\n")
 
-      q"""static String invokeJson$ctxTypeParamDecl(
+      val retType     = asyncRetType(q"String")
+      val handlerType = asyncRetType(q"String")
+      q"""static $retType invokeJson$ctxTypeParamDecl(
          |  $baboonMethodId method,
          |  String data,
          |  $svcName$ctxTypeParamDecl impl,
-         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
-         |  final handlers = <String, String Function()>{
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName)$dispatcherAsyncKw {
+         |  final handlers = <String, $handlerType Function()>{
          |    ${cases.shift(4).trim}
          |  };
          |  final handler = handlers[method.methodName];
          |  if (handler == null) {
          |    throw $baboonWiringException($baboonWiringError.noMatchingMethod(method));
          |  }
-         |  return handler();
+         |  return ${awaitKw}handler();
          |}""".stripMargin
     }
 
@@ -457,11 +482,11 @@ object DtServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"final result = impl.$dartMethodName(${ctxArgPass}decoded);"
-            case None    => q"impl.$dartMethodName(${ctxArgPass}decoded);"
+            case Some(_) => q"final result = ${awaitKw}impl.$dartMethodName(${ctxArgPass}decoded);"
+            case None    => q"${awaitKw}impl.$dartMethodName(${ctxArgPass}decoded);"
           }
 
-          q"""'${m.name.name}': () {
+          q"""'${m.name.name}': ()$dispatcherAsyncKw {
              |  final reader = $baboonBinTools.createReader(data);
              |  final decoded = $decodeIn;
              |  $callExpr
@@ -469,19 +494,21 @@ object DtServiceWiringTranslator {
              |},""".stripMargin
       }.join("\n")
 
-      q"""static $dtUint8List invokeUeba$ctxTypeParamDecl(
+      val retType     = asyncRetType(q"$dtUint8List")
+      val handlerType = asyncRetType(q"$dtUint8List")
+      q"""static $retType invokeUeba$ctxTypeParamDecl(
          |  $baboonMethodId method,
          |  $dtUint8List data,
          |  $svcName$ctxTypeParamDecl impl,
-         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
-         |  final handlers = <String, $dtUint8List Function()>{
+         |  $ctxParamDecl$baboonCodecContext $codecCtxName)$dispatcherAsyncKw {
+         |  final handlers = <String, $handlerType Function()>{
          |    ${cases.shift(4).trim}
          |  };
          |  final handler = handlers[method.methodName];
          |  if (handler == null) {
          |    throw $baboonWiringException($baboonWiringError.noMatchingMethod(method));
          |  }
-         |  return handler();
+         |  return ${awaitKw}handler();
          |}""".stripMargin
     }
 
@@ -556,10 +583,13 @@ object DtServiceWiringTranslator {
       * construction time so the runtime `IBaboon*Service.invoke(method, data,
       * ctx)` contract stays codec-flavour-symmetric and language-uniform.
       *
-      * Dart services are currently always synchronous (no `--dt-async-services`
-      * flag exists), so the wrapper's R is the underlying static-method's
-      * return type directly — no Future wrapping. If async services land later
-      * the wrapper's R becomes `Future<…>` without changing the muxer contract.
+      * Under `--dt-async-services` the underlying `invokeJson`/`invokeUeba`
+      * static dispatchers are `async`/`Future`-returning (they `await` the
+      * now-`Future` impl), so the wrapper's R becomes `Future<…>` — the
+      * synchronous `IBaboon*Service.invoke` runtime contract is unchanged; the
+      * `invoke` override just returns that `Future`. With the flag off the
+      * wrapper's R is the underlying static-method's return type directly (no
+      * Future wrapping), keeping that output byte-identical to HEAD.
       */
     private def generateServiceWrappers(
       service: Typedef.Service,
