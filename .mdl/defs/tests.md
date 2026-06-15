@@ -2497,6 +2497,80 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-dt-wiring-async
+
+Generate ASYNC Dart service wiring for the petstore model
+(`--dt-async-services=true`, noErrors flavour, both codec families) into the
+`dt-async` overlay project. This is a RED reproduction lane for D25: the
+generated `pet_store.dart` abstract class declares bare `T` return types even
+when `--dt-async-services=true` is passed (DtDefnTranslator emits
+`addpet_out.out addPet(addpet_in.in_ arg);` unconditionally, and
+DtServiceWiringTranslator.invokeJson is a sync `static String` dispatcher with
+no `await`). An async server impl returning `Future<T>` cannot satisfy the
+generated synchronous interface — the lane MUST fail with a dart-analyze
+`invalid_override` error.
+
+NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
+a RED reproduction gating the Dart server-side async fix (T80/T81).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-dt-wiring-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/dt-async"
+
+rsync -a --exclude='.dart_tool' --exclude='pubspec.lock' \
+  ./test/services/dt-async/ "$TEST_DIR/dt-async/"
+
+mkdir -p "$TEST_DIR/dt-async/lib/generated"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore.baboon \
+  --lock-file="$TEST_DIR/baboon-dt-async.lock" \
+  :dart \
+  --output "$TEST_DIR/dt-async/lib/generated" \
+  --dt-async-services=true \
+  --service-result-no-errors=true \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+mv "$TEST_DIR/dt-async/lib/generated/baboon_runtime.dart" \
+   "$TEST_DIR/dt-async/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-async/lib/generated/baboon_any_opaque.dart" \
+   "$TEST_DIR/dt-async/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-async/lib/generated/baboon_codecs_facade.dart" \
+   "$TEST_DIR/dt-async/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-async/lib/generated/baboon_identifier_repr.dart" \
+   "$TEST_DIR/dt-async/packages/baboon_runtime/lib/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-dt-wiring-async
+
+Analyze the async Dart server impl overlay against the generated
+`--dt-async-services=true` petstore code. This lane is a RED reproduction for
+D25: the generated `pet_store.dart` abstract class declares bare `T` methods;
+the overlay `PetStoreAsyncImpl` returns `Future<T>` for each method, causing a
+dart-analyze `invalid_override` error. Expected failure messages:
+  - `'addPet' ('Future<out> Function(in_)') isn't a valid override of 'PetStore.addPet' ('out Function(in_)')`
+  - `'getPet' ('Future<out> Function(in_)') isn't a valid override of 'PetStore.getPet' ('out Function(in_)')`
+  - (same pattern for listPets and deletePet)
+
+```bash
+TEST_DIR="${action.test-gen-dt-wiring-async.test_dir}"
+pushd "$TEST_DIR/dt-async"
+dart pub get
+dart analyze lib/petstore_async_impl.dart
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-sw-wiring
 
 Generate code for Swift wiring tests in no-errors service-result mode.
