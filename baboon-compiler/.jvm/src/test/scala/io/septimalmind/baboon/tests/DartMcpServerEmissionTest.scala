@@ -57,6 +57,7 @@ abstract class DartMcpServerEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTes
       serviceResult               = ServiceResultConfig.dartDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      asyncServices               = false,
       generateMcpServer           = mcp,
     ),
   )

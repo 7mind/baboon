@@ -226,7 +226,7 @@ const LANGUAGE_OPTION_DEFS: LanguageOptionDef[] = [
   { kind: "checkbox", key: "generateIndexWriters", label: "Generate index writers", description: "Emit UEBA index writers", langs: ["cs"] },
   { kind: "checkbox", key: "deduplicate", label: "Deduplicate", description: "Apply code deduplication", langs: ["cs"] },
   // Rust / TypeScript
-  { kind: "checkbox", key: "asyncServices", label: "Async services", description: "Generate async service signatures", langs: ["rust", "typescript", "cs", "python", "java", "kotlin", "swift"] },
+  { kind: "checkbox", key: "asyncServices", label: "Async services", description: "Generate async service signatures", langs: ["rust", "typescript", "cs", "python", "java", "kotlin", "dart", "swift"] },
   // TypeScript
   { kind: "text", key: "importSuffix", label: "Import suffix", description: "Suffix appended to generated import paths (e.g. .ts/.js)", langs: ["typescript"], placeholder: "(none)" },
   // Kotlin

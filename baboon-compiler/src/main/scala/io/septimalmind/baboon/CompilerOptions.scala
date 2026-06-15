@@ -321,6 +321,7 @@ final case class DtOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  asyncServices: Boolean,
   generateMcpServer: Boolean,
 )
 

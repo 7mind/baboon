@@ -399,6 +399,8 @@ case class DtCLIOptions(
   generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate async service signatures + RPC client methods returning Future (default: false)")
+  dtAsyncServices: Option[Boolean],
   @HelpMessage("Generate an MCP server (default: false)")
   dtGenerateMcpServer: Option[Boolean],
 ) extends SharedCLIOptions

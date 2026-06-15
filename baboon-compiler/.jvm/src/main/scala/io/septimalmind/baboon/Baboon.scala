@@ -507,6 +507,7 @@ object Baboon {
                             serviceResult               = mkServiceResult(opts, ServiceResultConfig.dartDefault),
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
+                            asyncServices               = opts.dtAsyncServices.getOrElse(false),
                             generateMcpServer           = opts.dtGenerateMcpServer.getOrElse(false),
                           ),
                         )
