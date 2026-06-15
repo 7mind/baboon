@@ -443,7 +443,8 @@ object KtDefnTranslator {
               val errStr = err.map(_.mapRender(ktFqName))
               val retStr    = resolved.renderReturnType(outStr, errStr, "Unit")
               val ktMName   = KtTypeTranslator.escapeKtKeyword(m.name.name)
-              val methodTree = q"fun $ktMName(${ctxParam}arg: $in): $retStr"
+              val suspendKw  = if (target.language.asyncServices) "suspend " else ""
+              val methodTree = q"${suspendKw}fun $ktMName(${ctxParam}arg: $in): $retStr"
               prependDocs(m.docs, methodTree)
           }
           val typeParams = Seq(
