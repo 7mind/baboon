@@ -832,6 +832,8 @@ trait BillingApi[F[+_, +_]] {
 
 **Scala async services note:** Unlike C#, Python, Rust, TypeScript, Java, Dart, and Swift, Scala does not have a `--sc-async-services` flag. Instead, Scala achieves async method dispatch by configuring the service result HKT (higher-kinded type). When `scala.service.result.hkt = "true"` is set, every service method becomes effectful in both the return type AND the server dispatch (see `ScDefnTranslator.scala:441-474` and `ScServiceWiringTranslator.scala:830-841`). This design allows users to instantiate the HKT with any effect type (`scala.util.Either`, `cats.effect.IO`, `zio.ZIO`, etc.), making async expressible without a separate flag or code path.
 
+**Kotlin service result type note:** Kotlin's built-in service-result container is `Either` (declared as `sealed class Either` in `baboon.runtime.shared`, file `baboon-compiler/src/main/resources/baboon-runtime/kotlin/BaboonEither.kt`), not `BaboonEither`. The correct `--service-result-type` value for Kotlin is `Either`. Setting `--service-result-type=BaboonEither` for Kotlin produces an unresolved-reference error and broken codegen. For comparison, Java, TypeScript, Swift, and Dart use `BaboonEither` (Java uses the fully qualified name `baboon.runtime.shared.BaboonEither`). Current test lanes already use the correct per-backend names.
+
 #### Example: error-free Python services
 
 ```baboon
