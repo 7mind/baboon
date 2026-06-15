@@ -2374,6 +2374,68 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-kt-wiring-async
+
+Generate ASYNC Kotlin service wiring for the petstore model
+(`--kt-async-services=true`, noErrors flavour, both codec families) into the
+`kt-async` overlay project. This is a RED reproduction lane for D25: the
+generated `PetStore.kt` interface declares plain `fun` method signatures even
+when `--kt-async-services=true` is passed (KtDefnTranslator emits
+`fun $name(...)` unconditionally, and KtServiceWiringTranslator invokes the
+impl synchronously without coroutine context). An async server impl using
+`suspend fun` cannot satisfy the generated non-suspend interface — the lane
+MUST fail with a Kotlin compile error.
+
+NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
+a RED reproduction gating the Kotlin server-side async fix (T76/T77).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-kt-wiring-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/kt-async"
+
+rsync -a --exclude='build' --exclude='.gradle' \
+  ./test/services/kt-async/ "$TEST_DIR/kt-async/"
+
+mkdir -p "$TEST_DIR/kt-async/src/main/kotlin/generated"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore.baboon \
+  --lock-file="$TEST_DIR/baboon-kt-async.lock" \
+  :kotlin \
+  --output "$TEST_DIR/kt-async/src/main/kotlin/generated" \
+  --kt-async-services=true \
+  --service-result-no-errors=true \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-kt-wiring-async
+
+Compile the async Kotlin server impl overlay against the generated
+`--kt-async-services=true` petstore code. This lane is a RED reproduction for
+D25: the generated `PetStore.kt` interface declares plain `fun` methods; the
+overlay `PetStoreAsyncImpl` uses `suspend fun` for each method, causing a
+kotlinc compile error. Expected failure messages:
+  - `'addPet' overrides nothing. Potential signatures for overriding: fun addPet(...)`
+  - `Conflicting overloads: suspend fun addPet(...) / fun addPet(...)`
+
+```bash
+TEST_DIR="${action.test-gen-kt-wiring-async.test_dir}"
+pushd "$TEST_DIR/kt-async"
+gradle --no-daemon compileKotlin
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-dt-wiring
 
 Generate code for Dart wiring tests in no-errors service-result mode.
