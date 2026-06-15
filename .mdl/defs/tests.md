@@ -3312,6 +3312,193 @@ ret success:bool=true
 ret test_dir:string="$TEST_DIR"
 ```
 
+# action: test-gen-cs-wiring-errors-async
+
+Generate ERRORS+ASYNC C# service wiring for the petstore-errors model
+(`--cs-async-services=true`, errors flavour with `Baboon.Runtime.Shared.Either<err,success>`
+container, both codec families). Emits the `IPetStore` interface with
+`Task<Either<Err, Out>>` methods, `PetStoreWiring.InvokeJson/InvokeUeba`
+as `async Task<Either<BaboonWiringError, string/byte[]>>`, the muxer
+wrappers parameterised over `Task<Either<…>>`, and the `PetStoreClient`
+with `async`/`await` over `Task`-returning transport delegates.
+This is the GENERATE-ONLY step: it ends after baboon (no compile).
+The companion runner `test-cs-wiring-errors-async` compiles and round-trips.
+
+This is the CONTROL lane for D26: C# errors+async is already sound via
+`generateErrorsJsonCaseAsync` (the await-then-thread linear path).
+
+NOTE: not wired into the aggregate `:test` target (T95 wires it later).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-wiring-errors-async"
+
+mkdir -p "$TEST_DIR/gen"
+rm -rf "$TEST_DIR/gen"
+mkdir -p "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore-errors.baboon \
+  :cs \
+  --output "$TEST_DIR/gen" \
+  --cs-async-services=true \
+  --service-result-no-errors=false \
+  --service-result-type="Baboon.Runtime.Shared.Either" \
+  '--service-result-pattern=<$error, $success>' \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-wiring-errors-async
+
+Build and round-trip the ERRORS+ASYNC C# wiring control lane (D26/T92).
+Deps the gen action, scaffolds an errors+async impl and an in-process
+driver, then:
+  - `dotnet build` (type-checks the emitted async surface, including the
+    `generateErrorsJsonCaseAsync` await-then-`rt.LeftMap` path)
+  - runs the driver executable which exercises the success path
+    (impl returns `Right(out)` → wiring encodes to JSON → driver
+    decodes and asserts) and the error path (impl returns `Left(err)` →
+    `rt.LeftMap` converts to `BaboonWiringError.CallFailed` → driver
+    asserts Left).
+
+This lane is GREEN on the current tree — C# errors+async is already
+sound. It serves as the reference control for the broken Kotlin/Java
+RED lanes (D26).
+
+```bash
+TEST_DIR="${action.test-gen-cs-wiring-errors-async.test_dir}"
+
+cat > "$TEST_DIR/gen/Build.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>
+EOF
+
+cat > "$TEST_DIR/gen/AsyncErrorsImpl.cs" <<'EOF'
+#nullable enable
+using System.Threading.Tasks;
+using Baboon.Runtime.Shared;
+namespace Petstore.Api {
+    // Success impl: always returns Right(out).
+    public sealed class PetStoreSuccessImpl : IPetStore {
+        private long _nextId = 1;
+        public Task<Either<PetStore.AddPet.Err, PetStore.AddPet.Out>> AddPet(PetStore.AddPet.In arg) {
+            long id = _nextId++;
+            var pet = new Pet(id, arg.Name, arg.Status, arg.Tag);
+            return Task.FromResult(Either.Right<PetStore.AddPet.Err, PetStore.AddPet.Out>(new PetStore.AddPet.Out(pet)));
+        }
+        public Task<Either<PetStore.GetPet.Err, PetStore.GetPet.Out>> GetPet(PetStore.GetPet.In arg) {
+            var pet = new Pet(arg.Id, "Rex", PetStatus.Available, null);
+            return Task.FromResult(Either.Right<PetStore.GetPet.Err, PetStore.GetPet.Out>(new PetStore.GetPet.Out(pet)));
+        }
+    }
+
+    // Error impl: always returns Left(err).
+    public sealed class PetStoreErrorImpl : IPetStore {
+        public Task<Either<PetStore.AddPet.Err, PetStore.AddPet.Out>> AddPet(PetStore.AddPet.In arg) {
+            return Task.FromResult(Either.Left<PetStore.AddPet.Err, PetStore.AddPet.Out>(new PetStore.AddPet.Err(new PetError(42, "test error"))));
+        }
+        public Task<Either<PetStore.GetPet.Err, PetStore.GetPet.Out>> GetPet(PetStore.GetPet.In arg) {
+            return Task.FromResult(Either.Left<PetStore.GetPet.Err, PetStore.GetPet.Out>(new PetStore.GetPet.Err(new PetError(42, "test error"))));
+        }
+    }
+}
+EOF
+
+cat > "$TEST_DIR/gen/Driver.cs" <<'EOF'
+#nullable enable
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using Baboon.Runtime.Shared;
+using Newtonsoft.Json.Linq;
+using Petstore.Api;
+
+// In-process round-trip driver for the errors+async C# wiring control lane.
+// Exercises generateErrorsJsonCaseAsync (the await-then-rt.LeftMap path):
+//   - Success path: impl returns Right(out) -> wiring encodes to JSON -> Right(jsonString)
+//   - Error path:   impl returns Left(err)  -> rt.LeftMap -> Left(BaboonWiringError.CallFailed)
+public static class Driver {
+    public static async Task<int> Main() {
+        var ctx = BaboonCodecContext.Default;
+        var rt  = BaboonServiceRtDefault.Instance;
+        var addPetMethod = new BaboonMethodId("PetStore", "addPet");
+        var getPetMethod = new BaboonMethodId("PetStore", "getPet");
+
+        // --- Success path (JSON) ---
+        {
+            var impl = new PetStoreSuccessImpl();
+            var inArg = new PetStore.AddPet.In("Buddy", PetStatus.Available, "dog");
+            var encoded = PetStore.AddPet.In_JsonCodec.Instance.Encode(ctx, inArg).ToString(Newtonsoft.Json.Formatting.None);
+            var result = await PetStoreWiring.InvokeJson(addPetMethod, encoded, impl, rt, ctx);
+            if (result is not Either<BaboonWiringError, string>.Right successResult) {
+                Console.Error.WriteLine($"JSON SUCCESS PATH FAILED: expected Right, got {result}");
+                return 1;
+            }
+            Console.WriteLine($"JSON success path OK: {successResult.Value}");
+        }
+
+        // --- Error path (JSON) ---
+        {
+            var impl = new PetStoreErrorImpl();
+            var inArg = new PetStore.AddPet.In("Ghost", PetStatus.Sold, null);
+            var encoded = PetStore.AddPet.In_JsonCodec.Instance.Encode(ctx, inArg).ToString(Newtonsoft.Json.Formatting.None);
+            var result = await PetStoreWiring.InvokeJson(addPetMethod, encoded, impl, rt, ctx);
+            if (result is not Either<BaboonWiringError, string>.Left errResult) {
+                Console.Error.WriteLine($"JSON ERROR PATH FAILED: expected Left, got {result}");
+                return 1;
+            }
+            if (errResult.Value is not BaboonWiringError.CallFailed callFailed) {
+                Console.Error.WriteLine($"JSON ERROR PATH FAILED: expected CallFailed, got {errResult.Value}");
+                return 1;
+            }
+            Console.WriteLine($"JSON error path OK: CallFailed domain error = {callFailed.DomainError}");
+        }
+
+        // --- Success path (UEBA) ---
+        {
+            var impl = new PetStoreSuccessImpl();
+            var inArg = new PetStore.GetPet.In(1L);
+            var ms = new MemoryStream();
+            var bw = new BinaryWriter(ms);
+            PetStore.GetPet.In_UEBACodec.Instance.Encode(ctx, bw, inArg);
+            bw.Flush();
+            var result = await PetStoreWiring.InvokeUeba(getPetMethod, ms.ToArray(), impl, rt, ctx);
+            if (result is not Either<BaboonWiringError, byte[]>.Right uebaSuccess) {
+                Console.Error.WriteLine($"UEBA SUCCESS PATH FAILED: expected Right, got {result}");
+                return 1;
+            }
+            Console.WriteLine($"UEBA success path OK: {uebaSuccess.Value.Length} bytes");
+        }
+
+        Console.WriteLine("ALL OK");
+        return 0;
+    }
+}
+EOF
+
+pushd "$TEST_DIR/gen"
+dotnet build -c Release Build.csproj
+dotnet run --project Build.csproj -c Release --no-build
+popd
+
+ret success:bool=true
+```
+
 # action: test-jv-client-roundtrip
 
 Exercise the GENERATED Java RPC client (`${Svc}Client`) end to end with an
