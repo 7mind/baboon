@@ -676,6 +676,8 @@ object KtServiceWiringTranslator {
           val inRef    = trans.asKtRef(m.sig, domain, evo)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
+          if (isAsync) generateErrorsJsonCaseAsync(m, inRef, decodeIn)
+          else {
           val decodeStep =
             q"""val input: ${ct(bweFq, renderFq(inRef))} = try {
                |  val wire = $kotlinxJson.parseToJsonElement(data)
@@ -749,6 +751,7 @@ object KtServiceWiringTranslator {
              |  ${decodeStep.shift(2).trim}
              |  ${callAndEncodeStep.shift(2).trim}
              |}""".stripMargin
+          }
       }.join("\n")
 
       q"""${dispatcherSuspendKw}fun ${funGenericPrefix}invokeJson${funGenericSuffix}(
@@ -765,6 +768,89 @@ object KtServiceWiringTranslator {
          |}""".stripMargin
     }
 
+    /** Async errors-mode JSON case (one `when` arm). Mirrors the C#
+      * `generateErrorsJsonCaseAsync` await-then-thread pattern: the `suspend`
+      * `impl.<method>(decoded)` call is made in LINEAR code first (outside any
+      * `rt` combinator lambda — those lambdas are plain non-suspend), the
+      * resolved value is bound to a local, then threaded synchronously over F
+      * through `rt.leftMap`/`rt.pure`/`rt.flatMap`. Wrapping happens only at the
+      * `rt.pure`/`rt.fail` boundaries, identical to the sync arm's results.
+      */
+    private def generateErrorsJsonCaseAsync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[KtValue],
+      decodeIn: TextTree[KtValue],
+    ): TextTree[KtValue] = {
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val decodeStep =
+        q"""val decoded: $inRef = try {
+           |  val wire = $kotlinxJson.parseToJsonElement(data)
+           |  $decodeIn
+           |} catch (ex: Throwable) {
+           |  return rt.fail<$bweFq, String>($bweFq.DecoderFailed(method, ex))
+           |}""".stripMargin
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val outType   = trans.asKtRef(outRef, domain, evo)
+          val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
+
+          val callStep = if (hasErrType) {
+            val errType = trans.asKtRef(m.err.get, domain, evo)
+            q"""val output: ${ct(bweFq, renderFq(outType))} = try {
+               |  val callResult = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)
+               |  rt.leftMap<$errType, $outType, $bweFq>(
+               |    callResult) { err -> $bweFq.CallFailed(method, err) }
+               |} catch (ex: Throwable) {
+               |  return rt.fail<$bweFq, String>($bweFq.CallFailed(method, ex))
+               |}""".stripMargin
+          } else {
+            q"""val output: ${ct(bweFq, renderFq(outType))} = try {
+               |  val callResultValue = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)
+               |  rt.pure<$bweFq, $outType>(callResultValue)
+               |} catch (ex: Throwable) {
+               |  return rt.fail<$bweFq, String>($bweFq.CallFailed(method, ex))
+               |}""".stripMargin
+          }
+
+          q"""$callStep
+             |rt.flatMap<$bweFq, $outType, String>(output) { v ->
+             |  try {
+             |    val encoded = $encodeOut
+             |    rt.pure<$bweFq, String>(encoded.toString())
+             |  } catch (ex: Throwable) {
+             |    rt.fail<$bweFq, String>($bweFq.EncoderFailed(method, ex))
+             |  }
+             |}""".stripMargin
+
+        case None =>
+          if (hasErrType) {
+            val errType = trans.asKtRef(m.err.get, domain, evo)
+            q"""try {
+               |  val callResult = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)
+               |  val mapped = rt.leftMap<$errType, Unit, $bweFq>(
+               |    callResult) { err -> $bweFq.CallFailed(method, err) }
+               |  rt.flatMap<$bweFq, Unit, String>(mapped) { v -> rt.pure<$bweFq, String>("null") }
+               |} catch (ex: Throwable) {
+               |  rt.fail<$bweFq, String>($bweFq.CallFailed(method, ex))
+               |}""".stripMargin
+          } else {
+            q"""try {
+               |  impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)
+               |  rt.pure<$bweFq, String>("null")
+               |} catch (ex: Throwable) {
+               |  rt.fail<$bweFq, String>($bweFq.CallFailed(method, ex))
+               |}""".stripMargin
+          }
+      }
+
+      q""""${m.name.name}" -> {
+         |  ${decodeStep.shift(2).trim}
+         |  ${callAndEncodeStep.shift(2).trim}
+         |}""".stripMargin
+    }
+
     private def generateErrorsUebaMethod(service: Typedef.Service): TextTree[KtValue] = {
       val svcName       = service.id.name.name
       val wiringRetType = ct(bweFq, "ByteArray")
@@ -774,6 +860,8 @@ object KtServiceWiringTranslator {
           val inRef    = trans.asKtRef(m.sig, domain, evo)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
+          if (isAsync) generateErrorsUebaCaseAsync(m, inRef, decodeIn)
+          else {
           val decodeStep =
             q"""val input: ${ct(bweFq, renderFq(inRef))} = try {
                |  ${mkReaderSetup("br", "data")}
@@ -848,6 +936,7 @@ object KtServiceWiringTranslator {
              |  ${decodeStep.shift(2).trim}
              |  ${callAndEncodeStep.shift(2).trim}
              |}""".stripMargin
+          }
       }.join("\n")
 
       q"""${dispatcherSuspendKw}fun ${funGenericPrefix}invokeUeba${funGenericSuffix}(
@@ -861,6 +950,85 @@ object KtServiceWiringTranslator {
          |    else ->
          |      rt.fail<$bweFq, ByteArray>($bweFq.NoMatchingMethod(method))
          |  }
+         |}""".stripMargin
+    }
+
+    /** Async errors-mode UEBA case (one `when` arm). See
+      * [[generateErrorsJsonCaseAsync]] for the await-then-thread rationale.
+      */
+    private def generateErrorsUebaCaseAsync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[KtValue],
+      decodeIn: TextTree[KtValue],
+    ): TextTree[KtValue] = {
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val decodeStep =
+        q"""val decoded: $inRef = try {
+           |  ${mkReaderSetup("br", "data")}
+           |  $decodeIn
+           |} catch (ex: Throwable) {
+           |  return rt.fail<$bweFq, ByteArray>($bweFq.DecoderFailed(method, ex))
+           |}""".stripMargin
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val outType = trans.asKtRef(outRef, domain, evo)
+          val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
+
+          val callStep = if (hasErrType) {
+            val errType = trans.asKtRef(m.err.get, domain, evo)
+            q"""val output: ${ct(bweFq, renderFq(outType))} = try {
+               |  val callResult = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)
+               |  rt.leftMap<$errType, $outType, $bweFq>(
+               |    callResult) { err -> $bweFq.CallFailed(method, err) }
+               |} catch (ex: Throwable) {
+               |  return rt.fail<$bweFq, ByteArray>($bweFq.CallFailed(method, ex))
+               |}""".stripMargin
+          } else {
+            q"""val output: ${ct(bweFq, renderFq(outType))} = try {
+               |  val callResultValue = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)
+               |  rt.pure<$bweFq, $outType>(callResultValue)
+               |} catch (ex: Throwable) {
+               |  return rt.fail<$bweFq, ByteArray>($bweFq.CallFailed(method, ex))
+               |}""".stripMargin
+          }
+
+          q"""$callStep
+             |rt.flatMap<$bweFq, $outType, ByteArray>(output) { v ->
+             |  try {
+             |    ${mkWriterSetup("bw").shift(4).trim}
+             |    $encStmt
+             |    rt.pure<$bweFq, ByteArray>(${mkWriterGetBytes("bw")})
+             |  } catch (ex: Throwable) {
+             |    rt.fail<$bweFq, ByteArray>($bweFq.EncoderFailed(method, ex))
+             |  }
+             |}""".stripMargin
+
+        case None =>
+          if (hasErrType) {
+            val errType = trans.asKtRef(m.err.get, domain, evo)
+            q"""try {
+               |  val callResult = impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)
+               |  val mapped = rt.leftMap<$errType, Unit, $bweFq>(
+               |    callResult) { err -> $bweFq.CallFailed(method, err) }
+               |  rt.flatMap<$bweFq, Unit, ByteArray>(mapped) { v -> rt.pure<$bweFq, ByteArray>(ByteArray(0)) }
+               |} catch (ex: Throwable) {
+               |  rt.fail<$bweFq, ByteArray>($bweFq.CallFailed(method, ex))
+               |}""".stripMargin
+          } else {
+            q"""try {
+               |  impl.${KtTypeTranslator.escapeKtKeyword(m.name.name)}(${ctxArgPass}decoded)
+               |  rt.pure<$bweFq, ByteArray>(ByteArray(0))
+               |} catch (ex: Throwable) {
+               |  rt.fail<$bweFq, ByteArray>($bweFq.CallFailed(method, ex))
+               |}""".stripMargin
+          }
+      }
+
+      q""""${m.name.name}" -> {
+         |  ${decodeStep.shift(2).trim}
+         |  ${callAndEncodeStep.shift(2).trim}
          |}""".stripMargin
     }
 
