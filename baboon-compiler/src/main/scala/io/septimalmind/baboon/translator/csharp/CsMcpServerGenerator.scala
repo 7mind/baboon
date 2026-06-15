@@ -107,14 +107,33 @@ class CsMcpServerGenerator[F[+_, +_]: Error2](
         s"""        new Baboon.Runtime.Shared.McpToolEntry(${csString(toolName)}, new Baboon.Runtime.Shared.BaboonMethodId(${csString(serviceName)}, ${csString(m.name.name)}), Newtonsoft.Json.Linq.JToken.Parse(${csVerbatimJson(schema)})),"""
     }
 
+    // Async axis (`--cs-async-services=true`): the errors-mode wiring entry
+    // `${serviceName}Wiring.InvokeJson` returns `Task<Either<..>>`, so the MCP
+    // server must take the async `McpJsonInvokeAsync<Ctx>` delegate, extend the
+    // async runtime base, and `await` the delegate in its `InvokeJson` override.
+    // When OFF the sync branch is emitted verbatim, keeping the generated file
+    // byte-identical to the pre-change baseline.
+    val isAsync = target.language.asyncServices
+
+    val baseClass    = if (isAsync) "AbstractBaboonMcpServerAsync" else "AbstractBaboonMcpServer"
+    val delegateType = if (isAsync) "McpJsonInvokeAsync" else "McpJsonInvoke"
+    val invokeRetType =
+      if (isAsync)
+        "async System.Threading.Tasks.Task<Baboon.Runtime.Shared.Either<Baboon.Runtime.Shared.BaboonWiringError, string>>"
+      else
+        "Baboon.Runtime.Shared.Either<Baboon.Runtime.Shared.BaboonWiringError, string>"
+    val invokeReturn =
+      if (isAsync) "return await _invokeJson(method, data, ctx, codecCtx);"
+      else "return _invokeJson(method, data, ctx, codecCtx);"
+
     val body =
       s"""// Generated MCP server for service `$serviceName` (model `${domain.id.path.mkString(".")}` v$modelVer).
-         |// Transport-abstract: `Handle` is inherited from AbstractBaboonMcpServer and
+         |// Transport-abstract: `Handle` is inherited from $baseClass and
          |// performs no I/O. The `InvokeJson` delegate routes `tools/call` into the
          |// generated service dispatch; the integrator supplies it (typically the
          |// errors-mode `${serviceName}Wiring.InvokeJson` bound to this service) plus the
          |// per-request `Ctx`.
-         |public sealed class $className<Ctx> : Baboon.Runtime.Shared.AbstractBaboonMcpServer<Ctx>
+         |public sealed class $className<Ctx> : Baboon.Runtime.Shared.$baseClass<Ctx>
          |{
          |    protected override Baboon.Runtime.Shared.McpServerInfo ServerInfo { get; } = new Baboon.Runtime.Shared.McpServerInfo(${csString(serviceName)}, ${csString(modelVer)});
          |
@@ -123,16 +142,16 @@ class CsMcpServerGenerator[F[+_, +_]: Error2](
          |${toolEntries.mkString("\n")}
          |    };
          |
-         |    private readonly Baboon.Runtime.Shared.McpJsonInvoke<Ctx> _invokeJson;
+         |    private readonly Baboon.Runtime.Shared.$delegateType<Ctx> _invokeJson;
          |
-         |    public $className(Baboon.Runtime.Shared.McpJsonInvoke<Ctx> invokeJson)
+         |    public $className(Baboon.Runtime.Shared.$delegateType<Ctx> invokeJson)
          |    {
          |        _invokeJson = invokeJson;
          |    }
          |
-         |    protected override Baboon.Runtime.Shared.Either<Baboon.Runtime.Shared.BaboonWiringError, string> InvokeJson(Baboon.Runtime.Shared.BaboonMethodId method, string data, Ctx ctx, Baboon.Runtime.Shared.BaboonCodecContext codecCtx)
+         |    protected override $invokeRetType InvokeJson(Baboon.Runtime.Shared.BaboonMethodId method, string data, Ctx ctx, Baboon.Runtime.Shared.BaboonCodecContext codecCtx)
          |    {
-         |        return _invokeJson(method, data, ctx, codecCtx);
+         |        $invokeReturn
          |    }
          |}
          |""".stripMargin

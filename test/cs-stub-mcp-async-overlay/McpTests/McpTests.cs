@@ -1,43 +1,27 @@
 #nullable enable
 
-// T58 (D24/G11) — C# ASYNC-MCP reproduction overlay (EXPECTED RED).
+// T59 (D24/G11) — C# ASYNC-MCP round-trip overlay (GREEN after the fix).
 //
 // This overlay is the async sibling of test/cs-stub-mcp-overlay/McpTests/. It is
 // generated with BOTH --cs-generate-mcp-server=true AND --cs-async-services=true.
 //
-// PURPOSE — reproduce the sync-delegate vs async-wiring mismatch:
-//   Under --cs-async-services=true the generated errors-mode wiring entry
+// Under --cs-async-services=true the generated errors-mode wiring entry
 //   `McpToolsWiring.InvokeJson(...)` returns
 //       System.Threading.Tasks.Task<Either<BaboonWiringError, string>>
 //   (CSServiceWiringTranslator.scala:786 — `async Task<Either<..>>`), and the
 //   generated service interface `IMcpTools` is async-typed (each method returns
-//   `Task<Either<.., Out>>`).
+//   a `Task<..>`).
 //
-//   But the generated `McpToolsMcpServer<Ctx>` (CsMcpServerGenerator.scala:126-137)
-//   is STILL sync: its constructor takes the runtime delegate
-//       Baboon.Runtime.Shared.McpJsonInvoke<Ctx>
-//   (BaboonMcpRuntime.cs:102) whose return type is the SYNCHRONOUS
-//       Either<BaboonWiringError, string>
-//   and its `protected override InvokeJson(...)` (BaboonMcpRuntime.cs:120) is
-//   declared to return that same synchronous `Either<..>` directly.
+// T59 threads `asyncServices` into the C# MCP server generator: with the flag on,
+// the generated `McpToolsMcpServer<Ctx>` extends the async runtime base
+//   `Baboon.Runtime.Shared.AbstractBaboonMcpServerAsync<Ctx>`, takes the async
+//   delegate `McpJsonInvokeAsync<Ctx>` (returns `Task<Either<..>>`), `await`s it
+//   in `InvokeJson`, and exposes `Task<JsonRpcResponse?> Handle(...)`.
 //
-//   Therefore the async wiring `InvokeJson` (Task<Either<..>>) CANNOT bind to the
-//   sync `McpJsonInvoke<Ctx>` delegate that the generated MCP server requires.
-//   `MakeFakeInvoke()` below attempts exactly that bind and the C# compiler MUST
-//   reject it with a return-type mismatch (CS0029 / CS4016) between
-//   `Task<Either<BaboonWiringError, string>>` and `Either<BaboonWiringError, string>`.
-//
-// EXPECTED FAILURE (right reason): `dotnet build` of this overlay fails at the
-//   `MakeFakeInvoke` body — the async wiring result `Task<Either<..>>` is not
-//   convertible to the sync `McpJsonInvoke<object?>` delegate's `Either<..>`
-//   return type. This is NOT a missing-file / harness error: every type
-//   referenced here (McpToolsWiring, McpToolsMcpServer<Ctx>, IMcpTools,
-//   McpJsonInvoke<Ctx>) is emitted by the generator under the async flags; only
-//   the SYNC-vs-ASYNC return-type contract is incompatible.
-//
-// This lane GATES the C# MCP async fix (T59). It must stay RED until the
-// generator emits an async-capable MCP server (async McpJsonInvoke delegate +
-// async InvokeJson override). Do NOT wire it green here.
+//   The async wiring `InvokeJson` (Task<Either<..>>) therefore binds directly to
+//   the async `McpJsonInvokeAsync<Ctx>` delegate, and `tools/call` round-trips
+//   through awaited dispatch. With the flag OFF the generated MCP server is
+//   byte-identical to the pre-change sync baseline.
 
 using System;
 using System.Collections.Generic;
@@ -103,25 +87,17 @@ namespace McpTest
         }
 
         // ---------------------------------------------------------------------------
-        // THE REPRODUCTION POINT.
+        // THE ROUND-TRIP POINT.
         //
-        // The generated McpToolsMcpServer<Ctx> requires a SYNC McpJsonInvoke<Ctx>
-        // delegate (returns Either<BaboonWiringError, string>). But under async
-        // services McpToolsWiring.InvokeJson(...) returns
-        // Task<Either<BaboonWiringError, string>>. Returning the async wiring result
-        // from a delegate whose return type is the sync Either<..> is a return-type
-        // mismatch the C# compiler rejects (CS0029 / CS4016).
-        //
-        // We deliberately do NOT `await` here: there is no async-capable seam in the
-        // sync McpJsonInvoke<Ctx> contract to await into — that absence IS the defect
-        // T59 must fix. The bind below is the minimal expression of it.
+        // Under async services McpToolsWiring.InvokeJson(...) returns
+        // Task<Either<BaboonWiringError, string>>, which binds directly to the async
+        // McpJsonInvokeAsync<Ctx> delegate the generated McpToolsMcpServer<Ctx>
+        // requires (T59). The body returns the async wiring Task verbatim.
         // ---------------------------------------------------------------------------
-        private McpJsonInvoke<object?> MakeFakeInvoke()
+        private McpJsonInvokeAsync<object?> MakeFakeInvoke()
         {
             var stub = new StubMcpTools();
             var rt = _rt;
-            // RED: McpToolsWiring.InvokeJson returns Task<Either<..>> under async,
-            // but McpJsonInvoke<object?> requires the body to yield Either<..>.
             return (method, data, _, codecContext) =>
                 McpToolsWiring.InvokeJson(method, data, stub, rt, codecContext);
         }
@@ -129,13 +105,13 @@ namespace McpTest
         private McpToolsMcpServer<object?> MakeServer()
             => new McpToolsMcpServer<object?>(MakeFakeInvoke());
 
-        private static JsonRpcResponse Send(
+        private static async Task<JsonRpcResponse> Send(
             McpToolsMcpServer<object?> server,
             McpSession session,
             JsonRpcRequest req,
             BaboonCodecContext codecCtx)
         {
-            var resp = server.Handle(req, session, null, codecCtx);
+            var resp = await server.Handle(req, session, null, codecCtx);
             if (resp == null)
                 throw new InvalidOperationException(
                     $"Expected a response for \"{req.Method}\" but got null (notification not expected here)");
@@ -154,12 +130,12 @@ namespace McpTest
         // ---------------------------------------------------------------------------
 
         [Test]
-        public void Sec1_Initialize_ResponseIsCorrect()
+        public async Task Sec1_Initialize_ResponseIsCorrect()
         {
             var server = MakeServer();
             var session = new McpSession();
 
-            var resp = Send(server, session, new JsonRpcRequest(
+            var resp = await Send(server, session, new JsonRpcRequest(
                 new JValue(1),
                 "initialize",
                 JToken.Parse("{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"0.0.1\"}}")
@@ -185,19 +161,19 @@ namespace McpTest
         // §2 — tools/list
         // ---------------------------------------------------------------------------
 
-        private (JArray tools, JsonRpcResponse resp) InitAndList()
+        private async Task<(JArray tools, JsonRpcResponse resp)> InitAndList()
         {
             var server = MakeServer();
             var session = new McpSession();
 
-            server.Handle(new JsonRpcRequest(
+            await server.Handle(new JsonRpcRequest(
                 new JValue(0), "initialize",
                 JToken.Parse("{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"0.0.1\"}}")
             ), session, null, _codecCtx);
-            server.Handle(new JsonRpcRequest(null, "notifications/initialized", null),
+            await server.Handle(new JsonRpcRequest(null, "notifications/initialized", null),
                 session, null, _codecCtx);
 
-            var resp = Send(server, session, new JsonRpcRequest(
+            var resp = await Send(server, session, new JsonRpcRequest(
                 new JValue(2), "tools/list", null
             ), _codecCtx);
 
@@ -206,9 +182,9 @@ namespace McpTest
         }
 
         [Test]
-        public void Sec2_ToolsList_ExactlySixToolsInDeclarationOrder()
+        public async Task Sec2_ToolsList_ExactlySixToolsInDeclarationOrder()
         {
-            var (tools, resp) = InitAndList();
+            var (tools, resp) = await InitAndList();
 
             Assert.AreEqual(2, resp.Id!.Value<int>());
             Assert.IsNull(resp.Error);
@@ -225,7 +201,7 @@ namespace McpTest
         [Test]
         public async Task Sec2_NJsonSchema_AllInputSchemasAreWellFormed()
         {
-            var (tools, _) = InitAndList();
+            var (tools, _) = await InitAndList();
             foreach (var t in tools)
             {
                 var normalised = NormalizeForNJsonSchema(t["inputSchema"]!.ToString(Formatting.None));
@@ -239,13 +215,13 @@ namespace McpTest
         // ---------------------------------------------------------------------------
 
         [Test]
-        public void Sec3_Ping_ReturnsOkTrue()
+        public async Task Sec3_Ping_ReturnsOkTrue()
         {
             var server = MakeServer();
             var session = new McpSession();
-            InitializeSession(server, session);
+            await InitializeSession(server, session);
 
-            var resp = Send(server, session, new JsonRpcRequest(
+            var resp = await Send(server, session, new JsonRpcRequest(
                 new JValue(3), "tools/call",
                 JToken.Parse("{\"name\":\"McpTools_ping\",\"arguments\":{\"seqno\":42,\"label\":\"hello\"}}")
             ), _codecCtx);
@@ -271,13 +247,13 @@ namespace McpTest
         // ---------------------------------------------------------------------------
 
         [Test]
-        public void Sec4_UnknownTool_ChannelAError_Code32602()
+        public async Task Sec4_UnknownTool_ChannelAError_Code32602()
         {
             var server = MakeServer();
             var session = new McpSession();
-            InitializeSession(server, session);
+            await InitializeSession(server, session);
 
-            var resp = Send(server, session, new JsonRpcRequest(
+            var resp = await Send(server, session, new JsonRpcRequest(
                 new JValue(5), "tools/call",
                 JToken.Parse("{\"name\":\"McpTools_nonexistent\",\"arguments\":{}}")
             ), _codecCtx);
@@ -293,13 +269,13 @@ namespace McpTest
         // Helpers
         // ---------------------------------------------------------------------------
 
-        private void InitializeSession(McpToolsMcpServer<object?> server, McpSession session)
+        private async Task InitializeSession(McpToolsMcpServer<object?> server, McpSession session)
         {
-            server.Handle(new JsonRpcRequest(
+            await server.Handle(new JsonRpcRequest(
                 new JValue(0), "initialize",
                 JToken.Parse("{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"0.0.1\"}}")
             ), session, null, _codecCtx);
-            server.Handle(new JsonRpcRequest(null, "notifications/initialized", null),
+            await server.Handle(new JsonRpcRequest(null, "notifications/initialized", null),
                 session, null, _codecCtx);
         }
     }

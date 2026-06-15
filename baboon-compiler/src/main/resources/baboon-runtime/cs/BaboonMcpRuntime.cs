@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
 // ReSharper disable UnusedTypeParameter
@@ -92,6 +93,14 @@ namespace Baboon.Runtime.Shared
         JsonRpcResponse? Handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx);
     }
 
+    // Async sibling of `IBaboonMcpServer`, used when the backend is generated with
+    // `--cs-async-services=true`. `Handle` returns `Task<JsonRpcResponse?>` because
+    // the `tools/call` dispatch must `await` the async `InvokeJson` delegate.
+    public interface IBaboonMcpServerAsync<in Ctx>
+    {
+        Task<JsonRpcResponse?> Handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx);
+    }
+
     // The JSON `tools/call` delegate the generated server supplies: it routes
     // one tool invocation into the already-generated service dispatch (the
     // errors-mode `InvokeJson`, which returns the service-result container). The
@@ -100,6 +109,17 @@ namespace Baboon.Runtime.Shared
     // exclusively through this delegate; the MCP runtime holds no codec logic
     // itself.
     public delegate Either<BaboonWiringError, string> McpJsonInvoke<in Ctx>(
+        BaboonMethodId method,
+        string data,
+        Ctx ctx,
+        BaboonCodecContext codecCtx);
+
+    // Async sibling of `McpJsonInvoke`, selected when the C# backend is generated
+    // with `--cs-async-services=true`. The generated errors-mode wiring entry
+    // (`<Service>Wiring.InvokeJson`) then returns `Task<Either<..>>`, which binds
+    // to this delegate directly. The SYNC `McpJsonInvoke` above is left untouched
+    // so the non-async generated MCP server stays byte-identical.
+    public delegate Task<Either<BaboonWiringError, string>> McpJsonInvokeAsync<in Ctx>(
         BaboonMethodId method,
         string data,
         Ctx ctx,
@@ -193,6 +213,123 @@ namespace Baboon.Runtime.Shared
                     var argsToken = request.Params?["arguments"] ?? new JObject();
                     var argsJson = argsToken.ToString(Newtonsoft.Json.Formatting.None);
                     var result = InvokeJson(entry.Method, argsJson, ctx, codecCtx);
+                    if (result.IsRight)
+                    {
+                        var content = new JArray { new JObject { ["type"] = "text", ["text"] = result.GetRight() } };
+                        return new JsonRpcResponse(id, new JObject { ["content"] = content, ["isError"] = false });
+                    }
+                    else
+                    {
+                        // Channel B: a valid protocol call whose domain payload failed.
+                        var content = new JArray { new JObject { ["type"] = "text", ["text"] = DescribeWiringError(result.GetLeft()) } };
+                        return new JsonRpcResponse(id, new JObject { ["content"] = content, ["isError"] = true });
+                    }
+                }
+                default:
+                    return ErrorResponse(id, JsonRpcErrorCodes.MethodNotFound, $"Method not found: {request.Method}");
+            }
+        }
+
+        protected JsonRpcResponse ErrorResponse(JToken? id, int code, string message)
+        {
+            return new JsonRpcResponse(id, null, new JsonRpcError(code, message));
+        }
+
+        protected virtual string DescribeWiringError(BaboonWiringError e)
+        {
+            return e.ToString();
+        }
+    }
+
+    // --- Async transport-abstract dispatch base ---
+    //
+    // Async sibling of `AbstractBaboonMcpServer`. Selected when the backend is
+    // generated with `--cs-async-services=true`: the `tools/call` dispatch awaits
+    // the async `InvokeJson` (whose result is the async wiring's
+    // `Task<Either<..>>`), so `Handle` itself is `async Task<JsonRpcResponse?>`.
+    // The synchronous method state machine (initialize / tools/list, the error
+    // mapping, the wire-string constants) is identical to the sync base; only the
+    // single `tools/call` hop awaits.
+    public abstract class AbstractBaboonMcpServerAsync<Ctx> : IBaboonMcpServerAsync<Ctx>
+    {
+        protected abstract McpServerInfo ServerInfo { get; }
+        protected abstract IReadOnlyList<McpToolEntry> Tools { get; }
+        protected abstract Task<Either<BaboonWiringError, string>> InvokeJson(BaboonMethodId method, string data, Ctx ctx, BaboonCodecContext codecCtx);
+
+        private Dictionary<string, McpToolEntry> ByName()
+        {
+            var m = new Dictionary<string, McpToolEntry>();
+            foreach (var t in Tools)
+            {
+                m[t.Name] = t;
+            }
+            return m;
+        }
+
+        public async Task<JsonRpcResponse?> Handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx)
+        {
+            var id = request.Id;
+            switch (request.Method)
+            {
+                case "initialize":
+                {
+                    var pv = request.Params?["protocolVersion"];
+                    if (request.Params == null || pv == null)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion");
+                    }
+                    session.Initialized = true;
+                    var result = new JObject
+                    {
+                        ["protocolVersion"] = McpProtocol.Version,
+                        ["capabilities"] = new JObject { ["tools"] = new JObject() },
+                        ["serverInfo"] = new JObject { ["name"] = ServerInfo.Name, ["version"] = ServerInfo.Version },
+                    };
+                    return new JsonRpcResponse(id, result);
+                }
+                case "notifications/initialized":
+                    return null;
+                case "tools/list":
+                {
+                    if (!session.Initialized)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize");
+                    }
+                    var tools = new JArray();
+                    foreach (var t in Tools)
+                    {
+                        var entry = new JObject
+                        {
+                            ["name"] = t.Name,
+                            ["inputSchema"] = t.InputSchema,
+                        };
+                        if (t.Description != null)
+                        {
+                            entry["description"] = t.Description;
+                        }
+                        tools.Add(entry);
+                    }
+                    return new JsonRpcResponse(id, new JObject { ["tools"] = tools });
+                }
+                case "tools/call":
+                {
+                    if (!session.Initialized)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize");
+                    }
+                    var name = request.Params?["name"];
+                    if (name == null || name.Type != JTokenType.String)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name");
+                    }
+                    var toolName = name.Value<string>()!;
+                    if (!ByName().TryGetValue(toolName, out var entry))
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, $"tools/call: unknown tool '{toolName}'");
+                    }
+                    var argsToken = request.Params?["arguments"] ?? new JObject();
+                    var argsJson = argsToken.ToString(Newtonsoft.Json.Formatting.None);
+                    var result = await InvokeJson(entry.Method, argsJson, ctx, codecCtx);
                     if (result.IsRight)
                     {
                         var content = new JArray { new JObject { ["type"] = "text", ["text"] = result.GetRight() } };

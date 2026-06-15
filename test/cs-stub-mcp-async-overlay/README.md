@@ -12,12 +12,14 @@ Convention (shared by cs/py/rs/ts/sw):
 - sync lane  : `test-gen-<lang>-mcp`       + `test-<lang>-mcp`       (overlay `test/<lang>-stub-mcp-overlay/`)
 - async lane : `test-gen-<lang>-mcp-async` + `test-<lang>-mcp-async` (overlay `test/<lang>-stub-mcp-async-overlay/`)
 
-Status: RED reproduction (T58). `McpTests/` mirrors
-`test/cs-stub-mcp-overlay/McpTests/` but binds the async-typed wiring against the
-SYNC generated MCP server. `dotnet build` is EXPECTED to FAIL: under
+Status: GREEN (T59). `McpTests/` mirrors `test/cs-stub-mcp-overlay/McpTests/` but
+binds the async-typed wiring against the ASYNC generated MCP server. Under
 `--cs-async-services=true` `McpToolsWiring.InvokeJson` returns
-`Task<Either<BaboonWiringError, string>>`, but `McpToolsMcpServer<Ctx>` still
-requires a SYNC `McpJsonInvoke<Ctx>` delegate (returns `Either<..>` directly) —
-a return-type mismatch (CS0029 / CS4016). This gates the C# async-MCP fix (T59);
-do NOT wire it green here. Once T59 lands an async-capable MCP server this
-overlay is updated to compile and the lane turns green.
+`Task<Either<BaboonWiringError, string>>`; T59 makes the generated
+`McpToolsMcpServer<Ctx>` extend the async runtime base
+`AbstractBaboonMcpServerAsync<Ctx>`, take the async `McpJsonInvokeAsync<Ctx>`
+delegate (returns `Task<Either<..>>`), `await` it in `InvokeJson`, and expose
+`Task<JsonRpcResponse?> Handle(...)`. The async wiring result binds directly to
+that delegate, so the overlay builds and round-trips a `tools/call`. With the
+flag OFF the generated sync MCP server is byte-identical to the pre-change
+baseline.
