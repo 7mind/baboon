@@ -12,6 +12,12 @@ Convention (shared by cs/py/rs/ts/sw):
 - sync lane  : `test-gen-<lang>-mcp`       + `test-<lang>-mcp`       (overlay `test/<lang>-stub-mcp-overlay/`)
 - async lane : `test-gen-<lang>-mcp-async` + `test-<lang>-mcp-async` (overlay `test/<lang>-stub-mcp-async-overlay/`)
 
-Status: scaffold only. The test target (mirroring
-`test/cs-stub-mcp-overlay/McpTests/`) lands with the C# async-MCP backend fix.
-Until then this lane is expected RED.
+Status: RED reproduction (T58). `McpTests/` mirrors
+`test/cs-stub-mcp-overlay/McpTests/` but binds the async-typed wiring against the
+SYNC generated MCP server. `dotnet build` is EXPECTED to FAIL: under
+`--cs-async-services=true` `McpToolsWiring.InvokeJson` returns
+`Task<Either<BaboonWiringError, string>>`, but `McpToolsMcpServer<Ctx>` still
+requires a SYNC `McpJsonInvoke<Ctx>` delegate (returns `Either<..>` directly) —
+a return-type mismatch (CS0029 / CS4016). This gates the C# async-MCP fix (T59);
+do NOT wire it green here. Once T59 lands an async-capable MCP server this
+overlay is updated to compile and the lane turns green.
