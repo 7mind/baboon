@@ -830,6 +830,8 @@ trait BillingApi[F[+_, +_]] {
 }
 ```
 
+**Scala async services note:** Unlike C#, Python, Rust, TypeScript, Java, Dart, and Swift, Scala does not have a `--sc-async-services` flag. Instead, Scala achieves async method dispatch by configuring the service result HKT (higher-kinded type). When `scala.service.result.hkt = "true"` is set, every service method becomes effectful in both the return type AND the server dispatch (see `ScDefnTranslator.scala:441-474` and `ScServiceWiringTranslator.scala:830-841`). This design allows users to instantiate the HKT with any effect type (`scala.util.Either`, `cats.effect.IO`, `zio.ZIO`, etc.), making async expressible without a separate flag or code path.
+
 #### Example: error-free Python services
 
 ```baboon
