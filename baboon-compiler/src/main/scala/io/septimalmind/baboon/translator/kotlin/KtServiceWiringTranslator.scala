@@ -26,6 +26,27 @@ object KtServiceWiringTranslator {
   ) extends KtServiceWiringTranslator {
     import ktTypes.*
 
+    // When the Kotlin `asyncServices` flag is on, the service interface methods
+    // are `suspend fun` (KtDefnTranslator), so the server dispatchers
+    // `invokeJson`/`invokeUeba` must call the impl in a suspend context and
+    // become `suspend fun` themselves. The runtime `IBaboon*Service.invoke`
+    // contract (a static resource) stays a plain `fun` — asyncness is absorbed
+    // into the wrapper's `R` type parameter, which becomes a deferred suspend
+    // thunk `suspend () -> base`. The wrapper's `override fun invoke` therefore
+    // stays a plain `fun` returning that thunk, mirroring the Swift backend.
+    // Every helper below is a no-op when the flag is off, keeping that output
+    // byte-identical to HEAD.
+    private val isAsync: Boolean = target.language.asyncServices
+
+    // Prefix at the static dispatcher's signature (`suspend fun invokeJson`).
+    private val dispatcherSuspendKw: String = if (isAsync) "suspend " else ""
+
+    // The wrapper's `R` type parameter: in async mode a deferred suspend thunk
+    // so the synchronous runtime `IBaboon*Service.invoke` contract is preserved;
+    // identity otherwise.
+    private def wrapperRetType(base: TextTree[KtValue]): TextTree[KtValue] =
+      if (isAsync) q"suspend () -> $base" else base
+
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "kotlin", target.language.serviceResult, target.language.pragmas)
 
@@ -424,7 +445,7 @@ object KtServiceWiringTranslator {
            |  ${methods.shift(2).trim}
            |}""".stripMargin
 
-      val wrappers = generateServiceWrappers(service, q"String", q"ByteArray")
+      val wrappers = generateServiceWrappers(service, wrapperRetType(q"String"), wrapperRetType(q"ByteArray"))
       Seq(Some(wiringObj), wrappers).flatten.join("\n\n")
     }
 
@@ -456,7 +477,7 @@ object KtServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""fun ${funGenericPrefix}invokeJson${funGenericSuffix}(
+      q"""${dispatcherSuspendKw}fun ${funGenericPrefix}invokeJson${funGenericSuffix}(
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
@@ -498,7 +519,7 @@ object KtServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""fun ${funGenericPrefix}invokeUeba${funGenericSuffix}(
+      q"""${dispatcherSuspendKw}fun ${funGenericPrefix}invokeUeba${funGenericSuffix}(
          |  method: $baboonMethodId,
          |  data: ByteArray,
          |  impl: $svcName$svcTypeArg,
@@ -535,7 +556,7 @@ object KtServiceWiringTranslator {
 
       val jsonRet = q"${ct(bweFq, "String")}"
       val uebaRet = q"${ct(bweFq, "ByteArray")}"
-      val wrappers = generateServiceWrappers(service, jsonRet, uebaRet)
+      val wrappers = generateServiceWrappers(service, wrapperRetType(jsonRet), wrapperRetType(uebaRet))
       Seq(Some(wiringObj), wrappers).flatten.join("\n\n")
     }
 
@@ -617,13 +638,20 @@ object KtServiceWiringTranslator {
         withSvcCtx :+ codecCtxRef
       }
 
+      // Sync: forward directly. Async: the dispatcher is `suspend`, so the
+      // (non-suspend) `invoke` override returns a deferred suspend thunk that
+      // awaits the dispatcher when later invoked in a coroutine context.
+      val invokeBody: TextTree[KtValue] =
+        if (isAsync) q"return { ${svcName}Wiring.$invokerName(${invokerArgs.join(", ")}) }"
+        else q"return ${svcName}Wiring.$invokerName(${invokerArgs.join(", ")})"
+
       q"""class $wrapperName$genericParam(
          |  ${ctorParamList.shift(2).trim}
          |) : $implementsClause {
          |  override val serviceName: String = "$svcName"
          |
          |  override fun invoke(method: $baboonMethodId, data: $wireType, $invokeCtxParamDecl$codecCtxName: $baboonCodecContext): $retType {
-         |    return ${svcName}Wiring.$invokerName(${invokerArgs.join(", ")})
+         |    ${invokeBody.shift(4).trim}
          |  }
          |}""".stripMargin
     }
@@ -723,7 +751,7 @@ object KtServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""fun ${funGenericPrefix}invokeJson${funGenericSuffix}(
+      q"""${dispatcherSuspendKw}fun ${funGenericPrefix}invokeJson${funGenericSuffix}(
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
@@ -822,7 +850,7 @@ object KtServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""fun ${funGenericPrefix}invokeUeba${funGenericSuffix}(
+      q"""${dispatcherSuspendKw}fun ${funGenericPrefix}invokeUeba${funGenericSuffix}(
          |  method: $baboonMethodId,
          |  data: ByteArray,
          |  impl: $svcName$svcTypeArg,
