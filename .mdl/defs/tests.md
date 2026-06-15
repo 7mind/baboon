@@ -2505,6 +2505,78 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-jv-wiring-errors-async
+
+Generate ERRORS+ASYNC Java service wiring for the petstore-errors model
+(`--jv-async-services=true`, errors flavour with `BaboonEither<err,success>`
+container, both codec families) into the `jv-errors-async` overlay project.
+This is a RED reproduction lane for D26: the generated PetStoreWiring server
+dispatch calls `impl.method(v)` inside a lambda passed to `rt.leftMap`, but
+when `--jv-async-services=true` the generated PetStore interface declares
+`CompletableFuture<BaboonEither<Err, Out>>` return types — so
+`impl.method(v)` returns `CompletableFuture<BaboonEither<Err, Out>>` where
+`BaboonEither<Err, Out>` is expected, and `errorsFutureWrap` then adds a
+second `CompletableFuture.completedFuture(...)` on top (double-wrap).
+
+NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
+a RED reproduction gating the Java server-side errors+async fix (D26).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-jv-wiring-errors-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/jv-errors-async"
+
+rsync -a --exclude='target' \
+  ./test/services/jv-errors-async/ "$TEST_DIR/jv-errors-async/"
+
+mkdir -p "$TEST_DIR/jv-errors-async/src/main/java/generated"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore-errors.baboon \
+  --lock-file="$TEST_DIR/baboon-jv-errors-async.lock" \
+  :java \
+  --output "$TEST_DIR/jv-errors-async/src/main/java/generated" \
+  --jv-async-services=true \
+  --service-result-no-errors=false \
+  --service-result-type="baboon.runtime.shared.BaboonEither" \
+  '--service-result-pattern=<$error,$success>' \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-jv-wiring-errors-async
+
+Compile the errors+async Java server impl overlay against the generated
+`--jv-async-services=true --service-result-no-errors=false` petstore-errors
+code. This lane is a RED reproduction for D26: the generated PetStoreWiring
+dispatchers call `impl.method(v)` inside a lambda body passed to
+`rt.leftMap`/`rt.pure`, treating its return as `BaboonEither<Err, Out>`, but
+when `--jv-async-services=true` the generated PetStore interface declares
+`CompletableFuture<BaboonEither<Err, Out>>` return types. The javac compiler
+rejects the call with a type mismatch. Additionally `errorsFutureWrap` adds a
+second `CompletableFuture.completedFuture(...)` on top, producing the
+double-wrap artifact.
+
+Expected javac errors (type mismatch at rt.leftMap/rt.pure call-sites in
+PetStoreWiring.invokeJson / PetStoreWiring.invokeUeba):
+  - `incompatible types: CompletableFuture<BaboonEither<...>> cannot be converted to BaboonEither<...>`
+
+```bash
+TEST_DIR="${action.test-gen-jv-wiring-errors-async.test_dir}"
+pushd "$TEST_DIR/jv-errors-async"
+mvn compile
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-dt-wiring
 
 Generate code for Dart wiring tests in no-errors service-result mode.
