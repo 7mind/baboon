@@ -236,6 +236,17 @@ object JvServiceWiringTranslator {
 
     private def isAsync: Boolean = target.language.asyncServices
 
+    // In errors mode the service-result container F already models the effect,
+    // so the impl call and the rt.flatMap/leftMap composition stay synchronous
+    // over F (mirroring the C# backend). Under asyncServices the WHOLE wiring
+    // return type is wrapped in CompletableFuture<…> for uniformity with the
+    // async server-dispatch contract, and each terminal container value is
+    // lifted with CompletableFuture.completedFuture(…).
+    private def errorsWiringReturnType(inner: String): TextTree[JvValue] =
+      if (isAsync) q"$completableFuture<$inner>" else q"$inner"
+    private def errorsFutureWrap(expr: TextTree[JvValue]): TextTree[JvValue] =
+      if (isAsync) q"$completableFuture.completedFuture($expr)" else expr
+
     override def translateClient(defn: DomainMember.User): Option[TextTree[JvValue]] = {
       defn.defn match {
         case service: Typedef.Service =>
@@ -370,7 +381,11 @@ object JvServiceWiringTranslator {
                |}""".stripMargin
           case None => q"return null;"
         }
-        q"""public $retType $methodName($ctxParamDecl$inRef arg) {
+        // The synchronous UEBA encode block (binary-output writes + flush)
+        // throws checked IOException; the sync variant already declares
+        // `throws Exception`, so the async variant must too (the encode runs
+        // synchronously before the returned CompletableFuture).
+        q"""public $retType $methodName($ctxParamDecl$inRef arg) throws Exception {
            |  ${encodeBlock.shift(2).trim}
            |  return transportUeba.apply(${ctxArgPass}"$svcName", "$methodName", payload).thenApply(resp -> {
            |    ${decodeBody.shift(4).trim}
@@ -563,35 +578,60 @@ object JvServiceWiringTranslator {
     }
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[JvValue] = {
-      val svcName = service.id.name.name
+      val svcName    = service.id.name.name
+      val returnType = if (isAsync) q"$completableFuture<String>" else q"String"
       val cases = service.methods.map {
         m =>
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
-          val encodeOutput = m.out match {
-            case Some(outRef) =>
-              val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"result")
-              q"""var encoded = $encodeOut;
-                 |yield encoded.toString();""".stripMargin
-            case None =>
-              q"""yield "null";"""
-          }
+          if (isAsync) {
+            // The impl call returns CompletableFuture<Out> (or
+            // CompletableFuture<Void> for void output); compose decode →
+            // impl.method(...) → encode via thenApply so the whole arm yields a
+            // CompletableFuture<String>. No synchronous impl.method() call.
+            val composed = m.out match {
+              case Some(outRef) =>
+                val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"result")
+                q"""yield impl.${m.name.name}(${ctxArgPass}decoded).thenApply(result -> {
+                   |  var encoded = $encodeOut;
+                   |  return encoded.toString();
+                   |});""".stripMargin
+              case None =>
+                q"""yield impl.${m.name.name}(${ctxArgPass}decoded).thenApply(ignored -> "null");"""
+            }
 
-          val callExpr = m.out match {
-            case Some(_) => q"var result = impl.${m.name.name}(${ctxArgPass}decoded);"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded);"
-          }
+            q"""case "${m.name.name}" -> {
+               |  var mapper = new $objectMapper();
+               |  $jsonNode wire = mapper.readTree(data);
+               |  var decoded = $decodeIn;
+               |  ${composed.shift(2).trim}
+               |}""".stripMargin
+          } else {
+            val encodeOutput = m.out match {
+              case Some(outRef) =>
+                val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"result")
+                q"""var encoded = $encodeOut;
+                   |yield encoded.toString();""".stripMargin
+              case None =>
+                q"""yield "null";"""
+            }
 
-          q"""case "${m.name.name}" -> {
-             |  var mapper = new $objectMapper();
-             |  $jsonNode wire = mapper.readTree(data);
-             |  var decoded = $decodeIn;
-             |  $callExpr
-             |  ${encodeOutput.shift(2).trim}
-             |}""".stripMargin
+            val callExpr = m.out match {
+              case Some(_) => q"var result = impl.${m.name.name}(${ctxArgPass}decoded);"
+              case None    => q"impl.${m.name.name}(${ctxArgPass}decoded);"
+            }
+
+            q"""case "${m.name.name}" -> {
+               |  var mapper = new $objectMapper();
+               |  $jsonNode wire = mapper.readTree(data);
+               |  var decoded = $decodeIn;
+               |  $callExpr
+               |  ${encodeOutput.shift(2).trim}
+               |}""".stripMargin
+          }
       }.join("\n")
 
-      q"""public static $staticGenericDecl String invokeJson$staticGenericAfterName(
+      q"""public static $staticGenericDecl $returnType invokeJson$staticGenericAfterName(
          |  $baboonMethodId method,
          |  String data,
          |  $svcName$svcTypeArg impl,
@@ -605,38 +645,72 @@ object JvServiceWiringTranslator {
     }
 
     private def generateNoErrorsUebaMethod(service: Typedef.Service): TextTree[JvValue] = {
-      val svcName = service.id.name.name
+      val svcName    = service.id.name.name
+      val returnType = if (isAsync) q"$completableFuture<byte[]>" else q"byte[]"
       val cases = service.methods.map {
         m =>
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
-          val encodeOutput = m.out match {
-            case Some(outRef) =>
-              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"result")
-              q"""var oms = new $byteArrayOutputStream();
-                 |var bw = new $binaryOutput(oms);
-                 |$encStmt
-                 |bw.flush();
-                 |yield oms.toByteArray();""".stripMargin
-            case None =>
-              q"yield new byte[0];"
-          }
+          if (isAsync) {
+            // The impl call returns CompletableFuture<Out> (or
+            // CompletableFuture<Void> for void output); compose decode →
+            // impl.method(...) → encode via thenApply so the whole arm yields a
+            // CompletableFuture<byte[]>. No synchronous impl.method() call. The
+            // UEBA encode path throws checked IOException, so the thenApply
+            // lambda wraps it (CompletableFuture lambdas cannot throw checked).
+            val composed = m.out match {
+              case Some(outRef) =>
+                val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"result")
+                q"""yield impl.${m.name.name}(${ctxArgPass}decoded).thenApply(result -> {
+                   |  try {
+                   |    var oms = new $byteArrayOutputStream();
+                   |    var bw = new $binaryOutput(oms);
+                   |    $encStmt
+                   |    bw.flush();
+                   |    return oms.toByteArray();
+                   |  } catch (Exception ex) {
+                   |    throw new RuntimeException(ex);
+                   |  }
+                   |});""".stripMargin
+              case None =>
+                q"""yield impl.${m.name.name}(${ctxArgPass}decoded).thenApply(ignored -> new byte[0]);"""
+            }
 
-          val callExpr = m.out match {
-            case Some(_) => q"var result = impl.${m.name.name}(${ctxArgPass}decoded);"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded);"
-          }
+            q"""case "${m.name.name}" -> {
+               |  var ims = new $byteArrayInputStream(data);
+               |  var br = new $binaryInput(ims);
+               |  var decoded = $decodeIn;
+               |  ${composed.shift(2).trim}
+               |}""".stripMargin
+          } else {
+            val encodeOutput = m.out match {
+              case Some(outRef) =>
+                val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"result")
+                q"""var oms = new $byteArrayOutputStream();
+                   |var bw = new $binaryOutput(oms);
+                   |$encStmt
+                   |bw.flush();
+                   |yield oms.toByteArray();""".stripMargin
+              case None =>
+                q"yield new byte[0];"
+            }
 
-          q"""case "${m.name.name}" -> {
-             |  var ims = new $byteArrayInputStream(data);
-             |  var br = new $binaryInput(ims);
-             |  var decoded = $decodeIn;
-             |  $callExpr
-             |  ${encodeOutput.shift(2).trim}
-             |}""".stripMargin
+            val callExpr = m.out match {
+              case Some(_) => q"var result = impl.${m.name.name}(${ctxArgPass}decoded);"
+              case None    => q"impl.${m.name.name}(${ctxArgPass}decoded);"
+            }
+
+            q"""case "${m.name.name}" -> {
+               |  var ims = new $byteArrayInputStream(data);
+               |  var br = new $binaryInput(ims);
+               |  var decoded = $decodeIn;
+               |  $callExpr
+               |  ${encodeOutput.shift(2).trim}
+               |}""".stripMargin
+          }
       }.join("\n")
 
-      q"""public static $staticGenericDecl byte[] invokeUeba$staticGenericAfterName(
+      q"""public static $staticGenericDecl $returnType invokeUeba$staticGenericAfterName(
          |  $baboonMethodId method,
          |  byte[] data,
          |  $svcName$svcTypeArg impl,
@@ -723,17 +797,19 @@ object JvServiceWiringTranslator {
                    |}""".stripMargin
               }
 
+              val containerExpr =
+                q"""rt.flatMap(output, v -> {
+                   |  try {
+                   |    var encoded = $encodeOut;
+                   |    return rt.pure(encoded.toString());
+                   |  } catch (Throwable ex) {
+                   |    return rt.fail(new $baboonWiringError.EncoderFailed(method, ex));
+                   |  }
+                   |})""".stripMargin
               q"""var output = rt.flatMap(input, v -> {
                  |  ${callBody.shift(2).trim}
                  |});
-                 |yield rt.flatMap(output, v -> {
-                 |  try {
-                 |    var encoded = $encodeOut;
-                 |    return rt.pure(encoded.toString());
-                 |  } catch (Throwable ex) {
-                 |    return rt.fail(new $baboonWiringError.EncoderFailed(method, ex));
-                 |  }
-                 |});""".stripMargin
+                 |yield ${errorsFutureWrap(containerExpr)};""".stripMargin
 
             case None =>
               val callBody = if (hasErrType) {
@@ -753,10 +829,12 @@ object JvServiceWiringTranslator {
                    |}""".stripMargin
               }
 
-              q"""yield rt.flatMap(input, v -> {
-                 |  ${callBody.shift(2).trim}
-                 |  return rt.pure("null");
-                 |});""".stripMargin
+              val containerExpr =
+                q"""rt.flatMap(input, v -> {
+                   |  ${callBody.shift(2).trim}
+                   |  return rt.pure("null");
+                   |})""".stripMargin
+              q"""yield ${errorsFutureWrap(containerExpr)};""".stripMargin
           }
 
           q"""case "${m.name.name}" -> {
@@ -765,7 +843,7 @@ object JvServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""public static $staticGenericDecl $wiringRetType invokeJson$staticGenericAfterName(
+      q"""public static $staticGenericDecl ${errorsWiringReturnType(wiringRetType)} invokeJson$staticGenericAfterName(
          |  $baboonMethodId method,
          |  String data,
          |  $svcName$svcTypeArg impl,
@@ -773,7 +851,7 @@ object JvServiceWiringTranslator {
          |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
          |  return switch (method.methodName()) {
          |    ${cases.shift(4).trim}
-         |    default -> rt.fail(new $baboonWiringError.NoMatchingMethod(method));
+         |    default -> ${errorsFutureWrap(q"rt.fail(new $baboonWiringError.NoMatchingMethod(method))")};
          |  };
          |}""".stripMargin
     }
@@ -820,20 +898,22 @@ object JvServiceWiringTranslator {
                    |}""".stripMargin
               }
 
+              val containerExpr =
+                q"""rt.flatMap(output, v -> {
+                   |  try {
+                   |    var oms = new $byteArrayOutputStream();
+                   |    var bw = new $binaryOutput(oms);
+                   |    $encStmt
+                   |    bw.flush();
+                   |    return rt.pure(oms.toByteArray());
+                   |  } catch (Throwable ex) {
+                   |    return rt.fail(new $baboonWiringError.EncoderFailed(method, ex));
+                   |  }
+                   |})""".stripMargin
               q"""var output = rt.flatMap(input, v -> {
                  |  ${callBody.shift(2).trim}
                  |});
-                 |yield rt.flatMap(output, v -> {
-                 |  try {
-                 |    var oms = new $byteArrayOutputStream();
-                 |    var bw = new $binaryOutput(oms);
-                 |    $encStmt
-                 |    bw.flush();
-                 |    return rt.pure(oms.toByteArray());
-                 |  } catch (Throwable ex) {
-                 |    return rt.fail(new $baboonWiringError.EncoderFailed(method, ex));
-                 |  }
-                 |});""".stripMargin
+                 |yield ${errorsFutureWrap(containerExpr)};""".stripMargin
 
             case None =>
               val callBody = if (hasErrType) {
@@ -853,10 +933,12 @@ object JvServiceWiringTranslator {
                    |}""".stripMargin
               }
 
-              q"""yield rt.flatMap(input, v -> {
-                 |  ${callBody.shift(2).trim}
-                 |  return rt.pure(new byte[0]);
-                 |});""".stripMargin
+              val containerExpr =
+                q"""rt.flatMap(input, v -> {
+                   |  ${callBody.shift(2).trim}
+                   |  return rt.pure(new byte[0]);
+                   |})""".stripMargin
+              q"""yield ${errorsFutureWrap(containerExpr)};""".stripMargin
           }
 
           q"""case "${m.name.name}" -> {
@@ -865,7 +947,7 @@ object JvServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""public static $staticGenericDecl $wiringRetType invokeUeba$staticGenericAfterName(
+      q"""public static $staticGenericDecl ${errorsWiringReturnType(wiringRetType)} invokeUeba$staticGenericAfterName(
          |  $baboonMethodId method,
          |  byte[] data,
          |  $svcName$svcTypeArg impl,
@@ -873,7 +955,7 @@ object JvServiceWiringTranslator {
          |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
          |  return switch (method.methodName()) {
          |    ${cases.shift(4).trim}
-         |    default -> rt.fail(new $baboonWiringError.NoMatchingMethod(method));
+         |    default -> ${errorsFutureWrap(q"rt.fail(new $baboonWiringError.NoMatchingMethod(method))")};
          |  };
          |}""".stripMargin
     }
@@ -958,9 +1040,12 @@ object JvServiceWiringTranslator {
       // R for IBaboon*Service<R>. In noErrors mode it's just the wire type.
       // In errors mode it's the service-result container wrapping the wire
       // type, e.g. `BaboonEither<BaboonWiringError, String>` or `F<…, …>`.
+      // Under asyncServices the static invoker returns CompletableFuture<…>, so
+      // R is wrapped to match (keeping the wrapper/server-dispatch contract
+      // consistent with the async invoker shape).
       val rType: String = {
-        if (!isErrorsMode) wireType
-        else renderContainer(bweFq, wireType)
+        val inner = if (!isErrorsMode) wireType else renderContainer(bweFq, wireType)
+        if (isAsync) s"${renderFq(q"$completableFuture")}<$inner>" else inner
       }
 
       // Extra deps to bake at construction time. `rt` only in errors mode.
