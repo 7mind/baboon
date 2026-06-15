@@ -3486,8 +3486,11 @@ Async sibling of `test-gen-rust-mcp`: uses the mcp-stub-ok model + BOTH
 `--rs-generate-mcp-server=true` AND `--rs-async-services=true` (Result errors
 mode), and overlays `test/rust-stub-mcp-async-overlay/` on top of a rs-stub copy.
 
-Scaffold only — the async-MCP Rust backend fix has not landed; this lane is
-expected RED until it does. DO NOT modify the sync `test-gen-rust-mcp` lane.
+RED reproduction (T62) — the async-MCP Rust backend fix (T63) has not landed;
+this lane is EXPECTED RED until it does: the generated async service-wiring does
+not compile (sync `IBaboonServiceRt`/`McpJsonInvoke` cannot thread async calls).
+See `test/rust-stub-mcp-async-overlay/README.md` for the captured rustc errors.
+DO NOT modify the sync `test-gen-rust-mcp` lane.
 
 ```bash
 dep action.build
@@ -3527,8 +3530,8 @@ ret test_dir:string="$TEST_DIR"
 # action: test-rust-mcp-async
 
 Run the Rust ASYNC MCP round-trip overlay tests (D24/G11).
-Async sibling of `test-rust-mcp`. Scaffold only — expected RED until the
-Rust async-MCP backend fix lands.
+Async sibling of `test-rust-mcp`. RED reproduction (T62) — expected RED at
+`cargo build` until the Rust async-MCP backend fix (T63) lands.
 
 ```bash
 TEST_DIR="${action.test-gen-rust-mcp-async.test_dir}"
