@@ -570,6 +570,7 @@ object BaboonJS {
                 serviceResult  = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.kotlinDefault),
                 serviceContext = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
                 pragmas        = parsePragmas(opts.pragma),
+                asyncServices        = opts.asyncServices.getOrElse(false),
                 generateDomainFacade = opts.generateDomainFacade.getOrElse(true),
                 multiplatform        = opts.multiplatform.getOrElse(false),
                 generateMcpServer    = opts.generateMcpServer.getOrElse(false),

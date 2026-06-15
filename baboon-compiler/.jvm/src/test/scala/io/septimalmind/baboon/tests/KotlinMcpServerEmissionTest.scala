@@ -58,6 +58,7 @@ abstract class KotlinMcpServerEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonT
       serviceResult               = ServiceResultConfig.kotlinDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      asyncServices               = false,
       multiplatform               = false,
       generateMcpServer           = mcp,
     ),

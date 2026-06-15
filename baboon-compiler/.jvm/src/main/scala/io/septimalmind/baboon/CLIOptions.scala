@@ -316,6 +316,8 @@ case class KtCLIOptions(
   generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate async RPC client methods returning Deferred/CompletableFuture (default: false)")
+  ktAsyncServices: Option[Boolean],
   @HelpMessage("Generate Kotlin Multiplatform compatible code (default: false)")
   ktMultiplatform: Option[Boolean],
   @HelpMessage("Generate an MCP server (default: false)")

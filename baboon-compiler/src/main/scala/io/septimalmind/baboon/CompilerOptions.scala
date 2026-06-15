@@ -289,6 +289,7 @@ final case class KtOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  asyncServices: Boolean,
   multiplatform: Boolean,
   generateMcpServer: Boolean,
 )
