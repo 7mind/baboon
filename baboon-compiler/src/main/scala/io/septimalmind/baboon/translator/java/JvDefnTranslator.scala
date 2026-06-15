@@ -605,7 +605,14 @@ object JvDefnTranslator {
           val errStr     = err.map(_.mapRender(jvFqName))
           val retStr     = resolved.renderReturnType(outStr, errStr, "void")
           val javaMethodName = JvTypeTranslator.escapeJvKeyword(m.name.name)
-          val methodTree     = q"$retStr $javaMethodName($ctxParam$in arg);"
+          val retTree: TextTree[JvValue] =
+            if (target.language.asyncServices) {
+              val inner = if (retStr == "void") "Void" else retStr
+              q"$completableFuture<$inner>"
+            } else {
+              q"$retStr"
+            }
+          val methodTree     = q"$retTree $javaMethodName($ctxParam$in arg);"
           prependDocs(m.docs, methodTree)
       }
       val typeParams = Seq(
