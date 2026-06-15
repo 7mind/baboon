@@ -1,4 +1,4 @@
-# py-stub-mcp-async-overlay (RED red-repro — D24/G11)
+# py-stub-mcp-async-overlay (GREEN — D24/G11)
 
 Async-MCP RUNTIME test-lane overlay for the Python backend (D24/G11).
 
@@ -12,28 +12,26 @@ Convention (shared by cs/py/rs/ts/sw):
 - sync lane  : `test-gen-<lang>-mcp`       + `test-<lang>-mcp`       (overlay `test/<lang>-stub-mcp-overlay/`)
 - async lane : `test-gen-<lang>-mcp-async` + `test-<lang>-mcp-async` (overlay `test/<lang>-stub-mcp-async-overlay/`)
 
-## Status: RED — un-awaited-coroutine repro (T60), gates the fix (T61)
+## Status: GREEN — async server awaits the delegate (T61)
 
-`BaboonTests/mcp/test_mcp.py` is a RUNTIME red-repro for the silent un-awaited
-coroutine defect (D24): Python's MCP delegate type is dynamic
-(`Callable[..., object]`), so the mismatch does NOT fail to compile. Under
-`--py-async-services=true` the generated errors-mode wiring entry
+`BaboonTests/mcp/test_mcp.py` is a RUNTIME round-trip for the async MCP server.
+Under `--py-async-services=true` the generated errors-mode wiring entry
 `invoke_json_McpTools` is an `async def` (PyServiceWiringTranslator.scala:36-39,
-:793), but the generated `McpToolsMcpServer` calls the delegate SYNCHRONOUSLY
-(PyMcpServerGenerator.scala:147 → baboon_mcp_runtime.py `handle`). Calling the
-`async def` without `await` SILENTLY returns a coroutine object that is never
-awaited.
+:793). T61 threads `asyncServices` into `PyMcpServerGenerator`: under the flag
+the generated `McpToolsMcpServer` extends `AbstractAsyncBaboonMcpServer`, its
+`invoke_json` is an `async def` that `await`s the delegate, and the inherited
+async `handle` is a coroutine that awaits the dispatch. The integrator awaits
+the coroutine returned by `handle`.
 
-`test_ping_returns_ok_true_async` performs a real `tools/call` and asserts on the
-AWAITED JSON result. It FAILS today: the coroutine is neither `BaboonRight` nor
-`BaboonLeft`, so the sync dispatch raises on the coroutine (or emits a coroutine
-repr as a non-JSON Channel-B body) and Python logs
-`RuntimeWarning: coroutine 'invoke_json_McpTools' was never awaited`. The
-assertion pinpoints the symptom (NOT an import/harness error). Two control tests
-(`inspect.iscoroutinefunction` on the wiring entry; an `asyncio.run`-awaited
-dispatch yielding `{"ok": true}`) confirm the stub/codec are correct and isolate
-the defect to the server's missing `await`.
+`test_ping_returns_ok_true_async` awaits a real `tools/call` and asserts on the
+AWAITED JSON result (`ok == True`) — no coroutine object, no
+`RuntimeWarning: coroutine ... was never awaited`. Control tests pin that the
+wiring entry and the server's `handle` are both coroutine functions
+(`inspect.iscoroutinefunction`) and that a directly-awaited dispatch yields
+`{"ok": true}`.
 
-This lane stays RED until the Python async-MCP backend fix (T61) threads
-`asyncServices` into the MCP server generator (async server base that awaits the
-delegate). The sync `test-py-mcp` lane is unaffected.
+The defect (D24) was: pre-T61 the generated server called the `async def`
+delegate SYNCHRONOUSLY (PyMcpServerGenerator.scala:147 → baboon_mcp_runtime.py
+sync `handle`), silently returning an un-awaited coroutine object (neither
+`BaboonRight` nor `BaboonLeft`). The sync `test-py-mcp` lane is unaffected: with
+the flag OFF the generated server is byte-identical to baseline.

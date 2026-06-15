@@ -115,22 +115,37 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
 
     val invokeFnName = s"invoke_json_$serviceName"
 
+    // Async axis (`--py-async-services=true`): the errors-mode wiring entry
+    // `$invokeFnName` is an `async def` (PyServiceWiringTranslator.scala:36-39),
+    // so the MCP server must extend the async runtime base, take the async
+    // delegate, and `await` it in its `invoke_json` override (which is itself an
+    // `async def`, awaited by the inherited async `handle`). When OFF the sync
+    // branch is emitted verbatim, keeping the generated file byte-identical to
+    // the pre-change baseline.
+    val isAsync = target.language.asyncServices
+
+    val baseClass    = if (isAsync) "AbstractAsyncBaboonMcpServer" else "AbstractBaboonMcpServer"
+    val asyncPrefix  = if (isAsync) "async " else ""
+    val invokeReturn =
+      if (isAsync) "return await self._invoke_json(method, data, ctx, codec_ctx)"
+      else "return self._invoke_json(method, data, ctx, codec_ctx)"
+
     val content =
       s"""# Generated MCP server for service `$serviceName` (model `${domain.id.path.mkString(".")}` v$modelVer).
-         |# Transport-abstract: `handle` is inherited from AbstractBaboonMcpServer and
+         |# Transport-abstract: `handle` is inherited from $baseClass and
          |# performs no I/O. The `_invoke_json` delegate routes `tools/call` into the
          |# generated service dispatch; the integrator supplies it (typically the
          |# errors-mode `$invokeFnName` bound to this service) plus the per-request `ctx`.
          |import json
          |from typing import Callable, Generic, List, TypeVar
          |
-         |from ${rtPkg}baboon_mcp_runtime import AbstractBaboonMcpServer, McpServerInfo, McpSession, McpToolEntry
+         |from ${rtPkg}baboon_mcp_runtime import $baseClass, McpServerInfo, McpSession, McpToolEntry
          |from ${rtPkg}baboon_service_wiring import BaboonLeft, BaboonMethodId, BaboonWiringError
          |
          |Ctx = TypeVar("Ctx")
          |
          |
-         |class $className(AbstractBaboonMcpServer[Ctx], Generic[Ctx]):
+         |class $className($baseClass[Ctx], Generic[Ctx]):
          |    def __init__(self, invoke_json: Callable[[BaboonMethodId, str, Ctx, object], object]) -> None:
          |        self._invoke_json = invoke_json
          |
@@ -144,8 +159,8 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
          |${toolEntries.mkString("\n")}
          |        ]
          |
-         |    def invoke_json(self, method: BaboonMethodId, data: str, ctx: Ctx, codec_ctx: object) -> object:
-         |        return self._invoke_json(method, data, ctx, codec_ctx)
+         |    ${asyncPrefix}def invoke_json(self, method: BaboonMethodId, data: str, ctx: Ctx, codec_ctx: object) -> object:
+         |        $invokeReturn
          |""".stripMargin
 
     path -> OutputFile(content, CompilerProduct.Definition)

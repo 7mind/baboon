@@ -3549,8 +3549,9 @@ Async sibling of `test-gen-python-mcp`: uses the mcp-stub-ok model + BOTH
 `--py-generate-mcp-server=true` AND `--py-async-services=true` (Either mode), and
 overlays `test/py-stub-mcp-async-overlay/` on top of a py-stub copy.
 
-Scaffold only — the async-MCP Python backend fix has not landed; this lane is
-expected RED until it does. DO NOT modify the sync `test-gen-python-mcp` lane.
+GREEN since T61 threaded `asyncServices` into `PyMcpServerGenerator` (async
+server base that awaits the delegate). DO NOT modify the sync
+`test-gen-python-mcp` lane.
 
 ```bash
 dep action.build
@@ -3590,8 +3591,8 @@ ret test_dir:string="$TEST_DIR"
 # action: test-python-mcp-async
 
 Run the Python ASYNC MCP round-trip overlay tests (D24/G11).
-Async sibling of `test-python-mcp`. Scaffold only — expected RED until the
-Python async-MCP backend fix lands.
+Async sibling of `test-python-mcp`. GREEN since the T61 async-MCP Python backend
+fix (async server base that awaits the delegate).
 
 ```bash
 TEST_DIR="${action.test-gen-python-mcp-async.test_dir}"

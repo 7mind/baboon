@@ -1,34 +1,27 @@
-# T60 (D24/G11) — Python ASYNC-MCP RUNTIME red-repro overlay test.
+# T60/T61 (D24/G11) — Python ASYNC-MCP RUNTIME lane (GREEN after the T61 fix).
 #
 # Async sibling of test/py-stub-mcp-overlay/BaboonTests/mcp/test_mcp.py, generated
 # with BOTH --py-generate-mcp-server=true AND --py-async-services=true.
 #
-# THE DEFECT (D24) — silent un-awaited coroutine at RUNTIME:
+# THE DEFECT (D24) and ITS FIX (T61):
 #   Under --py-async-services=true the generated errors-mode wiring entry
 #     `invoke_json_McpTools(...)` is an `async def`
 #     (PyServiceWiringTranslator.scala:36-39 + :793 — asyncPrefix = "async ").
-#   The generated MCP server `McpToolsMcpServer` is NOT async-aware: its
-#     `invoke_json` (PyMcpServerGenerator.scala:147) and the inherited
-#     `AbstractBaboonMcpServer.handle` both call the delegate SYNCHRONOUSLY
-#     (baboon_mcp_runtime.py:177 — `result = self.invoke_json(...)`).
-#   Python's MCP delegate type is dynamic (`Callable[..., object]`), so this
-#   does NOT fail to compile — calling the `async def` synchronously SILENTLY
-#   returns a COROUTINE OBJECT (never awaited). The server then runs
-#     `isinstance(result, BaboonRight)` → False (a coroutine is neither
-#     BaboonRight nor BaboonLeft), drops into the Channel-B branch, and emits
-#     `repr(coroutine)` (e.g. "<coroutine object invoke_json_McpTools at 0x..>")
-#     as `content[0].text` with isError=True. That text is NOT JSON.
+#   Pre-T61 the generated MCP server `McpToolsMcpServer` was NOT async-aware: its
+#     `invoke_json` and the inherited `AbstractBaboonMcpServer.handle` both called
+#     the delegate SYNCHRONOUSLY, so the `async def` returned an un-awaited
+#     coroutine object (neither BaboonRight nor BaboonLeft).
+#   T61 threads `asyncServices` into PyMcpServerGenerator: under the flag the
+#     generated server extends `AbstractAsyncBaboonMcpServer`, its `invoke_json`
+#     is an `async def` that `await`s the delegate, and the inherited async
+#     `handle` is itself a coroutine that awaits the dispatch. The integrator
+#     awaits the coroutine returned by `handle`.
 #
-# EXPECTED RED (today, pre-fix T61):
-#   `test_ping_returns_ok_true_async` performs a real tools/call and asserts on
-#   the AWAITED JSON result (ok == True). It FAILS because the sync delegate call
-#   returns a coroutine: the body is a coroutine repr (non-JSON) inside an
-#   isError=True Channel-B result. The assertion pinpoints the un-awaited-coroutine
-#   symptom (NOT an import/harness error). The sync lane (test-py-mcp) is unaffected.
-#
-# After the Python async-MCP backend fix (T61) threads asyncServices into the MCP
-# server generator (async server base that awaits the delegate), this lane goes
-# GREEN. DO NOT wire it green here — this task only reproduces the defect.
+# EXPECTED GREEN (post-fix T61):
+#   `test_ping_returns_ok_true_async` awaits a real tools/call and asserts on the
+#   AWAITED JSON result (ok == True) — no coroutine object, no
+#   `RuntimeWarning: coroutine ... was never awaited`. The sync lane
+#   (test-py-mcp) is unaffected.
 #
 # Run from py-stub/:
 #   python3 -m unittest BaboonTests.mcp.test_mcp
@@ -71,19 +64,19 @@ def _make_server():
     rt = BaboonServiceRtDefault()
     stub = _StubMcpTools()
 
-    # The generated McpToolsMcpServer requires a SYNC delegate
-    # `Callable[[BaboonMethodId, str, Ctx, object], object]`. Because the
-    # underlying `invoke_json_McpTools` is an `async def`, calling it (without
-    # await) returns a coroutine object — exactly what the un-awaited-coroutine
-    # defect feeds into the server's sync dispatch.
-    def _fake_invoke(method, data, ctx, codec_context):
+    # Under --py-async-services=true the generated McpToolsMcpServer extends the
+    # async runtime base and takes an ASYNC delegate
+    # (Awaitable[BaboonEither[..]]). Returning the coroutine from
+    # `invoke_json_McpTools` (an `async def`) is correct: the server's async
+    # `invoke_json` / `handle` await it.
+    def _async_invoke(method, data, ctx, codec_context):
         return invoke_json_McpTools(method, data, stub, rt, codec_context)
 
-    return McpToolsMcpServer(_fake_invoke)
+    return McpToolsMcpServer(_async_invoke)
 
 
-def _init_session(server, session, codec_ctx):
-    server.handle(
+async def _init_session(server, session, codec_ctx):
+    await server.handle(
         {
             "jsonrpc": "2.0",
             "id": 0,
@@ -98,7 +91,7 @@ def _init_session(server, session, codec_ctx):
         None,
         codec_ctx,
     )
-    server.handle(
+    await server.handle(
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         session,
         None,
@@ -106,8 +99,8 @@ def _init_session(server, session, codec_ctx):
     )
 
 
-def _send(server, session, codec_ctx, req):
-    resp = server.handle(req, session, None, codec_ctx)
+async def _send(server, session, codec_ctx, req):
+    resp = await server.handle(req, session, None, codec_ctx)
     if resp is None:
         raise AssertionError(f"Expected a response for {req['method']!r} but got None")
     return resp
@@ -116,40 +109,28 @@ def _send(server, session, codec_ctx, req):
 class Sec3AsyncToolsCallTests(unittest.TestCase):
 
     def test_ping_returns_ok_true_async(self):
-        # THE RED-REPRO POINT.
+        # THE GREEN POINT (post-T61).
         #
-        # A real tools/call must round-trip through the async dispatch and yield
-        # the AWAITED JSON result {"ok": true}. Today the sync MCP server calls
-        # the `async def` delegate without awaiting it. The returned coroutine is
-        # neither BaboonRight nor BaboonLeft, so the runtime's sync dispatch
-        # (baboon_mcp_runtime.py: `isinstance(result, BaboonRight)` → False, then
-        # `_describe_wiring_error(result.value)`) raises AttributeError /
-        # TypeError on the coroutine, OR — depending on the runtime version —
-        # places the coroutine's repr into a non-JSON Channel-B body. Both are the
-        # same un-awaited-coroutine symptom; the assertions below pinpoint it.
-        codec_ctx = BaboonCodecContext.Default
-        server = _make_server()
-        session = McpSession()
-        _init_session(server, session, codec_ctx)
+        # A real tools/call round-trips through the async dispatch and yields the
+        # AWAITED JSON result {"ok": true}. The async MCP server awaits the
+        # `async def` delegate, so `tools/call` returns the awaited Either value
+        # (NOT a coroutine object), and the runtime maps BaboonRight → Channel-A
+        # success.
+        async def scenario():
+            codec_ctx = BaboonCodecContext.Default
+            server = _make_server()
+            session = McpSession()
+            await _init_session(server, session, codec_ctx)
 
-        call = {
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {"name": "McpTools_ping", "arguments": {"seqno": 42, "label": "hello"}},
-        }
+            call = {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "McpTools_ping", "arguments": {"seqno": 42, "label": "hello"}},
+            }
+            return await _send(server, session, codec_ctx, call)
 
-        try:
-            resp = _send(server, session, codec_ctx, call)
-        except (AttributeError, TypeError) as e:
-            # The sync server reached `result.value` / isinstance on a coroutine.
-            raise AssertionError(
-                "D24 un-awaited-coroutine defect reproduced: the sync MCP server "
-                "called the `async def` invoke_json_McpTools delegate WITHOUT awaiting "
-                "it, so `tools/call` dispatch received a coroutine object (neither "
-                "BaboonRight nor BaboonLeft) and the runtime raised "
-                f"{type(e).__name__}: {e}. Expected the awaited JSON result {{'ok': true}}."
-            ) from e
+        resp = asyncio.run(scenario())
 
         self.assertEqual(resp["id"], 3)
         self.assertNotIn("error", resp, "Unexpected Channel-A error on async ping call")
@@ -161,29 +142,16 @@ class Sec3AsyncToolsCallTests(unittest.TestCase):
 
         text = content[0]["text"]
 
-        # Pinpoint the un-awaited-coroutine symptom for a RIGHT-reason failure:
-        # the body is the repr of a coroutine object instead of awaited JSON.
+        # Right-reason guard: the body must NOT be a coroutine repr (the pre-T61
+        # un-awaited-coroutine symptom). It must be the awaited JSON result.
         if "coroutine" in text or "<coroutine object" in text:
             raise AssertionError(
-                "D24 un-awaited-coroutine defect reproduced: the sync MCP server "
-                "called the `async def` invoke_json_McpTools delegate WITHOUT awaiting "
-                "it, so tools/call returned a coroutine object instead of the awaited "
-                f"JSON result. content[0].text = {text!r}; "
+                "D24 un-awaited-coroutine defect: the async MCP server returned a "
+                f"coroutine object instead of the awaited JSON result. text = {text!r}; "
                 f"isError = {result.get('isError')!r}."
             )
 
-        # If the body is not the coroutine repr it must be awaited JSON — parse it.
-        # (json.loads of a coroutine repr raises JSONDecodeError, which is also a
-        # right-reason RED for the non-JSON Channel-B body symptom.)
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError as e:
-            raise AssertionError(
-                "D24 un-awaited-coroutine defect reproduced: tools/call body is not "
-                f"JSON (un-awaited coroutine / non-JSON Channel-B body). text = {text!r}; "
-                f"isError = {result.get('isError')!r}; json error = {e}."
-            )
-
+        payload = json.loads(text)
         self.assertEqual(payload["ok"], True, "ok must be true (awaited async dispatch result)")
 
         is_error = result.get("isError")
@@ -191,24 +159,30 @@ class Sec3AsyncToolsCallTests(unittest.TestCase):
             raise AssertionError(f"isError must be false or absent, got {is_error!r}")
 
     def test_invoke_delegate_is_a_coroutine_function(self):
-        # Structural pin (not the primary RED): documents that the generated
-        # wiring entry is `async def`, so any SYNCHRONOUS call to it (as the
-        # generated MCP server performs) yields a coroutine object. This makes
-        # the un-awaited-coroutine hazard explicit and would itself need
-        # revisiting if the fix changed the wiring shape rather than the server.
+        # Structural control: documents that the generated wiring entry is
+        # `async def`, so the server MUST await it (which the async server now
+        # does). Would need revisiting if the fix changed the wiring shape.
         self.assertTrue(
             inspect.iscoroutinefunction(invoke_json_McpTools),
             "Under --py-async-services=true the generated invoke_json_McpTools "
-            "MUST be an async def (coroutine function); the sync MCP server "
-            "dispatch therefore returns an un-awaited coroutine.",
+            "MUST be an async def (coroutine function).",
+        )
+
+    def test_handle_is_a_coroutine_function(self):
+        # Structural control: the generated async MCP server's inherited `handle`
+        # is a coroutine function (async def), so the integrator awaits it. This
+        # pins the fix that converted the server's dispatch path to async.
+        server = _make_server()
+        self.assertTrue(
+            inspect.iscoroutinefunction(server.handle),
+            "Under --py-async-services=true the generated MCP server's `handle` "
+            "MUST be an async def (coroutine function) that awaits the delegate.",
         )
 
     def test_awaited_dispatch_yields_ok_true_json(self):
-        # Control: when the delegate IS awaited (as the post-T61 fix server will
-        # do), the dispatch yields awaited JSON {"ok": true}. This proves the
-        # generated wiring + stub are correct and that the RED above is caused
-        # SOLELY by the server's missing await — not by a broken async stub or
-        # codec. Runs the coroutine directly via asyncio.run.
+        # Control: when the delegate IS awaited directly, the dispatch yields
+        # awaited JSON {"ok": true}. Proves the generated wiring + stub are
+        # correct independent of the server.
         rt = BaboonServiceRtDefault()
         stub = _StubMcpTools()
         codec_ctx = BaboonCodecContext.Default
