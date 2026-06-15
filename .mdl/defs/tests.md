@@ -2436,6 +2436,75 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-kt-wiring-errors-async
+
+Generate ERRORS+ASYNC Kotlin service wiring for the petstore-errors model
+(`--kt-async-services=true`, errors flavour with `Either<err,success>` container,
+both codec families) into the `kt-errors-async` overlay project. This is a RED
+reproduction lane for D26: the generated PetStoreWiring server dispatch calls
+`impl.method(v)` inside a plain non-suspend lambda passed to `rt.flatMap`,
+but when `--kt-async-services=true` the generated PetStore interface declares
+`suspend fun` methods — so calling `impl.method(v)` from the non-suspend
+lambda is a kotlinc error (suspension functions can be called only within a
+coroutine body).
+
+NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
+a RED reproduction gating the Kotlin server-side errors+async fix (D26).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-kt-wiring-errors-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/kt-errors-async"
+
+rsync -a --exclude='build' --exclude='.gradle' \
+  ./test/services/kt-errors-async/ "$TEST_DIR/kt-errors-async/"
+
+mkdir -p "$TEST_DIR/kt-errors-async/src/main/kotlin/generated"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore-errors.baboon \
+  --lock-file="$TEST_DIR/baboon-kt-errors-async.lock" \
+  :kotlin \
+  --output "$TEST_DIR/kt-errors-async/src/main/kotlin/generated" \
+  --kt-async-services=true \
+  --service-result-no-errors=false \
+  --service-result-type=Either \
+  '--service-result-pattern=<$error,$success>' \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-kt-wiring-errors-async
+
+Compile the errors+async Kotlin server impl overlay against the generated
+`--kt-async-services=true --service-result-no-errors=false` petstore-errors
+code. This lane is a RED reproduction for D26: the generated PetStoreWiring
+dispatchers call `impl.method(v)` inside a plain non-suspend lambda body
+(the BIO combinator parameter `(B) -> Either<A, C>` is not suspend), but the
+generated PetStore interface declares `suspend fun` methods when
+`--kt-async-services=true` is active. The kotlinc compiler rejects the call
+with: "Suspension functions can be called only within coroutine body".
+
+Expected kotlinc error:
+  - `Suspension functions can be called only within coroutine body`
+  - (or: `suspend function 'addPet' should be called only from a coroutine or another suspend function`)
+
+```bash
+TEST_DIR="${action.test-gen-kt-wiring-errors-async.test_dir}"
+pushd "$TEST_DIR/kt-errors-async"
+gradle --no-daemon compileKotlin
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-dt-wiring
 
 Generate code for Dart wiring tests in no-errors service-result mode.
