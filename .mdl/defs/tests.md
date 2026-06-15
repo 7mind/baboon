@@ -2798,6 +2798,11 @@ dep action.test-java-mcp
 dep action.test-dart-mcp
 dep action.test-python-mcp
 dep action.test-swift-mcp
+dep action.test-ts-mcp-async
+dep action.test-cs-mcp-async
+dep action.test-rust-mcp-async
+dep action.test-python-mcp-async
+dep action.test-swift-mcp-async
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
@@ -3153,6 +3158,324 @@ if ! command -v swift &> /dev/null; then
 fi
 
 TEST_DIR="${action.test-gen-swift-mcp.test_dir}"
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
+
+ret success:bool=true
+```
+
+# action: test-gen-ts-mcp-async
+
+Generate code for the TypeScript ASYNC MCP round-trip overlay test (D24/G11).
+Async sibling of `test-gen-ts-mcp`: uses the mcp-stub-ok model + BOTH
+`--ts-generate-mcp-server=true` AND `--ts-async-services=true`, and overlays
+`test/ts-stub-mcp-async-overlay/` on top of a ts-stub copy.
+
+Scaffold only — the async-MCP TypeScript backend fix has not landed; this lane is
+expected RED until it does. DO NOT modify the sync `test-gen-ts-mcp` lane.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-mcp-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
+  --lock-file=./target/baboon-ts-mcp-async.lock \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --ts-generate-mcp-server=true \
+  --ts-async-services=true
+
+rsync -a ./test/ts-stub-mcp-async-overlay/ "$TEST_DIR/ts-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-ts-mcp-async
+
+Run the TypeScript ASYNC MCP round-trip overlay tests (D24/G11).
+Async sibling of `test-ts-mcp`. Scaffold only — expected RED until the
+TypeScript async-MCP backend fix lands.
+
+```bash
+TEST_DIR="${action.test-gen-ts-mcp-async.test_dir}"
+pushd "$TEST_DIR/ts-stub"
+npm install
+npx vitest run src/mcp.test.ts
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-cs-mcp-async
+
+Generate code for the C# ASYNC MCP round-trip overlay test (D24/G11).
+Async sibling of `test-gen-cs-mcp`: uses the mcp-stub-ok model + BOTH
+`--cs-generate-mcp-server=true` AND `--cs-async-services=true` (Either mode), and
+overlays `test/cs-stub-mcp-async-overlay/` on top of a cs-stub copy.
+
+Scaffold only — the async-MCP C# backend fix has not landed; this lane is
+expected RED until it does. DO NOT modify the sync `test-gen-cs-mcp` lane.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-mcp-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
+  --lock-file=./target/baboon-cs-mcp-async.lock \
+  :cs \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Baboon.Runtime.Shared.Either" \
+  --service-result-pattern="<\$error, \$success>" \
+  --cs-generate-mcp-server=true \
+  --cs-async-services=true
+
+rsync -a ./test/cs-stub-mcp-async-overlay/ "$TEST_DIR/cs-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-mcp-async
+
+Run the C# ASYNC MCP round-trip overlay tests (D24/G11).
+Async sibling of `test-cs-mcp`. Scaffold only — expected RED until the
+C# async-MCP backend fix lands.
+
+```bash
+TEST_DIR="${action.test-gen-cs-mcp-async.test_dir}"
+pushd "$TEST_DIR/cs-stub"
+dotnet build -c Release McpTests/McpTests.csproj
+dotnet test -c Release McpTests/McpTests.csproj
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-rust-mcp-async
+
+Generate code for the Rust ASYNC MCP round-trip overlay test (D24/G11).
+Async sibling of `test-gen-rust-mcp`: uses the mcp-stub-ok model + BOTH
+`--rs-generate-mcp-server=true` AND `--rs-async-services=true` (Result errors
+mode), and overlays `test/rust-stub-mcp-async-overlay/` on top of a rs-stub copy.
+
+Scaffold only — the async-MCP Rust backend fix has not landed; this lane is
+expected RED until it does. DO NOT modify the sync `test-gen-rust-mcp` lane.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-rust-mcp-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/rs-stub"
+mkdir -p "$TEST_DIR/rs-stub"
+
+# Copy only the Cargo.toml (package name = baboon-rs-stub) from rs-stub;
+# the generated source tree from mcp-stub-ok will be written into src/.
+cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
+  --lock-file=./target/baboon-rust-mcp-async.lock \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type=Result \
+  '--service-result-pattern=<$success, $error>' \
+  --rs-generate-mcp-server=true \
+  --rs-async-services=true
+
+rsync -a ./test/rust-stub-mcp-async-overlay/ "$TEST_DIR/rs-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-rust-mcp-async
+
+Run the Rust ASYNC MCP round-trip overlay tests (D24/G11).
+Async sibling of `test-rust-mcp`. Scaffold only — expected RED until the
+Rust async-MCP backend fix lands.
+
+```bash
+TEST_DIR="${action.test-gen-rust-mcp-async.test_dir}"
+pushd "$TEST_DIR/rs-stub"
+RUSTFLAGS="-D warnings" cargo test --test mcp_tests
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-python-mcp-async
+
+Generate code for the Python ASYNC MCP round-trip overlay test (D24/G11).
+Async sibling of `test-gen-python-mcp`: uses the mcp-stub-ok model + BOTH
+`--py-generate-mcp-server=true` AND `--py-async-services=true` (Either mode), and
+overlays `test/py-stub-mcp-async-overlay/` on top of a py-stub copy.
+
+Scaffold only — the async-MCP Python backend fix has not landed; this lane is
+expected RED until it does. DO NOT modify the sync `test-gen-python-mcp` lane.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-python-mcp-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/py-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' \
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
+  --lock-file=./target/baboon-python-mcp-async.lock \
+  :python \
+  --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --py-generate-mcp-server=true \
+  --py-async-services=true
+
+rsync -a ./test/py-stub-mcp-async-overlay/ "$TEST_DIR/py-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-python-mcp-async
+
+Run the Python ASYNC MCP round-trip overlay tests (D24/G11).
+Async sibling of `test-python-mcp`. Scaffold only — expected RED until the
+Python async-MCP backend fix lands.
+
+```bash
+TEST_DIR="${action.test-gen-python-mcp-async.test_dir}"
+pushd "$TEST_DIR/py-stub"
+python3 -m venv .venv
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
+python3 -m pip install -r requirements.txt
+python3 -m unittest BaboonTests.mcp.test_mcp
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-swift-mcp-async
+
+Generate code for the Swift ASYNC MCP round-trip overlay test (D24/G11).
+Async sibling of `test-gen-swift-mcp`: uses the mcp-stub-ok model + BOTH
+`--sw-generate-mcp-server=true` AND `--sw-async-services=true` (no-errors mode),
+and overlays `test/swift-stub-mcp-async-overlay/` on top of a sw-stub copy
+(same self-contained Swift-package assembly as the sync lane).
+
+Scaffold only — the async-MCP Swift backend fix has not landed; this lane is
+expected RED until it does. DO NOT modify the sync `test-gen-swift-mcp` lane.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-swift-mcp-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sw-stub"
+mkdir -p "$TEST_DIR/sw-stub/Sources"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
+  --lock-file=./target/baboon-swift-mcp-async.lock \
+  :swift \
+  --output "$TEST_DIR/sw-stub/Sources" \
+  --sw-write-evolution-dict=true \
+  --sw-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --sw-generate-mcp-server=true \
+  --sw-async-services=true
+
+# Swift SPM splits Tests/BaboonTests into per-module .testTarget()s; the
+# codegen-emitted CrossLanguageFixturePath.swift sits at the top level and must
+# be copied into each per-module subdirectory (mirrors test-gen-regular-adt).
+# This MCP pass emits no test product, so the helper is absent — guarded no-op.
+SW_BTESTS="$TEST_DIR/sw-stub/Tests/BaboonTests"
+if [ -f "$SW_BTESTS/CrossLanguageFixturePath.swift" ]; then
+  for sub in "$SW_BTESTS"/*/; do
+    [ -d "$sub" ] || continue
+    cp "$SW_BTESTS/CrossLanguageFixturePath.swift" "$sub"
+  done
+  rm -f "$SW_BTESTS/CrossLanguageFixturePath.swift"
+fi
+
+# Apply async MCP overlay (Package.swift + McpTests target).
+rsync -a ./test/swift-stub-mcp-async-overlay/ "$TEST_DIR/sw-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-swift-mcp-async
+
+Run the Swift ASYNC MCP round-trip overlay tests (D24/G11).
+Async sibling of `test-swift-mcp`. Scaffold only — expected RED until the
+Swift async-MCP backend fix lands.
+
+```bash
+if ! command -v swift &> /dev/null; then
+  if [[ "$(uname)" == "Linux" ]]; then
+    echo "Swift is required on Linux but was not found in PATH" >&2
+    exit 1
+  fi
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+TEST_DIR="${action.test-gen-swift-mcp-async.test_dir}"
 ./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
 
 ret success:bool=true
