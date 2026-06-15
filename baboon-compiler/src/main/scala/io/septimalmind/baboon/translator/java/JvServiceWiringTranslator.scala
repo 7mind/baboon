@@ -764,83 +764,86 @@ object JvServiceWiringTranslator {
           val inRef    = trans.asJvRef(m.sig, domain, evo)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
-          val decodeStep =
-            q"""${ct(bweFq, renderFq(inRef))} input;
-               |try {
-               |  var mapper = new $objectMapper();
-               |  $jsonNode wire = mapper.readTree(data);
-               |  input = rt.pure($decodeIn);
-               |} catch (Throwable ex) {
-               |  input = rt.fail(new $baboonWiringError.DecoderFailed(method, ex));
-               |}""".stripMargin
+          if (isAsync) generateErrorsJsonCaseAsync(m, inRef, decodeIn)
+          else {
+            val decodeStep =
+              q"""${ct(bweFq, renderFq(inRef))} input;
+                 |try {
+                 |  var mapper = new $objectMapper();
+                 |  $jsonNode wire = mapper.readTree(data);
+                 |  input = rt.pure($decodeIn);
+                 |} catch (Throwable ex) {
+                 |  input = rt.fail(new $baboonWiringError.DecoderFailed(method, ex));
+                 |}""".stripMargin
 
-          val hasErrType = m.err.isDefined && !resolved.noErrors
+            val hasErrType = m.err.isDefined && !resolved.noErrors
 
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val outType   = trans.asJvRef(outRef, domain, evo)
-              val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
+            val callAndEncodeStep = m.out match {
+              case Some(outRef) =>
+                val outType   = trans.asJvRef(outRef, domain, evo)
+                val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
 
-              val callBody = if (hasErrType) {
-                q"""try {
-                   |  var callResult = impl.${m.name.name}(${ctxArgPass}v);
-                   |  return rt.leftMap(
-                   |    callResult, err -> new $baboonWiringError.CallFailed(method, err));
-                   |} catch (Throwable ex) {
-                   |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try {
-                   |  return rt.pure(impl.${m.name.name}(${ctxArgPass}v));
-                   |} catch (Throwable ex) {
-                   |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              }
+                val callBody = if (hasErrType) {
+                  q"""try {
+                     |  var callResult = impl.${m.name.name}(${ctxArgPass}v);
+                     |  return rt.leftMap(
+                     |    callResult, err -> new $baboonWiringError.CallFailed(method, err));
+                     |} catch (Throwable ex) {
+                     |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+                     |}""".stripMargin
+                } else {
+                  q"""try {
+                     |  return rt.pure(impl.${m.name.name}(${ctxArgPass}v));
+                     |} catch (Throwable ex) {
+                     |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+                     |}""".stripMargin
+                }
 
-              val containerExpr =
-                q"""rt.flatMap(output, v -> {
-                   |  try {
-                   |    var encoded = $encodeOut;
-                   |    return rt.pure(encoded.toString());
-                   |  } catch (Throwable ex) {
-                   |    return rt.fail(new $baboonWiringError.EncoderFailed(method, ex));
-                   |  }
-                   |})""".stripMargin
-              q"""var output = rt.flatMap(input, v -> {
-                 |  ${callBody.shift(2).trim}
-                 |});
-                 |yield ${errorsFutureWrap(containerExpr)};""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                q"""try {
-                   |  var callResult = impl.${m.name.name}(${ctxArgPass}v);
-                   |  return rt.leftMap(
-                   |    callResult, err -> new $baboonWiringError.CallFailed(method, err));
-                   |} catch (Throwable ex) {
-                   |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try {
-                   |  impl.${m.name.name}(${ctxArgPass}v);
-                   |  return rt.pure(null);
-                   |} catch (Throwable ex) {
-                   |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              val containerExpr =
-                q"""rt.flatMap(input, v -> {
+                val containerExpr =
+                  q"""rt.flatMap(output, v -> {
+                     |  try {
+                     |    var encoded = $encodeOut;
+                     |    return rt.pure(encoded.toString());
+                     |  } catch (Throwable ex) {
+                     |    return rt.fail(new $baboonWiringError.EncoderFailed(method, ex));
+                     |  }
+                     |})""".stripMargin
+                q"""var output = rt.flatMap(input, v -> {
                    |  ${callBody.shift(2).trim}
-                   |  return rt.pure("null");
-                   |})""".stripMargin
-              q"""yield ${errorsFutureWrap(containerExpr)};""".stripMargin
-          }
+                   |});
+                   |yield ${errorsFutureWrap(containerExpr)};""".stripMargin
 
-          q"""case "${m.name.name}" -> {
-             |  ${decodeStep.shift(2).trim}
-             |  ${callAndEncodeStep.shift(2).trim}
-             |}""".stripMargin
+              case None =>
+                val callBody = if (hasErrType) {
+                  q"""try {
+                     |  var callResult = impl.${m.name.name}(${ctxArgPass}v);
+                     |  return rt.leftMap(
+                     |    callResult, err -> new $baboonWiringError.CallFailed(method, err));
+                     |} catch (Throwable ex) {
+                     |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+                     |}""".stripMargin
+                } else {
+                  q"""try {
+                     |  impl.${m.name.name}(${ctxArgPass}v);
+                     |  return rt.pure(null);
+                     |} catch (Throwable ex) {
+                     |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+                     |}""".stripMargin
+                }
+
+                val containerExpr =
+                  q"""rt.flatMap(input, v -> {
+                     |  ${callBody.shift(2).trim}
+                     |  return rt.pure("null");
+                     |})""".stripMargin
+                q"""yield ${errorsFutureWrap(containerExpr)};""".stripMargin
+            }
+
+            q"""case "${m.name.name}" -> {
+               |  ${decodeStep.shift(2).trim}
+               |  ${callAndEncodeStep.shift(2).trim}
+               |}""".stripMargin
+          }
       }.join("\n")
 
       q"""public static $staticGenericDecl ${errorsWiringReturnType(wiringRetType)} invokeJson$staticGenericAfterName(
@@ -856,6 +859,92 @@ object JvServiceWiringTranslator {
          |}""".stripMargin
     }
 
+    // Async errors-mode JSON case (one `switch` arm). Mirrors the C#
+    // `generateErrorsJsonCaseAsync` linear-await pattern: under
+    // --jv-async-services the impl method returns CompletableFuture<…>, and the
+    // abstract IBaboonServiceRt exposes no async bind. Java has no `await`, so
+    // the impl future is chained FIRST (`.handle`), the resolved Out is bound,
+    // then threaded SYNCHRONOUSLY through rt.leftMap/rt.pure/rt.flatMap over F.
+    // The whole arm yields a SINGLE CompletableFuture<F<…, String>> — no
+    // CompletableFuture-around-F double-wrap. Decode failures short-circuit with
+    // a single completedFuture(rt.fail(…)).
+    private def generateErrorsJsonCaseAsync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[JvValue],
+      decodeIn: TextTree[JvValue],
+    ): TextTree[JvValue] = {
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val decodeStep =
+        q"""$inRef decoded;
+           |try {
+           |  var mapper = new $objectMapper();
+           |  $jsonNode wire = mapper.readTree(data);
+           |  decoded = $decodeIn;
+           |} catch (Throwable ex) {
+           |  yield $completableFuture.completedFuture(rt.fail(new $baboonWiringError.DecoderFailed(method, ex)));
+           |}""".stripMargin
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val outType   = trans.asJvRef(outRef, domain, evo)
+          val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
+
+          // Resolve the impl future first, bind `output` (the F container) from
+          // the resolved value, then thread the encode through rt.flatMap over F.
+          // A faulted impl future maps to CallFailed (mirrors the C# catch). The
+          // `output` declaration is explicitly typed (not `var`) so leftMap's
+          // error type-arg pins to BaboonWiringError, not the CallFailed subtype.
+          val bindOutput = bindOutputStep(hasErrType, renderFq(outType))
+
+          q"""yield impl.${m.name.name}(${ctxArgPass}decoded).handle((callResult, ex) -> {
+             |  if (ex != null) {
+             |    return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+             |  }
+             |  ${bindOutput.shift(2).trim}
+             |  return rt.flatMap(output, v -> {
+             |    try {
+             |      var encoded = $encodeOut;
+             |      return rt.pure(encoded.toString());
+             |    } catch (Throwable encEx) {
+             |      return rt.fail(new $baboonWiringError.EncoderFailed(method, encEx));
+             |    }
+             |  });
+             |});""".stripMargin
+
+        case None =>
+          val bindOutput = bindOutputStep(hasErrType, "Void")
+
+          q"""yield impl.${m.name.name}(${ctxArgPass}decoded).handle((callResult, ex) -> {
+             |  if (ex != null) {
+             |    return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+             |  }
+             |  ${bindOutput.shift(2).trim}
+             |  return rt.flatMap(output, v -> rt.pure("null"));
+             |});""".stripMargin
+      }
+
+      q"""case "${m.name.name}" -> {
+         |  ${decodeStep.shift(2).trim}
+         |  ${callAndEncodeStep.shift(2).trim}
+         |}""".stripMargin
+    }
+
+    // Binds the resolved impl-future value into the explicitly-typed F container
+    // `output`. The explicit `F<BaboonWiringError, Out>` declaration (not `var`)
+    // pins the error type-arg so leftMap's `err -> CallFailed(…)` does not infer
+    // the container's error type down to the CallFailed subtype — the cause of
+    // the "incompatible equality constraints" inference failure under `var`.
+    private def bindOutputStep(hasErrType: Boolean, successType: String): TextTree[JvValue] = {
+      val outContainer = ct(bweFq, successType)
+      if (hasErrType) {
+        q"""$outContainer output = rt.leftMap(
+           |  callResult, err -> new $baboonWiringError.CallFailed(method, err));""".stripMargin
+      } else {
+        q"""$outContainer output = rt.pure(callResult);""".stripMargin
+      }
+    }
+
     private def generateErrorsUebaMethod(service: Typedef.Service): TextTree[JvValue] = {
       val svcName       = service.id.name.name
       val wiringRetType = ct(bweFq, "byte[]")
@@ -865,86 +954,89 @@ object JvServiceWiringTranslator {
           val inRef    = trans.asJvRef(m.sig, domain, evo)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
-          val decodeStep =
-            q"""${ct(bweFq, renderFq(inRef))} input;
-               |try {
-               |  var ims = new $byteArrayInputStream(data);
-               |  var br = new $binaryInput(ims);
-               |  input = rt.pure($decodeIn);
-               |} catch (Throwable ex) {
-               |  input = rt.fail(new $baboonWiringError.DecoderFailed(method, ex));
-               |}""".stripMargin
+          if (isAsync) generateErrorsUebaCaseAsync(m, inRef, decodeIn)
+          else {
+            val decodeStep =
+              q"""${ct(bweFq, renderFq(inRef))} input;
+                 |try {
+                 |  var ims = new $byteArrayInputStream(data);
+                 |  var br = new $binaryInput(ims);
+                 |  input = rt.pure($decodeIn);
+                 |} catch (Throwable ex) {
+                 |  input = rt.fail(new $baboonWiringError.DecoderFailed(method, ex));
+                 |}""".stripMargin
 
-          val hasErrType = m.err.isDefined && !resolved.noErrors
+            val hasErrType = m.err.isDefined && !resolved.noErrors
 
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val outType = trans.asJvRef(outRef, domain, evo)
-              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
+            val callAndEncodeStep = m.out match {
+              case Some(outRef) =>
+                val outType = trans.asJvRef(outRef, domain, evo)
+                val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
 
-              val callBody = if (hasErrType) {
-                q"""try {
-                   |  var callResult = impl.${m.name.name}(${ctxArgPass}v);
-                   |  return rt.leftMap(
-                   |    callResult, err -> new $baboonWiringError.CallFailed(method, err));
-                   |} catch (Throwable ex) {
-                   |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try {
-                   |  return rt.pure(impl.${m.name.name}(${ctxArgPass}v));
-                   |} catch (Throwable ex) {
-                   |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              }
+                val callBody = if (hasErrType) {
+                  q"""try {
+                     |  var callResult = impl.${m.name.name}(${ctxArgPass}v);
+                     |  return rt.leftMap(
+                     |    callResult, err -> new $baboonWiringError.CallFailed(method, err));
+                     |} catch (Throwable ex) {
+                     |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+                     |}""".stripMargin
+                } else {
+                  q"""try {
+                     |  return rt.pure(impl.${m.name.name}(${ctxArgPass}v));
+                     |} catch (Throwable ex) {
+                     |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+                     |}""".stripMargin
+                }
 
-              val containerExpr =
-                q"""rt.flatMap(output, v -> {
-                   |  try {
-                   |    var oms = new $byteArrayOutputStream();
-                   |    var bw = new $binaryOutput(oms);
-                   |    $encStmt
-                   |    bw.flush();
-                   |    return rt.pure(oms.toByteArray());
-                   |  } catch (Throwable ex) {
-                   |    return rt.fail(new $baboonWiringError.EncoderFailed(method, ex));
-                   |  }
-                   |})""".stripMargin
-              q"""var output = rt.flatMap(input, v -> {
-                 |  ${callBody.shift(2).trim}
-                 |});
-                 |yield ${errorsFutureWrap(containerExpr)};""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                q"""try {
-                   |  var callResult = impl.${m.name.name}(${ctxArgPass}v);
-                   |  return rt.leftMap(
-                   |    callResult, err -> new $baboonWiringError.CallFailed(method, err));
-                   |} catch (Throwable ex) {
-                   |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try {
-                   |  impl.${m.name.name}(${ctxArgPass}v);
-                   |  return rt.pure(null);
-                   |} catch (Throwable ex) {
-                   |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              val containerExpr =
-                q"""rt.flatMap(input, v -> {
+                val containerExpr =
+                  q"""rt.flatMap(output, v -> {
+                     |  try {
+                     |    var oms = new $byteArrayOutputStream();
+                     |    var bw = new $binaryOutput(oms);
+                     |    $encStmt
+                     |    bw.flush();
+                     |    return rt.pure(oms.toByteArray());
+                     |  } catch (Throwable ex) {
+                     |    return rt.fail(new $baboonWiringError.EncoderFailed(method, ex));
+                     |  }
+                     |})""".stripMargin
+                q"""var output = rt.flatMap(input, v -> {
                    |  ${callBody.shift(2).trim}
-                   |  return rt.pure(new byte[0]);
-                   |})""".stripMargin
-              q"""yield ${errorsFutureWrap(containerExpr)};""".stripMargin
-          }
+                   |});
+                   |yield ${errorsFutureWrap(containerExpr)};""".stripMargin
 
-          q"""case "${m.name.name}" -> {
-             |  ${decodeStep.shift(2).trim}
-             |  ${callAndEncodeStep.shift(2).trim}
-             |}""".stripMargin
+              case None =>
+                val callBody = if (hasErrType) {
+                  q"""try {
+                     |  var callResult = impl.${m.name.name}(${ctxArgPass}v);
+                     |  return rt.leftMap(
+                     |    callResult, err -> new $baboonWiringError.CallFailed(method, err));
+                     |} catch (Throwable ex) {
+                     |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+                     |}""".stripMargin
+                } else {
+                  q"""try {
+                     |  impl.${m.name.name}(${ctxArgPass}v);
+                     |  return rt.pure(null);
+                     |} catch (Throwable ex) {
+                     |  return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+                     |}""".stripMargin
+                }
+
+                val containerExpr =
+                  q"""rt.flatMap(input, v -> {
+                     |  ${callBody.shift(2).trim}
+                     |  return rt.pure(new byte[0]);
+                     |})""".stripMargin
+                q"""yield ${errorsFutureWrap(containerExpr)};""".stripMargin
+            }
+
+            q"""case "${m.name.name}" -> {
+               |  ${decodeStep.shift(2).trim}
+               |  ${callAndEncodeStep.shift(2).trim}
+               |}""".stripMargin
+          }
       }.join("\n")
 
       q"""public static $staticGenericDecl ${errorsWiringReturnType(wiringRetType)} invokeUeba$staticGenericAfterName(
@@ -957,6 +1049,68 @@ object JvServiceWiringTranslator {
          |    ${cases.shift(4).trim}
          |    default -> ${errorsFutureWrap(q"rt.fail(new $baboonWiringError.NoMatchingMethod(method))")};
          |  };
+         |}""".stripMargin
+    }
+
+    // Async errors-mode UEBA case (one `switch` arm). See
+    // [[generateErrorsJsonCaseAsync]] for the chain-then-thread rationale.
+    private def generateErrorsUebaCaseAsync(
+      m: Typedef.MethodDef,
+      inRef: TextTree[JvValue],
+      decodeIn: TextTree[JvValue],
+    ): TextTree[JvValue] = {
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+
+      val decodeStep =
+        q"""$inRef decoded;
+           |try {
+           |  var ims = new $byteArrayInputStream(data);
+           |  var br = new $binaryInput(ims);
+           |  decoded = $decodeIn;
+           |} catch (Throwable ex) {
+           |  yield $completableFuture.completedFuture(rt.fail(new $baboonWiringError.DecoderFailed(method, ex)));
+           |}""".stripMargin
+
+      val callAndEncodeStep = m.out match {
+        case Some(outRef) =>
+          val outType = trans.asJvRef(outRef, domain, evo)
+          val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
+
+          val bindOutput = bindOutputStep(hasErrType, renderFq(outType))
+
+          q"""yield impl.${m.name.name}(${ctxArgPass}decoded).handle((callResult, ex) -> {
+             |  if (ex != null) {
+             |    return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+             |  }
+             |  ${bindOutput.shift(2).trim}
+             |  return rt.flatMap(output, v -> {
+             |    try {
+             |      var oms = new $byteArrayOutputStream();
+             |      var bw = new $binaryOutput(oms);
+             |      $encStmt
+             |      bw.flush();
+             |      return rt.pure(oms.toByteArray());
+             |    } catch (Throwable encEx) {
+             |      return rt.fail(new $baboonWiringError.EncoderFailed(method, encEx));
+             |    }
+             |  });
+             |});""".stripMargin
+
+        case None =>
+          val bindOutput = bindOutputStep(hasErrType, "Void")
+
+          q"""yield impl.${m.name.name}(${ctxArgPass}decoded).handle((callResult, ex) -> {
+             |  if (ex != null) {
+             |    return rt.fail(new $baboonWiringError.CallFailed(method, ex));
+             |  }
+             |  ${bindOutput.shift(2).trim}
+             |  return rt.flatMap(output, v -> rt.pure(new byte[0]));
+             |});""".stripMargin
+      }
+
+      q"""case "${m.name.name}" -> {
+         |  ${decodeStep.shift(2).trim}
+         |  ${callAndEncodeStep.shift(2).trim}
          |}""".stripMargin
     }
 
