@@ -3,18 +3,13 @@ package example
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Async server implementation attempting to implement the generated PetStore
- * interface with `suspend fun` methods.
+ * Async server implementation of the generated PetStore interface using
+ * `suspend fun` methods.
  *
- * This FAILS to compile because `--kt-async-services=true` does NOT yet make
- * the generated interface methods `suspend fun` (KtDefnTranslator:446 emits
- * `fun $name(...)` unconditionally, and KtServiceWiringTranslator invokes the
- * impl synchronously). An async server impl overriding with `suspend fun`
- * cannot satisfy the generated non-suspend interface — reproducing D25.
- *
- * Expected kotlinc error:
- *   'suspend fun' overrides nothing (the interface declares plain 'fun')
- *   or: overriding 'suspend fun' with non-suspend declaration is not allowed.
+ * With --kt-async-services=true (fixed in T76/T77), the generated PetStore
+ * interface declares `suspend fun` methods and the server dispatchers
+ * `suspend`-call the impl. This impl compiles and round-trips correctly as a
+ * GREEN regression guard for D25.
  */
 class PetStoreAsyncImpl : petstore.api.PetStore {
     private val pets = mutableMapOf<Long, petstore.api.Pet>()
@@ -24,13 +19,6 @@ class PetStoreAsyncImpl : petstore.api.PetStore {
         pets.clear()
         nextId.set(1)
     }
-
-    // These methods use `suspend` but the generated PetStore interface declares
-    // plain `fun`. The Kotlin compiler rejects overriding a non-suspend
-    // function with a suspend one:
-    //   error: 'suspend' modifier is not applicable on this function
-    //   (overriding non-suspend declaration)
-    // reproducing D25.
 
     override suspend fun addPet(arg: petstore.api.petstore.addpet.In): petstore.api.petstore.addpet.Out {
         val id = nextId.getAndIncrement()

@@ -1,5 +1,5 @@
 name: dt_async_service
-description: Baboon Dart async petstore service (RED reproduction lane for D25)
+description: Baboon Dart async petstore service (GREEN regression guard for D25)
 version: 0.0.1
 
 environment:

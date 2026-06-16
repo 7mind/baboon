@@ -2368,16 +2368,11 @@ ret success:bool=true
 
 Generate ASYNC Java service wiring for the petstore model
 (`--jv-async-services=true`, noErrors flavour, both codec families) into the
-`jv-async` overlay project. This is a RED reproduction lane for D25: the
-generated `PetStore.java` interface declares bare `T` return types even when
-`--jv-async-services=true` is passed (only the client is wrapped in
-`CompletableFuture<T>`; the server interface and `PetStoreWiring.invokeJson`
-remain synchronous). An async server impl returning `CompletableFuture<T>`
-therefore cannot satisfy the generated sync interface — the lane MUST fail with
-a Java compile-time type-mismatch error.
-
-NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
-a RED reproduction gating the Java server-side async fix (T72/T73).
+`jv-async` overlay project. GREEN since T72/T73: the generated `PetStore.java`
+interface declares `CompletableFuture<T>` return types and `PetStoreWiring.invokeJson`/
+`invokeUeba` compose the async server impl call via `CompletableFuture`. The
+companion overlay `PetStoreAsyncImpl` satisfies the async interface; `Driver`
+round-trips JSON and UEBA in-process. Companion runner: `test-jv-wiring-async`.
 
 ```bash
 dep action.build
@@ -2409,18 +2404,17 @@ ret test_dir:string="$TEST_DIR"
 
 # action: test-jv-wiring-async
 
-Compile the async Java server impl overlay against the generated
-`--jv-async-services=true` petstore code. This lane is a RED reproduction for
-D25: the generated `PetStore.java` interface declares bare `T` methods; the
-overlay `PetStoreAsyncImpl` returns `CompletableFuture<T>` for each method,
-causing a javac type-mismatch compile error. Expected failure messages:
-  - `return type CompletableFuture<...Out> is not compatible with ...Out`
-  - `method does not override or implement a method from a supertype`
+Compile and round-trip the async Java wiring lane (D25/T73 GREEN guard).
+Builds the overlay project (impl + Driver) against the generated
+`--jv-async-services=true` petstore code via `mvn compile`, then runs
+the Driver which exercises JSON and UEBA in-process round-trips through
+the async dispatchers. All assertions use explicit throws (no vacuous
+Java asserts).
 
 ```bash
 TEST_DIR="${action.test-gen-jv-wiring-async.test_dir}"
 pushd "$TEST_DIR/jv-async"
-mvn compile
+mvn -q compile org.codehaus.mojo:exec-maven-plugin:3.5.0:java
 popd
 
 ret success:bool=true
@@ -2430,16 +2424,12 @@ ret success:bool=true
 
 Generate ASYNC Kotlin service wiring for the petstore model
 (`--kt-async-services=true`, noErrors flavour, both codec families) into the
-`kt-async` overlay project. This is a RED reproduction lane for D25: the
-generated `PetStore.kt` interface declares plain `fun` method signatures even
-when `--kt-async-services=true` is passed (KtDefnTranslator emits
-`fun $name(...)` unconditionally, and KtServiceWiringTranslator invokes the
-impl synchronously without coroutine context). An async server impl using
-`suspend fun` cannot satisfy the generated non-suspend interface — the lane
-MUST fail with a Kotlin compile error.
-
-NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
-a RED reproduction gating the Kotlin server-side async fix (T76/T77).
+`kt-async` overlay project. GREEN since T76/T77: the generated `PetStore.kt`
+interface declares `suspend fun` methods and `PetStoreWiring.invokeJson`/
+`invokeUeba` are `suspend fun`s that `await` the impl call. The companion
+overlay `PetStoreAsyncImpl` uses `suspend fun` overrides that satisfy the
+generated interface; `Driver` round-trips JSON and UEBA in-process.
+Companion runner: `test-kt-wiring-async`.
 
 ```bash
 dep action.build
@@ -2471,18 +2461,17 @@ ret test_dir:string="$TEST_DIR"
 
 # action: test-kt-wiring-async
 
-Compile the async Kotlin server impl overlay against the generated
-`--kt-async-services=true` petstore code. This lane is a RED reproduction for
-D25: the generated `PetStore.kt` interface declares plain `fun` methods; the
-overlay `PetStoreAsyncImpl` uses `suspend fun` for each method, causing a
-kotlinc compile error. Expected failure messages:
-  - `'addPet' overrides nothing. Potential signatures for overriding: fun addPet(...)`
-  - `Conflicting overloads: suspend fun addPet(...) / fun addPet(...)`
+Compile and round-trip the async Kotlin wiring lane (D25/T77 GREEN guard).
+Builds the overlay project (impl + Driver) against the generated
+`--kt-async-services=true` petstore code via `gradle --no-daemon run`, which
+compiles the Kotlin sources and then runs the Driver that exercises JSON and
+UEBA in-process round-trips through the async suspend dispatchers. All
+assertions use explicit throws (no vacuous Kotlin asserts).
 
 ```bash
 TEST_DIR="${action.test-gen-kt-wiring-async.test_dir}"
 pushd "$TEST_DIR/kt-async"
-gradle --no-daemon compileKotlin
+gradle --no-daemon run
 popd
 
 ret success:bool=true
@@ -2694,17 +2683,11 @@ ret success:bool=true
 
 Generate ASYNC Dart service wiring for the petstore model
 (`--dt-async-services=true`, noErrors flavour, both codec families) into the
-`dt-async` overlay project. This is a RED reproduction lane for D25: the
-generated `pet_store.dart` abstract class declares bare `T` return types even
-when `--dt-async-services=true` is passed (DtDefnTranslator emits
-`addpet_out.out addPet(addpet_in.in_ arg);` unconditionally, and
-DtServiceWiringTranslator.invokeJson is a sync `static String` dispatcher with
-no `await`). An async server impl returning `Future<T>` cannot satisfy the
-generated synchronous interface — the lane MUST fail with a dart-analyze
-`invalid_override` error.
-
-NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
-a RED reproduction gating the Dart server-side async fix (T80/T81).
+`dt-async` overlay project. GREEN since T80/T81: the generated `pet_store.dart`
+abstract class declares `Future<T>` return types and `PetStoreWiring.invokeJson`/
+`invokeUeba` are `async` functions that `await` the impl call. The companion
+overlay `PetStoreAsyncImpl` returns `Future<T>` for each method and passes
+`dart analyze` with no errors. Companion runner: `test-dt-wiring-async`.
 
 ```bash
 dep action.build
@@ -2746,13 +2729,11 @@ ret test_dir:string="$TEST_DIR"
 # action: test-dt-wiring-async
 
 Analyze the async Dart server impl overlay against the generated
-`--dt-async-services=true` petstore code. This lane is a RED reproduction for
-D25: the generated `pet_store.dart` abstract class declares bare `T` methods;
-the overlay `PetStoreAsyncImpl` returns `Future<T>` for each method, causing a
-dart-analyze `invalid_override` error. Expected failure messages:
-  - `'addPet' ('Future<out> Function(in_)') isn't a valid override of 'PetStore.addPet' ('out Function(in_)')`
-  - `'getPet' ('Future<out> Function(in_)') isn't a valid override of 'PetStore.getPet' ('out Function(in_)')`
-  - (same pattern for listPets and deletePet)
+`--dt-async-services=true` petstore code (D25/T81 GREEN guard). With the fix,
+the generated `pet_store.dart` abstract class declares `Future<T>` methods so
+the overlay `PetStoreAsyncImpl` returning `Future<T>` passes `dart analyze`
+with no errors. Verification scope: `dart analyze lib/petstore_async_impl.dart`
+(single-file analyze, mirrors the original repro scope).
 
 ```bash
 TEST_DIR="${action.test-gen-dt-wiring-async.test_dir}"
@@ -3203,6 +3184,9 @@ dep action.test-py-wiring-outcome
 dep action.test-py-wiring-async
 dep action.test-ts-wiring-async
 dep action.test-cs-wiring-async
+dep action.test-jv-wiring-async
+dep action.test-kt-wiring-async
+dep action.test-dt-wiring-async
 dep action.test-kt-wiring
 dep action.test-jv-wiring
 dep action.test-dt-wiring

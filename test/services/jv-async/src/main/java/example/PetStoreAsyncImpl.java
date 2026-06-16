@@ -11,28 +11,22 @@ import petstore.api.Pet;
 import petstore.api.PetStatus;
 
 /**
- * Async server implementation attempting to implement the generated PetStore
- * interface with CompletableFuture<T> return types.
+ * Async server implementation of the generated PetStore interface with
+ * CompletableFuture<T> return types.
  *
- * This FAILS to compile because --jv-async-services=true only makes the
- * generated CLIENT return CompletableFuture<T>, but the generated server
- * interface (PetStore.java) still declares bare T return types. An async
- * server impl returning CompletableFuture<T> does not satisfy the generated
- * synchronous interface — reproducing D25.
+ * With --jv-async-services=true (fixed in T72/T73), the generated PetStore
+ * interface declares CompletableFuture<T> return types on both the server
+ * interface and the invoke dispatchers. This impl compiles and round-trips
+ * correctly as a GREEN regression guard for D25.
  */
 public final class PetStoreAsyncImpl implements petstore.api.PetStore {
     private final Map<Long, Pet> pets = new ConcurrentHashMap<>();
     private final AtomicLong nextId = new AtomicLong(1);
 
-    // These methods return CompletableFuture<T>, but the generated PetStore
-    // interface declares bare T return types. The @Override annotations will
-    // cause javac to reject the file with:
-    //   error: method does not override or implement a method from a supertype
-    // and the return-type mismatch will surface as:
-    //   error: addPet(petstore.api.petstore.addpet.In) in PetStoreAsyncImpl
-    //   cannot override addPet(petstore.api.petstore.addpet.In) in PetStore
-    //   return type CompletableFuture is not compatible with
-    //   petstore.api.petstore.addpet.Out
+    public void reset() {
+        pets.clear();
+        nextId.set(1);
+    }
 
     @Override
     public CompletableFuture<petstore.api.petstore.addpet.Out> addPet(

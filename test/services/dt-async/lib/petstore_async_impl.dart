@@ -9,19 +9,13 @@ import 'generated/petstore/api/petstore/listpets/out.dart' as listpets_out;
 import 'generated/petstore/api/petstore/deletepet/in.dart' as deletepet;
 import 'generated/petstore/api/petstore/deletepet/out.dart' as deletepet_out;
 
-/// Async server implementation attempting to implement the generated PetStore
-/// interface with Future<T> return types.
+/// Async server implementation of the generated PetStore interface with
+/// Future<T> return types.
 ///
-/// This FAILS to analyze because --dt-async-services=true does NOT yet make
-/// the generated interface methods async (DtDefnTranslator emits
-/// `addpet_out.out addPet(addpet_in.in_ arg);` unconditionally, and
-/// DtServiceWiringTranslator.invokeJson is a sync `static String` dispatcher).
-/// An async server impl returning Future<T> cannot satisfy the generated
-/// synchronous interface — reproducing D25.
-///
-/// Expected dart-analyze error:
-///   'addPet' ('Future<out> Function(in_)') isn't a valid override of
-///   'PetStore.addPet' ('out Function(in_)').
+/// With --dt-async-services=true (fixed in T80/T81), the generated PetStore
+/// abstract class declares Future<T> return types on all methods and the
+/// server dispatchers use async/await. This impl passes dart analyze and
+/// serves as a GREEN regression guard for D25.
 class PetStoreAsyncImpl implements PetStore {
   final Map<int, Pet> _pets = {};
   int _nextId = 1;
@@ -30,13 +24,6 @@ class PetStoreAsyncImpl implements PetStore {
     _pets.clear();
     _nextId = 1;
   }
-
-  // These methods return Future<T>, but the generated PetStore interface
-  // declares bare T return types. The Dart analyzer rejects overriding a
-  // non-Future method with a Future-returning one:
-  //   'addPet' ('Future<out> Function(in_)') isn't a valid override of
-  //   'PetStore.addPet' ('out Function(in_)')
-  // reproducing D25.
 
   @override
   Future<addpet_out.out> addPet(addpet.in_ arg) async {
