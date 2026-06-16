@@ -101,30 +101,45 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
         s"""        { name: ${jsString(toolName)}, method: { serviceName: ${jsString(serviceName)}, methodName: ${jsString(m.name.name)} }, inputSchema: ${jsonLiteral(schema)} },"""
     }
 
+    // Async axis (`--ts-async-services=true`): the errors-mode wiring entry
+    // `dispatchJson` is `async` and returns `Promise<BaboonEither<…>>`
+    // (TsServiceWiringTranslator.scala:484/490), so the MCP server must extend
+    // the async runtime base, take a `Promise`-returning delegate, and `await`
+    // it in its `invokeJson` override (which is itself `async`; the inherited
+    // async `handle` awaits the `tools/call` dispatch). When OFF the sync branch
+    // is emitted verbatim, keeping the generated file byte-identical to the
+    // pre-change baseline.
+    val isAsync = target.language.asyncServices
+
+    val baseClass     = if (isAsync) "AbstractAsyncBaboonMcpServer" else "AbstractBaboonMcpServer"
+    val delegateRet   = if (isAsync) "Promise<BaboonEitherResult>" else "BaboonEitherResult"
+    val invokeJsonRet = if (isAsync) "Promise<BaboonEitherResult>" else "BaboonEitherResult"
+    val asyncPrefix   = if (isAsync) "async " else ""
+
     val content =
-      s"""import { AbstractBaboonMcpServer, McpServerInfo, McpToolEntry, BaboonEitherResult } from '${rootRel}BaboonMcpRuntime$sfx';
+      s"""import { $baseClass, McpServerInfo, McpToolEntry, BaboonEitherResult } from '${rootRel}BaboonMcpRuntime$sfx';
          |import { BaboonCodecContext, BaboonMethodId } from '${rootRel}BaboonSharedRuntime$sfx';
          |
          |// Generated MCP server for service `$serviceName` (model `${domain.id.path.mkString(".")}` v$modelVer).
-         |// Transport-abstract: `handle` is inherited from AbstractBaboonMcpServer and
+         |// Transport-abstract: `handle` is inherited from $baseClass and
          |// performs no I/O. The `invokeJson` delegate routes `tools/call` into the
          |// generated service dispatch; the integrator supplies it (typically the
          |// errors-mode `dispatchJson` bound to this service) plus the per-request `Ctx`.
-         |export class $className<Ctx> extends AbstractBaboonMcpServer<Ctx> {
+         |export class $className<Ctx> extends $baseClass<Ctx> {
          |    protected readonly serverInfo: McpServerInfo = { name: ${jsString(serviceName)}, version: ${jsString(modelVer)} };
          |
          |    protected readonly tools: readonly McpToolEntry[] = [
          |${toolEntries.mkString("\n")}
          |    ];
          |
-         |    private readonly _invokeJson: (method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext) => BaboonEitherResult;
+         |    private readonly _invokeJson: (method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext) => $delegateRet;
          |
-         |    constructor(invokeJson: (method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext) => BaboonEitherResult) {
+         |    constructor(invokeJson: (method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext) => $delegateRet) {
          |        super();
          |        this._invokeJson = invokeJson;
          |    }
          |
-         |    protected invokeJson(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): BaboonEitherResult {
+         |    protected ${asyncPrefix}invokeJson(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): $invokeJsonRet {
          |        return this._invokeJson(method, data, ctx, codecCtx);
          |    }
          |}

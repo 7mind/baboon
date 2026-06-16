@@ -3696,8 +3696,9 @@ Async sibling of `test-gen-ts-mcp`: uses the mcp-stub-ok model + BOTH
 `--ts-generate-mcp-server=true` AND `--ts-async-services=true`, and overlays
 `test/ts-stub-mcp-async-overlay/` on top of a ts-stub copy.
 
-Scaffold only — the async-MCP TypeScript backend fix has not landed; this lane is
-expected RED until it does. DO NOT modify the sync `test-gen-ts-mcp` lane.
+GREEN since T65: under `--ts-async-services=true` `TsMcpServerGenerator` emits the
+async server (extends `AbstractAsyncBaboonMcpServer`, `Promise`-returning delegate,
+`async handle`/`await`). DO NOT modify the sync `test-gen-ts-mcp` lane.
 
 ```bash
 dep action.build
@@ -3735,22 +3736,20 @@ ret test_dir:string="$TEST_DIR"
 # action: test-ts-mcp-async
 
 Run the TypeScript ASYNC MCP round-trip overlay tests (D24/G11).
-Async sibling of `test-ts-mcp`. RED repro for D24, gated by T65: under
+Async sibling of `test-ts-mcp`. GREEN since T65: under
 `--ts-async-services=true` the wiring `invokeJson_McpTools` is async and returns
-`Promise<BaboonEither<…>>`, but `TsMcpServerGenerator` still declares the
-generated `McpToolsMcpServer` delegate SYNCHRONOUS (`=> BaboonEitherResult`).
-The `tsc --noEmit` build step therefore FAILS with a TS2345/TS2322
-assignability error (Promise<BaboonEitherResult> not assignable to the sync
-delegate). The build step (NOT vitest, which transpiles types away) is the gate
-that must stay RED until the generator fix (T65) lands. DO NOT modify the sync
-`test-ts-mcp` lane.
+`Promise<BaboonEither<…>>`, and `TsMcpServerGenerator` now emits the generated
+`McpToolsMcpServer` extending `AbstractAsyncBaboonMcpServer` with a
+`Promise`-returning delegate (`=> Promise<BaboonEitherResult>`) and an async
+`invokeJson`/inherited `handle`. The `tsc --noEmit` build step typechecks the
+binding; vitest awaits a `tools/call` round-trip and asserts `{"ok":true}`. DO
+NOT modify the sync `test-ts-mcp` lane.
 
 ```bash
 TEST_DIR="${action.test-gen-ts-mcp-async.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
-# Type-only gate: surfaces the TS2345/TS2322 sync-delegate-vs-Promise mismatch.
-# Expected RED until T65 fixes TsMcpServerGenerator.
+# Type gate: the Promise-returning delegate now typechecks against the async server.
 npm run build
 npx vitest run src/mcp.test.ts
 popd

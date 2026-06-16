@@ -1,5 +1,5 @@
 /**
- * T64 / D24 — TypeScript ASYNC-MCP round-trip overlay test (RED repro).
+ * T64 / T65 / D24 — TypeScript ASYNC-MCP round-trip overlay test (GREEN).
  *
  * Async sibling of `test/ts-stub-mcp-overlay/src/mcp.test.ts`. The model is
  * generated with BOTH `--ts-generate-mcp-server=true` AND
@@ -8,24 +8,20 @@
  *   - the `McpTools` service interface methods return `Promise<…Out>`;
  *   - the generated wiring `invokeJson_McpTools(...)` is `async` and returns
  *     `Promise<BaboonEither<BaboonWiringError, string>>`
- *     (wiring.ts:20/26 under the async axis).
+ *     (wiring.ts under the async axis).
  *
- * DEFECT (D24, gated by T65): `TsMcpServerGenerator` does NOT thread the async
- * axis through the MCP-server delegate. `McpToolsMcpServer`'s constructor and
- * `_invokeJson` field still declare the delegate SYNCHRONOUS —
- * `(method, data, ctx, codecCtx) => BaboonEitherResult`
- * (mcp-server.ts; TsMcpServerGenerator.scala:120/122/127). The async wiring
- * function returns `Promise<BaboonEitherResult>`, which is NOT assignable to a
- * synchronous `=> BaboonEitherResult` delegate.
+ * FIX (T65, D24): `TsMcpServerGenerator` now threads the async axis through the
+ * MCP-server delegate. Under `--ts-async-services=true` the generated
+ * `McpToolsMcpServer` extends `AbstractAsyncBaboonMcpServer`, its constructor and
+ * `_invokeJson` field declare the delegate as `Promise`-returning —
+ * `(method, data, ctx, codecCtx) => Promise<BaboonEitherResult>` — and its
+ * `invokeJson` / inherited `handle` are `async` and `await` the dispatch. The
+ * async wiring's `Promise<BaboonEitherResult>` is therefore assignable to the
+ * delegate and `tsc --noEmit` typechecks.
  *
- * EXPECTED RED: this file MUST fail under `tsc --noEmit` (the lane's build
- * step) with a TS2345 (argument not assignable — the `new McpToolsMcpServer`
- * call) / TS2322 (return-type not assignable) assignability error:
- *   "Type 'Promise<BaboonEitherResult>' is not assignable to type 'BaboonEitherResult'".
- *
- * This is a RED-repro lane. DO NOT make it green by widening the delegate here;
- * the fix belongs in the generator (T65). The load-bearing lines are
- * `makeServer()` (the constructor binding) and `fakeInvokeJson`'s async return.
+ * The load-bearing lines are `makeServer()` (the constructor binding accepting
+ * the `Promise`-returning `fakeInvokeJson`) and the `await`ed `handle` calls in
+ * `send` / `initSession` that round-trip a real `tools/call`.
  */
 
 import { describe, test, expect } from "vitest";
@@ -121,28 +117,48 @@ async function fakeInvokeJson(
 }
 
 // ---------------------------------------------------------------------------
-// Server factory. LOAD-BEARING: the generated McpToolsMcpServer constructor
-// expects a SYNCHRONOUS delegate `(…) => BaboonEitherResult`. `fakeInvokeJson`
-// returns `Promise<BaboonEitherResult>`. Under `tsc --noEmit` strict typecheck
-// this binding is the TS2345/TS2322 assignability error that gates T65.
+// Server factory. LOAD-BEARING (T65): under `--ts-async-services=true` the
+// generated McpToolsMcpServer extends AbstractAsyncBaboonMcpServer and its
+// constructor accepts the `Promise`-returning delegate
+// `(…) => Promise<BaboonEitherResult>`. `fakeInvokeJson` returns
+// `Promise<BaboonEitherResult>`, so this binding now typechecks under
+// `tsc --noEmit`. `handle` is `async`; the integrator awaits the round-trip.
 // ---------------------------------------------------------------------------
 
 function makeServer(): McpToolsMcpServer<null> {
     return new McpToolsMcpServer<null>(fakeInvokeJson);
 }
 
-function send(
+async function send(
     server: McpToolsMcpServer<null>,
     session: McpSession,
     req: JsonRpcRequest,
-): JsonRpcResponse {
-    const resp = server.handle(req, session, null, codecCtx);
+): Promise<JsonRpcResponse> {
+    const resp = await server.handle(req, session, null, codecCtx);
     if (resp === undefined) {
         throw new Error(
             `Expected a response for "${req.method}" but got undefined (notification not expected here)`,
         );
     }
     return resp;
+}
+
+async function initSession(server: McpToolsMcpServer<null>, session: McpSession): Promise<void> {
+    await server.handle(
+        {
+            id: 0,
+            method: "initialize",
+            params: {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "test-client", version: "0.0.1" },
+            },
+        },
+        session,
+        null,
+        codecCtx,
+    );
+    await server.handle({ method: "notifications/initialized" }, session, null, codecCtx);
 }
 
 const ajv = new Ajv({ strict: false, allErrors: true });
@@ -155,8 +171,8 @@ describe("MCP async §1: initialize", () => {
     const server = makeServer();
     const session = new McpSession();
 
-    test("§1.2: protocolVersion, capabilities, serverInfo are correct", () => {
-        const resp = send(server, session, {
+    test("§1.2: protocolVersion, capabilities, serverInfo are correct", async () => {
+        const resp = await send(server, session, {
             id: 1,
             method: "initialize",
             params: {
@@ -183,24 +199,9 @@ describe("MCP async §2: tools/list AJV well-formedness", () => {
     const server = makeServer();
     const session = new McpSession();
 
-    server.handle(
-        {
-            id: 0,
-            method: "initialize",
-            params: {
-                protocolVersion: "2025-06-18",
-                capabilities: {},
-                clientInfo: { name: "test-client", version: "0.0.1" },
-            },
-        },
-        session,
-        null,
-        codecCtx,
-    );
-    server.handle({ method: "notifications/initialized" }, session, null, codecCtx);
-
-    test("§2.3: each inputSchema compiles as well-formed Draft-2020-12", () => {
-        const resp = send(server, session, { id: 2, method: "tools/list" });
+    test("§2.3: each inputSchema compiles as well-formed Draft-2020-12", async () => {
+        await initSession(server, session);
+        const resp = await send(server, session, { id: 2, method: "tools/list" });
         const result = resp.result as {
             tools: Array<{ name: string; inputSchema: unknown }>;
         };
@@ -220,24 +221,9 @@ describe("MCP async §3: tools/call success path", () => {
     const server = makeServer();
     const session = new McpSession();
 
-    server.handle(
-        {
-            id: 0,
-            method: "initialize",
-            params: {
-                protocolVersion: "2025-06-18",
-                capabilities: {},
-                clientInfo: { name: "test-client", version: "0.0.1" },
-            },
-        },
-        session,
-        null,
-        codecCtx,
-    );
-    server.handle({ method: "notifications/initialized" }, session, null, codecCtx);
-
-    test("§3.1 McpTools_ping: content[0].text is '{\"ok\":true}', isError is false", () => {
-        const resp = send(server, session, {
+    test("§3.1 McpTools_ping: content[0].text is '{\"ok\":true}', isError is false", async () => {
+        await initSession(server, session);
+        const resp = await send(server, session, {
             id: 3,
             method: "tools/call",
             params: { name: "McpTools_ping", arguments: { seqno: 42, label: "hello" } },

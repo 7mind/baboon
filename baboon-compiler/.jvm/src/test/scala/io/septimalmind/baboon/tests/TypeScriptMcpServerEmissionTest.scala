@@ -132,10 +132,14 @@ abstract class TypeScriptMcpServerEmissionTestBase[F[+_, +_]: Error2: TagKK: Bab
           val server = files(serverPaths.head).content
 
           // Class is generic over Ctx and extends the transport-abstract base.
-          assert(server.contains("export class McpToolsMcpServer<Ctx> extends AbstractBaboonMcpServer<Ctx>"), s"missing generic server class:\n$server")
+          // This fixture is generated with `asyncServices = true` (T65/D24): the
+          // server extends the async runtime base and takes a `Promise`-returning
+          // delegate, matching the async errors-mode `dispatchJson`.
+          assert(server.contains("export class McpToolsMcpServer<Ctx> extends AbstractAsyncBaboonMcpServer<Ctx>"), s"missing generic async server class:\n$server")
           // It implements the dispatch contract entrypoint through the runtime base
-          // (inherited `handle`), supplying the injected JSON delegate — NO I/O loop.
-          assert(server.contains("invokeJson: (method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext) => BaboonEitherResult"), s"missing invokeJson delegate signature:\n$server")
+          // (inherited async `handle`), supplying the injected `Promise`-returning
+          // JSON delegate — NO I/O loop.
+          assert(server.contains("invokeJson: (method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext) => Promise<BaboonEitherResult>"), s"missing async invokeJson delegate signature:\n$server")
           assert(!server.contains("while (true)") && !server.toLowerCase.contains("stdin") && !server.toLowerCase.contains("createserver"), s"generated server must not bake in an I/O loop:\n$server")
 
           // serverInfo carries name + version.
