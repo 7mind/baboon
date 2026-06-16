@@ -3123,6 +3123,7 @@ dep action.test-ts-wiring-either
 dep action.test-ts-wiring-result
 dep action.test-ts-wiring-outcome
 dep action.test-ts-mcp
+dep action.test-ts-mcp-mux
 dep action.test-cs-mcp
 dep action.test-scala-mcp
 dep action.test-rust-mcp
@@ -4248,6 +4249,61 @@ fi
 
 TEST_DIR="${action.test-gen-swift-mcp-async.test_dir}"
 ./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
+
+ret success:bool=true
+```
+
+# action: test-gen-ts-mcp-mux
+
+Generate code for the TypeScript MCP muxer round-trip test (T105).
+Uses the mcp-mux-stub-ok model (UserService + OrderService) with
+`--ts-generate-mcp-server=true` and overlays `test/ts-stub-mcp-mux-overlay/`
+on top of a ts-stub copy. Generated code lands in `src/mux-generated/`.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-mcp-mux"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-ts-mcp-mux.lock \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src/mux-generated" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --ts-generate-mcp-server=true
+
+rsync -a ./test/ts-stub-mcp-mux-overlay/ "$TEST_DIR/ts-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-ts-mcp-mux
+
+Run the TypeScript MCP muxer round-trip tests (T105).
+Validates tools/list union, per-service routing for UserService and
+OrderService, DuplicateTool collision, and NoMatchingTool (-32602).
+
+```bash
+TEST_DIR="${action.test-gen-ts-mcp-mux.test_dir}"
+pushd "$TEST_DIR/ts-stub"
+npm install
+npx vitest run src/mcp.muxer.test.ts
+popd
 
 ret success:bool=true
 ```
