@@ -299,6 +299,16 @@ object TsServiceWiringTranslator {
           val jsonCodec = activeJsonCodec(service)
           val binCodec  = activeBinCodec(service)
 
+          // The generated client is INTENTIONALLY always `async`/`Promise<T>`, even in a
+          // sync-server build (`--ts-async-services=false`). This is not an oversight and is
+          // deliberately NOT gated on `isAsync` like the server side (see :690-694 / `asyncPrefix`).
+          // Rationale: the client is structurally bound to its injected transport callbacks
+          // (`transportUeba`/`transportJson`, declared just below), which are unconditionally
+          // `=> Promise<...>` — a TS HTTP/network transport is inherently asynchronous. The method
+          // bodies `await this.transport*(...)`, so the enclosing method MUST be `async`. A
+          // Promise-returning client is idiomatic TS and composes against a sync server too: a
+          // synchronous server result is simply resolved/awaited trivially. See the "TypeScript
+          // service client is always async" note in docs/language-features.md.
           val clientMethods = service.methods.flatMap {
             m =>
               val inType  = typeTranslator.asTsRef(m.sig, domain, evo, tsFileTools.definitionsBasePkg)

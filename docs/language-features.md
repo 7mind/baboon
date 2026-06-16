@@ -771,6 +771,8 @@ Service definitions are scoped like other members and can live inside namespaces
 
 Per-language flags additionally generate service plumbing: RPC client/server wiring, async method variants (`--cs-async-services`, `--py-async-services`, `--rs-async-services`, `--ts-async-services`, `--jv-async-services`, `--sw-async-services`), and optional [MCP servers](cli-reference.md#mcp-servers) exposing each service's methods as MCP tools (`--<lang>-generate-mcp-server`).
 
+> **TypeScript service client is always async (by design).** The `--ts-async-services` flag governs the *server* dispatcher signatures (sync vs `Promise`-returning), but the generated TypeScript **client** is always emitted as `async`/`Promise<T>` regardless of the flag. This is intentional: the client is parameterised by injected transport callbacks (`transportJson` / `transportUeba`) that are always `Promise`-returning — a TypeScript HTTP/network transport is inherently asynchronous — so the client methods must `await` them and therefore must be `async`. A `Promise`-returning client composes correctly against a synchronous server: the server's synchronous result is simply resolved/awaited trivially. This asymmetry applies only to TypeScript.
+
 ### Configurable service return types
 
 By default each backend wraps service method return types in a language-idiomatic result type:
