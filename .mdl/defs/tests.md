@@ -3015,6 +3015,62 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-scala-mcp-mux
+
+Generate code for the Scala MCP muxer round-trip overlay test (T107).
+Uses the mcp-mux-stub-ok model (UserService + OrderService) with
+`--scala-generate-mcp-server=true` (Either mode) and overlays
+`test/scala-stub-mcp-mux-overlay/` on top of a scala-stub-mcp-mux copy.
+Generated code lands in `src/main/scala/generated-main/`.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-scala-mcp-mux"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/scala-stub-mcp-mux"
+
+rsync -a --exclude='target' --exclude='project/target' \
+  ./test/scala-stub-mcp-mux/ "$TEST_DIR/scala-stub-mcp-mux/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-scala-mcp-mux.lock \
+  :scala \
+  --output "$TEST_DIR/scala-stub-mcp-mux/src/main/scala/generated-main" \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Either" \
+  "--service-result-pattern=[\$error, \$success]" \
+  --scala-generate-mcp-server=true
+
+rsync -a ./test/scala-stub-mcp-mux-overlay/ "$TEST_DIR/scala-stub-mcp-mux/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-scala-mcp-mux
+
+Run the Scala MCP muxer round-trip overlay tests (T107).
+Validates tools/list union, per-service routing for UserService and
+OrderService, DuplicateTool collision, and NoMatchingTool (-32602)
+on the Either (sync) path. No async lane — Scala MCP is Either-only (D24/T69).
+
+```bash
+TEST_DIR="${action.test-gen-scala-mcp-mux.test_dir}"
+pushd "$TEST_DIR/scala-stub-mcp-mux"
+sbt test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-python-mcp
 
 Generate code for the Python MCP round-trip overlay test (T18).
@@ -3131,6 +3187,7 @@ dep action.test-py-mcp-mux
 dep action.test-py-mcp-mux-async
 dep action.test-cs-mcp
 dep action.test-scala-mcp
+dep action.test-scala-mcp-mux
 dep action.test-rust-mcp
 dep action.test-rs-mcp-mux
 dep action.test-rs-mcp-mux-async

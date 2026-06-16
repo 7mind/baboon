@@ -223,4 +223,171 @@ package baboon.runtime.shared {
 
     protected def describeWiringError(e: BaboonWiringError): String = e.toString
   }
+
+  // --- MCP-muxer error taxonomy (tasks:T107; contract §6) ---
+  //
+  // The cross-service MCP muxer composes several <Service>McpServer instances
+  // behind one endpoint. `DuplicateTool` is the MCP-tier analogue of the
+  // service-wiring `DuplicateService` (a registration-time tool-name collision);
+  // `NoMatchingTool` is the analogue of `NoMatchingService` (a dispatch-time
+  // unknown tool name). They mirror that taxonomy exactly, but live in this
+  // MCP-only runtime file rather than the always-shipped service-wiring runtime
+  // (BaboonServiceWiring.scala) so that with `--scala-generate-mcp-server`
+  // absent the generated output is byte-identical to the pre-MCP baseline (no
+  // MCP types leak into the unconditional runtime).
+  // `BaboonMcpWiringException` is the MCP-tier carrier — the structural twin of
+  // `BaboonWiringException` (a thrown programmer error carrying a tagged value),
+  // so `DuplicateTool` propagates to the integrator exactly as `DuplicateService`
+  // does, just from the MCP-only runtime.
+  sealed trait BaboonMcpWiringError
+  object BaboonMcpWiringError {
+    final case class DuplicateTool(toolName: String) extends BaboonMcpWiringError
+    final case class NoMatchingTool(toolName: String) extends BaboonMcpWiringError
+  }
+
+  class BaboonMcpWiringException(val error: BaboonMcpWiringError) extends RuntimeException(error.toString)
+
+  // --- Cross-service MCP muxer (tasks:T107; contract:
+  // docs/research/mcp-muxer-runtime-contract.md) ---
+  //
+  // `AbstractMcpMuxer[Ctx]` composes several `<Service>McpServer[Ctx]` instances
+  // behind ONE MCP endpoint so a single connection serves the union of their
+  // tools. It is the MCP-tier sibling of `JsonMuxer`: where `JsonMuxer` keys
+  // `LinkedHashMap<serviceName, IBaboonJsonService>` and routes by
+  // `method.serviceName`, the muxer keys a name→owning-server table and routes
+  // by the inbound flat MCP tool name (contract §1).
+  //
+  // Composition seam: it depends ONLY on the PUBLIC `IBaboonRoutableMcpServer[Ctx]`
+  // surface (tasks:T114) — it reads each server's `serverInfo` and `tools`, and
+  // routes each `tools/call` via the public `routeToolCall`. It NEVER reads
+  // protected members and NEVER calls a server's `handle()` (a member's `handle`
+  // resolves only its OWN tools and returns "unknown tool" for any cross-service
+  // name — contract §4). The muxer owns the JSON-RPC envelope; each member owns
+  // its domain dispatch.
+  //
+  // Scala MCP is Either-only (D24/T69): this muxer is synchronous and
+  // Either-shaped to match `AbstractBaboonMcpServer`. No async variant is
+  // emitted for Scala.
+  //
+  // The `handle` state machine is the SAME shape as the per-service base, with
+  // three arms differing only in operating over the union: `tools/list` returns
+  // the union, `tools/call` routes by tool name to the owning server, and
+  // `initialize` returns a single merged `serverInfo` supplied to the ctor.
+  class AbstractMcpMuxer[Ctx](
+    mergedServerInfo: McpServerInfo,
+    initServers: IBaboonRoutableMcpServer[Ctx]*,
+  ) extends IBaboonMcpServer[Ctx] {
+    // Registration-order-preserving table: tool name -> owning server.
+    // Built at registration time (contract §2), never per request.
+    private val route  = scala.collection.mutable.LinkedHashMap.empty[String, IBaboonRoutableMcpServer[Ctx]]
+    private val entries = scala.collection.mutable.LinkedHashMap.empty[String, McpToolEntry]
+
+    initServers.foreach(register)
+
+    // Folds the server's declaration-ordered `tools` into the union table;
+    // throws DuplicateTool on a tool-name collision across servers (the exact
+    // MCP-tier analogue of JsonMuxer.register throwing DuplicateService).
+    def register(server: IBaboonRoutableMcpServer[Ctx]): Unit = {
+      server.tools.foreach {
+        t =>
+          if (route.contains(t.name)) {
+            throw new BaboonMcpWiringException(BaboonMcpWiringError.DuplicateTool(t.name))
+          }
+          route.update(t.name, server)
+          entries.update(t.name, t)
+      }
+    }
+
+    override final def handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): Option[JsonRpcResponse] = {
+      val id = request.id
+      request.method match {
+        case "initialize" =>
+          val pv = request.params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
+          if (request.params.isEmpty || pv.isEmpty) {
+            Some(errorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion"))
+          } else {
+            session.initialized = true
+            val result = io.circe.Json.obj(
+              "protocolVersion" -> io.circe.Json.fromString(McpProtocol.Version),
+              "capabilities"    -> io.circe.Json.obj("tools" -> io.circe.Json.obj()),
+              "serverInfo"      -> io.circe.Json.obj(
+                "name"    -> io.circe.Json.fromString(mergedServerInfo.name),
+                "version" -> io.circe.Json.fromString(mergedServerInfo.version),
+              ),
+            )
+            Some(JsonRpcResponse(id, result = Some(result)))
+          }
+
+        case "notifications/initialized" =>
+          None
+
+        case "tools/list" =>
+          if (!session.initialized) {
+            Some(errorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize"))
+          } else {
+            val toolsArray = toolsListUnion()
+            val result = io.circe.Json.obj("tools" -> io.circe.Json.arr(toolsArray: _*))
+            Some(JsonRpcResponse(id, result = Some(result)))
+          }
+
+        case "tools/call" =>
+          if (!session.initialized) {
+            Some(errorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize"))
+          } else {
+            val nameOpt = request.params.flatMap(_.hcursor.downField("name").as[String].toOption)
+            nameOpt match {
+              case None =>
+                Some(errorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name"))
+              case Some(name) =>
+                route.get(name) match {
+                  case None =>
+                    // NoMatchingTool: surfaced as the SAME wire response the per-service
+                    // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
+                    // so the bytes are identical whether one server or the muxer rejects.
+                    Some(errorResponse(id, JsonRpcErrorCodes.InvalidParams, s"tools/call: unknown tool '$name'"))
+                  case Some(server) =>
+                    val entry    = entries(name)
+                    val argsJson = request.params
+                      .flatMap(_.hcursor.downField("arguments").as[io.circe.Json].toOption)
+                      .getOrElse(io.circe.Json.obj())
+                      .noSpaces
+                    server.routeToolCall(entry.method, argsJson, ctx, codecCtx) match {
+                      case Right(text) =>
+                        val content = io.circe.Json.arr(io.circe.Json.obj("type" -> io.circe.Json.fromString("text"), "text" -> io.circe.Json.fromString(text)))
+                        val result  = io.circe.Json.obj("content" -> content, "isError" -> io.circe.Json.fromBoolean(false))
+                        Some(JsonRpcResponse(id, result = Some(result)))
+                      case Left(err) =>
+                        // Channel B: a valid protocol call whose domain payload failed.
+                        val content = io.circe.Json.arr(io.circe.Json.obj("type" -> io.circe.Json.fromString("text"), "text" -> io.circe.Json.fromString(describeWiringError(err))))
+                        val result  = io.circe.Json.obj("content" -> content, "isError" -> io.circe.Json.fromBoolean(true))
+                        Some(JsonRpcResponse(id, result = Some(result)))
+                    }
+                }
+            }
+          }
+
+        case other =>
+          Some(errorResponse(id, JsonRpcErrorCodes.MethodNotFound, s"Method not found: $other"))
+      }
+    }
+
+    // Backs tools/list (§3.2): the union of all registered servers' tool entries
+    // in registration-then-declaration order (the insertion order of `entries`),
+    // each in the same shape the per-service base emits.
+    private def toolsListUnion(): Seq[io.circe.Json] =
+      entries.values.map {
+        t =>
+          val base = Seq(
+            "name"        -> io.circe.Json.fromString(t.name),
+            "inputSchema" -> t.inputSchema,
+          )
+          val withDesc = t.description.fold(base)(d => base :+ ("description" -> io.circe.Json.fromString(d)))
+          io.circe.Json.obj(withDesc: _*)
+      }.toSeq
+
+    protected def errorResponse(id: Option[JsonRpcId], code: Int, message: String): JsonRpcResponse =
+      JsonRpcResponse(id, error = Some(JsonRpcError(code, message)))
+
+    protected def describeWiringError(e: BaboonWiringError): String = e.toString
+  }
 }
