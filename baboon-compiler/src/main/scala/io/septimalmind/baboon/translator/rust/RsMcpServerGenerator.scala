@@ -186,6 +186,11 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
            |/// synchronous at the `handle` boundary (it returns a `JsonRpcResponse` value),
            |/// so the future-returning `invoke_json` is blocked on here. The future is not
            |/// required to be `Send` (matching the `?Send` service-wiring futures).
+           |///
+           |/// **Precondition:** The future MUST NOT park on an external waker. If it does,
+           |/// `Poll::Pending` will trigger `std::thread::yield_now()`, which busy-spins the
+           |/// CPU core instead of blocking. The generated service futures are not `Send` and
+           |/// do not use external wakers, so this precondition is satisfied by construction.
            |fn block_on<F: std::future::Future>(future: F) -> F::Output {
            |    use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
            |
