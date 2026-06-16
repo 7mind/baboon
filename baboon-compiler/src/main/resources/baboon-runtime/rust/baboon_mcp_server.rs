@@ -298,3 +298,252 @@ impl BaboonMcpServerBase {
         }
     }
 }
+
+// --- Cross-service MCP muxer (tasks:T109; contract:
+// docs/research/mcp-muxer-runtime-contract.md) ---
+//
+// `AbstractMcpMuxer<Ctx>` composes several `<Service>McpServer<Ctx>` instances
+// behind ONE MCP endpoint so a single connection serves the union of their
+// tools. It is the MCP-tier sibling of `JsonMuxer`: where `JsonMuxer` keys
+// `BTreeMap<serviceName, IBaboonJsonService>` and routes by `method.service_name`,
+// the muxer keys an insertion-ordered tool-name -> owning-server table and routes
+// by the inbound flat MCP tool name (contract §1).
+//
+// Composition seam: it composes ONLY via the PUBLIC `IBaboonRoutableMcpServer<Ctx>`
+// surface (tasks:T114) — it reads each server's `server_info()` and `tools()`, and
+// routes each `tools/call` via the public `route_tool_call`. It NEVER reads private
+// members and NEVER calls a server's `handle()` (a member's `handle` resolves only
+// its OWN tools and returns "unknown tool" for any cross-service name — contract
+// §4). The muxer owns the JSON-RPC envelope; each member owns its domain dispatch.
+//
+// Sync/async parity (contract §7): Rust threads BOTH modes through the SAME muxer
+// type. `IBaboonRoutableMcpServer::route_tool_call` returns the synchronous
+// `Result<String, BaboonWiringError>` container in BOTH the sync and the
+// `--rs-async-services=true` generated server (the async generated impl drives its
+// future to completion with the same dependency-free `block_on` bridge `handle`
+// uses, per D30/T98), so the muxer needs no async-specific type and no second alias
+// swap. The Channel-A/B mapping is applied verbatim to that container.
+//
+// --- MCP-muxer error taxonomy (tasks:T109; contract §6) ---
+//
+// `DuplicateTool`/`NoMatchingTool` are the MCP-tier analogues of the service-wiring
+// `DuplicateService`/`NoMatchingService`. Following the TS reference muxer
+// (BaboonMcpRuntime.ts), they live in this MCP-ONLY runtime file rather than the
+// always-shipped service-wiring runtime (`baboon_service_wiring.rs`), so that with
+// `--rs-generate-mcp-server` absent the generated output is byte-identical to the
+// pre-MCP baseline (no MCP error variant leaks into the unconditional wiring ADT).
+// `BaboonMcpWiringError` is the MCP-tier carrier — the structural twin of
+// `BaboonWiringError`. `DuplicateTool` is reported at registration as
+// `Err(BaboonMcpWiringError::DuplicateTool)` (mirroring `JsonMuxer::register`
+// returning `Err(DuplicateService)`); the integrator composes via the fallible
+// `register`/`with` API rather than a panicking ctor, so the registration-time
+// programmer error stays in the `Result` channel Rust idiom expects. `NoMatchingTool`
+// is the typed internal carrier; at `tools/call` an unknown tool is surfaced as the
+// SAME `-32602` "unknown tool" wire response the per-service base uses, so the bytes
+// are identical whether one server or the muxer rejects the name.
+#[derive(Debug)]
+pub enum BaboonMcpWiringError {
+    DuplicateTool(String),
+    NoMatchingTool(String),
+}
+
+impl std::fmt::Display for BaboonMcpWiringError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BaboonMcpWiringError::DuplicateTool(name) => write!(f, "DuplicateTool({})", name),
+            BaboonMcpWiringError::NoMatchingTool(name) => write!(f, "NoMatchingTool({})", name),
+        }
+    }
+}
+
+impl std::error::Error for BaboonMcpWiringError {}
+
+pub struct AbstractMcpMuxer<Ctx: Clone> {
+    // Insertion-ordered union table (registration order of servers, then each
+    // server's tool declaration order — contract §5). A `Vec` of `(name, server-idx,
+    // entry-method)` preserves that order deterministically without an extra crate;
+    // `route` is the name -> server-idx lookup built at registration (contract §2).
+    servers: Vec<Box<dyn IBaboonRoutableMcpServer<Ctx>>>,
+    entries: Vec<(String, usize, BaboonMethodId)>,
+    route: std::collections::HashMap<String, usize>,
+    merged_server_info: McpServerInfo,
+}
+
+impl<Ctx: Clone> AbstractMcpMuxer<Ctx> {
+    pub fn new(merged_server_info: McpServerInfo) -> Self {
+        AbstractMcpMuxer {
+            servers: Vec::new(),
+            entries: Vec::new(),
+            route: std::collections::HashMap::new(),
+            merged_server_info,
+        }
+    }
+
+    // Folds the server's declaration-ordered `tools()` into the union table;
+    // returns `Err(DuplicateTool)` on a tool-name collision across servers (the
+    // exact MCP-tier analogue of `JsonMuxer::register` returning `DuplicateService`).
+    pub fn register(&mut self, server: Box<dyn IBaboonRoutableMcpServer<Ctx>>) -> Result<(), BaboonMcpWiringError> {
+        let idx = self.servers.len();
+        for t in server.tools() {
+            if self.route.contains_key(t.name) {
+                return Err(BaboonMcpWiringError::DuplicateTool(t.name.to_string()));
+            }
+            self.route.insert(t.name.to_string(), idx);
+            self.entries.push((t.name.to_string(), idx, t.method.clone()));
+        }
+        self.servers.push(server);
+        Ok(())
+    }
+
+    pub fn with(mut self, server: Box<dyn IBaboonRoutableMcpServer<Ctx>>) -> Result<Self, BaboonMcpWiringError> {
+        self.register(server)?;
+        Ok(self)
+    }
+
+    fn entry(&self, name: &str) -> Option<&(String, usize, BaboonMethodId)> {
+        self.entries.iter().find(|(n, _, _)| n == name)
+    }
+
+    // Backs tools/list (contract §3.2): the union of all registered servers' tool
+    // entries in registration-then-declaration order (the insertion order of
+    // `entries`), each in the same shape the per-service base emits.
+    fn tools_list_union(&self) -> Vec<serde_json::Value> {
+        self.entries.iter().map(|(name, srv_idx, _)| {
+            let entry_tool = self.servers[*srv_idx].tools().iter().find(|t| t.name == name).unwrap();
+            let mut entry = serde_json::json!({
+                "name": entry_tool.name,
+                "inputSchema": entry_tool.input_schema.clone(),
+            });
+            if let Some(desc) = entry_tool.description {
+                entry["description"] = serde_json::Value::String(desc.to_string());
+            }
+            entry
+        }).collect()
+    }
+
+    pub fn handle(
+        &self,
+        request: &JsonRpcRequest,
+        session: &mut McpSession,
+        ctx: Ctx,
+        codec_ctx: &BaboonCodecContext,
+    ) -> Option<JsonRpcResponse> {
+        let id = request.id.clone();
+        match request.method.as_str() {
+            "initialize" => {
+                let has_pv = request.params.as_ref()
+                    .and_then(|p| p.get("protocolVersion"))
+                    .is_some();
+                if !has_pv {
+                    return Some(self.error_response(id, json_rpc_error_codes::INVALID_PARAMS, "initialize: missing protocolVersion"));
+                }
+                session.initialized = true;
+                Some(JsonRpcResponse {
+                    id,
+                    result: Some(serde_json::json!({
+                        "protocolVersion": MCP_PROTOCOL_VERSION,
+                        "capabilities": { "tools": {} },
+                        "serverInfo": { "name": self.merged_server_info.name, "version": self.merged_server_info.version }
+                    })),
+                    error: None,
+                })
+            }
+            "notifications/initialized" => None,
+            "tools/list" => {
+                if !session.initialized {
+                    return Some(self.error_response(id, json_rpc_error_codes::INVALID_REQUEST, "tools/list before initialize"));
+                }
+                Some(JsonRpcResponse {
+                    id,
+                    result: Some(serde_json::json!({ "tools": self.tools_list_union() })),
+                    error: None,
+                })
+            }
+            "tools/call" => {
+                if !session.initialized {
+                    return Some(self.error_response(id, json_rpc_error_codes::INVALID_REQUEST, "tools/call before initialize"));
+                }
+                let name = request.params.as_ref()
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str());
+                let name = match name {
+                    Some(n) => n,
+                    None => {
+                        return Some(self.error_response(id, json_rpc_error_codes::INVALID_PARAMS, "tools/call: missing tool name"));
+                    }
+                };
+                // NoMatchingTool: surfaced as the SAME wire response the per-service
+                // base uses for an unknown tool (-32602, "unknown tool '<name>'"), so
+                // the bytes are identical whether one server or the muxer rejects.
+                let entry = match self.entry(name) {
+                    Some(e) => e,
+                    None => {
+                        return Some(self.error_response(
+                            id,
+                            json_rpc_error_codes::INVALID_PARAMS,
+                            &format!("tools/call: unknown tool '{}'", name),
+                        ));
+                    }
+                };
+                let (_name, srv_idx, method) = entry;
+                let args = request.params.as_ref()
+                    .and_then(|p| p.get("arguments"))
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let args_json = match serde_json::to_string(&args) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        return Some(self.error_response(
+                            id,
+                            json_rpc_error_codes::INTERNAL_ERROR,
+                            &format!("tools/call: failed to serialize arguments: {}", e),
+                        ));
+                    }
+                };
+                // T114 public dispatch entry — NOT handle(). Reuses the owning
+                // server's Channel-A/Channel-B mapping unchanged.
+                let result = self.servers[*srv_idx].route_tool_call(method, &args_json, ctx, codec_ctx);
+                match result {
+                    Ok(json_str) => {
+                        Some(JsonRpcResponse {
+                            id,
+                            result: Some(serde_json::json!({
+                                "content": [{ "type": "text", "text": json_str }],
+                                "isError": false
+                            })),
+                            error: None,
+                        })
+                    }
+                    Err(wiring_err) => {
+                        // Channel B: a valid protocol call whose domain payload failed.
+                        Some(JsonRpcResponse {
+                            id,
+                            result: Some(serde_json::json!({
+                                "content": [{ "type": "text", "text": wiring_err.to_string() }],
+                                "isError": true
+                            })),
+                            error: None,
+                        })
+                    }
+                }
+            }
+            _ => Some(self.error_response(
+                id,
+                json_rpc_error_codes::METHOD_NOT_FOUND,
+                &format!("Method not found: {}", request.method),
+            )),
+        }
+    }
+
+    fn error_response(&self, id: Option<JsonRpcId>, code: i32, message: &str) -> JsonRpcResponse {
+        JsonRpcResponse {
+            id,
+            result: None,
+            error: Some(JsonRpcError {
+                code,
+                message: message.to_string(),
+                data: None,
+            }),
+        }
+    }
+}

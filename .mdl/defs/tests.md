@@ -3132,6 +3132,8 @@ dep action.test-py-mcp-mux-async
 dep action.test-cs-mcp
 dep action.test-scala-mcp
 dep action.test-rust-mcp
+dep action.test-rs-mcp-mux
+dep action.test-rs-mcp-mux-async
 dep action.test-kotlin-mcp
 dep action.test-java-mcp
 dep action.test-dart-mcp
@@ -4599,6 +4601,126 @@ python3 -m venv .venv
 if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m pip install -r requirements.txt
 python3 -m unittest BaboonTests.mcp_mux_async.test_mcp_mux_async
+popd
+
+ret success:bool=true
+```
+# action: test-gen-rs-mcp-mux
+
+Generate code for the Rust MCP muxer round-trip test (T109).
+Uses the mcp-mux-stub-ok model (UserService + OrderService) with
+`--rs-generate-mcp-server=true` (Result errors mode) and overlays
+`test/rs-stub-mcp-mux-overlay/` on top of a rs-stub copy. Generated code
+lands in `src/` (the McpToolsMcpServer / UserServiceMcpServer pattern of the
+single-service `test-gen-rust-mcp` lane, but with two @root services so the
+muxer can compose them).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-rs-mcp-mux"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/rs-stub"
+mkdir -p "$TEST_DIR/rs-stub"
+
+# Copy only the Cargo.toml (package name = baboon-rs-stub) from rs-stub;
+# the generated source tree from mcp-mux-stub-ok will be written into src/.
+cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-rs-mcp-mux.lock \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type=Result \
+  '--service-result-pattern=<$success, $error>' \
+  --rs-generate-mcp-server=true
+
+rsync -a ./test/rs-stub-mcp-mux-overlay/ "$TEST_DIR/rs-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-rs-mcp-mux
+
+Run the Rust MCP muxer round-trip tests (T109).
+Validates tools/list union across UserService + OrderService in
+registration-then-declaration order, per-service routing, DuplicateTool on
+collision, and NoMatchingTool (-32602) against `AbstractMcpMuxer`.
+
+```bash
+TEST_DIR="${action.test-gen-rs-mcp-mux.test_dir}"
+pushd "$TEST_DIR/rs-stub"
+RUSTFLAGS="-D warnings" cargo test --test mcp_mux_tests
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-rs-mcp-mux-async
+
+Generate code for the Rust ASYNC MCP muxer round-trip test (T109).
+Async sibling of `test-gen-rs-mcp-mux`: uses the mcp-mux-stub-ok model + BOTH
+`--rs-generate-mcp-server=true` AND `--rs-async-services=true` (Result errors
+mode), and overlays `test/rs-stub-mcp-mux-async-overlay/` on top of a rs-stub
+copy. Proves the muxer compiles + routes in async mode: `route_tool_call`
+drives the async invoke future to completion via the same `block_on` bridge
+the per-service async server uses (D30/T98), so the muxer needs no async-specific
+type. DO NOT modify the sync `test-gen-rs-mcp-mux` lane.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-rs-mcp-mux-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/rs-stub"
+mkdir -p "$TEST_DIR/rs-stub"
+
+cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-rs-mcp-mux-async.lock \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type=Result \
+  '--service-result-pattern=<$success, $error>' \
+  --rs-generate-mcp-server=true \
+  --rs-async-services=true
+
+rsync -a ./test/rs-stub-mcp-mux-async-overlay/ "$TEST_DIR/rs-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-rs-mcp-mux-async
+
+Run the Rust ASYNC MCP muxer round-trip tests (T109).
+Async sibling of `test-rs-mcp-mux`. Validates tools/list union, per-service
+routing (driven through the async invoke via `block_on`), DuplicateTool on
+collision, and NoMatchingTool (-32602) against `AbstractMcpMuxer` composing
+async-generated `<Service>McpServer`s.
+
+```bash
+TEST_DIR="${action.test-gen-rs-mcp-mux-async.test_dir}"
+pushd "$TEST_DIR/rs-stub"
+RUSTFLAGS="-D warnings" cargo test --test mcp_mux_tests
 popd
 
 ret success:bool=true
