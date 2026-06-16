@@ -1,0 +1,94 @@
+// T115: TS wiring name-collision fixture.
+//
+// Purpose: demonstrate that two top-level named `In` types from two distinct
+// TS modules (namespaces svca/svcb within one Baboon package) both appear in
+// the SAME wiring.ts for the aggregating `SvcMux` service, causing
+// `buildAliasMap` (TsBaboonTranslator.scala) to auto-alias at least one of
+// them and exposing the L920 SYNC-path bug (TsServiceWiringTranslator.scala)
+// where `inTypeRef.name` is used as a plain string instead of the aliased
+// identifier.
+//
+// Topology:
+//   ns svca  →  TS module tswc/collision/svca/In  ("package a")
+//   ns svcb  →  TS module tswc/collision/svcb/In  ("package b")
+//
+//   Each namespace has its own @root service (SvcA / SvcB) plus the shared
+//   named `In` type.  A third @root service `SvcMux` acts as the muxer: its
+//   two SYNC methods use svca.In and svcb.In respectively, so BOTH module
+//   paths end up imported by the SINGLE wiring.ts generated for SvcMux.
+//
+// Named `In` types (NOT inline `data in {}` blocks) are used so the collision
+// is handled by buildAliasMap auto-aliasing (not the explicit per-method
+// prefix applied to inline blocks).  The auto-alias fires in imports
+// (producing e.g. `svca_In`) but the SYNC body at L920 of
+// TsServiceWiringTranslator.scala still emits the bare `In`, which is the
+// defect T117 fixes.
+//
+// D9 isolation: this model-dir is OUTSIDE the shared baboon/ model-dir to
+// avoid cross-namespace fixture conflicts in the regular/wiring test lanes.
+
+model tswc.collision
+
+version "1.0.0"
+
+// ── Package A (→ TS module tswc/collision/svca/) ──────────────────────────────
+ns svca {
+  // Named top-level In — NOT an inline `data in {}` block.
+  // Compiles to TS module …/svca/In, exporting symbol `In`.
+  root data In {
+    payload: str
+  }
+
+  root data Out {
+    result: str
+  }
+
+  // Own service in package A.  Its wiring.ts only uses svca.In — no collision.
+  root service SvcA {
+    def opA(
+      in = In
+      out = Out
+    )
+  }
+}
+
+// ── Package B (→ TS module tswc/collision/svcb/) ──────────────────────────────
+ns svcb {
+  // Named top-level In in a different TS module — same symbol `In`, different
+  // module path → triggers buildAliasMap when both appear in the same file.
+  root data In {
+    amount: i32
+  }
+
+  root data Out {
+    result: i32
+  }
+
+  // Own service in package B.  Its wiring.ts only uses svcb.In — no collision.
+  root service SvcB {
+    def opB(
+      in = In
+      out = Out
+    )
+  }
+}
+
+// ── Muxer: aggregates SvcA + SvcB into ONE wiring.ts ─────────────────────────
+// SvcMux has one SYNC method per sub-package, each referencing the respective
+// package's `In` type by its fully-qualified namespace name.  This causes both
+// `In` types (from different TS modules) to be imported together in the SINGLE
+// wiring.ts generated for SvcMux, so buildAliasMap must auto-alias at least one.
+//
+// Both methods are SYNC (no async) to exercise the L918-925 code path that
+// lacks alias-awareness (T117 is the fix; this fixture is T115).
+
+root service SvcMux {
+  def proxyA(
+    in = svca.In
+    out = svca.Out
+  )
+  def proxyB(
+    in = svcb.In
+    out = svcb.Out
+  )
+}
