@@ -2481,16 +2481,7 @@ ret success:bool=true
 
 Generate ERRORS+ASYNC Kotlin service wiring for the petstore-errors model
 (`--kt-async-services=true`, errors flavour with `Either<err,success>` container,
-both codec families) into the `kt-errors-async` overlay project. This is a RED
-reproduction lane for D26: the generated PetStoreWiring server dispatch calls
-`impl.method(v)` inside a plain non-suspend lambda passed to `rt.flatMap`,
-but when `--kt-async-services=true` the generated PetStore interface declares
-`suspend fun` methods — so calling `impl.method(v)` from the non-suspend
-lambda is a kotlinc error (suspension functions can be called only within a
-coroutine body).
-
-NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
-a RED reproduction gating the Kotlin server-side errors+async fix (D26).
+both codec families) into the `kt-errors-async` overlay project.
 
 ```bash
 dep action.build
@@ -2526,16 +2517,7 @@ ret test_dir:string="$TEST_DIR"
 
 Compile the errors+async Kotlin server impl overlay against the generated
 `--kt-async-services=true --service-result-no-errors=false` petstore-errors
-code. This lane is a RED reproduction for D26: the generated PetStoreWiring
-dispatchers call `impl.method(v)` inside a plain non-suspend lambda body
-(the BIO combinator parameter `(B) -> Either<A, C>` is not suspend), but the
-generated PetStore interface declares `suspend fun` methods when
-`--kt-async-services=true` is active. The kotlinc compiler rejects the call
-with: "Suspension functions can be called only within coroutine body".
-
-Expected kotlinc error:
-  - `Suspension functions can be called only within coroutine body`
-  - (or: `suspend function 'addPet' should be called only from a coroutine or another suspend function`)
+code (T93: GREEN after the suspend-lambda fix for D26).
 
 ```bash
 TEST_DIR="${action.test-gen-kt-wiring-errors-async.test_dir}"
@@ -2551,16 +2533,6 @@ ret success:bool=true
 Generate ERRORS+ASYNC Java service wiring for the petstore-errors model
 (`--jv-async-services=true`, errors flavour with `BaboonEither<err,success>`
 container, both codec families) into the `jv-errors-async` overlay project.
-This is a RED reproduction lane for D26: the generated PetStoreWiring server
-dispatch calls `impl.method(v)` inside a lambda passed to `rt.leftMap`, but
-when `--jv-async-services=true` the generated PetStore interface declares
-`CompletableFuture<BaboonEither<Err, Out>>` return types — so
-`impl.method(v)` returns `CompletableFuture<BaboonEither<Err, Out>>` where
-`BaboonEither<Err, Out>` is expected, and `errorsFutureWrap` then adds a
-second `CompletableFuture.completedFuture(...)` on top (double-wrap).
-
-NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
-a RED reproduction gating the Java server-side errors+async fix (D26).
 
 ```bash
 dep action.build
@@ -2596,18 +2568,7 @@ ret test_dir:string="$TEST_DIR"
 
 Compile the errors+async Java server impl overlay against the generated
 `--jv-async-services=true --service-result-no-errors=false` petstore-errors
-code. This lane is a RED reproduction for D26: the generated PetStoreWiring
-dispatchers call `impl.method(v)` inside a lambda body passed to
-`rt.leftMap`/`rt.pure`, treating its return as `BaboonEither<Err, Out>`, but
-when `--jv-async-services=true` the generated PetStore interface declares
-`CompletableFuture<BaboonEither<Err, Out>>` return types. The javac compiler
-rejects the call with a type mismatch. Additionally `errorsFutureWrap` adds a
-second `CompletableFuture.completedFuture(...)` on top, producing the
-double-wrap artifact.
-
-Expected javac errors (type mismatch at rt.leftMap/rt.pure call-sites in
-PetStoreWiring.invokeJson / PetStoreWiring.invokeUeba):
-  - `incompatible types: CompletableFuture<BaboonEither<...>> cannot be converted to BaboonEither<...>`
+code (T94: GREEN after the async-errors double-wrap fix for D26).
 
 ```bash
 TEST_DIR="${action.test-gen-jv-wiring-errors-async.test_dir}"
@@ -3193,6 +3154,9 @@ dep action.test-dt-wiring
 dep action.test-sw-wiring
 dep action.test-sw-wiring-async
 dep action.test-sw-wiring-errors
+dep action.test-kt-wiring-errors-async
+dep action.test-jv-wiring-errors-async
+dep action.test-cs-wiring-errors-async
 
 ret success:bool=true
 ```
@@ -3493,7 +3457,7 @@ The companion runner `test-cs-wiring-errors-async` compiles and round-trips.
 This is the CONTROL lane for D26: C# errors+async is already sound via
 `generateErrorsJsonCaseAsync` (the await-then-thread linear path).
 
-NOTE: not wired into the aggregate `:test` target (T95 wires it later).
+Wired into the aggregate `:test` target (T95).
 
 ```bash
 dep action.build
@@ -3533,9 +3497,9 @@ driver, then:
     `rt.LeftMap` converts to `BaboonWiringError.CallFailed` → driver
     asserts Left).
 
-This lane is GREEN on the current tree — C# errors+async is already
-sound. It serves as the reference control for the broken Kotlin/Java
-RED lanes (D26).
+This lane is GREEN — C# errors+async is already sound. It is the C#
+control lane for the D26 errors+async wiring contract (alongside the
+now-green Kotlin/Java errors+async lanes fixed in T93/T94).
 
 ```bash
 TEST_DIR="${action.test-gen-cs-wiring-errors-async.test_dir}"
