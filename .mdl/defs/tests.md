@@ -1935,6 +1935,63 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-jv-mcp-mux
+
+Generate code for the Java MCP muxer round-trip overlay test (T111, sync only).
+Uses the mcp-mux-stub-ok model (UserService + OrderService) with
+`--jv-generate-mcp-server=true` (Either mode) and overlays
+`test/java-stub-mcp-mux-overlay/` on top of a jv-stub copy.
+Generated code lands in `src/main/java/generated-main/`.
+SYNC ONLY — Java MCP has no async variant.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-jv-mcp-mux"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/jv-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
+  ./test/jv-stub/ "$TEST_DIR/jv-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-jv-mcp-mux.lock \
+  :java \
+  --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
+  --jv-write-evolution-dict=true \
+  --jv-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="baboon.runtime.shared.BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --jv-generate-mcp-server=true
+
+rsync -a ./test/java-stub-mcp-mux-overlay/ "$TEST_DIR/jv-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-jv-mcp-mux
+
+Run the Java MCP muxer round-trip overlay tests (T111, sync).
+Validates tools/list union, per-service routing for UserService and
+OrderService, DuplicateTool collision, and NoMatchingTool (-32602).
+SYNC ONLY — Java MCP has no async variant.
+
+```bash
+TEST_DIR="${action.test-gen-jv-mcp-mux.test_dir}"
+pushd "$TEST_DIR/jv-stub"
+mvn clean test -Dtest=mcpmux.McpMuxTests
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-rs-wiring-either
 
 Generate code for Rust wiring tests with built-in Result container.
@@ -3251,6 +3308,7 @@ dep action.test-rs-mcp-mux-async
 dep action.test-kotlin-mcp
 dep action.test-kt-mcp-mux
 dep action.test-java-mcp
+dep action.test-jv-mcp-mux
 dep action.test-dart-mcp
 dep action.test-python-mcp
 dep action.test-swift-mcp

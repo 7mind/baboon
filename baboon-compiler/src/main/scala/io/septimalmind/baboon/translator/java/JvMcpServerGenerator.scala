@@ -74,6 +74,9 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
         "IBaboonRoutableMcpServer.java",
         "McpJsonInvoke.java",
         "AbstractBaboonMcpServer.java",
+        "BaboonMcpWiringError.java",
+        "BaboonMcpWiringException.java",
+        "AbstractMcpMuxer.java",
       ).map { fname =>
         fname -> OutputFile(
           BaboonRuntimeResources.read(s"baboon-runtime/java/$fname"),
