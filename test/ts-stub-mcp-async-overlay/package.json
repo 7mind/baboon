@@ -1,0 +1,15 @@
+{
+  "name": "baboon-ts-stub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.typecheck.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "typescript": "~5.7.0",
+    "vitest": "~3.0.0"
+  }
+}

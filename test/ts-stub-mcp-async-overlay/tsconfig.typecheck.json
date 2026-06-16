@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/mcp.test.ts",
+    "src/baboondefinitions/generated/**/*.ts"
+  ]
+}
