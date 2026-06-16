@@ -15,15 +15,15 @@ import PackageDescription
 //   - McpTests: the hand-written round-trip suite driving the generated server
 //     through the canonical T7 scenario via an in-process delegate (no I/O).
 //
-// EXPECTED RED (D24): under `--sw-async-services=true` the generated
+// GREEN (D24/T67): under `--sw-async-services=true` the generated
 // `McpToolsWiring.invokeJson` dispatcher is `async throws -> String`
-// (SwServiceWiringTranslator.scala:43/508-513), while the generated
-// `McpToolsMcpServer.init` still requires a SYNC `throws -> String` delegate
-// closure (SwMcpServerGenerator.scala:125/127). The async wiring fn cannot
-// satisfy that non-async closure type, so `swift build`/`swift test` of this
-// overlay MUST FAIL at the `makeServer` binding in McpTests. This lane gates
-// the Swift async-MCP backend fix (T67); the sync `test-swift-mcp` lane is
-// untouched and still passes.
+// (SwServiceWiringTranslator.scala:43/508-513), and the generated
+// `McpToolsMcpServer.init` now accepts an `async throws -> String` delegate
+// closure conforming to `IBaboonAsyncMcpServer`, whose `handle` is genuinely
+// `async`. So `swift build`/`swift test` of this overlay drives a real
+// `tools/call` round-trip (from both a non-isolated and a @MainActor caller).
+// T66 added this lane RED to gate the fix; T67 turns it green. The sync
+// `test-swift-mcp` lane is untouched and still passes.
 let package = Package(
     name: "BaboonSwiftMcpAsyncTests",
     platforms: [.macOS(.v13)],

@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.swift
 
+import io.septimalmind.baboon.CompilerTarget.SwTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
@@ -47,12 +48,20 @@ import izumi.fundamentals.collections.nonempty.NEList
   * so Swift output is byte-identical to baseline.
   */
 class SwMcpServerGenerator[F[+_, +_]: Error2](
+  target: SwTarget,
   trans: SwTypeTranslator,
   swFiles: SwFileTools,
   oasTypeTranslator: OasTypeTranslator,
 ) extends McpServerGeneratorHook[F] {
 
   private val schemaEmitter = new McpInputSchemaEmitter(oasTypeTranslator)
+
+  // Async axis (D24/T67). When enabled the generated no-errors service-wiring
+  // dispatcher `<Svc>Wiring.invokeJson` is `async throws -> String`
+  // (SwServiceWiringTranslator), so the MCP server must hold an `async throws`
+  // delegate and conform to the async dispatch surface `IBaboonAsyncMcpServer`.
+  // When disabled the generated output is byte-identical to the sync baseline.
+  private val isAsync: Boolean = target.language.asyncServices
 
   override def generateMcpServer(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
@@ -111,20 +120,33 @@ class SwMcpServerGenerator[F[+_, +_]: Error2](
         s"""        McpToolEntry(${swiftString(toolName)}, BaboonMethodId(serviceId: ${swiftString(serviceName)}, methodName: ${swiftString(m.name.name)}), $className._parseSchema($schemaLiteral)),"""
     }
 
+    // Async axis (D24/T67): the delegate type, the conformed protocol, and the
+    // `invokeJson` declaration flip to `async throws` / `IBaboonAsyncMcpServer`
+    // when the Swift target's `asyncServices` is on. The inherited `handle` state
+    // machine is then GENUINELY `async` (it `await`s the delegate directly in the
+    // caller's task — no synchronous semaphore bridge, deadlock-free from an
+    // actor-isolated caller); the integrator calls `await server.handle(...)`.
+    // With async off, every interpolated fragment below is empty, so the rendered
+    // file is byte-identical to the sync baseline.
+    val mcpProtocol     = if (isAsync) "IBaboonAsyncMcpServer" else "IBaboonMcpServer"
+    val delegateEffects = if (isAsync) "async throws" else "throws"
+    val methodEffects   = if (isAsync) "async throws" else "throws"
+    val invokeCallPfx   = if (isAsync) "try await" else "try"
+
     val content =
       s"""import Foundation
          |import BaboonRuntime
          |
          |// Generated MCP server for service `$serviceName` (model `${domain.id.path.mkString(".")}` v$modelVer).
-         |// Transport-abstract: `handle` is inherited from the IBaboonMcpServer
+         |// Transport-abstract: `handle` is inherited from the $mcpProtocol
          |// protocol extension and performs no I/O. The `invokeJson` delegate routes
          |// `tools/call` into the generated service dispatch; the integrator supplies
          |// it (typically the errors-mode `${serviceName}Wiring.invokeJson` bound to this
          |// service) plus the per-request `Ctx`.
-         |public final class $className<Ctx>: IBaboonMcpServer {
-         |    private let _invokeJson: (BaboonMethodId, String, Ctx, BaboonCodecContext) throws -> String
+         |public final class $className<Ctx>: $mcpProtocol {
+         |    private let _invokeJson: (BaboonMethodId, String, Ctx, BaboonCodecContext) $delegateEffects -> String
          |
-         |    public init(_ invokeJson: @escaping (BaboonMethodId, String, Ctx, BaboonCodecContext) throws -> String) {
+         |    public init(_ invokeJson: @escaping (BaboonMethodId, String, Ctx, BaboonCodecContext) $delegateEffects -> String) {
          |        self._invokeJson = invokeJson
          |    }
          |
@@ -143,8 +165,8 @@ class SwMcpServerGenerator[F[+_, +_]: Error2](
          |        return _tools
          |    }
          |
-         |    public func invokeJson(_ method: BaboonMethodId, _ data: String, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) throws -> String {
-         |        return try _invokeJson(method, data, ctx, codecCtx)
+         |    public func invokeJson(_ method: BaboonMethodId, _ data: String, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) $methodEffects -> String {
+         |        return $invokeCallPfx _invokeJson(method, data, ctx, codecCtx)
          |    }
          |
          |    private static func _parseSchema(_ json: String) -> [String: Any] {

@@ -269,3 +269,163 @@ public struct AnyMcpServer<Ctx> {
         return _handle(request, session, ctx, codecCtx)
     }
 }
+
+// ===========================================================================
+// Async MCP dispatch surface (D24/T67).
+//
+// Emitted ONLY when the Swift target has `--sw-async-services=true`. Under that
+// axis the generated no-errors service-wiring dispatcher `<Svc>Wiring.invokeJson`
+// is `async throws -> String` (SwServiceWiringTranslator `dispatcherEffects`),
+// so its result requires `await`. The generated MCP server therefore binds an
+// `async throws` delegate rather than the sync `throws -> String` one above, and
+// conforms to `IBaboonAsyncMcpServer` instead of `IBaboonMcpServer`.
+//
+// `handle` is GENUINELY `async` on this surface (the async analogue of the sync
+// `IBaboonMcpServer.handle`): the adapter calls `await server.handle(...)`. The
+// single async hop — the `tools/call` delegate — is `await`ed DIRECTLY in the
+// caller's task; there is NO synchronous bridge (no `DispatchSemaphore`, no
+// spawned `Task`). This is deadlock-free from any execution context, including
+// an actor-isolated (`@MainActor` or custom-actor) caller: a sync semaphore
+// bridge that parks the calling thread while a context-inheriting `Task` waits
+// on that same actor's executor would deadlock (the inherited task can never run
+// because the blocked thread holds the actor). Awaiting directly suspends the
+// caller's task cooperatively and resumes it when `invokeJson` completes —
+// structurally immune to that deadlock class and to cooperative-pool starvation.
+// All other JSON-RPC arms (initialize / tools/list / errors) are pure (no
+// suspension points) and identical to the sync state machine; only the
+// `invokeJson` call is awaited.
+//
+// The sync `IBaboonMcpServer` protocol + extension above are UNTOUCHED, so with
+// `--sw-async-services=false` the generated output is byte-identical to baseline.
+// ===========================================================================
+public protocol IBaboonAsyncMcpServer {
+    associatedtype Ctx
+    var serverInfo: McpServerInfo { get }
+    var tools: [McpToolEntry] { get }
+
+    // The async `tools/call` delegate the generated server supplies: routes one
+    // tool invocation into the generated async service dispatch (the
+    // errors-mode/no-errors `invokeJson`, which is `async throws` under the async
+    // axis). The async `handle` awaits it directly in the caller's task.
+    func invokeJson(_ method: BaboonMethodId, _ data: String, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) async throws -> String
+
+    func handle(_ request: JsonRpcRequest, _ session: McpSession, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) async -> JsonRpcResponse?
+}
+
+extension IBaboonAsyncMcpServer {
+    private func byName() -> [String: McpToolEntry] {
+        var m: [String: McpToolEntry] = [:]
+        for t in tools { m[t.name] = t }
+        return m
+    }
+
+    private func errorResponse(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {
+        return JsonRpcResponse(id, error: JsonRpcError(code, message))
+    }
+
+    public func handle(_ request: JsonRpcRequest, _ session: McpSession, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) async -> JsonRpcResponse? {
+        let id = request.id
+        switch request.method {
+        case "initialize":
+            guard let params = request.params as? [String: Any] else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing params")
+            }
+            if params["protocolVersion"] == nil {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing protocolVersion")
+            }
+            session.initialized = true
+            let result: [String: Any] = [
+                "protocolVersion": mcpProtocolVersion,
+                "capabilities": ["tools": [String: Any]()],
+                "serverInfo": ["name": serverInfo.name, "version": serverInfo.version],
+            ]
+            return JsonRpcResponse(id, result: result)
+
+        case "notifications/initialized":
+            return nil
+
+        case "tools/list":
+            if !session.initialized {
+                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/list before initialize")
+            }
+            var toolsArr: [[String: Any]] = []
+            for t in tools {
+                var entry: [String: Any] = [
+                    "name": t.name,
+                    "inputSchema": t.inputSchema,
+                ]
+                if let d = t.description {
+                    entry["description"] = d
+                }
+                toolsArr.append(entry)
+            }
+            return JsonRpcResponse(id, result: ["tools": toolsArr])
+
+        case "tools/call":
+            if !session.initialized {
+                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/call before initialize")
+            }
+            guard let params = request.params as? [String: Any] else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing params")
+            }
+            guard let toolName = params["name"] as? String else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing tool name")
+            }
+            guard let entry = byName()[toolName] else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '\(toolName)'")
+            }
+            let argsRaw: Any = params["arguments"] ?? [String: Any]()
+            let argsJson: String
+            do {
+                let data = try JSONSerialization.data(withJSONObject: argsRaw, options: [.sortedKeys, .fragmentsAllowed])
+                argsJson = String(data: data, encoding: .utf8)!
+            } catch {
+                return errorResponse(id, jsonRpcErrorInternalError, "tools/call: failed to serialize arguments: \(error)")
+            }
+            do {
+                let resultStr = try await invokeJson(entry.method, argsJson, ctx, codecCtx)
+                let result: [String: Any] = [
+                    "content": [["type": "text", "text": resultStr]],
+                    "isError": false,
+                ]
+                return JsonRpcResponse(id, result: result)
+            } catch let e as BaboonWiringException {
+                // Channel B: a valid protocol call whose domain payload failed.
+                let result: [String: Any] = [
+                    "content": [["type": "text", "text": describeWiringError(e.error)]],
+                    "isError": true,
+                ]
+                return JsonRpcResponse(id, result: result)
+            } catch {
+                // Channel B: unexpected error during dispatch.
+                let result: [String: Any] = [
+                    "content": [["type": "text", "text": "\(error)"]],
+                    "isError": true,
+                ]
+                return JsonRpcResponse(id, result: result)
+            }
+
+        default:
+            return errorResponse(id, jsonRpcErrorMethodNotFound, "Method not found: \(request.method)")
+        }
+    }
+
+    private func describeWiringError(_ e: BaboonWiringError) -> String {
+        return "\(e)"
+    }
+}
+
+// Type-erasing box for the async dispatch surface, the async analogue of
+// `AnyMcpServer<Ctx>`. `handle` is `async` (it awaits the async delegate
+// directly), so the erased closure type carries the `async` effect.
+public struct AnyAsyncMcpServer<Ctx> {
+    private let _handle: (JsonRpcRequest, McpSession, Ctx, BaboonCodecContext) async -> JsonRpcResponse?
+
+    public init<S: IBaboonAsyncMcpServer>(_ s: S) where S.Ctx == Ctx {
+        self._handle = s.handle
+    }
+
+    public func handle(_ request: JsonRpcRequest, _ session: McpSession, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) async -> JsonRpcResponse? {
+        return await _handle(request, session, ctx, codecCtx)
+    }
+}

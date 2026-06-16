@@ -7,6 +7,7 @@ object BaboonRuntimeResources {
   // added under `baboon-compiler/src/main/resources/baboon-runtime/<lang>/`,
   // touch this comment to force a recompile of this unit (sbt won't otherwise
   // detect resource-tree changes and the macro's embedded map will be stale).
+  // Last touched: 2026-06-16 — add async MCP dispatch surface (IBaboonAsyncMcpServer) to baboon-runtime/swift/baboon_mcp_runtime.swift (D24/T67)
   // Last touched: 2026-06-04 — add baboon-runtime/typescript/BaboonMcpRuntime.ts (T8 MCP server runtime)
   // Last touched: 2026-06-02 — split swift service-wiring runtime out of baboon_runtime.swift
   // into baboon_service_wiring.swift (the monolith's embedded Utf8 constant exceeded the
