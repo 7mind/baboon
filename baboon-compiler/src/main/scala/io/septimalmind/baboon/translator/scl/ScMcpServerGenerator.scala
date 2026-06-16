@@ -2,10 +2,10 @@ package io.septimalmind.baboon.translator.scl
 
 import io.circe.Json
 import io.septimalmind.baboon.CompilerTarget.ScTarget
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
-import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, ServiceResultResolver, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -35,6 +35,19 @@ import izumi.fundamentals.collections.nonempty.NEList
   * the static resource `baboon-runtime/scala/BaboonMcpRuntime.scala`, emitted
   * alongside the per-service file. With the flag false the hook is never called,
   * so Scala output is byte-identical to baseline.
+  *
+  * '''serviceResult requirement (Either-only).''' The MCP delegate type and the
+  * runtime base `AbstractBaboonMcpServer.handle` are synchronous and
+  * Either-shaped — `handle` pattern-matches `Right`/`Left` on the wiring's
+  * `invokeJson` result to drive MCP Channel-A / Channel-B. This is the SAME
+  * synchronous axis as the broader async-service work (D24); it is NOT generic
+  * over the configurable serviceResult container that
+  * [[ScServiceWiringTranslator]] honors. Consequently MCP generation is supported
+  * ONLY in Either errors-mode serviceResult. Combining a non-Either serviceResult
+  * (an HKT `F[_, _]`, a custom result type, or `no-errors` mode) with
+  * `--scala-generate-mcp-server=true` is rejected up front with
+  * [[io.septimalmind.baboon.parser.model.issues.TranslationIssue.ScalaMcpRequiresEither]]
+  * rather than emitting code whose delegate type mismatches the wiring container.
   */
 class ScMcpServerGenerator[F[+_, +_]: Error2](
   target: ScTarget,
@@ -46,6 +59,45 @@ class ScMcpServerGenerator[F[+_, +_]: Error2](
   private val schemaEmitter = new McpInputSchemaEmitter(oasTypeTranslator)
 
   override def generateMcpServer(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
+    // The Scala MCP dispatch runtime (AbstractBaboonMcpServer.handle) is synchronous
+    // and Either-shaped: it matches Right/Left on the wiring's `invokeJson` result to
+    // map MCP Channel-A / Channel-B. The hardcoded `Either[BaboonWiringError, String]`
+    // delegate type below mirrors that. A non-Either (HKT / custom) serviceResult
+    // honored by ScServiceWiringTranslator would make the wiring's invokeJson return a
+    // different container, producing a latent type mismatch. Guard against that
+    // unsupported combination with a clear, actionable compiler error.
+    val mcpIncompatibleResult: Option[String] = family.domains.toMap.values.toList.flatMap {
+      lineage =>
+        val latestDomain = lineage.versions(lineage.evolution.latest)
+        if (servicesOf(latestDomain).isEmpty) None
+        else {
+          val resolved = ServiceResultResolver.resolve(latestDomain, "scala", target.language.serviceResult, target.language.pragmas)
+          if (isEitherErrorsMode(resolved)) None
+          else Some(describeResult(resolved))
+        }
+    }.headOption
+
+    mcpIncompatibleResult match {
+      case Some(rt) => F.fail(NEList(TranslationIssue.ScalaMcpRequiresEither(rt): BaboonIssue))
+      case None     => emitSources(family)
+    }
+  }
+
+  private def isEitherErrorsMode(resolved: io.septimalmind.baboon.translator.ResolvedServiceResult): Boolean =
+    !resolved.noErrors &&
+      resolved.hkt.isEmpty &&
+      resolved.resultType.exists(t => t == "Either" || t == "scala.util.Either")
+
+  private def describeResult(resolved: io.septimalmind.baboon.translator.ResolvedServiceResult): String = {
+    if (resolved.noErrors) "no-errors mode (no error channel)"
+    else
+      resolved.hkt match {
+        case Some(h) => s"HKT ${h.name}${h.signature}${resolved.resultType.fold("")(t => s" ($t)")}"
+        case None    => resolved.resultType.getOrElse("<unspecified>")
+      }
+  }
+
+  private def emitSources(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
       lineage =>
         val evo          = lineage.evolution

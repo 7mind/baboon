@@ -14,11 +14,25 @@ object TranslationIssue {
 
   case class NonUniqueOutputFiles(c: Map[String, List[OutputFile]]) extends TranslationIssue
 
+  case class ScalaMcpRequiresEither(resultType: String) extends TranslationIssue
+
   case class TranslationBug()(implicit val context: IssueContext) extends TranslationIssue with BaboonBug with Issue
 
   implicit val nonUniqueOutputFilesPrinter: IssuePrinter[NonUniqueOutputFiles] =
     (issue: NonUniqueOutputFiles) => {
       s"""Non unique output files:${issue.c.niceList()}
+         |""".stripMargin
+    }
+
+  implicit val scalaMcpRequiresEitherPrinter: IssuePrinter[ScalaMcpRequiresEither] =
+    (issue: ScalaMcpRequiresEither) => {
+      s"""Scala MCP server generation (--scala-generate-mcp-server=true) requires the Either-mode serviceResult,
+         |but the configured serviceResult is `${issue.resultType}`.
+         |The Scala MCP dispatch runtime (AbstractBaboonMcpServer.handle) is synchronous and Either-shaped:
+         |it matches Right/Left on the wiring's `invokeJson` result to map MCP Channel-A / Channel-B.
+         |A non-Either (HKT / custom) serviceResult is not supported on this dispatch surface.
+         |Resolution: either drop --scala-generate-mcp-server, or set the serviceResult to Either
+         |(--service-result-type=Either, no --service-result-hkt, --service-result-no-errors=false).
          |""".stripMargin
     }
 
