@@ -3124,6 +3124,7 @@ dep action.test-ts-wiring-result
 dep action.test-ts-wiring-outcome
 dep action.test-ts-mcp
 dep action.test-ts-mcp-mux
+dep action.test-ts-mcp-mux-async
 dep action.test-cs-mcp
 dep action.test-scala-mcp
 dep action.test-rust-mcp
@@ -4303,6 +4304,65 @@ TEST_DIR="${action.test-gen-ts-mcp-mux.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
 npx vitest run src/mcp.muxer.test.ts
+popd
+
+ret success:bool=true
+```
+
+
+# action: test-gen-ts-mcp-mux-async
+
+Generate code for the TypeScript ASYNC MCP muxer round-trip test (T105).
+Async sibling of `test-gen-ts-mcp-mux`: uses the mcp-mux-stub-ok model with BOTH
+`--ts-generate-mcp-server=true` AND `--ts-async-services=true`, overlays
+`test/ts-stub-mcp-mux-async-overlay/` on top of a ts-stub copy. Generated code
+lands in `src/mux-async-generated/`.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-mcp-mux-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-ts-mcp-mux-async.lock \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src/mux-async-generated" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --ts-generate-mcp-server=true \
+  --ts-async-services=true
+
+rsync -a ./test/ts-stub-mcp-mux-async-overlay/ "$TEST_DIR/ts-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-ts-mcp-mux-async
+
+Run the TypeScript ASYNC MCP muxer round-trip tests (T105).
+Async sibling of `test-ts-mcp-mux`. Validates tools/list union, per-service
+routing for UserService and OrderService (awaited), DuplicateTool collision,
+and NoMatchingTool (-32602) against `AbstractAsyncMcpMuxer`.
+
+```bash
+TEST_DIR="${action.test-gen-ts-mcp-mux-async.test_dir}"
+pushd "$TEST_DIR/ts-stub"
+npm install
+npx vitest run src/mcp.muxer.async.test.ts
 popd
 
 ret success:bool=true
