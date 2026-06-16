@@ -230,3 +230,190 @@ abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<Ctx>, IB
     return e.toString();
   }
 }
+
+// --- MCP-muxer error taxonomy (tasks:T112; contract §6) ---
+//
+// The cross-service MCP muxer composes several <Service>McpServer instances
+// behind one endpoint. `DuplicateTool` is the MCP-tier analogue of the
+// service-wiring `DuplicateService` (a registration-time tool-name collision);
+// `NoMatchingTool` is the analogue of `NoMatchingService` (a dispatch-time
+// unknown tool name). They mirror that taxonomy and carrier exactly, but live in
+// this MCP-only runtime file rather than the always-shipped service-wiring
+// runtime (baboon_runtime.dart) so that with `--dart-generate-mcp-server`
+// absent the generated output is byte-identical to the pre-MCP baseline.
+// `BaboonMcpWiringException` is the MCP-tier carrier — the structural twin of
+// the service-wiring `BaboonWiringException` (a thrown programmer error carrying
+// a tagged value), so `DuplicateTool` propagates to the integrator exactly as
+// `DuplicateService` does, just from the MCP-only runtime.
+abstract class BaboonMcpWiringError {
+  const BaboonMcpWiringError();
+}
+
+class DuplicateTool extends BaboonMcpWiringError {
+  final String toolName;
+  const DuplicateTool(this.toolName);
+
+  @override
+  String toString() => 'DuplicateTool{toolName: $toolName}';
+}
+
+class NoMatchingTool extends BaboonMcpWiringError {
+  final String toolName;
+  const NoMatchingTool(this.toolName);
+
+  @override
+  String toString() => 'NoMatchingTool{toolName: $toolName}';
+}
+
+class BaboonMcpWiringException implements Exception {
+  final BaboonMcpWiringError error;
+  const BaboonMcpWiringException(this.error);
+
+  @override
+  String toString() => 'BaboonMcpWiringException{error: $error}';
+}
+
+// --- Cross-service MCP muxer (tasks:T112; contract:
+// docs/research/mcp-muxer-runtime-contract.md) ---
+//
+// `AbstractMcpMuxer<Ctx>` composes several `<Service>McpServer<Ctx>` instances
+// behind ONE MCP endpoint so a single connection serves the union of their
+// tools. It is the MCP-tier sibling of `JsonMuxer`: where `JsonMuxer` keys
+// Map<serviceName, IBaboonJsonService> and routes by `method.serviceName`, the
+// muxer keys Map<toolName, owningServer> and routes by the inbound flat MCP
+// tool name (contract §1).
+//
+// Composition seam: it depends ONLY on the PUBLIC `IBaboonRoutableMcpServer<Ctx>`
+// surface (tasks:T114) — it reads each server's `serverInfo` and `tools`, and
+// routes each `tools/call` via the public `routeToolCall`. It NEVER reads
+// private members and NEVER calls a server's `handle()` (a member's `handle`
+// resolves only its OWN tools and returns "unknown tool" for any cross-service
+// name — contract §4). The muxer owns the JSON-RPC envelope; each member owns
+// its domain dispatch.
+//
+// Dart MCP is SYNC ONLY — no async variant (R112 criticism 3).
+class AbstractMcpMuxer<Ctx> implements IBaboonMcpServer<Ctx> {
+  // Registration order preserved (insertion-ordered Map / list — JsonMuxer
+  // LinkedHashMap precedent). `_route`/`_entries` are built at registration
+  // (contract §2), never per request.
+  final List<IBaboonRoutableMcpServer<Ctx>> _servers = [];
+  final Map<String, IBaboonRoutableMcpServer<Ctx>> _route = {};
+  final Map<String, McpToolEntry> _entries = <String, McpToolEntry>{};
+  final McpServerInfo _mergedServerInfo;
+
+  // Positional ctor: mergedServerInfo is the composed endpoint's single identity
+  // returned by `initialize` (§3.1). The optional [servers] list is registered
+  // in order (same precedent as JsonMuxer vararg ctor).
+  AbstractMcpMuxer(this._mergedServerInfo, [List<IBaboonRoutableMcpServer<Ctx>> servers = const []]) {
+    for (final s in servers) register(s);
+  }
+
+  // Folds the server's declaration-ordered `tools` into the union table;
+  // throws BaboonMcpWiringException(DuplicateTool) on a tool-name collision
+  // across servers (the exact MCP-tier analogue of JsonMuxer.register throwing
+  // DuplicateService).
+  void register(IBaboonRoutableMcpServer<Ctx> server) {
+    for (final t in server.tools) {
+      if (_route.containsKey(t.name)) {
+        throw BaboonMcpWiringException(DuplicateTool(t.name));
+      }
+      _route[t.name] = server;
+      _entries[t.name] = t;
+    }
+    _servers.add(server);
+  }
+
+  @override
+  JsonRpcResponse? handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx) {
+    final id = request.id;
+    switch (request.method) {
+      case 'initialize': {
+        final params = request.params;
+        if (params == null || params is! Map) {
+          return _errorResponse(id, jsonRpcErrorInvalidParams, 'initialize: missing params');
+        }
+        if (params['protocolVersion'] == null) {
+          return _errorResponse(id, jsonRpcErrorInvalidParams, 'initialize: missing protocolVersion');
+        }
+        session.initialized = true;
+        return JsonRpcResponse(id, result: {
+          'protocolVersion': mcpProtocolVersion,
+          'capabilities': {'tools': <String, dynamic>{}},
+          'serverInfo': {'name': _mergedServerInfo.name, 'version': _mergedServerInfo.version},
+        });
+      }
+      case 'notifications/initialized':
+        return null;
+      case 'tools/list': {
+        if (!session.initialized) {
+          return _errorResponse(id, jsonRpcErrorInvalidRequest, 'tools/list before initialize');
+        }
+        return JsonRpcResponse(id, result: {'tools': _toolsListUnion()});
+      }
+      case 'tools/call': {
+        if (!session.initialized) {
+          return _errorResponse(id, jsonRpcErrorInvalidRequest, 'tools/call before initialize');
+        }
+        final params = request.params;
+        if (params == null || params is! Map) {
+          return _errorResponse(id, jsonRpcErrorInvalidParams, 'tools/call: missing params');
+        }
+        final toolName = params['name'];
+        if (toolName == null || toolName is! String) {
+          return _errorResponse(id, jsonRpcErrorInvalidParams, 'tools/call: missing tool name');
+        }
+        final server = _route[toolName];
+        if (server == null) {
+          // NoMatchingTool: surfaced as the SAME wire response the per-service
+          // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
+          // so the bytes are identical whether one server or the muxer rejects.
+          return _errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '$toolName'");
+        }
+        final entry = _entries[toolName]!;
+        final argsRaw = params['arguments'] ?? <String, dynamic>{};
+        final argsJson = jsonEncode(argsRaw);
+        try {
+          final resultStr = server.routeToolCall(entry.method, argsJson, ctx, codecCtx);
+          return JsonRpcResponse(id, result: {
+            'content': [{'type': 'text', 'text': resultStr}],
+            'isError': false,
+          });
+        } on BaboonWiringException catch (e) {
+          // Channel B: a valid protocol call whose domain payload failed.
+          return JsonRpcResponse(id, result: {
+            'content': [{'type': 'text', 'text': e.error.toString()}],
+            'isError': true,
+          });
+        } catch (e) {
+          // Channel B: unexpected error during dispatch.
+          return JsonRpcResponse(id, result: {
+            'content': [{'type': 'text', 'text': e.toString()}],
+            'isError': true,
+          });
+        }
+      }
+      default:
+        return _errorResponse(id, jsonRpcErrorMethodNotFound, 'Method not found: ${request.method}');
+    }
+  }
+
+  // Backs tools/list (§3.2): the union of all registered servers' tool entries
+  // in registration-then-declaration order (the insertion order of `_entries`),
+  // each in the same shape the per-service base emits.
+  List<Map<String, dynamic>> _toolsListUnion() {
+    final out = <Map<String, dynamic>>[];
+    for (final t in _entries.values) {
+      final entry = <String, dynamic>{
+        'name': t.name,
+        'inputSchema': t.inputSchema,
+      };
+      if (t.description != null) entry['description'] = t.description;
+      out.add(entry);
+    }
+    return out;
+  }
+
+  JsonRpcResponse _errorResponse(Object? id, int code, String message) {
+    return JsonRpcResponse(id, error: JsonRpcError(code, message));
+  }
+}

@@ -3310,6 +3310,7 @@ dep action.test-kt-mcp-mux
 dep action.test-java-mcp
 dep action.test-jv-mcp-mux
 dep action.test-dart-mcp
+dep action.test-dt-mcp-mux
 dep action.test-python-mcp
 dep action.test-swift-mcp
 dep action.test-ts-mcp-async
@@ -3913,6 +3914,73 @@ dart pub get
 # the full model which is not generated in the MCP-only pass).
 dart analyze --fatal-warnings lib/ test/mcp/
 dart test test/mcp/mcp_tests.dart
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-dt-mcp-mux
+
+Generate code for the Dart MCP muxer round-trip overlay test (T112).
+Uses the mcp-mux-stub-ok model (UserService + OrderService) with
+`--dt-generate-mcp-server=true` (no-errors mode) and overlays
+`test/dart-stub-mcp-mux-overlay/` on top of a dt-stub copy.
+Applies the runtime-file relocation post-codegen step (mv runtime files into
+packages/baboon_runtime/lib/) matching the Dart MCP harness.
+No async lane — Dart MCP is sync-only (R112 criticism 3).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-dt-mcp-mux"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/dt-stub"
+
+rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
+  ./test/dt-stub/ "$TEST_DIR/dt-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-dt-mcp-mux.lock \
+  :dart \
+  --output "$TEST_DIR/dt-stub/lib" \
+  --dt-write-evolution-dict=true \
+  --dt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --dt-generate-mcp-server=true
+
+# Move Dart runtime files into the baboon_runtime package (same as regular-adt)
+mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_mcp_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+
+# Apply mux overlay (mux test file)
+rsync -a ./test/dart-stub-mcp-mux-overlay/ "$TEST_DIR/dt-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-dt-mcp-mux
+
+Run the Dart MCP muxer round-trip overlay tests (T112).
+Validates tools/list union, per-service routing for UserService and
+OrderService, DuplicateTool collision, and NoMatchingTool (-32602)
+on the sync path. No async lane — Dart MCP is sync-only.
+
+```bash
+TEST_DIR="${action.test-gen-dt-mcp-mux.test_dir}"
+pushd "$TEST_DIR/dt-stub"
+dart pub get
+# Analyze only the generated lib and mux test directory.
+dart analyze --fatal-warnings lib/ test/mcp_mux/
+dart test test/mcp_mux/mcp_mux_tests.dart
 popd
 
 ret success:bool=true
