@@ -571,15 +571,26 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       .sorted
   }
 
-  private val crateAllows = List(
-    q"#![allow(unused_imports)]",
-    q"#![allow(non_camel_case_types)]",
-    q"#![allow(non_snake_case)]",
-    q"#![allow(dead_code)]",
-    q"#![allow(unused_variables)]",
-    q"#![allow(clippy::too_many_arguments)]",
-    q"#![allow(clippy::large_enum_variant)]",
-  )
+  private val crateAllows = {
+    val base = List(
+      q"#![allow(unused_imports)]",
+      q"#![allow(non_camel_case_types)]",
+      q"#![allow(non_snake_case)]",
+      q"#![allow(dead_code)]",
+      q"#![allow(unused_variables)]",
+      q"#![allow(clippy::too_many_arguments)]",
+      q"#![allow(clippy::large_enum_variant)]",
+    )
+    // Under `--rs-async-services=true` the generated service traits declare
+    // their methods as bare `async fn` (AFIT). rustc warns (`async_fn_in_trait`)
+    // that auto-trait bounds like `Send` cannot be specified on the returned
+    // future; this is intentional here (the service futures are deliberately
+    // `?Send`, matching the wiring future shape — see RsServiceWiringTranslator).
+    // Allow it crate-wide so async output builds clean under `-D warnings`.
+    // Sync output omits this line and stays byte-identical to baseline.
+    if (target.language.asyncServices) base :+ q"#![allow(async_fn_in_trait)]"
+    else base
+  }
 
   private def modDeclsFor(names: List[String]): List[TextTree[RsValue]] = {
     names.map {

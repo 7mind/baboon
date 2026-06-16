@@ -12,14 +12,34 @@ Convention (shared by cs/py/rs/ts/sw):
 - sync lane  : `test-gen-<lang>-mcp`       + `test-<lang>-mcp`       (overlay `test/<lang>-stub-mcp-overlay/`)
 - async lane : `test-gen-<lang>-mcp-async` + `test-<lang>-mcp-async` (overlay `test/<lang>-stub-mcp-async-overlay/`)
 
-## Status: EXPECTED RED (T62 — gates the fix T63)
+## Status: GREEN (fix landed — T98/D28)
 
 `tests/mcp_tests.rs` is the async analogue of the sync overlay's round-trip test:
 its `make_fake_invoke()` binds the generated `invoke_json_mcp_tools` into the
-generated MCP server's `McpJsonInvoke<()>` callback, exactly as the sync overlay
-does. Under `--rs-async-services=true` that binding cannot compile, because the
-async Rust service path emits non-compiling code. `cargo test --test mcp_tests`
-fails at `cargo build` (lib) — never reaching the test body.
+generated MCP server's `McpJsonInvoke<()>` callback.
+
+Under `--rs-async-services=true` the generator (RsMcpServerGenerator) now swaps
+the runtime `McpJsonInvoke<Ctx>` alias for its future-returning form
+(`Box<dyn Fn(..) -> Pin<Box<dyn Future<Output = Result<String, BaboonWiringError>>>>>`,
+intentionally `?Send` to match the wiring futures), and the generated
+`McpToolsMcpServer::handle` drives that future to completion synchronously with a
+self-contained `block_on` before delegating to the (byte-identical) sync
+`BaboonMcpServerBase` state machine. The `async fn`-in-trait AFIT warning that
+`--rs-async-services=true` produces is allowed crate-wide
+(`#![allow(async_fn_in_trait)]`) only when async is enabled.
+
+`make_fake_invoke()` returns a `'static` boxed future: the async service future
+borrows `method`/`data`/`rt`/`codec_ctx`, so those inputs are cloned into owned
+bindings moved into the `async move` block (mirroring the generated muxer
+wrappers) and `rt` is constructed inside the future. `cargo test --test mcp_tests`
+now builds clean under `-D warnings` and the round-trip passes.
+
+### Historical RED (pre-T98)
+
+Before the fix this lane was an EXPECTED RED reproduction (T62, gating T63/T98):
+the sync `McpJsonInvoke` closure alias could not hold the async `invoke_json_*`
+future, so `cargo test --test mcp_tests` failed at `cargo build` (lib) — never
+reaching the test body.
 
 The RED was reproduced with the JVM-classpath compiler (`sbt baboonJVM/runMain
 io.septimalmind.baboon.Baboon … --rs-generate-mcp-server=true

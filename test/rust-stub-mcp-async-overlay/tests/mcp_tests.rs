@@ -101,8 +101,24 @@ impl McpTools for StubMcpTools {
 
 fn make_fake_invoke() -> McpJsonInvoke<()> {
     Box::new(|method: &BaboonMethodId, data: &str, _ctx: (), codec_ctx: &BaboonCodecContext| {
-        let rt = BaboonServiceRtDefault;
-        invoke_json_mcp_tools(method, data, &StubMcpTools, &rt, codec_ctx)
+        // Under `--rs-async-services=true`, `McpJsonInvoke<Ctx>` is the
+        // future-returning alias `Box<dyn Fn(..) -> Pin<Box<dyn Future<Output =
+        // Result<String, BaboonWiringError>>>>>` (baboon_mcp_server.rs, swapped
+        // by RsMcpServerGenerator). `invoke_json_mcp_tools(..)` is an `async fn`
+        // whose call evaluates to a future borrowing `method`/`data`/`rt`/
+        // `codec_ctx`. To hand that future across the `Fn` boundary it must be
+        // `'static`, so the borrowed inputs are cloned into owned bindings moved
+        // into the `async move` block (mirroring the generated muxer wrappers),
+        // and `rt` is constructed inside the future so it is owned by it. The
+        // generated `McpToolsMcpServer::handle` drives this future to completion
+        // synchronously (its `block_on`).
+        let method = method.clone();
+        let data = data.to_string();
+        let codec_ctx = codec_ctx.clone();
+        Box::pin(async move {
+            let rt = BaboonServiceRtDefault;
+            invoke_json_mcp_tools(&method, &data, &StubMcpTools, &rt, &codec_ctx).await
+        })
     })
 }
 
@@ -144,7 +160,7 @@ fn async_mcp_initialize_and_tools_call_roundtrip() {
         method: "tools/call".to_string(),
         params: Some(serde_json::json!({
             "name": "McpTools_ping",
-            "arguments": {}
+            "arguments": { "seqno": 42, "label": "hello" }
         })),
     };
     let resp = server.handle(&call_req, &mut session, (), &ctx);
