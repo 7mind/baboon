@@ -13,6 +13,33 @@
 
 import type { BaboonCodecContext, BaboonMethodId, BaboonWiringError } from "./BaboonSharedRuntime";
 
+// --- MCP-muxer error taxonomy (tasks:T104; contract §6) ---
+//
+// The cross-service MCP muxer composes several <Service>McpServer instances
+// behind one endpoint. `DuplicateTool` is the MCP-tier analogue of the
+// service-wiring `DuplicateService` (a registration-time tool-name collision);
+// `NoMatchingTool` is the analogue of `NoMatchingService` (a dispatch-time
+// unknown tool name). They mirror that taxonomy and carrier exactly, but live in
+// this MCP-only runtime file rather than the always-shipped service-wiring
+// runtime (BaboonSharedRuntime.ts) so that with `--ts-generate-mcp-server`
+// absent the generated output is byte-identical to the pre-MCP baseline (no MCP
+// types leak into the unconditional runtime). `BaboonMcpWiringException` is the
+// MCP-tier carrier — the structural twin of the service-wiring
+// `BaboonWiringException` (a thrown programmer error carrying a tagged value),
+// so `DuplicateTool` propagates to the integrator exactly as `DuplicateService`
+// does, just from the MCP-only runtime.
+export type BaboonMcpWiringError =
+    | { readonly tag: 'DuplicateTool'; readonly toolName: string }
+    | { readonly tag: 'NoMatchingTool'; readonly toolName: string };
+
+export class BaboonMcpWiringException extends Error {
+    readonly error: BaboonMcpWiringError;
+    constructor(error: BaboonMcpWiringError) {
+        super(JSON.stringify(error));
+        this.error = error;
+    }
+}
+
 // --- JSON-RPC value types (already parsed from bytes by the adapter) ---
 //
 // `JsonRpcId` is `string | number` per JSON-RPC 2.0. A notification carries no
@@ -232,6 +259,137 @@ export abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<C
     }
 }
 
+// --- Cross-service MCP muxer (tasks:T104; contract:
+// docs/research/mcp-muxer-runtime-contract.md) ---
+//
+// `AbstractMcpMuxer<Ctx>` composes several `<Service>McpServer<Ctx>` instances
+// behind ONE MCP endpoint so a single connection serves the union of their
+// tools. It is the MCP-tier sibling of `JsonMuxer`: where `JsonMuxer` keys
+// `Map<serviceName, IBaboonJsonService>` and routes by `method.serviceName`, the
+// muxer keys `Map<toolName, owningServer>` and routes by the inbound flat MCP
+// tool name (contract §1).
+//
+// Composition seam: it depends ONLY on the PUBLIC `IBaboonRoutableMcpServer<Ctx>`
+// surface (tasks:T114) — it reads each server's `serverInfo` and `tools`, and
+// routes each `tools/call` via the public `routeToolCall`. It NEVER reads
+// protected members and NEVER calls a server's `handle()` (a member's `handle`
+// resolves only its OWN tools and returns "unknown tool" for any cross-service
+// name — contract §4). The muxer owns the JSON-RPC envelope; each member owns
+// its domain dispatch.
+//
+// The `handle` state machine is the SAME shape as the per-service base, with
+// three arms differing only in operating over the union: `tools/list` returns
+// the union, `tools/call` routes by tool name to the owning server, and
+// `initialize` returns a single merged `serverInfo` supplied to the ctor.
+export class AbstractMcpMuxer<Ctx> implements IBaboonMcpServer<Ctx> {
+    // Registration order preserved (insertion-ordered Map / array — JsonMuxer
+    // LinkedHashMap precedent). `route`/`entries` are built at registration
+    // (contract §2), never per request.
+    private readonly servers: IBaboonRoutableMcpServer<Ctx>[] = [];
+    private readonly route = new Map<string, IBaboonRoutableMcpServer<Ctx>>();
+    private readonly entries = new Map<string, McpToolEntry>();
+    private readonly mergedServerInfo: McpServerInfo;
+
+    // varargs ctor mirrors `JsonMuxer(...services)`. `mergedServerInfo` is the
+    // composed endpoint's single identity returned by `initialize` (§3.1).
+    constructor(mergedServerInfo: McpServerInfo, ...servers: IBaboonRoutableMcpServer<Ctx>[]) {
+        this.mergedServerInfo = mergedServerInfo;
+        for (const s of servers) this.register(s);
+    }
+
+    // Folds the server's declaration-ordered `tools()` into the union table;
+    // throws DuplicateTool on a tool-name collision across servers (the exact
+    // MCP-tier analogue of JsonMuxer.register throwing DuplicateService).
+    register(server: IBaboonRoutableMcpServer<Ctx>): void {
+        for (const t of server.tools) {
+            if (this.route.has(t.name)) {
+                throw new BaboonMcpWiringException({ tag: 'DuplicateTool', toolName: t.name });
+            }
+            this.route.set(t.name, server);
+            this.entries.set(t.name, t);
+        }
+        this.servers.push(server);
+    }
+
+    handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse | undefined {
+        const id: JsonRpcId | null = request.id ?? null;
+        switch (request.method) {
+            case 'initialize': {
+                const params = request.params as { protocolVersion?: unknown } | undefined;
+                if (params === undefined || params === null || params.protocolVersion === undefined) {
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'initialize: missing protocolVersion');
+                }
+                session.initialized = true;
+                return {
+                    id,
+                    result: {
+                        protocolVersion: McpProtocolVersion,
+                        capabilities: { tools: {} },
+                        serverInfo: { name: this.mergedServerInfo.name, version: this.mergedServerInfo.version },
+                    },
+                };
+            }
+            case 'notifications/initialized':
+                return undefined;
+            case 'tools/list': {
+                if (!session.initialized) {
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/list before initialize');
+                }
+                return { id, result: { tools: this.toolsListUnion() } };
+            }
+            case 'tools/call': {
+                if (!session.initialized) {
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/call before initialize');
+                }
+                const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
+                const name = params?.name;
+                if (typeof name !== 'string') {
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'tools/call: missing tool name');
+                }
+                const server = this.route.get(name);
+                if (server === undefined) {
+                    // NoMatchingTool: surfaced as the SAME wire response the per-service
+                    // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
+                    // so the bytes are identical whether one server or the muxer rejects.
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, `tools/call: unknown tool '${name}'`);
+                }
+                const entry = this.entries.get(name)!;
+                const argsJson = JSON.stringify(params?.arguments ?? {});
+                const result = server.routeToolCall(entry.method, argsJson, ctx, codecCtx);
+                if (result.tag === 'Right') {
+                    return { id, result: { content: [{ type: 'text', text: result.value }], isError: false } };
+                } else {
+                    // Channel B: a valid protocol call whose domain payload failed.
+                    return { id, result: { content: [{ type: 'text', text: this.describeWiringError(result.value) }], isError: true } };
+                }
+            }
+            default:
+                return this.errorResponse(id, JsonRpcErrorCodes.MethodNotFound, `Method not found: ${request.method}`);
+        }
+    }
+
+    // Backs tools/list (§3.2): the union of all registered servers' tool entries
+    // in registration-then-declaration order (the insertion order of `entries`),
+    // each in the same shape the per-service base emits.
+    private toolsListUnion(): Array<{ name: string; inputSchema: unknown; description?: string }> {
+        const out: Array<{ name: string; inputSchema: unknown; description?: string }> = [];
+        for (const t of this.entries.values()) {
+            const entry: { name: string; inputSchema: unknown; description?: string } = { name: t.name, inputSchema: t.inputSchema };
+            if (t.description !== undefined) entry.description = t.description;
+            out.push(entry);
+        }
+        return out;
+    }
+
+    protected errorResponse(id: JsonRpcId | null, code: number, message: string): JsonRpcResponse {
+        return { id, error: { code, message } };
+    }
+
+    protected describeWiringError(e: BaboonWiringError): string {
+        return JSON.stringify(e);
+    }
+}
+
 // --- Async dispatch interface ---
 //
 // Async sibling of `IBaboonMcpServer`, selected when the backend is generated
@@ -336,6 +494,109 @@ export abstract class AbstractAsyncBaboonMcpServer<Ctx> implements IBaboonAsyncM
             default:
                 return this.errorResponse(id, JsonRpcErrorCodes.MethodNotFound, `Method not found: ${request.method}`);
         }
+    }
+
+    protected errorResponse(id: JsonRpcId | null, code: number, message: string): JsonRpcResponse {
+        return { id, error: { code, message } };
+    }
+
+    protected describeWiringError(e: BaboonWiringError): string {
+        return JSON.stringify(e);
+    }
+}
+
+// --- Async cross-service MCP muxer (tasks:T104; contract §7) ---
+//
+// Async sibling of `AbstractMcpMuxer`, for backends generated with
+// `--ts-async-services=true`: it composes `IBaboonRoutableAsyncMcpServer<Ctx>`
+// members (whose `routeToolCall` returns a `Promise<BaboonEitherResult>`), so the
+// single `tools/call` dispatch hop is awaited and `handle` is itself `async`. The
+// registration / union-table build (`DuplicateTool` on collision), the merged
+// `initialize`, the ordering rule, and the `NoMatchingTool` wire mapping are
+// identical to the sync muxer; only the `tools/call` hop awaits.
+export class AbstractAsyncMcpMuxer<Ctx> implements IBaboonAsyncMcpServer<Ctx> {
+    private readonly servers: IBaboonRoutableAsyncMcpServer<Ctx>[] = [];
+    private readonly route = new Map<string, IBaboonRoutableAsyncMcpServer<Ctx>>();
+    private readonly entries = new Map<string, McpToolEntry>();
+    private readonly mergedServerInfo: McpServerInfo;
+
+    constructor(mergedServerInfo: McpServerInfo, ...servers: IBaboonRoutableAsyncMcpServer<Ctx>[]) {
+        this.mergedServerInfo = mergedServerInfo;
+        for (const s of servers) this.register(s);
+    }
+
+    register(server: IBaboonRoutableAsyncMcpServer<Ctx>): void {
+        for (const t of server.tools) {
+            if (this.route.has(t.name)) {
+                throw new BaboonMcpWiringException({ tag: 'DuplicateTool', toolName: t.name });
+            }
+            this.route.set(t.name, server);
+            this.entries.set(t.name, t);
+        }
+        this.servers.push(server);
+    }
+
+    async handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): Promise<JsonRpcResponse | undefined> {
+        const id: JsonRpcId | null = request.id ?? null;
+        switch (request.method) {
+            case 'initialize': {
+                const params = request.params as { protocolVersion?: unknown } | undefined;
+                if (params === undefined || params === null || params.protocolVersion === undefined) {
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'initialize: missing protocolVersion');
+                }
+                session.initialized = true;
+                return {
+                    id,
+                    result: {
+                        protocolVersion: McpProtocolVersion,
+                        capabilities: { tools: {} },
+                        serverInfo: { name: this.mergedServerInfo.name, version: this.mergedServerInfo.version },
+                    },
+                };
+            }
+            case 'notifications/initialized':
+                return undefined;
+            case 'tools/list': {
+                if (!session.initialized) {
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/list before initialize');
+                }
+                return { id, result: { tools: this.toolsListUnion() } };
+            }
+            case 'tools/call': {
+                if (!session.initialized) {
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/call before initialize');
+                }
+                const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
+                const name = params?.name;
+                if (typeof name !== 'string') {
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'tools/call: missing tool name');
+                }
+                const server = this.route.get(name);
+                if (server === undefined) {
+                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, `tools/call: unknown tool '${name}'`);
+                }
+                const entry = this.entries.get(name)!;
+                const argsJson = JSON.stringify(params?.arguments ?? {});
+                const result = await server.routeToolCall(entry.method, argsJson, ctx, codecCtx);
+                if (result.tag === 'Right') {
+                    return { id, result: { content: [{ type: 'text', text: result.value }], isError: false } };
+                } else {
+                    return { id, result: { content: [{ type: 'text', text: this.describeWiringError(result.value) }], isError: true } };
+                }
+            }
+            default:
+                return this.errorResponse(id, JsonRpcErrorCodes.MethodNotFound, `Method not found: ${request.method}`);
+        }
+    }
+
+    private toolsListUnion(): Array<{ name: string; inputSchema: unknown; description?: string }> {
+        const out: Array<{ name: string; inputSchema: unknown; description?: string }> = [];
+        for (const t of this.entries.values()) {
+            const entry: { name: string; inputSchema: unknown; description?: string } = { name: t.name, inputSchema: t.inputSchema };
+            if (t.description !== undefined) entry.description = t.description;
+            out.push(entry);
+        }
+        return out;
     }
 
     protected errorResponse(id: JsonRpcId | null, code: number, message: string): JsonRpcResponse {
