@@ -3202,6 +3202,7 @@ dep action.test-py-wiring-result
 dep action.test-py-wiring-outcome
 dep action.test-py-wiring-async
 dep action.test-ts-wiring-async
+dep action.test-cs-wiring-async
 dep action.test-kt-wiring
 dep action.test-jv-wiring
 dep action.test-dt-wiring
@@ -3301,14 +3302,9 @@ Generate ASYNC C# service wiring for the petstore model
 `IPetStore` interface with `Task<T>` methods, `PetStoreWiring.Invoke{Json,Ueba}`
 as `async Task<...>`, the muxer wrappers parameterised over `Task<...>`, and the
 `PetStoreClient` with `async`/`await` over `Task`-returning transport delegates.
-A minimal async `IPetStore` impl is scaffolded inline so `dotnet build`
+A minimal async `IPetStore` stub is scaffolded inline so `dotnet build`
 type-checks the emitted async surface (interface conformance, await sites,
-delegate signatures).
-
-NOTE: requires the native binary (`action.build`) and dotnet. Authored to
-mirror the sync `test-gen-cs-client` lane; not wired into the aggregate `:test`
-target yet and UNRUN in CI as of this commit — verified locally only via
-`sbt baboonJVM/runMain ...` + `dotnet build`.
+delegate signatures). Companion runner: `test-cs-wiring-async`.
 
 ```bash
 dep action.restore-dotnet
@@ -3349,10 +3345,10 @@ cat > "$TEST_DIR/gen/AsyncImpl.cs" <<'EOF'
 using System.Threading.Tasks;
 namespace Petstore.Api {
     public sealed class PetStoreAsyncImpl : IPetStore {
-        public Task<PetStore.AddPet.Out> addPet(PetStore.AddPet.In arg) => Task.FromResult<PetStore.AddPet.Out>(null!);
-        public Task<PetStore.GetPet.Out> getPet(PetStore.GetPet.In arg) => Task.FromResult<PetStore.GetPet.Out>(null!);
-        public Task<PetStore.ListPets.Out> listPets(PetStore.ListPets.In arg) => Task.FromResult<PetStore.ListPets.Out>(null!);
-        public Task<PetStore.DeletePet.Out> deletePet(PetStore.DeletePet.In arg) => Task.FromResult<PetStore.DeletePet.Out>(null!);
+        public Task<PetStore.AddPet.Out> AddPet(PetStore.AddPet.In arg) => Task.FromResult<PetStore.AddPet.Out>(null!);
+        public Task<PetStore.GetPet.Out> GetPet(PetStore.GetPet.In arg) => Task.FromResult<PetStore.GetPet.Out>(null!);
+        public Task<PetStore.ListPets.Out> ListPets(PetStore.ListPets.In arg) => Task.FromResult<PetStore.ListPets.Out>(null!);
+        public Task<PetStore.DeletePet.Out> DeletePet(PetStore.DeletePet.In arg) => Task.FromResult<PetStore.DeletePet.Out>(null!);
     }
 }
 EOF
@@ -3363,6 +3359,139 @@ popd
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-wiring-async
+
+Build and run the async C# wiring round-trip: type-checks the generated
+`Task<T>`-returning service interface and async invoke dispatchers via
+`dotnet build`, then runs an in-process round-trip (JSON + UEBA) via the
+generated `PetStoreClient` backed by the async dispatchers.
+
+```bash
+TEST_DIR="${action.test-gen-cs-wiring-async.test_dir}"
+
+cat > "$TEST_DIR/gen/Build.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>
+EOF
+
+cat > "$TEST_DIR/gen/Driver.cs" <<'EOF'
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Baboon.Runtime.Shared;
+using Petstore.Api;
+
+// In-process async round-trip driver for the C# async wiring lane.
+// Exercises the generated PetStoreClient (async transport delegates) end-to-end
+// via both JSON and UEBA codecs, calling through the async invoke dispatchers.
+namespace AsyncDriver {
+    public sealed class Impl : IPetStore {
+        private readonly Dictionary<long, Pet> _pets = new();
+        private long _next = 1;
+
+        public Task<PetStore.AddPet.Out> AddPet(PetStore.AddPet.In arg) {
+            long id = _next++;
+            Pet pet = new Pet(id, arg.Name, arg.Status, arg.Tag);
+            _pets[id] = pet;
+            return Task.FromResult(new PetStore.AddPet.Out(pet));
+        }
+
+        public Task<PetStore.GetPet.Out> GetPet(PetStore.GetPet.In arg) =>
+            Task.FromResult(new PetStore.GetPet.Out(_pets[arg.Id]));
+
+        public Task<PetStore.ListPets.Out> ListPets(PetStore.ListPets.In arg) =>
+            Task.FromResult(new PetStore.ListPets.Out(_pets.Values.OrderBy(p => p.Id).ToList()));
+
+        public Task<PetStore.DeletePet.Out> DeletePet(PetStore.DeletePet.In arg) =>
+            Task.FromResult(new PetStore.DeletePet.Out(_pets.Remove(arg.Id)));
+    }
+
+    public static class Driver {
+        public static async Task<int> Main() {
+            BaboonCodecContext ctx = BaboonCodecContext.Default;
+            await RunUeba(ctx);
+            await RunJson(ctx);
+            Console.WriteLine("OK");
+            return 0;
+        }
+
+        private static async Task RunUeba(BaboonCodecContext ctx) {
+            Impl impl = new Impl();
+            PetStoreClient client = new PetStoreClient(
+                async (svc, method, data) => await PetStoreWiring.InvokeUeba(new BaboonMethodId(svc, method), data, impl, ctx),
+                async (svc, method, data) => await PetStoreWiring.InvokeJson(new BaboonMethodId(svc, method), data, impl, ctx)
+            );
+
+            PetStore.AddPet.Out addOut = await client.AddPet(new PetStore.AddPet.In("Buddy", PetStatus.Available, "dog"), ctx);
+            Assert(addOut.Pet.Name == "Buddy", $"UEBA AddPet name: {addOut.Pet.Name}");
+            long id = addOut.Pet.Id;
+
+            PetStore.GetPet.Out getOut = await client.GetPet(new PetStore.GetPet.In(id), ctx);
+            Assert(getOut.Pet.Status == PetStatus.Available, "UEBA GetPet status");
+
+            PetStore.ListPets.Out listOut = await client.ListPets(new PetStore.ListPets.In(), ctx);
+            Assert(listOut.Pets.Count == 1, $"UEBA ListPets count: {listOut.Pets.Count}");
+
+            PetStore.DeletePet.Out delOut = await client.DeletePet(new PetStore.DeletePet.In(id), ctx);
+            Assert(delOut.Deleted, "UEBA DeletePet");
+
+            Console.WriteLine("UEBA round-trip OK");
+        }
+
+        private static async Task RunJson(BaboonCodecContext ctx) {
+            Impl impl = new Impl();
+            PetStoreClient client = new PetStoreClient(
+                async (svc, method, data) => await PetStoreWiring.InvokeUeba(new BaboonMethodId(svc, method), data, impl, ctx),
+                async (svc, method, data) => await PetStoreWiring.InvokeJson(new BaboonMethodId(svc, method), data, impl, ctx)
+            );
+
+            PetStore.AddPet.Out addOut = await client.AddPetJson(new PetStore.AddPet.In("Whiskers", PetStatus.Pending, "cat"), ctx);
+            Assert(addOut.Pet.Name == "Whiskers", $"JSON AddPet name: {addOut.Pet.Name}");
+            long id = addOut.Pet.Id;
+
+            PetStore.GetPet.Out getOut = await client.GetPetJson(new PetStore.GetPet.In(id), ctx);
+            Assert(getOut.Pet.Status == PetStatus.Pending, "JSON GetPet status");
+
+            PetStore.ListPets.Out listOut = await client.ListPetsJson(new PetStore.ListPets.In(), ctx);
+            Assert(listOut.Pets.Count == 1, $"JSON ListPets count: {listOut.Pets.Count}");
+
+            PetStore.DeletePet.Out delOut = await client.DeletePetJson(new PetStore.DeletePet.In(id), ctx);
+            Assert(delOut.Deleted, "JSON DeletePet");
+
+            Console.WriteLine("JSON round-trip OK");
+        }
+
+        private static void Assert(bool cond, string msg) {
+            if (!cond) {
+                Console.Error.WriteLine("ASSERT FAILED: " + msg);
+                Environment.Exit(1);
+            }
+        }
+    }
+}
+EOF
+
+pushd "$TEST_DIR/gen"
+dotnet build -c Release Build.csproj
+dotnet run --project Build.csproj -c Release --no-build
+popd
+
+ret success:bool=true
 ```
 
 # action: test-gen-cs-wiring-errors-async
