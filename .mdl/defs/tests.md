@@ -2217,6 +2217,58 @@ grep -q "Awaitable\[" "$TEST_DIR/gen/petstore/api/PetStore_Client.py"
 ret success:bool=true
 ```
 
+# action: test-gen-ts-wiring-async
+
+Generate async TypeScript service wiring (`--ts-async-services=true`) for the
+petstore model into the `ts-async` overlay project. Both JSON and UEBA codec
+families are enabled. Generates the `async`-flavour invoke dispatchers
+(`invokeJson_PetStore` / `invokeUeba_PetStore` returning `Promise<...>`) and
+the service interface with `Promise<Out>` methods.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-wiring-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-async"
+
+rsync -a --exclude='node_modules' --exclude='dist' \
+  ./test/services/ts-async/ "$TEST_DIR/ts-async/"
+
+mkdir -p "$TEST_DIR/ts-async/src/generated"
+
+$BABOON_BIN \
+  --model-dir ./test/services/petstore.baboon \
+  --lock-file="$TEST_DIR/baboon-ts-wiring-async.lock" \
+  :typescript \
+  --output "$TEST_DIR/ts-async/src/generated" \
+  --ts-async-services=true \
+  --service-result-no-errors=true \
+  --generate-json-codecs-by-default=true \
+  --generate-ueba-codecs-by-default=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-ts-wiring-async
+
+Build and run the async TypeScript wiring round-trip: type-checks the generated
+`Promise`-returning service interface and async invoke dispatchers via `tsc --noEmit`,
+then runs an in-process round-trip (JSON + UEBA) via the generated
+`PetStoreClient` backed by the async dispatchers.
+
+```bash
+TEST_DIR="${action.test-gen-ts-wiring-async.test_dir}"
+pushd "$TEST_DIR/ts-async"
+npm install
+npm run build
+npm test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-kt-wiring
 
 Generate code for Kotlin wiring tests in no-errors service-result mode
@@ -3149,6 +3201,7 @@ dep action.test-py-wiring-either
 dep action.test-py-wiring-result
 dep action.test-py-wiring-outcome
 dep action.test-py-wiring-async
+dep action.test-ts-wiring-async
 dep action.test-kt-wiring
 dep action.test-jv-wiring
 dep action.test-dt-wiring
