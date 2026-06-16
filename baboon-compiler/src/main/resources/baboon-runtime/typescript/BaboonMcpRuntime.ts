@@ -90,6 +90,37 @@ export interface IBaboonMcpServer<Ctx> {
     handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse | undefined;
 }
 
+// --- PUBLIC routable-server surface (tasks:T114) ---
+//
+// The composition seam the cross-service MCP muxer (AbstractMcpMuxer) depends
+// on. A sibling muxer needs to (1) read each server's identity, (2) read its
+// declaration-ordered tool registry to build the union tools/list and the
+// tool-name -> owner table, and (3) route a single tools/call into the owning
+// server reusing its existing Channel-A/Channel-B mapping unchanged. Those
+// inputs were `protected`/`private` on the base, so a sibling could not compose
+// them portably; this interface promotes exactly them to a stable PUBLIC
+// surface. The muxer depends on the interface, not on concrete
+// `<Service>McpServer` subclasses, and NEVER calls a server's `handle()`.
+//
+// `routeToolCall` is the public name for the per-service routable dispatch
+// entry: the SAME code path `handle()` drives for its own `tools/call` arm
+// (`invokeJson`), exposed so the muxer reuses Channel-A/Channel-B verbatim.
+// The sync variant returns `BaboonEitherResult`; the async variant returns a
+// `Promise<BaboonEitherResult>` (see `IBaboonRoutableAsyncMcpServer`).
+export interface IBaboonRoutableMcpServer<Ctx> {
+    readonly serverInfo: McpServerInfo;
+    readonly tools: readonly McpToolEntry[];
+    routeToolCall(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): BaboonEitherResult;
+}
+
+// Async sibling of `IBaboonRoutableMcpServer`, for backends generated with
+// `--ts-async-services=true`: `routeToolCall` returns a `Promise`.
+export interface IBaboonRoutableAsyncMcpServer<Ctx> {
+    readonly serverInfo: McpServerInfo;
+    readonly tools: readonly McpToolEntry[];
+    routeToolCall(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): Promise<BaboonEitherResult>;
+}
+
 // The JSON `tools/call` delegate the generated server supplies: it routes one
 // tool invocation into the already-generated service dispatch (the errors-mode
 // `dispatchJson`, which returns the service-result container). The MCP layer
@@ -114,10 +145,19 @@ export type BaboonEitherResult =
 // All JSON-RPC method strings ("tools/list" …) and result keys ("protocolVersion",
 // "inputSchema" …) are literal lowercase strings, NOT subject to any per-language
 // symbol casing.
-export abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<Ctx> {
-    protected abstract readonly serverInfo: McpServerInfo;
-    protected abstract readonly tools: readonly McpToolEntry[];
+export abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<Ctx>, IBaboonRoutableMcpServer<Ctx> {
+    // PUBLIC routable-server surface (tasks:T114): the muxer reads serverInfo /
+    // tools and routes via routeToolCall, never via the (private) byName() and
+    // never via handle().
+    public abstract readonly serverInfo: McpServerInfo;
+    public abstract readonly tools: readonly McpToolEntry[];
     protected abstract invokeJson(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): BaboonEitherResult;
+
+    // PUBLIC dispatch entry (tasks:T114): the same path handle() drives for its
+    // own tools/call arm, exposed for the muxer to reuse Channel-A/B unchanged.
+    routeToolCall(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): BaboonEitherResult {
+        return this.invokeJson(method, data, ctx, codecCtx);
+    }
 
     private byName(): Map<string, McpToolEntry> {
         const m = new Map<string, McpToolEntry>();
@@ -223,10 +263,16 @@ export type McpJsonInvokeAsync<Ctx> = (
 // method state machine (initialize / tools/list, the error mapping, the wire
 // constants) is identical to the sync base; only the single `tools/call` hop
 // awaits.
-export abstract class AbstractAsyncBaboonMcpServer<Ctx> implements IBaboonAsyncMcpServer<Ctx> {
-    protected abstract readonly serverInfo: McpServerInfo;
-    protected abstract readonly tools: readonly McpToolEntry[];
+export abstract class AbstractAsyncBaboonMcpServer<Ctx> implements IBaboonAsyncMcpServer<Ctx>, IBaboonRoutableAsyncMcpServer<Ctx> {
+    // PUBLIC routable-server surface (tasks:T114), async flavour: routeToolCall
+    // returns a Promise; the muxer awaits it before applying Channel-A/B.
+    public abstract readonly serverInfo: McpServerInfo;
+    public abstract readonly tools: readonly McpToolEntry[];
     protected abstract invokeJson(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): Promise<BaboonEitherResult>;
+
+    routeToolCall(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): Promise<BaboonEitherResult> {
+        return this.invokeJson(method, data, ctx, codecCtx);
+    }
 
     private byName(): Map<string, McpToolEntry> {
         const m = new Map<string, McpToolEntry>();

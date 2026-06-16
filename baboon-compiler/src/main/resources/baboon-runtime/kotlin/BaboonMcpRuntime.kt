@@ -102,6 +102,23 @@ interface IBaboonMcpServer<Ctx> {
     fun handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse?
 }
 
+// --- PUBLIC routable-server surface (tasks:T114) ---
+//
+// The composition seam the cross-service MCP muxer (AbstractMcpMuxer) depends on.
+// A sibling muxer reads each server's identity (`serverInfo`) and its
+// declaration-ordered registry (`tools`) to build the union tools/list and the
+// tool-name -> owner table, and routes a single tools/call into the owning server
+// via `routeToolCall` — reusing its existing Channel-A/Channel-B mapping
+// unchanged. Those inputs were `protected`/`private` on the base, so a sibling
+// could not compose them; this interface promotes exactly them to a stable PUBLIC
+// surface. The muxer depends on the interface, NEVER on `handle`. Kotlin MCP is
+// sync-only (no async base), so `routeToolCall` returns the sync Either.
+interface IBaboonRoutableMcpServer<Ctx> {
+    val serverInfo: McpServerInfo
+    val tools: List<McpToolEntry>
+    fun routeToolCall(method: BaboonMethodId, data: String, ctx: Ctx, codecCtx: BaboonCodecContext): Either<BaboonWiringError, String>
+}
+
 // The JSON `tools/call` delegate the generated server supplies: it routes
 // one tool invocation into the already-generated service dispatch (the
 // errors-mode `invokeJson`, which returns the service-result container). The
@@ -117,10 +134,18 @@ typealias McpJsonInvoke<Ctx> = (method: BaboonMethodId, data: String, ctx: Ctx, 
 // All JSON-RPC method strings ("tools/list" …) and result keys ("protocolVersion",
 // "inputSchema" …) are literal lowercase strings, NOT subject to any per-language
 // symbol casing.
-abstract class AbstractBaboonMcpServer<Ctx> : IBaboonMcpServer<Ctx> {
-    protected abstract val serverInfo: McpServerInfo
-    protected abstract val tools: List<McpToolEntry>
+abstract class AbstractBaboonMcpServer<Ctx> : IBaboonMcpServer<Ctx>, IBaboonRoutableMcpServer<Ctx> {
+    // PUBLIC routable-server surface (tasks:T114): the muxer reads `serverInfo` /
+    // `tools` and routes via `routeToolCall`, never via the private `byName()`
+    // and never via `handle`.
+    abstract override val serverInfo: McpServerInfo
+    abstract override val tools: List<McpToolEntry>
     protected abstract fun invokeJson(method: BaboonMethodId, data: String, ctx: Ctx, codecCtx: BaboonCodecContext): Either<BaboonWiringError, String>
+
+    // PUBLIC dispatch entry (tasks:T114): the same path `handle` drives for its
+    // own tools/call arm, exposed for the muxer to reuse Channel-A/B unchanged.
+    final override fun routeToolCall(method: BaboonMethodId, data: String, ctx: Ctx, codecCtx: BaboonCodecContext): Either<BaboonWiringError, String> =
+        invokeJson(method, data, ctx, codecCtx)
 
     private fun byName(): Map<String, McpToolEntry> {
         val m = mutableMapOf<String, McpToolEntry>()

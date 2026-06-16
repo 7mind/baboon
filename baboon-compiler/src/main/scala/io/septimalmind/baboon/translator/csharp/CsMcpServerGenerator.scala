@@ -135,9 +135,9 @@ class CsMcpServerGenerator[F[+_, +_]: Error2](
          |// per-request `Ctx`.
          |public sealed class $className<Ctx> : Baboon.Runtime.Shared.$baseClass<Ctx>
          |{
-         |    protected override Baboon.Runtime.Shared.McpServerInfo ServerInfo { get; } = new Baboon.Runtime.Shared.McpServerInfo(${csString(serviceName)}, ${csString(modelVer)});
+         |    public override Baboon.Runtime.Shared.McpServerInfo ServerInfo { get; } = new Baboon.Runtime.Shared.McpServerInfo(${csString(serviceName)}, ${csString(modelVer)});
          |
-         |    protected override System.Collections.Generic.IReadOnlyList<Baboon.Runtime.Shared.McpToolEntry> Tools { get; } = new System.Collections.Generic.List<Baboon.Runtime.Shared.McpToolEntry>
+         |    public override System.Collections.Generic.IReadOnlyList<Baboon.Runtime.Shared.McpToolEntry> Tools { get; } = new System.Collections.Generic.List<Baboon.Runtime.Shared.McpToolEntry>
          |    {
          |${toolEntries.mkString("\n")}
          |    };

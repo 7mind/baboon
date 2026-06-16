@@ -99,6 +99,25 @@ package baboon.runtime.shared {
     def apply(method: BaboonMethodId, data: String, ctx: Ctx, codecCtx: BaboonCodecContext): Either[BaboonWiringError, String]
   }
 
+  // --- PUBLIC routable-server surface (tasks:T114) ---
+  //
+  // The composition seam the cross-service MCP muxer (AbstractMcpMuxer) depends
+  // on. A sibling muxer reads each server's identity (`serverInfo`) and its
+  // declaration-ordered registry (`tools`) to build the union tools/list and the
+  // tool-name -> owner table, and routes a single tools/call into the owning
+  // server via `routeToolCall` — reusing its existing Channel-A/Channel-B mapping
+  // unchanged. Those inputs were `protected`/`private` on the base, so a sibling
+  // could not compose them; this trait promotes exactly them to a stable PUBLIC
+  // surface. The muxer depends on the trait, NEVER on `handle`.
+  //
+  // Scala MCP is Either-only (D24/T69): `routeToolCall` returns
+  // `Either[BaboonWiringError, String]`. No async/HKT variant is emitted.
+  trait IBaboonRoutableMcpServer[Ctx] {
+    def serverInfo: McpServerInfo
+    def tools: Seq[McpToolEntry]
+    def routeToolCall(method: BaboonMethodId, data: String, ctx: Ctx, codecCtx: BaboonCodecContext): Either[BaboonWiringError, String]
+  }
+
   // --- Transport-abstract dispatch base ---
   //
   // Shared `handle` state machine. The generated `<Service>McpServer` extends this
@@ -106,10 +125,18 @@ package baboon.runtime.shared {
   // All JSON-RPC method strings ("tools/list" …) and result keys ("protocolVersion",
   // "inputSchema" …) are literal lowercase strings, NOT subject to any per-language
   // symbol casing.
-  abstract class AbstractBaboonMcpServer[Ctx] extends IBaboonMcpServer[Ctx] {
-    protected val serverInfo: McpServerInfo
-    protected val tools: Seq[McpToolEntry]
+  abstract class AbstractBaboonMcpServer[Ctx] extends IBaboonMcpServer[Ctx] with IBaboonRoutableMcpServer[Ctx] {
+    // PUBLIC routable-server surface (tasks:T114): the muxer reads `serverInfo` /
+    // `tools` and routes via `routeToolCall`, never via the private `byName()`
+    // and never via `handle`.
+    def serverInfo: McpServerInfo
+    def tools: Seq[McpToolEntry]
     protected def invokeJson(method: BaboonMethodId, data: String, ctx: Ctx, codecCtx: BaboonCodecContext): Either[BaboonWiringError, String]
+
+    // PUBLIC dispatch entry (tasks:T114): the same path `handle` drives for its
+    // own tools/call arm, exposed for the muxer to reuse Channel-A/B unchanged.
+    final def routeToolCall(method: BaboonMethodId, data: String, ctx: Ctx, codecCtx: BaboonCodecContext): Either[BaboonWiringError, String] =
+      invokeJson(method, data, ctx, codecCtx)
 
     private def byName(): Map[String, McpToolEntry] =
       tools.map(t => t.name -> t).toMap

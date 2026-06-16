@@ -174,6 +174,17 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
       else
         "        self.base.handle_request(request, session, ctx, codec_ctx, &*self.invoke_json)"
 
+    // PUBLIC routable dispatch (tasks:T114). The closure routes one tool into the
+    // generated service dispatch exactly as `handle`'s tools/call arm does. In
+    // async mode `invoke_json` evaluates to a future, so it is driven to
+    // completion by the same `block_on` bridge `handle` uses, returning the sync
+    // `Result<String, BaboonWiringError>` container the muxer maps to Channel-A/B.
+    val routeBody =
+      if (isAsync)
+        "        block_on((self.invoke_json)(method, data, ctx, codec_ctx))"
+      else
+        "        (self.invoke_json)(method, data, ctx, codec_ctx)"
+
     // Self-contained, dependency-free `block_on` for the async server (no tokio
     // / futures crate is on the generated crate's dependency list). The generated
     // service futures are not `Send`, so a single-threaded park-loop executor is
@@ -253,6 +264,26 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
          |        codec_ctx: &crate::baboon_runtime::BaboonCodecContext,
          |    ) -> Option<crate::baboon_mcp_server::JsonRpcResponse> {
          |$handleBody
+         |    }
+         |}
+         |
+         |impl<Ctx: Clone> crate::baboon_mcp_server::IBaboonRoutableMcpServer<Ctx> for $structName<Ctx> {
+         |    fn server_info(&self) -> &crate::baboon_mcp_server::McpServerInfo {
+         |        &self.base.server_info
+         |    }
+         |
+         |    fn tools(&self) -> &[crate::baboon_mcp_server::McpToolEntry] {
+         |        &self.base.tools
+         |    }
+         |
+         |    fn route_tool_call(
+         |        &self,
+         |        method: &crate::baboon_service_wiring::BaboonMethodId,
+         |        data: &str,
+         |        ctx: Ctx,
+         |        codec_ctx: &crate::baboon_runtime::BaboonCodecContext,
+         |    ) -> Result<String, crate::baboon_service_wiring::BaboonWiringError> {
+         |$routeBody
          |    }
          |}
          |""".stripMargin

@@ -97,6 +97,23 @@ abstract class IBaboonMcpServer<Ctx> {
   JsonRpcResponse? handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx);
 }
 
+// --- PUBLIC routable-server surface (tasks:T114) ---
+//
+// The composition seam the cross-service MCP muxer (AbstractMcpMuxer) depends on.
+// A sibling muxer reads each server's identity (`serverInfo`) and its
+// declaration-ordered registry (`tools`) to build the union tools/list and the
+// tool-name -> owner table, and routes a single tools/call into the owning server
+// via `routeToolCall` — reusing its existing Channel-A/Channel-B mapping
+// unchanged. Those inputs were not behind a stable public interface; this one
+// promotes exactly them. The muxer depends on the interface, NEVER on `handle`.
+// Dart MCP is sync-only (no async base); `routeToolCall` returns the wire result
+// string (or throws BaboonWiringException, exactly as `invokeJsonFn` does).
+abstract class IBaboonRoutableMcpServer<Ctx> {
+  McpServerInfo get serverInfo;
+  List<McpToolEntry> get tools;
+  String routeToolCall(BaboonMethodId method, String data, Ctx ctx, BaboonCodecContext codecCtx);
+}
+
 // --- Transport-abstract dispatch base ---
 //
 // Shared `handle` state machine. The generated `<Service>McpServer` extends this
@@ -104,14 +121,22 @@ abstract class IBaboonMcpServer<Ctx> {
 // All JSON-RPC method strings ("tools/list" …) and result keys ("protocolVersion",
 // "inputSchema" …) are literal lowercase strings, NOT subject to any per-language
 // symbol casing.
-abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<Ctx> {
+abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<Ctx>, IBaboonRoutableMcpServer<Ctx> {
+  @override
   McpServerInfo get serverInfo;
+  @override
   List<McpToolEntry> get tools;
 
   // The JSON `tools/call` delegate the generated server supplies: routes one
   // tool invocation into the already-generated service dispatch (the errors-mode
   // `invokeJson`, which returns the wire result or throws BaboonWiringException).
   String Function(BaboonMethodId, String, Ctx, BaboonCodecContext) get invokeJsonFn;
+
+  // PUBLIC dispatch entry (tasks:T114): the same path `handle` drives for its
+  // own tools/call arm, exposed for the muxer to reuse Channel-A/B unchanged.
+  @override
+  String routeToolCall(BaboonMethodId method, String data, Ctx ctx, BaboonCodecContext codecCtx) =>
+      invokeJsonFn(method, data, ctx, codecCtx);
 
   Map<String, McpToolEntry> _byName() {
     final m = <String, McpToolEntry>{};

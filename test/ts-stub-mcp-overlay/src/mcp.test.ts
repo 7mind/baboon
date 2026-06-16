@@ -52,6 +52,7 @@ import {
     JsonRpcResponse,
     McpSession,
     BaboonEitherResult,
+    IBaboonRoutableMcpServer,
 } from "./baboondefinitions/generated/BaboonMcpRuntime";
 
 // Generated DTOs — imported only to construct stub responses.
@@ -572,5 +573,78 @@ describe("MCP §4: tools/call error paths (negative controls)", () => {
         expect(result.content.length).toBeGreaterThan(0);
         expect(result.content[0].type).toBe("text");
         expect(result.content[0].text.length).toBeGreaterThan(0);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// T114 — PUBLIC routable-server surface (the muxer composition seam).
+//
+// Acceptance: given a generated `<Service>McpServer` instance, a sibling object
+// reads its serverInfo + tool list and invokes one tool by flat name
+//   - via the PUBLIC interface `IBaboonRoutableMcpServer<Ctx>`,
+//   - WITHOUT subclassing the server,
+//   - WITHOUT calling `handle()`.
+// This proves the muxer can build the union tools/list, the tool-name->owner
+// table, and route a tools/call into the owning server reusing Channel-A/B.
+// ---------------------------------------------------------------------------
+
+describe("MCP T114: public routable-server surface (no handle, no subclass)", () => {
+    // Bind the concrete server purely through the PUBLIC interface — a sibling
+    // muxer would hold exactly this static type, never the concrete subclass.
+    const routable: IBaboonRoutableMcpServer<null> = makeServer();
+
+    test("serverInfo is readable publicly", () => {
+        expect(typeof routable.serverInfo.name).toBe("string");
+        expect(routable.serverInfo.name.length).toBeGreaterThan(0);
+        expect(routable.serverInfo.name).toBe("McpTools");
+        expect(typeof routable.serverInfo.version).toBe("string");
+        expect(routable.serverInfo.version.length).toBeGreaterThan(0);
+    });
+
+    test("tool registry is readable publicly and declaration-ordered", () => {
+        const names = routable.tools.map(t => t.name);
+        // The 6 stub methods, in declaration order (matches §2 tools/list).
+        expect(names).toStrictEqual([
+            "McpTools_listCollections",
+            "McpTools_submitComposite",
+            "McpTools_processShape",
+            "McpTools_processTagged",
+            "McpTools_pagePoints",
+            "McpTools_ping",
+        ]);
+        // Each entry carries a BaboonMethodId the muxer routes by.
+        for (const t of routable.tools) {
+            expect(t.method.serviceName).toBe("McpTools");
+            expect(typeof t.method.methodName).toBe("string");
+            expect(t.method.methodName.length).toBeGreaterThan(0);
+        }
+    });
+
+    test("routeToolCall dispatches one tool by resolved entry → Channel-A (Right)", () => {
+        // Muxer flow: look up the entry by flat name, then route by its method.
+        const byName = new Map(routable.tools.map(t => [t.name, t]));
+        const entry = byName.get("McpTools_ping");
+        expect(entry).toBeDefined();
+
+        const result = routable.routeToolCall(entry!.method, "{}", null, codecCtx);
+        // Stub ping returns ok=true → Right (Channel-A). No handle() involved.
+        expect(result.tag).toBe("Right");
+        if (result.tag === "Right") {
+            expect(typeof result.value).toBe("string");
+            expect(result.value.length).toBeGreaterThan(0);
+        }
+    });
+
+    test("routeToolCall surfaces a domain failure as Left (Channel-B carrier)", () => {
+        // NEGATIVE CONTROL: a malformed submitComposite (nested:null) makes the
+        // wiring decoder throw → invokeJson returns Left. The public dispatch
+        // entry surfaces that Left unchanged for the muxer to map to Channel-B.
+        const byName = new Map(routable.tools.map(t => [t.name, t]));
+        const entry = byName.get("McpTools_submitComposite");
+        expect(entry).toBeDefined();
+
+        const badArgs = JSON.stringify({ nested: null, color: "Blue", fancy: "x" });
+        const result = routable.routeToolCall(entry!.method, badArgs, null, codecCtx);
+        expect(result.tag).toBe("Left");
     });
 });

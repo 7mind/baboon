@@ -101,6 +101,35 @@ namespace Baboon.Runtime.Shared
         Task<JsonRpcResponse?> Handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx);
     }
 
+    // --- PUBLIC routable-server surface (tasks:T114) ---
+    //
+    // The composition seam the cross-service MCP muxer (AbstractMcpMuxer) depends
+    // on. A sibling muxer reads each server's identity (ServerInfo) and its
+    // declaration-ordered registry (Tools) to build the union tools/list and the
+    // tool-name -> owner table, and routes a single tools/call into the owning
+    // server via RouteToolCall — reusing its existing Channel-A/Channel-B mapping
+    // unchanged. Those inputs were `protected` on the base, so a sibling could
+    // not compose them; this interface promotes exactly them to a stable PUBLIC
+    // surface. The muxer depends on the interface, NEVER on `Handle`.
+    //
+    // `RouteToolCall` is the public name for the per-service dispatch entry that
+    // `Handle` already drives for its own `tools/call` arm (`InvokeJson`).
+    public interface IBaboonRoutableMcpServer<in Ctx>
+    {
+        McpServerInfo ServerInfo { get; }
+        IReadOnlyList<McpToolEntry> Tools { get; }
+        Either<BaboonWiringError, string> RouteToolCall(BaboonMethodId method, string data, Ctx ctx, BaboonCodecContext codecCtx);
+    }
+
+    // Async sibling of `IBaboonRoutableMcpServer`, for `--cs-async-services=true`:
+    // `RouteToolCall` returns `Task<Either<..>>`.
+    public interface IBaboonRoutableMcpServerAsync<in Ctx>
+    {
+        McpServerInfo ServerInfo { get; }
+        IReadOnlyList<McpToolEntry> Tools { get; }
+        Task<Either<BaboonWiringError, string>> RouteToolCall(BaboonMethodId method, string data, Ctx ctx, BaboonCodecContext codecCtx);
+    }
+
     // The JSON `tools/call` delegate the generated server supplies: it routes
     // one tool invocation into the already-generated service dispatch (the
     // errors-mode `InvokeJson`, which returns the service-result container). The
@@ -133,11 +162,21 @@ namespace Baboon.Runtime.Shared
     // ("protocolVersion", "inputSchema" …) are literal lowercase strings, NOT
     // subject to any per-language symbol casing (the PascalCase convention
     // applies only to internal C# symbols, never to the wire).
-    public abstract class AbstractBaboonMcpServer<Ctx> : IBaboonMcpServer<Ctx>
+    public abstract class AbstractBaboonMcpServer<Ctx> : IBaboonMcpServer<Ctx>, IBaboonRoutableMcpServer<Ctx>
     {
-        protected abstract McpServerInfo ServerInfo { get; }
-        protected abstract IReadOnlyList<McpToolEntry> Tools { get; }
+        // PUBLIC routable-server surface (tasks:T114): the muxer reads ServerInfo
+        // / Tools and routes via RouteToolCall, never via the private ByName()
+        // and never via Handle.
+        public abstract McpServerInfo ServerInfo { get; }
+        public abstract IReadOnlyList<McpToolEntry> Tools { get; }
         protected abstract Either<BaboonWiringError, string> InvokeJson(BaboonMethodId method, string data, Ctx ctx, BaboonCodecContext codecCtx);
+
+        // PUBLIC dispatch entry (tasks:T114): the same path Handle drives for its
+        // own tools/call arm, exposed for the muxer to reuse Channel-A/B unchanged.
+        public Either<BaboonWiringError, string> RouteToolCall(BaboonMethodId method, string data, Ctx ctx, BaboonCodecContext codecCtx)
+        {
+            return InvokeJson(method, data, ctx, codecCtx);
+        }
 
         private Dictionary<string, McpToolEntry> ByName()
         {
@@ -250,11 +289,18 @@ namespace Baboon.Runtime.Shared
     // The synchronous method state machine (initialize / tools/list, the error
     // mapping, the wire-string constants) is identical to the sync base; only the
     // single `tools/call` hop awaits.
-    public abstract class AbstractBaboonMcpServerAsync<Ctx> : IBaboonMcpServerAsync<Ctx>
+    public abstract class AbstractBaboonMcpServerAsync<Ctx> : IBaboonMcpServerAsync<Ctx>, IBaboonRoutableMcpServerAsync<Ctx>
     {
-        protected abstract McpServerInfo ServerInfo { get; }
-        protected abstract IReadOnlyList<McpToolEntry> Tools { get; }
+        // PUBLIC routable-server surface (tasks:T114), async flavour: RouteToolCall
+        // returns Task<Either<..>>; the muxer awaits it before Channel-A/B.
+        public abstract McpServerInfo ServerInfo { get; }
+        public abstract IReadOnlyList<McpToolEntry> Tools { get; }
         protected abstract Task<Either<BaboonWiringError, string>> InvokeJson(BaboonMethodId method, string data, Ctx ctx, BaboonCodecContext codecCtx);
+
+        public Task<Either<BaboonWiringError, string>> RouteToolCall(BaboonMethodId method, string data, Ctx ctx, BaboonCodecContext codecCtx)
+        {
+            return InvokeJson(method, data, ctx, codecCtx);
+        }
 
         private Dictionary<string, McpToolEntry> ByName()
         {

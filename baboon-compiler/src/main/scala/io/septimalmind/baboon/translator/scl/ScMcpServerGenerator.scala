@@ -168,10 +168,10 @@ class ScMcpServerGenerator[F[+_, +_]: Error2](
          |  private val _invokeJson: $invokeJsonType,
          |) extends _root_.baboon.runtime.shared.AbstractBaboonMcpServer[Ctx] {
          |
-         |  protected override val serverInfo: _root_.baboon.runtime.shared.McpServerInfo =
+         |  override val serverInfo: _root_.baboon.runtime.shared.McpServerInfo =
          |    _root_.baboon.runtime.shared.McpServerInfo(name = ${scalaString(serviceName)}, version = ${scalaString(modelVer)})
          |
-         |  protected override val tools: Seq[_root_.baboon.runtime.shared.McpToolEntry] = Seq(
+         |  override val tools: Seq[_root_.baboon.runtime.shared.McpToolEntry] = Seq(
          |${toolEntries.mkString("\n")}
          |  )
          |

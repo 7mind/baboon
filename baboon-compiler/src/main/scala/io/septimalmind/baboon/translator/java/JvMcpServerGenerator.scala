@@ -71,6 +71,7 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
         "McpToolEntry.java",
         "McpServerInfo.java",
         "IBaboonMcpServer.java",
+        "IBaboonRoutableMcpServer.java",
         "McpJsonInvoke.java",
         "AbstractBaboonMcpServer.java",
       ).map { fname =>
@@ -164,12 +165,12 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
          |    }
          |
          |    @Override
-         |    protected McpServerInfo serverInfo() {
+         |    public McpServerInfo serverInfo() {
          |        return new McpServerInfo(${javaString(serviceName)}, ${javaString(modelVer)});
          |    }
          |
          |    @Override
-         |    protected List<McpToolEntry> tools() {
+         |    public List<McpToolEntry> tools() {
          |        return List.of(
          |${toolEntries.mkString(",\n")}
          |        );

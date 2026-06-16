@@ -115,6 +115,32 @@ pub trait IBaboonMcpServer<Ctx> {
     ) -> Option<JsonRpcResponse>;
 }
 
+// --- PUBLIC routable-server surface (tasks:T114) ---
+//
+// The composition seam the cross-service MCP muxer (AbstractMcpMuxer) depends on.
+// `BaboonMcpServerBase` already exposes `server_info`/`tools` as public fields,
+// but the per-server routable dispatch (the `invoke_json` closure the generated
+// struct owns) was not reachable behind a trait. This trait promotes the three
+// composition inputs to a stable PUBLIC surface implemented BY THE GENERATED
+// `<Service>McpServer<Ctx>` struct (which holds both the base and the closure),
+// so the muxer depends on the trait, never on the concrete struct, and never on
+// `handle`. `route_tool_call` is the public name for the per-service dispatch
+// entry `handle` drives for its own `tools/call` arm; in async mode the
+// generated impl drives the future to completion (the `block_on` bridge already
+// used by `handle`), returning the same sync result container so Channel-A/B
+// mapping is reused unchanged.
+pub trait IBaboonRoutableMcpServer<Ctx> {
+    fn server_info(&self) -> &McpServerInfo;
+    fn tools(&self) -> &[McpToolEntry];
+    fn route_tool_call(
+        &self,
+        method: &BaboonMethodId,
+        data: &str,
+        ctx: Ctx,
+        codec_ctx: &BaboonCodecContext,
+    ) -> Result<String, BaboonWiringError>;
+}
+
 // The JSON `tools/call` delegate the generated server supplies: it routes one
 // tool invocation into the already-generated service dispatch (the errors-mode
 // `invoke_json_*`, which returns `Result<String, BaboonWiringError>`). The MCP

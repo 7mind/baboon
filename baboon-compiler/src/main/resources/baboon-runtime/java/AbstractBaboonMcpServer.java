@@ -18,13 +18,26 @@ import java.util.Map;
 // All JSON-RPC method strings ("tools/list" ...) and result keys
 // ("protocolVersion", "inputSchema" ...) are literal lowercase strings, NOT
 // subject to any per-language symbol casing.
-public abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<Ctx> {
+public abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<Ctx>, IBaboonRoutableMcpServer<Ctx> {
     protected static final ObjectMapper MAPPER = new ObjectMapper();
 
-    protected abstract McpServerInfo serverInfo();
-    protected abstract List<McpToolEntry> tools();
+    // PUBLIC routable-server surface (tasks:T114). The cross-service MCP muxer
+    // (AbstractMcpMuxer) composes registered servers ONLY through these public
+    // accessors + routeToolCall, never via protected members and never via
+    // handle(). serverInfo()/tools() expose this server's identity and its
+    // declaration-ordered registry; routeToolCall is the public name for the
+    // per-service dispatch entry handle() already drives for its own tools/call
+    // arm — it reuses Channel-A/Channel-B mapping unchanged.
+    public abstract McpServerInfo serverInfo();
+    public abstract List<McpToolEntry> tools();
     protected abstract BaboonEither<BaboonWiringError, String> invokeJson(
             BaboonMethodId method, String data, Ctx ctx, BaboonCodecContext codecCtx);
+
+    @Override
+    public BaboonEither<BaboonWiringError, String> routeToolCall(
+            BaboonMethodId method, String data, Ctx ctx, BaboonCodecContext codecCtx) {
+        return invokeJson(method, data, ctx, codecCtx);
+    }
 
     private Map<String, McpToolEntry> byName() {
         Map<String, McpToolEntry> m = new HashMap<>();

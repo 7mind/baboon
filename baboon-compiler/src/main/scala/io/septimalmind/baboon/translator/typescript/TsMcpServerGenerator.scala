@@ -126,9 +126,9 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
          |// generated service dispatch; the integrator supplies it (typically the
          |// errors-mode `dispatchJson` bound to this service) plus the per-request `Ctx`.
          |export class $className<Ctx> extends $baseClass<Ctx> {
-         |    protected readonly serverInfo: McpServerInfo = { name: ${jsString(serviceName)}, version: ${jsString(modelVer)} };
+         |    public readonly serverInfo: McpServerInfo = { name: ${jsString(serviceName)}, version: ${jsString(modelVer)} };
          |
-         |    protected readonly tools: readonly McpToolEntry[] = [
+         |    public readonly tools: readonly McpToolEntry[] = [
          |${toolEntries.mkString("\n")}
          |    ];
          |

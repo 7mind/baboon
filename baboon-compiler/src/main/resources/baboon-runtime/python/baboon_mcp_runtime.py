@@ -108,6 +108,22 @@ class AbstractBaboonMcpServer(IBaboonMcpServer[Ctx]):
     ) -> Any:  # BaboonEither[BaboonWiringError, str]
         raise NotImplementedError
 
+    # PUBLIC routable-server surface (tasks:T114): the cross-service MCP muxer
+    # (AbstractMcpMuxer) composes registered servers through `server_info`,
+    # `tools`, and `route_tool_call` ONLY -- never via the name-private
+    # `_by_name` and never via `handle`. `server_info`/`tools` are already public
+    # properties; `route_tool_call` is the public name for the per-service
+    # dispatch entry `handle` drives for its own `tools/call` arm (`invoke_json`),
+    # exposed so the muxer reuses Channel-A/Channel-B mapping unchanged.
+    def route_tool_call(
+        self,
+        method: BaboonMethodId,
+        data: str,
+        ctx: Ctx,
+        codec_ctx: Any,
+    ) -> Any:  # BaboonEither[BaboonWiringError, str]
+        return self.invoke_json(method, data, ctx, codec_ctx)
+
     def _by_name(self) -> Dict[str, McpToolEntry]:
         return {t.name: t for t in self.tools}
 
@@ -263,6 +279,17 @@ class AbstractAsyncBaboonMcpServer(IBaboonAsyncMcpServer[Ctx]):
         codec_ctx: Any,
     ) -> Any:  # Awaitable[BaboonEither[BaboonWiringError, str]]
         raise NotImplementedError
+
+    # PUBLIC routable-server surface (tasks:T114), async flavour: `route_tool_call`
+    # is an `async def` whose result the muxer awaits before applying Channel-A/B.
+    async def route_tool_call(
+        self,
+        method: BaboonMethodId,
+        data: str,
+        ctx: Ctx,
+        codec_ctx: Any,
+    ) -> Any:  # Awaitable[BaboonEither[BaboonWiringError, str]]
+        return await self.invoke_json(method, data, ctx, codec_ctx)
 
     def _by_name(self) -> Dict[str, McpToolEntry]:
         return {t.name: t for t in self.tools}

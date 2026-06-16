@@ -154,6 +154,19 @@ extension IBaboonMcpServer {
         return m
     }
 
+    // --- PUBLIC routable-server surface (tasks:T114) ---
+    //
+    // `serverInfo`/`tools` are already public protocol requirements; this adds
+    // `routeToolCall`, the public name for the per-service dispatch entry that
+    // `handle` drives for its own `tools/call` arm (`invokeJson`). The
+    // cross-service MCP muxer (AbstractMcpMuxer) composes registered servers
+    // through `serverInfo`/`tools`/`routeToolCall` ONLY — never via the private
+    // `byName()` and never via `handle`. It reuses Channel-A/Channel-B mapping
+    // unchanged.
+    public func routeToolCall(_ method: BaboonMethodId, _ data: String, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) throws -> String {
+        return try invokeJson(method, data, ctx, codecCtx)
+    }
+
     private func errorResponse(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {
         return JsonRpcResponse(id, error: JsonRpcError(code, message))
     }
@@ -317,6 +330,12 @@ extension IBaboonAsyncMcpServer {
         var m: [String: McpToolEntry] = [:]
         for t in tools { m[t.name] = t }
         return m
+    }
+
+    // PUBLIC routable-server surface (tasks:T114), async flavour: `routeToolCall`
+    // is `async throws`; the muxer awaits it before applying Channel-A/B.
+    public func routeToolCall(_ method: BaboonMethodId, _ data: String, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) async throws -> String {
+        return try await invokeJson(method, data, ctx, codecCtx)
     }
 
     private func errorResponse(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {

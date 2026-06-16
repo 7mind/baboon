@@ -36,10 +36,13 @@ import baboon.runtime.shared.BaboonCodecContext;
 import baboon.runtime.shared.BaboonEither;
 import baboon.runtime.shared.BaboonMethodId;
 import baboon.runtime.shared.BaboonWiringError;
+import baboon.runtime.shared.IBaboonRoutableMcpServer;
 import baboon.runtime.shared.JsonRpcError;
 import baboon.runtime.shared.JsonRpcRequest;
 import baboon.runtime.shared.JsonRpcResponse;
+import baboon.runtime.shared.McpServerInfo;
 import baboon.runtime.shared.McpSession;
+import baboon.runtime.shared.McpToolEntry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -710,5 +713,84 @@ public class McpTests {
         assertEquals("text", content.get(0).get("type").textValue());
         assertFalse(content.get(0).get("text").textValue().isEmpty(),
             "content[0].text must be non-empty");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T114 — PUBLIC routable-server surface (the muxer composition seam).
+    //
+    // Acceptance: given a generated <Service>McpServer instance, a sibling object
+    // reads its serverInfo + tool list and invokes one tool by flat name
+    //   - via the PUBLIC interface IBaboonRoutableMcpServer<Ctx>,
+    //   - WITHOUT subclassing the server,
+    //   - WITHOUT calling handle().
+    // This proves the muxer can build the union tools/list, the tool-name->owner
+    // table, and route a tools/call into the owning server reusing Channel-A/B.
+    // ---------------------------------------------------------------------------
+
+    @Test
+    public void t114_publicSurface_serverInfoAndToolsReadableWithoutHandle() throws Exception {
+        // Bind the concrete server purely through the PUBLIC interface — a sibling
+        // muxer would hold exactly this static type, never the concrete subclass.
+        IBaboonRoutableMcpServer<Void> routable = makeServer();
+
+        McpServerInfo info = routable.serverInfo();
+        assertEquals("McpTools", info.name, "serverInfo.name must be readable publicly");
+        assertFalse(info.version.isEmpty(), "serverInfo.version must be non-empty");
+
+        List<McpToolEntry> tools = routable.tools();
+        assertEquals(6, tools.size(), "public tool registry must list all 6 tools");
+        // Declaration order (matches §2 tools/list).
+        assertEquals("McpTools_listCollections", tools.get(0).name);
+        assertEquals("McpTools_submitComposite", tools.get(1).name);
+        assertEquals("McpTools_processShape",    tools.get(2).name);
+        assertEquals("McpTools_processTagged",   tools.get(3).name);
+        assertEquals("McpTools_pagePoints",      tools.get(4).name);
+        assertEquals("McpTools_ping",            tools.get(5).name);
+        for (var t : tools) {
+            assertEquals("McpTools", t.method.serviceName(), "method.serviceName must be McpTools");
+            assertFalse(t.method.methodName().isEmpty(), "method.methodName must be non-empty");
+        }
+    }
+
+    @Test
+    public void t114_publicSurface_routeToolCall_channelA_right() throws Exception {
+        // Muxer flow: look up the entry by flat name, then route by its method via
+        // the PUBLIC routeToolCall — no handle(), no subclassing.
+        IBaboonRoutableMcpServer<Void> routable = makeServer();
+
+        McpToolEntry entry = null;
+        for (var t : routable.tools()) {
+            if (t.name.equals("McpTools_ping")) {
+                entry = t;
+            }
+        }
+        assertNotNull(entry, "McpTools_ping entry must be resolvable from the public registry");
+
+        BaboonEither<BaboonWiringError, String> result =
+            routable.routeToolCall(entry.method, "{\"seqno\":42,\"label\":\"hi\"}", null, codecCtx);
+        // Stub ping returns ok=true → Right (Channel-A).
+        assertTrue(result instanceof BaboonEither.Right, "routeToolCall must return Right for a valid call");
+        var payload = MAPPER.readTree(((BaboonEither.Right<BaboonWiringError, String>) result).value());
+        assertTrue(payload.get("ok").booleanValue(), "ok must be true");
+    }
+
+    @Test
+    public void t114_publicSurface_routeToolCall_channelB_left() throws Exception {
+        // NEGATIVE CONTROL: ping with missing required "seqno" makes the wiring
+        // decoder throw → invokeJson returns Left. The public dispatch entry
+        // surfaces that Left unchanged for the muxer to map to Channel-B.
+        IBaboonRoutableMcpServer<Void> routable = makeServer();
+
+        McpToolEntry entry = null;
+        for (var t : routable.tools()) {
+            if (t.name.equals("McpTools_ping")) {
+                entry = t;
+            }
+        }
+        assertNotNull(entry);
+
+        BaboonEither<BaboonWiringError, String> result =
+            routable.routeToolCall(entry.method, "{\"label\":\"missing-seqno\"}", null, codecCtx);
+        assertTrue(result instanceof BaboonEither.Left, "routeToolCall must surface a decode failure as Left");
     }
 }
