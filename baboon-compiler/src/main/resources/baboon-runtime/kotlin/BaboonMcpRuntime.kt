@@ -250,3 +250,175 @@ abstract class AbstractBaboonMcpServer<Ctx> : IBaboonMcpServer<Ctx>, IBaboonRout
         return e.toString()
     }
 }
+
+// --- MCP-muxer error taxonomy (tasks:T110; contract §6) ---
+//
+// The cross-service MCP muxer composes several <Service>McpServer instances
+// behind one endpoint. `DuplicateTool` is the MCP-tier analogue of the
+// service-wiring `DuplicateService` (a registration-time tool-name collision);
+// `NoMatchingTool` is the analogue of `NoMatchingService` (a dispatch-time
+// unknown tool name). They mirror that taxonomy exactly, but live in this
+// MCP-only runtime file rather than the always-shipped service-wiring runtime
+// (BaboonServiceWiring.kt) so that with `--kt-generate-mcp-server` absent
+// the generated output is byte-identical to the pre-MCP baseline (no MCP
+// types leak into the unconditional runtime).
+// `BaboonMcpWiringException` is the MCP-tier carrier — the structural twin of
+// `BaboonWiringException` (a thrown programmer error carrying a tagged value),
+// so `DuplicateTool` propagates to the integrator exactly as `DuplicateService`
+// does, just from the MCP-only runtime.
+sealed class BaboonMcpWiringError {
+    data class DuplicateTool(val toolName: String) : BaboonMcpWiringError()
+    data class NoMatchingTool(val toolName: String) : BaboonMcpWiringError()
+}
+
+class BaboonMcpWiringException(val error: BaboonMcpWiringError) : RuntimeException(error.toString())
+
+// --- Cross-service MCP muxer (tasks:T110; contract:
+// docs/research/mcp-muxer-runtime-contract.md) ---
+//
+// `AbstractMcpMuxer<Ctx>` composes several `<Service>McpServer<Ctx>` instances
+// behind ONE MCP endpoint so a single connection serves the union of their
+// tools. It is the MCP-tier sibling of `JsonMuxer`: where `JsonMuxer` keys
+// `LinkedHashMap<serviceName, IBaboonJsonService>` and routes by
+// `method.serviceName`, the muxer keys a name→owning-server table and routes
+// by the inbound flat MCP tool name (contract §1).
+//
+// Composition seam: it depends ONLY on the PUBLIC `IBaboonRoutableMcpServer<Ctx>`
+// surface (tasks:T114) — it reads each server's `serverInfo` and `tools`, and
+// routes each `tools/call` via the public `routeToolCall`. It NEVER reads
+// protected members and NEVER calls a server's `handle()` (a member's `handle`
+// resolves only its OWN tools and returns "unknown tool" for any cross-service
+// name — contract §4). The muxer owns the JSON-RPC envelope; each member owns
+// its domain dispatch.
+//
+// Kotlin MCP is sync-only (no async base), so this muxer is synchronous and
+// SYNC ONLY — no async muxer lane is emitted for Kotlin (R112 criticism 3).
+//
+// The `handle` state machine is the SAME shape as the per-service base, with
+// three arms differing only in operating over the union: `tools/list` returns
+// the union, `tools/call` routes by tool name to the owning server, and
+// `initialize` returns a single merged `serverInfo` supplied to the ctor.
+class AbstractMcpMuxer<Ctx>(
+    private val mergedServerInfo: McpServerInfo,
+    vararg initServers: IBaboonRoutableMcpServer<Ctx>,
+) : IBaboonMcpServer<Ctx> {
+    // Registration-order-preserving table: tool name -> owning server.
+    // Built at registration time (contract §2), never per request.
+    // LinkedHashMap preserves insertion order for tools/list union.
+    private val route = LinkedHashMap<String, IBaboonRoutableMcpServer<Ctx>>()
+    private val entries = LinkedHashMap<String, McpToolEntry>()
+
+    init {
+        for (s in initServers) register(s)
+    }
+
+    // Folds the server's declaration-ordered `tools` into the union table;
+    // throws DuplicateTool on a tool-name collision across servers (the exact
+    // MCP-tier analogue of JsonMuxer.register throwing DuplicateService).
+    fun register(server: IBaboonRoutableMcpServer<Ctx>) {
+        for (t in server.tools) {
+            if (route.containsKey(t.name)) {
+                throw BaboonMcpWiringException(BaboonMcpWiringError.DuplicateTool(t.name))
+            }
+            route[t.name] = server
+            entries[t.name] = t
+        }
+    }
+
+    override fun handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse? {
+        val id = request.id
+        return when (request.method) {
+            "initialize" -> {
+                val params = request.params
+                val pv = if (params is JsonObject) params["protocolVersion"] else null
+                if (params == null || pv == null) {
+                    errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "initialize: missing protocolVersion")
+                } else {
+                    session.initialized = true
+                    val result = buildJsonObject {
+                        put("protocolVersion", JsonPrimitive(McpProtocol.VERSION))
+                        put("capabilities", buildJsonObject { put("tools", buildJsonObject { }) })
+                        put("serverInfo", buildJsonObject {
+                            put("name", JsonPrimitive(mergedServerInfo.name))
+                            put("version", JsonPrimitive(mergedServerInfo.version))
+                        })
+                    }
+                    JsonRpcResponse(id, result)
+                }
+            }
+            "notifications/initialized" -> null
+            "tools/list" -> {
+                if (!session.initialized) {
+                    errorResponse(id, JsonRpcErrorCodes.INVALID_REQUEST, "tools/list before initialize")
+                } else {
+                    val toolsArray = buildJsonArray {
+                        for (t in entries.values) {
+                            val entry = buildJsonObject {
+                                put("name", JsonPrimitive(t.name))
+                                put("inputSchema", t.inputSchema)
+                                t.description?.let { put("description", JsonPrimitive(it)) }
+                            }
+                            add(entry)
+                        }
+                    }
+                    JsonRpcResponse(id, buildJsonObject { put("tools", toolsArray) })
+                }
+            }
+            "tools/call" -> {
+                if (!session.initialized) {
+                    errorResponse(id, JsonRpcErrorCodes.INVALID_REQUEST, "tools/call before initialize")
+                } else {
+                    val paramsObj = request.params as? JsonObject
+                    val nameEl = paramsObj?.get("name")
+                    if (nameEl == null || nameEl is JsonNull) {
+                        errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: missing tool name")
+                    } else {
+                        val toolName = (nameEl as? JsonPrimitive)?.contentOrNull
+                            ?: return errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: tool name must be a string")
+                        val server = route[toolName]
+                            ?: return errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: unknown tool '$toolName'")
+                        val entry = entries[toolName]!!
+                        val argsEl = paramsObj["arguments"] ?: buildJsonObject { }
+                        val argsJson = Json.encodeToString(JsonElement.serializer(), argsEl)
+                        when (val result = server.routeToolCall(entry.method, argsJson, ctx, codecCtx)) {
+                            is Either.Right -> {
+                                val content = buildJsonArray {
+                                    add(buildJsonObject {
+                                        put("type", JsonPrimitive("text"))
+                                        put("text", JsonPrimitive(result.value))
+                                    })
+                                }
+                                JsonRpcResponse(id, buildJsonObject {
+                                    put("content", content)
+                                    put("isError", JsonPrimitive(false))
+                                })
+                            }
+                            is Either.Left -> {
+                                // Channel B: a valid protocol call whose domain payload failed.
+                                val content = buildJsonArray {
+                                    add(buildJsonObject {
+                                        put("type", JsonPrimitive("text"))
+                                        put("text", JsonPrimitive(describeWiringError(result.value)))
+                                    })
+                                }
+                                JsonRpcResponse(id, buildJsonObject {
+                                    put("content", content)
+                                    put("isError", JsonPrimitive(true))
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+            else -> errorResponse(id, JsonRpcErrorCodes.METHOD_NOT_FOUND, "Method not found: ${request.method}")
+        }
+    }
+
+    protected fun errorResponse(id: JsonElement?, code: Int, message: String): JsonRpcResponse {
+        return JsonRpcResponse(id, null, JsonRpcError(code, message))
+    }
+
+    protected open fun describeWiringError(e: BaboonWiringError): String {
+        return e.toString()
+    }
+}
