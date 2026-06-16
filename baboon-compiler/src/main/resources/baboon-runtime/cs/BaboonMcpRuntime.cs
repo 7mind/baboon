@@ -280,6 +280,339 @@ namespace Baboon.Runtime.Shared
         }
     }
 
+    // --- MCP-muxer error taxonomy (tasks:T106; contract §6) ---
+    //
+    // The cross-service MCP muxer composes several <Service>McpServer instances
+    // behind one endpoint. `DuplicateTool` is the MCP-tier analogue of the
+    // service-wiring `DuplicateService` (a registration-time tool-name collision);
+    // `NoMatchingTool` is the analogue of `NoMatchingService` (a dispatch-time
+    // unknown tool name). They mirror that taxonomy and carrier exactly, but live in
+    // this MCP-only runtime file rather than the always-shipped service-wiring
+    // runtime (BaboonServiceWiring.cs) so that with `--cs-generate-mcp-server`
+    // absent the generated output is byte-identical to the pre-MCP baseline (no MCP
+    // types leak into the unconditional runtime). `BaboonMcpWiringException` is the
+    // MCP-tier carrier — the structural twin of `BaboonWiringException` (a thrown
+    // programmer error), so `DuplicateTool` propagates to the integrator exactly as
+    // `DuplicateService` does, just from the MCP-only runtime.
+    public enum BaboonMcpWiringErrorTag
+    {
+        DuplicateTool,
+        NoMatchingTool,
+    }
+
+    public sealed record BaboonMcpWiringError(BaboonMcpWiringErrorTag Tag, string ToolName);
+
+    public sealed class BaboonMcpWiringException : Exception
+    {
+        public BaboonMcpWiringError Error { get; }
+        public BaboonMcpWiringException(BaboonMcpWiringError error)
+            : base($"{{\"tag\":\"{error.Tag}\",\"toolName\":\"{error.ToolName}\"}}")
+        {
+            Error = error;
+        }
+    }
+
+    // --- Cross-service MCP muxer (tasks:T106; contract:
+    // docs/research/mcp-muxer-runtime-contract.md) ---
+    //
+    // `AbstractMcpMuxer<Ctx>` composes several `<Service>McpServer<Ctx>` instances
+    // behind ONE MCP endpoint so a single connection serves the union of their
+    // tools. It is the MCP-tier sibling of `JsonMuxer`: where `JsonMuxer` keys
+    // by service name, the muxer keys `Dictionary<toolName, owningServer>` and
+    // routes by the inbound flat MCP tool name (contract §1).
+    //
+    // Composition seam: it depends ONLY on the PUBLIC `IBaboonRoutableMcpServer<Ctx>`
+    // surface (tasks:T114) — it reads each server's `ServerInfo` and `Tools`, and
+    // routes each `tools/call` via the public `RouteToolCall`. It NEVER reads
+    // protected members and NEVER calls a server's `Handle` (a member's Handle
+    // resolves only its OWN tools and returns "unknown tool" for any cross-service
+    // name — contract §4). The muxer owns the JSON-RPC envelope; each member owns
+    // its domain dispatch.
+    //
+    // The `Handle` state machine is the SAME shape as the per-service base, with
+    // three arms differing only in operating over the union: `tools/list` returns
+    // the union, `tools/call` routes by tool name to the owning server, and
+    // `initialize` returns a single merged `ServerInfo` supplied to the ctor.
+    public class AbstractMcpMuxer<Ctx> : IBaboonMcpServer<Ctx>
+    {
+        // Registration order preserved (insertion-ordered Dictionary / list —
+        // JsonMuxer LinkedHashMap precedent). `_route`/`_entries` are built at
+        // registration (contract §2), never per request.
+        private readonly List<IBaboonRoutableMcpServer<Ctx>> _servers = new List<IBaboonRoutableMcpServer<Ctx>>();
+        private readonly Dictionary<string, IBaboonRoutableMcpServer<Ctx>> _route = new Dictionary<string, IBaboonRoutableMcpServer<Ctx>>();
+        private readonly Dictionary<string, McpToolEntry> _entries = new Dictionary<string, McpToolEntry>();
+        // Insertion-ordered tool-name list for tools/list iteration.
+        private readonly List<string> _toolOrder = new List<string>();
+        private readonly McpServerInfo _mergedServerInfo;
+
+        // varargs-style ctor mirrors `JsonMuxer`. `mergedServerInfo` is the composed
+        // endpoint's single identity returned by `initialize` (§3.1).
+        public AbstractMcpMuxer(McpServerInfo mergedServerInfo, params IBaboonRoutableMcpServer<Ctx>[] servers)
+        {
+            _mergedServerInfo = mergedServerInfo;
+            foreach (var s in servers) Register(s);
+        }
+
+        // Folds the server's declaration-ordered `Tools` into the union table;
+        // throws DuplicateTool on a tool-name collision across servers (the exact
+        // MCP-tier analogue of JsonMuxer throwing DuplicateService).
+        public void Register(IBaboonRoutableMcpServer<Ctx> server)
+        {
+            foreach (var t in server.Tools)
+            {
+                if (_route.ContainsKey(t.Name))
+                {
+                    throw new BaboonMcpWiringException(new BaboonMcpWiringError(BaboonMcpWiringErrorTag.DuplicateTool, t.Name));
+                }
+                _route[t.Name] = server;
+                _entries[t.Name] = t;
+                _toolOrder.Add(t.Name);
+            }
+            _servers.Add(server);
+        }
+
+        public JsonRpcResponse? Handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx)
+        {
+            var id = request.Id;
+            switch (request.Method)
+            {
+                case "initialize":
+                {
+                    var pv = request.Params?["protocolVersion"];
+                    if (request.Params == null || pv == null)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion");
+                    }
+                    session.Initialized = true;
+                    var result = new Newtonsoft.Json.Linq.JObject
+                    {
+                        ["protocolVersion"] = McpProtocol.Version,
+                        ["capabilities"] = new Newtonsoft.Json.Linq.JObject { ["tools"] = new Newtonsoft.Json.Linq.JObject() },
+                        ["serverInfo"] = new Newtonsoft.Json.Linq.JObject { ["name"] = _mergedServerInfo.Name, ["version"] = _mergedServerInfo.Version },
+                    };
+                    return new JsonRpcResponse(id, result);
+                }
+                case "notifications/initialized":
+                    return null;
+                case "tools/list":
+                {
+                    if (!session.Initialized)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize");
+                    }
+                    return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["tools"] = ToolsListUnion() });
+                }
+                case "tools/call":
+                {
+                    if (!session.Initialized)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize");
+                    }
+                    var name = request.Params?["name"];
+                    if (name == null || name.Type != Newtonsoft.Json.Linq.JTokenType.String)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name");
+                    }
+                    var toolName = name.Value<string>()!;
+                    if (!_route.TryGetValue(toolName, out var server))
+                    {
+                        // NoMatchingTool: surfaced as the SAME wire response the per-service
+                        // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
+                        // so the bytes are identical whether one server or the muxer rejects.
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, $"tools/call: unknown tool '{toolName}'");
+                    }
+                    var entry = _entries[toolName];
+                    var argsToken = request.Params?["arguments"] ?? new Newtonsoft.Json.Linq.JObject();
+                    var argsJson = argsToken.ToString(Newtonsoft.Json.Formatting.None);
+                    var result = server.RouteToolCall(entry.Method, argsJson, ctx, codecCtx);
+                    if (result.IsRight)
+                    {
+                        var content = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject { ["type"] = "text", ["text"] = result.GetRight() } };
+                        return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["content"] = content, ["isError"] = false });
+                    }
+                    else
+                    {
+                        // Channel B: a valid protocol call whose domain payload failed.
+                        var content = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject { ["type"] = "text", ["text"] = DescribeWiringError(result.GetLeft()) } };
+                        return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["content"] = content, ["isError"] = true });
+                    }
+                }
+                default:
+                    return ErrorResponse(id, JsonRpcErrorCodes.MethodNotFound, $"Method not found: {request.Method}");
+            }
+        }
+
+        // Backs tools/list (§3.2): the union of all registered servers' tool entries
+        // in registration-then-declaration order (insertion order of `_toolOrder`),
+        // each in the same shape the per-service base emits.
+        private Newtonsoft.Json.Linq.JArray ToolsListUnion()
+        {
+            var tools = new Newtonsoft.Json.Linq.JArray();
+            foreach (var name in _toolOrder)
+            {
+                var t = _entries[name];
+                var entry = new Newtonsoft.Json.Linq.JObject
+                {
+                    ["name"] = t.Name,
+                    ["inputSchema"] = t.InputSchema,
+                };
+                if (t.Description != null)
+                {
+                    entry["description"] = t.Description;
+                }
+                tools.Add(entry);
+            }
+            return tools;
+        }
+
+        protected JsonRpcResponse ErrorResponse(Newtonsoft.Json.Linq.JToken? id, int code, string message)
+        {
+            return new JsonRpcResponse(id, null, new JsonRpcError(code, message));
+        }
+
+        protected virtual string DescribeWiringError(BaboonWiringError e)
+        {
+            return e.ToString();
+        }
+    }
+
+    // --- Async cross-service MCP muxer (tasks:T106; contract §7) ---
+    //
+    // Async sibling of `AbstractMcpMuxer`, for backends generated with
+    // `--cs-async-services=true`: it composes `IBaboonRoutableMcpServerAsync<Ctx>`
+    // members (whose `RouteToolCall` returns `Task<Either<..>>`), so the single
+    // `tools/call` dispatch hop is awaited and `Handle` is itself `async Task<>`.
+    // The registration / union-table build (`DuplicateTool` on collision), the
+    // merged `initialize`, the ordering rule, and the `NoMatchingTool` wire mapping
+    // are identical to the sync muxer; only the `tools/call` hop awaits.
+    public class AbstractAsyncMcpMuxer<Ctx> : IBaboonMcpServerAsync<Ctx>
+    {
+        private readonly List<IBaboonRoutableMcpServerAsync<Ctx>> _servers = new List<IBaboonRoutableMcpServerAsync<Ctx>>();
+        private readonly Dictionary<string, IBaboonRoutableMcpServerAsync<Ctx>> _route = new Dictionary<string, IBaboonRoutableMcpServerAsync<Ctx>>();
+        private readonly Dictionary<string, McpToolEntry> _entries = new Dictionary<string, McpToolEntry>();
+        private readonly List<string> _toolOrder = new List<string>();
+        private readonly McpServerInfo _mergedServerInfo;
+
+        public AbstractAsyncMcpMuxer(McpServerInfo mergedServerInfo, params IBaboonRoutableMcpServerAsync<Ctx>[] servers)
+        {
+            _mergedServerInfo = mergedServerInfo;
+            foreach (var s in servers) Register(s);
+        }
+
+        public void Register(IBaboonRoutableMcpServerAsync<Ctx> server)
+        {
+            foreach (var t in server.Tools)
+            {
+                if (_route.ContainsKey(t.Name))
+                {
+                    throw new BaboonMcpWiringException(new BaboonMcpWiringError(BaboonMcpWiringErrorTag.DuplicateTool, t.Name));
+                }
+                _route[t.Name] = server;
+                _entries[t.Name] = t;
+                _toolOrder.Add(t.Name);
+            }
+            _servers.Add(server);
+        }
+
+        public async Task<JsonRpcResponse?> Handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx)
+        {
+            var id = request.Id;
+            switch (request.Method)
+            {
+                case "initialize":
+                {
+                    var pv = request.Params?["protocolVersion"];
+                    if (request.Params == null || pv == null)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion");
+                    }
+                    session.Initialized = true;
+                    var result = new Newtonsoft.Json.Linq.JObject
+                    {
+                        ["protocolVersion"] = McpProtocol.Version,
+                        ["capabilities"] = new Newtonsoft.Json.Linq.JObject { ["tools"] = new Newtonsoft.Json.Linq.JObject() },
+                        ["serverInfo"] = new Newtonsoft.Json.Linq.JObject { ["name"] = _mergedServerInfo.Name, ["version"] = _mergedServerInfo.Version },
+                    };
+                    return new JsonRpcResponse(id, result);
+                }
+                case "notifications/initialized":
+                    return null;
+                case "tools/list":
+                {
+                    if (!session.Initialized)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize");
+                    }
+                    return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["tools"] = ToolsListUnion() });
+                }
+                case "tools/call":
+                {
+                    if (!session.Initialized)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize");
+                    }
+                    var name = request.Params?["name"];
+                    if (name == null || name.Type != Newtonsoft.Json.Linq.JTokenType.String)
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name");
+                    }
+                    var toolName = name.Value<string>()!;
+                    if (!_route.TryGetValue(toolName, out var server))
+                    {
+                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, $"tools/call: unknown tool '{toolName}'");
+                    }
+                    var entry = _entries[toolName];
+                    var argsToken = request.Params?["arguments"] ?? new Newtonsoft.Json.Linq.JObject();
+                    var argsJson = argsToken.ToString(Newtonsoft.Json.Formatting.None);
+                    var result = await server.RouteToolCall(entry.Method, argsJson, ctx, codecCtx);
+                    if (result.IsRight)
+                    {
+                        var content = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject { ["type"] = "text", ["text"] = result.GetRight() } };
+                        return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["content"] = content, ["isError"] = false });
+                    }
+                    else
+                    {
+                        // Channel B: a valid protocol call whose domain payload failed.
+                        var content = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject { ["type"] = "text", ["text"] = DescribeWiringError(result.GetLeft()) } };
+                        return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["content"] = content, ["isError"] = true });
+                    }
+                }
+                default:
+                    return ErrorResponse(id, JsonRpcErrorCodes.MethodNotFound, $"Method not found: {request.Method}");
+            }
+        }
+
+        private Newtonsoft.Json.Linq.JArray ToolsListUnion()
+        {
+            var tools = new Newtonsoft.Json.Linq.JArray();
+            foreach (var name in _toolOrder)
+            {
+                var t = _entries[name];
+                var entry = new Newtonsoft.Json.Linq.JObject
+                {
+                    ["name"] = t.Name,
+                    ["inputSchema"] = t.InputSchema,
+                };
+                if (t.Description != null)
+                {
+                    entry["description"] = t.Description;
+                }
+                tools.Add(entry);
+            }
+            return tools;
+        }
+
+        protected JsonRpcResponse ErrorResponse(Newtonsoft.Json.Linq.JToken? id, int code, string message)
+        {
+            return new JsonRpcResponse(id, null, new JsonRpcError(code, message));
+        }
+
+        protected virtual string DescribeWiringError(BaboonWiringError e)
+        {
+            return e.ToString();
+        }
+    }
+
     // --- Async transport-abstract dispatch base ---
     //
     // Async sibling of `AbstractBaboonMcpServer`. Selected when the backend is

@@ -3125,6 +3125,8 @@ dep action.test-ts-wiring-outcome
 dep action.test-ts-mcp
 dep action.test-ts-mcp-mux
 dep action.test-ts-mcp-mux-async
+dep action.test-cs-mcp-mux
+dep action.test-cs-mcp-mux-async
 dep action.test-cs-mcp
 dep action.test-scala-mcp
 dep action.test-rust-mcp
@@ -4363,6 +4365,118 @@ TEST_DIR="${action.test-gen-ts-mcp-mux-async.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
 npx vitest run src/mcp.muxer.async.test.ts
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-cs-mcp-mux
+
+Generate code for the C# MCP muxer round-trip test (T106, sync).
+Uses the mcp-mux-stub-ok model (UserService + OrderService) with
+`--cs-generate-mcp-server=true` (Either mode) and overlays
+`test/cs-stub-mcp-mux-overlay/` on top of a cs-stub copy.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-mcp-mux"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-cs-mcp-mux.lock \
+  :cs \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Baboon.Runtime.Shared.Either" \
+  --service-result-pattern="<\$error, \$success>" \
+  --cs-generate-mcp-server=true
+
+rsync -a ./test/cs-stub-mcp-mux-overlay/ "$TEST_DIR/cs-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-mcp-mux
+
+Run the C# MCP muxer round-trip tests (T106, sync).
+Validates tools/list union, per-service routing for UserService and
+OrderService, DuplicateTool collision, and NoMatchingTool (-32602).
+
+```bash
+TEST_DIR="${action.test-gen-cs-mcp-mux.test_dir}"
+pushd "$TEST_DIR/cs-stub"
+dotnet build -c Release McpMuxTests/McpMuxTests.csproj
+dotnet test -c Release McpMuxTests/McpMuxTests.csproj
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-cs-mcp-mux-async
+
+Generate code for the C# ASYNC MCP muxer round-trip test (T106, async).
+Async sibling of `test-gen-cs-mcp-mux`: uses the mcp-mux-stub-ok model with BOTH
+`--cs-generate-mcp-server=true` AND `--cs-async-services=true` (Either mode), and
+overlays `test/cs-stub-mcp-mux-async-overlay/` on top of a cs-stub copy.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-mcp-mux-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-cs-mcp-mux-async.lock \
+  :cs \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Baboon.Runtime.Shared.Either" \
+  --service-result-pattern="<\$error, \$success>" \
+  --cs-generate-mcp-server=true \
+  --cs-async-services=true
+
+rsync -a ./test/cs-stub-mcp-mux-async-overlay/ "$TEST_DIR/cs-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-mcp-mux-async
+
+Run the C# ASYNC MCP muxer round-trip tests (T106, async).
+Async sibling of `test-cs-mcp-mux`. Validates tools/list union, per-service
+routing (awaited), DuplicateTool collision, and NoMatchingTool (-32602) against
+`AbstractAsyncMcpMuxer`.
+
+```bash
+TEST_DIR="${action.test-gen-cs-mcp-mux-async.test_dir}"
+pushd "$TEST_DIR/cs-stub"
+dotnet build -c Release McpMuxTests/McpMuxTests.csproj
+dotnet test -c Release McpMuxTests/McpMuxTests.csproj
 popd
 
 ret success:bool=true
