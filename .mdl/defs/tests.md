@@ -3292,6 +3292,7 @@ dep action.test-sc-wiring-hkt
 dep action.test-ts-wiring-either
 dep action.test-ts-wiring-result
 dep action.test-ts-wiring-outcome
+dep action.test-ts-wiring-collision
 dep action.test-ts-mcp
 dep action.test-ts-mcp-mux
 dep action.test-ts-mcp-mux-async
@@ -5120,17 +5121,12 @@ ret success:bool=true
 
 Generate TypeScript service wiring for the T115 name-collision fixture model
 (`baboon-compiler/src/test/resources/ts-wiring-collision-ok/`) in BaboonEither
-errors mode. This is the REPRODUCTION step for D32 (T116): the output wiring.ts
-contains `let input: BaboonEither<BaboonWiringError, In>` with the bare alias-
-dangling `In` name at the decode-step, which `tsc --noEmit` will reject with
-`error TS2304: Cannot find name 'In'`.
+errors mode. T117 fixed the alias-dangling bare name emitted at the decode-step;
+T118 wired this lane into `:test` as a permanent regression gate.
 
 The generated code goes into an ISOLATED stub directory (`target/test-ts-wiring-
 collision/ts-wiring-collision-stub/src/`) with its own `tsconfig.typecheck.json`.
 The shared `test/ts-stub` is NOT used.
-
-NOT aggregated into `:test` — this lane stays RED (reproduction only) until
-T117 (fix) + T118 (wire into `:test`).
 
 ```bash
 dep action.build
@@ -5166,19 +5162,17 @@ ret test_dir:string="$TEST_DIR"
 
 # action: test-ts-wiring-collision
 
-RED reproduction lane for D32 (T116): runs `tsc --noEmit` over the generated
-collision wiring.ts using an ISOLATED `tsconfig.typecheck.json` (NOT the shared
-`test/ts-stub`).
+Permanent regression gate for D32 (T116/T117/T118): runs `tsc --noEmit` over
+the generated collision wiring.ts using an ISOLATED `tsconfig.typecheck.json`
+(NOT the shared `test/ts-stub`). Wired into `:test` and `:ci` via T118.
 
 With the UNFIXED translator this action FAILS with:
   error TS2304: Cannot find name 'In'
 at `let input: BaboonEither<BaboonWiringError, In>` in the generated
 `tswc/collision/svc-mux/wiring.ts` — the alias-dangling bare `In` name.
 
-This is the expected RED state.  T117 fixes the translator; T118 wires this
-lane into `:test` once it turns GREEN.
-
-NOT aggregated into `:test`/`:ci`.
+T117 fixed the translator (alias-aware rendering at L920). This lane is now
+GREEN and aggregated into `:test`/`:ci` as a permanent guard.
 
 ```bash
 TEST_DIR="${action.test-gen-ts-wiring-collision.test_dir}"
