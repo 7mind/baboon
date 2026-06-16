@@ -65,6 +65,42 @@ object TsServiceWiringTranslator {
       }
     }
 
+    // Alias-aware counterpart to renderContainer: builds the result-container declared type as a
+    // TextTree[TsValue] so any TsType in the success/error slots flows through
+    // TsBaboonTranslator.mapRender/buildAliasMap. The bare-string renderContainer keeps the
+    // success name un-aliased, which produces TS2304 on a cross-module input-type name collision
+    // (D32/T117). The container shape is identical (pattern/resultType-driven), so on a
+    // non-collision model the rendered output is byte-identical (the alias map is a no-op).
+    private def renderContainerTree(error: TextTree[TsValue], success: TextTree[TsValue]): TextTree[TsValue] = {
+      if (isBuiltinEither) {
+        val resultTypeRef = TsValue.TsType(tsBaboonRuntimeShared, resolved.resultType.get)
+        val expanded      = expandContainerPattern(resolved.pattern.get, error, success)
+        q"$resultTypeRef$expanded"
+      } else {
+        q"any"
+      }
+    }
+
+    private def expandContainerPattern(pat: String, errTree: TextTree[TsValue], successTree: TextTree[TsValue]): TextTree[TsValue] = {
+      val placeholderRegex = "\\$(error|success)".r
+      val segments         = scala.collection.mutable.ListBuffer.empty[TextTree[TsValue]]
+      var lastEnd          = 0
+      for (m <- placeholderRegex.findAllMatchIn(pat)) {
+        if (m.start > lastEnd) {
+          segments += q"${pat.substring(lastEnd, m.start)}"
+        }
+        m.group(1) match {
+          case "error"   => segments += errTree
+          case "success" => segments += successTree
+        }
+        lastEnd = m.end
+      }
+      if (lastEnd < pat.length) {
+        segments += q"${pat.substring(lastEnd)}"
+      }
+      segments.reduce((a, b) => q"$a$b")
+    }
+
     private val fbase: String = tsFileTools.basename(domain, evo)
 
     private val rtModule: TsValue.TsModuleId =
@@ -917,7 +953,7 @@ object TsServiceWiringTranslator {
            |}""".stripMargin
       } else {
         val decodeStep =
-          q"""let input: ${renderContainer("BaboonWiringError", inTypeRef.name)};
+          q"""let input: ${renderContainerTree(q"$baboonWiringError", q"$inTypeRef")};
              |try {
              |    input = rt.pure<$baboonWiringError, $inTypeRef>(${mkDecode(m.sig.id.asInstanceOf[TypeId.Scalar])});
              |} catch (ex: unknown) {
