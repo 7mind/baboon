@@ -3157,6 +3157,8 @@ dep action.test-sw-wiring-errors
 dep action.test-kt-wiring-errors-async
 dep action.test-jv-wiring-errors-async
 dep action.test-cs-wiring-errors-async
+dep action.test-rs-wiring-async
+dep action.test-rs-wiring-async-errors
 
 ret success:bool=true
 ```
@@ -3953,10 +3955,9 @@ Async sibling of `test-gen-rust-mcp`: uses the mcp-stub-ok model + BOTH
 `--rs-generate-mcp-server=true` AND `--rs-async-services=true` (Result errors
 mode), and overlays `test/rust-stub-mcp-async-overlay/` on top of a rs-stub copy.
 
-RED reproduction (T62) — the async-MCP Rust backend fix (T63) has not landed;
-this lane is EXPECTED RED until it does: the generated async service-wiring does
-not compile (sync `IBaboonServiceRt`/`McpJsonInvoke` cannot thread async calls).
-See `test/rust-stub-mcp-async-overlay/README.md` for the captured rustc errors.
+GREEN since T98/D28 fixed the async-MCP Rust backend: the async `McpJsonInvoke`
+alias and `block_on` driver now compile clean under `-D warnings`. See
+`test/rust-stub-mcp-async-overlay/README.md` for the full history.
 DO NOT modify the sync `test-gen-rust-mcp` lane.
 
 ```bash
@@ -3997,8 +3998,8 @@ ret test_dir:string="$TEST_DIR"
 # action: test-rust-mcp-async
 
 Run the Rust ASYNC MCP round-trip overlay tests (D24/G11).
-Async sibling of `test-rust-mcp`. RED reproduction (T62) — expected RED at
-`cargo build` until the Rust async-MCP backend fix (T63) lands.
+Async sibling of `test-rust-mcp`. GREEN since T98/D28 landed the async-MCP
+Rust backend fix (`McpJsonInvoke` async alias + `block_on` driver).
 
 ```bash
 TEST_DIR="${action.test-gen-rust-mcp-async.test_dir}"
@@ -4013,14 +4014,8 @@ ret success:bool=true
 
 Generate Rust ASYNC service wiring for the petstore model (`--rs-async-services=true`,
 no-errors flavour, both codec families) into an isolated `rs-async` project copied from
-`test/services/rs-async/`. This is a RED reproduction lane for D28: the generated
-`pet_store_wiring.rs` muxer wrappers clone `impl_` and `rt` into pinned async blocks
-without bounding those generics on `Clone` (E0599), and the generated
-`pet_store_client.rs` uses `?` on `Result<_, Box<dyn StdError + Send + Sync>>` whose
-error type is not `Sized` (E0277). `cargo build` MUST fail with exit 101.
-
-NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
-a RED reproduction gating the Rust server-side async fix (D28).
+`test/services/rs-async/`. GREEN since T97/D28 fixed the async wiring (Clone bounds
+on muxer generics + sized error type in client `?`). Companion runner: `test-rs-wiring-async`.
 
 ```bash
 dep action.build
@@ -4053,16 +4048,12 @@ ret test_dir:string="$TEST_DIR"
 
 # action: test-rs-wiring-async
 
-Attempt `cargo build` for the async Rust no-errors petstore service wiring (D28/T96).
-RED reproduction lane — MUST fail with exit 101. The generated `pet_store_wiring.rs`
-muxer wrappers call `.clone()` on `Impl`/`Rt` generics not bounded by `Clone`
-(E0599 × 2), and `pet_store_client.rs` applies `?` on an unsized error type (E0277 × 8).
-Expected stderr: E0599 + E0277.
+Run `cargo build` for the async Rust no-errors petstore service wiring (D28/T97 GREEN).
 
 ```bash
 TEST_DIR="${action.test-gen-rs-wiring-async.test_dir}"
 pushd "$TEST_DIR/rs-async"
-cargo build 2>&1 || true
+RUSTFLAGS="-D warnings" cargo build
 popd
 
 ret success:bool=true
@@ -4073,16 +4064,8 @@ ret success:bool=true
 Generate Rust ASYNC service wiring for the errors-mode petstore model
 (`--rs-async-services=true`, errors flavour with Result container, both codec families)
 into an isolated `rs-async-errors` project copied from `test/services/rs-async-errors/`.
-This is a RED reproduction lane for D28 (errors-mode axis): the generated
-`pet_store_wiring.rs` emits `rt.flat_map(input, |v| { impl_.method(v).await … })`
-at RsServiceWiringTranslator.scala:734/747/767 — `.await` inside a SYNC `FnOnce`
-closure passed to `IBaboonServiceRt::flat_map`, rejected by rustc as E0728. The
-muxer wrappers also omit `Clone` bounds on `Impl`/`Rt` (E0599 × 4), and the
-async client uses `?` on an unsized error type (E0277 × 4). `cargo build` MUST fail
-with exit 101.
-
-NOTE: intentionally NOT wired into the aggregate `:test` target — this lane is
-a RED reproduction gating the Rust server-side async fix (D28).
+GREEN since T97/D28 fixed the async errors wiring (async invoke body, Clone bounds,
+sized error type). Companion runner: `test-rs-wiring-async-errors`.
 
 ```bash
 dep action.build
@@ -4117,18 +4100,12 @@ ret test_dir:string="$TEST_DIR"
 
 # action: test-rs-wiring-async-errors
 
-Attempt `cargo build` for the async Rust errors-mode petstore service wiring (D28/T96).
-RED reproduction lane — MUST fail with exit 101. The generated `pet_store_wiring.rs`
-uses `.await` inside sync closures passed to `IBaboonServiceRt::flat_map`
-(RsServiceWiringTranslator.scala:734/747/767 errors path); rustc rejects this with
-E0728 × 4 (`'await' is only allowed inside 'async' functions and blocks`), plus
-E0599 × 4 (missing Clone on muxer `Impl`/`Rt` generics) and E0277 × 4 (client `?`
-on unsized error type). Expected stderr: E0728 + E0599 + E0277.
+Run `cargo build` for the async Rust errors-mode petstore service wiring (D28/T97 GREEN).
 
 ```bash
 TEST_DIR="${action.test-gen-rs-wiring-async-errors.test_dir}"
 pushd "$TEST_DIR/rs-async-errors"
-cargo build 2>&1 || true
+RUSTFLAGS="-D warnings" cargo build
 popd
 
 ret success:bool=true

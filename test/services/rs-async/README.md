@@ -1,7 +1,7 @@
 # test/services/rs-async
 
-Minimal Cargo project for the Rust ASYNC regular-service wiring reproduction lane
-(D28/T96, no-errors flavour).
+Minimal Cargo project for the Rust ASYNC regular-service wiring lane
+(D28/T96/T97, no-errors flavour).
 
 ## Purpose
 
@@ -10,27 +10,25 @@ which the baboon compiler generates a Rust async petstore service
 (`--rs-async-services=true`, `--service-result-no-errors=true`) from
 `test/services/petstore.baboon`.
 
-`test-rs-wiring-async` then runs `cargo build` over the generated code. The build
-MUST fail with exit 101.
+`test-rs-wiring-async` then runs `RUSTFLAGS="-D warnings" cargo build` over the
+generated code and asserts it exits 0.
 
-## Status: EXPECTED RED (T96 — gates the fix D28)
+## Status: GREEN (fix landed — T97/D28)
 
-The RED was reproduced via the native baboon binary + `cargo 1.91`.
+T97 fixed the Rust async service wiring generator
+(`RsServiceWiringTranslator.scala`): Clone bounds are now emitted on muxer generic
+parameters (`Impl: Clone`, `Rt: Clone`), and the async client error type is now
+`Box<dyn std::error::Error + Send + Sync>` (which `?` can propagate without the
+`Sized` constraint issue). `cargo build` exits 0 under `-D warnings`.
 
-### Captured rustc errors (all in GENERATED `src/`, none in this directory)
+### Historical RED (pre-T97)
 
-Two families of errors appear in the no-errors async path:
+Before the fix this lane was an EXPECTED RED reproduction gating D28. Two families
+of errors appeared:
 
 1. `error[E0599]: no method named 'clone' found for type parameter 'Impl'`
-   — `src/petstore/api/pet_store_wiring.rs` muxer wrappers (`PetStoreJsonService` /
-   `PetStoreUebaService`): the async `invoke` clones `impl_` into a
-   `Box::pin(async move { … })` but the generic bound omits `Clone`.
-   (RsServiceWiringTranslator.scala:203–215 async muxer wrapper path.)
+   — muxer wrappers cloned generics into `Box::pin(async move { … })` without
+   `Clone` bounds.
 
 2. `error[E0277]: '?' couldn't convert the error: 'dyn StdError + Send + Sync: Sized'
-   is not satisfied`
-   — `src/petstore/api/pet_store_client.rs`: the async client applies `?` on a
-   `Result<_, Box<dyn StdError + Send + Sync>>` but `Box<dyn StdError + Send + Sync>`
-   does not implement `From<Box<dyn StdError + Send + Sync>>` because
-   `dyn StdError + Send + Sync` is not `Sized`.
-   (RsServiceWiringTranslator.scala async client path.)
+   is not satisfied` — async client applied `?` on an unsized boxed-dyn error.

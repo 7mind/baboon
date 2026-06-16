@@ -1,7 +1,7 @@
 # test/services/rs-async-errors
 
-Minimal Cargo project for the Rust ASYNC regular-service wiring reproduction lane
-(D28/T96, errors flavour).
+Minimal Cargo project for the Rust ASYNC regular-service wiring lane
+(D28/T96/T97, errors flavour).
 
 ## Purpose
 
@@ -10,34 +10,29 @@ into which the baboon compiler generates a Rust async petstore service
 (`--rs-async-services=true`, `--service-result-no-errors=false`,
 `--service-result-type=Result`) from `test/services/petstore-errors.baboon`.
 
-`test-rs-wiring-async-errors` then runs `cargo build` over the generated code. The
-build MUST fail with exit 101.
+`test-rs-wiring-async-errors` then runs `RUSTFLAGS="-D warnings" cargo build` over
+the generated code and asserts it exits 0.
 
-## Status: EXPECTED RED (T96 — gates the fix D28)
+## Status: GREEN (fix landed — T97/D28)
 
-The RED was reproduced via the native baboon binary + `cargo 1.91`.
+T97 fixed the Rust async errors-mode service wiring generator
+(`RsServiceWiringTranslator.scala`): the errors-mode async invoke body now uses
+`async move` closures (resolving E0728), Clone bounds are emitted on muxer generics
+(resolving E0599), and the async client error type is correctly sized (resolving
+E0277). `cargo build` exits 0 under `-D warnings`.
 
-### Captured rustc errors (all in GENERATED `src/`, none in this directory)
+### Historical RED (pre-T97)
 
-Three families of errors appear in the errors-mode async path:
+Before the fix this lane was an EXPECTED RED reproduction gating D28. Three families
+of errors appeared:
 
 1. `error[E0728]: 'await' is only allowed inside 'async' functions and blocks`
-   — `src/petstore/api/pet_store_wiring.rs` × 4 (one per method × json/ueba). The
-   errors-mode async invoke body emits
-   `rt.flat_map(input, |v| { … impl_.method(v).await … })`, but
-   `IBaboonServiceRt::flat_map` takes a SYNC closure returning a `Result`, not a
-   future. `.await` inside that sync closure is illegal.
-   (RsServiceWiringTranslator.scala:734/747/767 errors path.)
+   — the errors-mode async invoke body used `.await` inside a sync `FnOnce` closure
+   passed to `IBaboonServiceRt::flat_map`.
 
 2. `error[E0599]: no method named 'clone' found for type parameter 'Impl'/'Rt'`
-   — `src/petstore/api/pet_store_wiring.rs` muxer wrappers (`PetStoreJsonService` /
-   `PetStoreUebaService`): the async `invoke` clones `impl_`/`rt` into a
-   `Box::pin(async move { … })` but the generic bounds omit `Clone`.
-   (RsServiceWiringTranslator.scala:203–215 async muxer wrapper path.)
+   — muxer wrappers cloned generics into `Box::pin(async move { … })` without
+   `Clone` bounds.
 
 3. `error[E0277]: '?' couldn't convert the error: 'dyn StdError + Send + Sync: Sized'
-   is not satisfied`
-   — `src/petstore/api/pet_store_client.rs`: the async client applies `?` on a
-   `Result<_, Box<dyn StdError + Send + Sync>>` but the trait bound is unsatisfied
-   for the unsized `dyn` type.
-   (RsServiceWiringTranslator.scala async client path.)
+   is not satisfied` — async client applied `?` on an unsized boxed-dyn error.
