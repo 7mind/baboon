@@ -390,3 +390,315 @@ class AbstractAsyncBaboonMcpServer(IBaboonAsyncMcpServer[Ctx]):
 
     def _describe_wiring_error(self, e: BaboonWiringError) -> str:
         return repr(e)
+
+
+# --- MCP-muxer error taxonomy (tasks:T108; contract §6) ---
+#
+# The cross-service MCP muxer composes several <Service>McpServer instances
+# behind one endpoint. `DuplicateTool` is the MCP-tier analogue of the
+# service-wiring `DuplicateService` (a registration-time tool-name collision);
+# `NoMatchingTool` is the analogue of `NoMatchingService` (a dispatch-time
+# unknown tool name). They mirror that taxonomy and carrier exactly, but live in
+# this MCP-only runtime file rather than the always-shipped service-wiring
+# runtime (baboon_service_wiring.py) so that with `--py-generate-mcp-server`
+# absent the generated output is byte-identical to the pre-MCP baseline (no MCP
+# types leak into the unconditional runtime). `BaboonMcpWiringException` is the
+# MCP-tier carrier -- the structural twin of the service-wiring
+# `BaboonWiringException` (a thrown programmer error carrying a tagged value),
+# so `DuplicateTool` propagates to the integrator exactly as `DuplicateService`
+# does, just from the MCP-only runtime.
+
+
+class BaboonMcpWiringError:
+    pass
+
+
+class DuplicateTool(BaboonMcpWiringError):
+    def __init__(self, tool_name: str) -> None:
+        self.tool_name = tool_name
+
+    def __repr__(self) -> str:
+        return f"DuplicateTool({self.tool_name!r})"
+
+
+class NoMatchingTool(BaboonMcpWiringError):
+    def __init__(self, tool_name: str) -> None:
+        self.tool_name = tool_name
+
+    def __repr__(self) -> str:
+        return f"NoMatchingTool({self.tool_name!r})"
+
+
+class BaboonMcpWiringException(Exception):
+    def __init__(self, error: BaboonMcpWiringError) -> None:
+        super().__init__(repr(error))
+        self.error = error
+
+
+# --- Cross-service MCP muxer (tasks:T108; contract:
+# docs/research/mcp-muxer-runtime-contract.md) ---
+#
+# `McpMuxer` composes several <Service>McpServer instances behind ONE MCP
+# endpoint so a single connection serves the union of their tools. It is the
+# MCP-tier sibling of `JsonMuxer`: where `JsonMuxer` keys on service_name and
+# routes by method.service_name, the muxer keys `_route` on tool_name and routes
+# by the inbound flat MCP tool name (contract §1).
+#
+# Composition seam: it depends ONLY on the PUBLIC routable surface exposed by
+# `AbstractBaboonMcpServer` -- it reads each server's `server_info` and `tools`,
+# and routes each `tools/call` via the public `route_tool_call`. It NEVER reads
+# private members and NEVER calls a server's `handle()` (a member's `handle`
+# resolves only its OWN tools and returns "unknown tool" for any cross-service
+# name -- contract §4). The muxer owns the JSON-RPC envelope; each member owns
+# its domain dispatch.
+#
+# Registration order is preserved (insertion-ordered dict). `_route`/`_entries`
+# are built at registration (contract §2), never per request.
+class McpMuxer(Generic[Ctx]):
+    def __init__(self, merged_server_info: McpServerInfo, *servers: Any) -> None:
+        # `servers` are objects exposing `.server_info`, `.tools`,
+        # `.route_tool_call` (the PUBLIC routable surface).
+        self._merged_server_info: McpServerInfo = merged_server_info
+        # insertion-ordered: tool_name -> owning server
+        self._route: Dict[str, Any] = {}
+        # insertion-ordered: tool_name -> McpToolEntry
+        self._entries: Dict[str, McpToolEntry] = {}
+        for server in servers:
+            self.register(server)
+
+    # Folds the server's declaration-ordered `tools` into the union table;
+    # raises BaboonMcpWiringException(DuplicateTool) on a tool-name collision
+    # across servers (the exact MCP-tier analogue of JsonMuxer.register raising
+    # DuplicateService).
+    def register(self, server: Any) -> None:
+        for t in server.tools:
+            if t.name in self._route:
+                raise BaboonMcpWiringException(DuplicateTool(t.name))
+            self._route[t.name] = server
+            self._entries[t.name] = t
+
+    def handle(
+        self,
+        request: Dict[str, Any],
+        session: McpSession,
+        ctx: Any,
+        codec_ctx: Any,
+    ) -> Optional[Dict[str, Any]]:
+        req_id = request.get("id")
+        method = request.get("method", "")
+        params = request.get("params")
+
+        if method == "initialize":
+            pv = None
+            if isinstance(params, dict):
+                pv = params.get("protocolVersion")
+            if pv is None:
+                return self._mux_error(req_id, JSONRPC_INVALID_PARAMS, "initialize: missing protocolVersion")
+            session.initialized = True
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "protocolVersion": MCP_PROTOCOL_VERSION,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {
+                        "name": self._merged_server_info.name,
+                        "version": self._merged_server_info.version,
+                    },
+                },
+            }
+
+        elif method == "notifications/initialized":
+            # Notification -- no response.
+            return None
+
+        elif method == "tools/list":
+            if not session.initialized:
+                return self._mux_error(req_id, JSONRPC_INVALID_REQUEST, "tools/list before initialize")
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {"tools": self._tools_list_union()},
+            }
+
+        elif method == "tools/call":
+            if not session.initialized:
+                return self._mux_error(req_id, JSONRPC_INVALID_REQUEST, "tools/call before initialize")
+            if not isinstance(params, dict):
+                return self._mux_error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing params")
+            name = params.get("name")
+            if not isinstance(name, str):
+                return self._mux_error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing tool name")
+            server = self._route.get(name)
+            if server is None:
+                # NoMatchingTool: surfaced as the SAME wire response the per-service
+                # base uses for an unknown tool (-32602, "unknown tool '<name>'"),
+                # so the bytes are identical whether one server or the muxer rejects.
+                return self._mux_error(req_id, JSONRPC_INVALID_PARAMS, f"tools/call: unknown tool '{name}'")
+            entry = self._entries[name]
+            args = params.get("arguments") or {}
+            args_json = json.dumps(args)
+            result = server.route_tool_call(entry.method, args_json, ctx, codec_ctx)
+            if isinstance(result, BaboonRight):
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": result.value}],
+                        "isError": False,
+                    },
+                }
+            else:
+                # Channel B: a valid protocol call whose domain payload failed.
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": repr(result.value)}],
+                        "isError": True,
+                    },
+                }
+
+        else:
+            return self._mux_error(req_id, JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}")
+
+    # Backs tools/list (§3.2): the union of all registered servers' tool entries
+    # in registration-then-declaration order (the insertion order of `_entries`),
+    # each in the same shape the per-service base emits.
+    def _tools_list_union(self) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for t in self._entries.values():
+            entry: Dict[str, Any] = {"name": t.name, "inputSchema": t.input_schema}
+            if t.description is not None:
+                entry["description"] = t.description
+            out.append(entry)
+        return out
+
+    def _mux_error(self, req_id: Any, code: int, message: str) -> Dict[str, Any]:
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": code, "message": message},
+        }
+
+
+# --- Async cross-service MCP muxer (tasks:T108; contract §7) ---
+#
+# Async sibling of `McpMuxer`, for backends generated with
+# `--py-async-services=true`: it composes servers whose `route_tool_call` is
+# an `async def` returning a coroutine, so the single `tools/call` dispatch hop
+# is awaited and `handle` is itself an `async def`. The registration /
+# union-table build (`DuplicateTool` on collision), the merged `initialize`, the
+# ordering rule, and the `NoMatchingTool` wire mapping are identical to the sync
+# muxer; only the `tools/call` hop awaits.
+class AsyncMcpMuxer(Generic[Ctx]):
+    def __init__(self, merged_server_info: McpServerInfo, *servers: Any) -> None:
+        self._merged_server_info: McpServerInfo = merged_server_info
+        self._route: Dict[str, Any] = {}
+        self._entries: Dict[str, McpToolEntry] = {}
+        for server in servers:
+            self.register(server)
+
+    def register(self, server: Any) -> None:
+        for t in server.tools:
+            if t.name in self._route:
+                raise BaboonMcpWiringException(DuplicateTool(t.name))
+            self._route[t.name] = server
+            self._entries[t.name] = t
+
+    async def handle(
+        self,
+        request: Dict[str, Any],
+        session: McpSession,
+        ctx: Any,
+        codec_ctx: Any,
+    ) -> Optional[Dict[str, Any]]:
+        req_id = request.get("id")
+        method = request.get("method", "")
+        params = request.get("params")
+
+        if method == "initialize":
+            pv = None
+            if isinstance(params, dict):
+                pv = params.get("protocolVersion")
+            if pv is None:
+                return self._async_mux_error(req_id, JSONRPC_INVALID_PARAMS, "initialize: missing protocolVersion")
+            session.initialized = True
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "protocolVersion": MCP_PROTOCOL_VERSION,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {
+                        "name": self._merged_server_info.name,
+                        "version": self._merged_server_info.version,
+                    },
+                },
+            }
+
+        elif method == "notifications/initialized":
+            return None
+
+        elif method == "tools/list":
+            if not session.initialized:
+                return self._async_mux_error(req_id, JSONRPC_INVALID_REQUEST, "tools/list before initialize")
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {"tools": self._async_tools_list_union()},
+            }
+
+        elif method == "tools/call":
+            if not session.initialized:
+                return self._async_mux_error(req_id, JSONRPC_INVALID_REQUEST, "tools/call before initialize")
+            if not isinstance(params, dict):
+                return self._async_mux_error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing params")
+            name = params.get("name")
+            if not isinstance(name, str):
+                return self._async_mux_error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing tool name")
+            server = self._route.get(name)
+            if server is None:
+                return self._async_mux_error(req_id, JSONRPC_INVALID_PARAMS, f"tools/call: unknown tool '{name}'")
+            entry = self._entries[name]
+            args = params.get("arguments") or {}
+            args_json = json.dumps(args)
+            result = await server.route_tool_call(entry.method, args_json, ctx, codec_ctx)
+            if isinstance(result, BaboonRight):
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": result.value}],
+                        "isError": False,
+                    },
+                }
+            else:
+                # Channel B: a valid protocol call whose domain payload failed.
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": repr(result.value)}],
+                        "isError": True,
+                    },
+                }
+
+        else:
+            return self._async_mux_error(req_id, JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}")
+
+    def _async_tools_list_union(self) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for t in self._entries.values():
+            entry: Dict[str, Any] = {"name": t.name, "inputSchema": t.input_schema}
+            if t.description is not None:
+                entry["description"] = t.description
+            out.append(entry)
+        return out
+
+    def _async_mux_error(self, req_id: Any, code: int, message: str) -> Dict[str, Any]:
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": code, "message": message},
+        }

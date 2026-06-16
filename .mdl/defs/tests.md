@@ -3127,6 +3127,8 @@ dep action.test-ts-mcp-mux
 dep action.test-ts-mcp-mux-async
 dep action.test-cs-mcp-mux
 dep action.test-cs-mcp-mux-async
+dep action.test-py-mcp-mux
+dep action.test-py-mcp-mux-async
 dep action.test-cs-mcp
 dep action.test-scala-mcp
 dep action.test-rust-mcp
@@ -4477,6 +4479,126 @@ TEST_DIR="${action.test-gen-cs-mcp-mux-async.test_dir}"
 pushd "$TEST_DIR/cs-stub"
 dotnet build -c Release McpMuxTests/McpMuxTests.csproj
 dotnet test -c Release McpMuxTests/McpMuxTests.csproj
+popd
+
+ret success:bool=true
+```
+# action: test-gen-py-mcp-mux
+
+Generate code for the Python MCP muxer round-trip test (T108).
+Uses the mcp-mux-stub-ok model (UserService + OrderService) with
+`--py-generate-mcp-server=true` and overlays `test/py-stub-mcp-mux-overlay/`
+on top of a py-stub copy. Generated code lands in `BaboonDefinitions/Generated/`.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-py-mcp-mux"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/py-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' \
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-py-mcp-mux.lock \
+  :python \
+  --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --py-generate-mcp-server=true
+
+rsync -a ./test/py-stub-mcp-mux-overlay/ "$TEST_DIR/py-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-py-mcp-mux
+
+Run the Python MCP muxer round-trip tests (T108).
+Validates tools/list union, per-service routing for UserService and
+OrderService, DuplicateTool collision, and NoMatchingTool (-32602).
+
+```bash
+TEST_DIR="${action.test-gen-py-mcp-mux.test_dir}"
+pushd "$TEST_DIR/py-stub"
+python3 -m venv .venv
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
+python3 -m pip install -r requirements.txt
+python3 -m unittest BaboonTests.mcp_mux.test_mcp_mux
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-py-mcp-mux-async
+
+Generate code for the Python ASYNC MCP muxer round-trip test (T108).
+Async sibling of `test-gen-py-mcp-mux`: uses the mcp-mux-stub-ok model with BOTH
+`--py-generate-mcp-server=true` AND `--py-async-services=true`, overlays
+`test/py-stub-mcp-mux-async-overlay/` on top of a py-stub copy. Generated code
+lands in `BaboonDefinitions/Generated/`.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-py-mcp-mux-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/py-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' \
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-py-mcp-mux-async.lock \
+  :python \
+  --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --py-generate-mcp-server=true \
+  --py-async-services=true
+
+rsync -a ./test/py-stub-mcp-mux-async-overlay/ "$TEST_DIR/py-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-py-mcp-mux-async
+
+Run the Python ASYNC MCP muxer round-trip tests (T108).
+Async sibling of `test-py-mcp-mux`. Validates tools/list union, per-service
+routing for UserService and OrderService (awaited via asyncio.run), DuplicateTool
+collision, and NoMatchingTool (-32602) against `AsyncMcpMuxer`.
+
+```bash
+TEST_DIR="${action.test-gen-py-mcp-mux-async.test_dir}"
+pushd "$TEST_DIR/py-stub"
+python3 -m venv .venv
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
+python3 -m pip install -r requirements.txt
+python3 -m unittest BaboonTests.mcp_mux_async.test_mcp_mux_async
 popd
 
 ret success:bool=true

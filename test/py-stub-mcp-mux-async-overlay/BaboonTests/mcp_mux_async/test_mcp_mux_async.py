@@ -1,0 +1,331 @@
+# T108 -- Python ASYNC MCP muxer round-trip overlay test.
+#
+# Async sibling of `test_mcp_mux.py`. Exercises `AsyncMcpMuxer` by composing
+# two FRESHLY GENERATED async <Service>McpServer instances produced from the
+# T102 `mcp-mux-stub-ok/` model (UserService + OrderService) compiled with
+# `--py-async-services=true`. Composition is done strictly through the public
+# T114 routable surface:
+#   - the muxer ctor takes objects with .server_info / .tools / .route_tool_call
+#     (the async `route_tool_call` is an `async def` returning a coroutine),
+#   - the test NEVER subclasses a <Service>McpServer,
+#   - the test NEVER calls a member server's own handle().
+#
+# RUNTIME AWAITED: every test case that exercises handle() AWAITS the coroutine.
+# The Python async MCP lane is a RUNTIME test -- not a type-check-only test.
+#
+# Generated code lands in `BaboonDefinitions/Generated/` (the isolated dir
+# set by the `test-gen-py-mcp-mux-async` mdl action). No committed generated
+# fixtures.
+#
+# Under `--py-async-services=true`:
+#   - service methods become `async def`,
+#   - the generated wiring `invoke_json_<Service>` is `async def` returning a
+#     coroutine that resolves to BaboonEither[BaboonWiringError, str],
+#   - the generated <Service>McpServer extends AbstractAsyncBaboonMcpServer and
+#     its `route_tool_call` is `async def`,
+#   - `AsyncMcpMuxer.handle()` is `async def` and awaits each `route_tool_call`.
+#
+# Four asserted muxer behaviours (T108 acceptance, async axis):
+#   1. tools/list -> UNION of both services' tools in registration-then-
+#                   declaration order (awaited);
+#   2. tools/call -> routes the flat tool name to the correct owning service,
+#                   awaited, proven for a tool of EACH service;
+#   3. register a server with a colliding tool name -> raises
+#      BaboonMcpWiringException with DuplicateTool error;
+#   4. unknown tool name -> -32602 "unknown tool" response (NoMatchingTool),
+#                          awaited.
+#
+# Run from py-stub/:
+#   python3 -m unittest BaboonTests.mcp_mux_async.test_mcp_mux_async
+
+import asyncio
+import json
+import unittest
+
+from BaboonDefinitions.Generated.baboon_codecs import BaboonCodecContext
+from BaboonDefinitions.Generated.baboon_mcp_runtime import (
+    McpSession,
+    McpServerInfo,
+    AsyncMcpMuxer,
+    BaboonMcpWiringException,
+    DuplicateTool,
+)
+from BaboonDefinitions.Generated.mcp.mux.stub.BaboonServiceRt import BaboonServiceRtDefault
+from BaboonDefinitions.Generated.mcp.mux.stub.UserService_Wiring import invoke_json_UserService
+from BaboonDefinitions.Generated.mcp.mux.stub.UserServiceMcpServer import UserServiceMcpServer
+from BaboonDefinitions.Generated.mcp.mux.stub.OrderService_Wiring import invoke_json_OrderService
+from BaboonDefinitions.Generated.mcp.mux.stub.OrderServiceMcpServer import OrderServiceMcpServer
+
+from BaboonDefinitions.Generated.mcp.mux.stub.UserProfile import UserProfile
+from BaboonDefinitions.Generated.mcp.mux.stub.UserStatus import UserStatus
+from BaboonDefinitions.Generated.mcp.mux.stub.userservice.createuser.Out import Out as CreateUserOut
+from BaboonDefinitions.Generated.mcp.mux.stub.userservice.getuser.Out import Out as GetUserOut
+from BaboonDefinitions.Generated.mcp.mux.stub.OrderSummary import OrderSummary
+from BaboonDefinitions.Generated.mcp.mux.stub.OrderStatus import OrderStatus
+from BaboonDefinitions.Generated.mcp.mux.stub.orderservice.placeorder.Out import Out as PlaceOrderOut
+from BaboonDefinitions.Generated.mcp.mux.stub.orderservice.cancelorder.Out import Out as CancelOrderOut
+
+# The union of both services' tools in registration-then-declaration order.
+EXPECTED_UNION = [
+    "UserService_createUser",
+    "UserService_getUser",
+    "OrderService_placeOrder",
+    "OrderService_cancelOrder",
+]
+
+MERGED_INFO = McpServerInfo(name="MergedAsyncEndpoint", version="1.0.0")
+
+
+# ---------------------------------------------------------------------------
+# Async stub service implementations
+# ---------------------------------------------------------------------------
+
+class _AsyncStubUserService:
+    async def createUser(self, arg):
+        return CreateUserOut(profile=UserProfile(userId="u1", email="a@b.c", status=UserStatus.Active))
+
+    async def getUser(self, arg):
+        return GetUserOut(profile=UserProfile(userId="u1", email="a@b.c", status=UserStatus.Active))
+
+
+class _AsyncStubOrderService:
+    async def placeOrder(self, arg):
+        return PlaceOrderOut(summary=OrderSummary(orderId="o1", status=OrderStatus.Confirmed, total=10.0))
+
+    async def cancelOrder(self, arg):
+        return CancelOrderOut(ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Delegate factories (async errors-mode invokeJson).
+# Under --py-async-services=true, invoke_json_<Service> is `async def`.
+# ---------------------------------------------------------------------------
+
+def _make_user_delegate():
+    rt = BaboonServiceRtDefault()
+    stub = _AsyncStubUserService()
+
+    async def _delegate(method, data, ctx, cc):
+        return await invoke_json_UserService(method, data, stub, rt, cc)
+
+    return _delegate
+
+
+def _make_order_delegate():
+    rt = BaboonServiceRtDefault()
+    stub = _AsyncStubOrderService()
+
+    async def _delegate(method, data, ctx, cc):
+        return await invoke_json_OrderService(method, data, stub, rt, cc)
+
+    return _delegate
+
+
+# ---------------------------------------------------------------------------
+# Server and muxer factories
+# ---------------------------------------------------------------------------
+
+def _make_user_server():
+    return UserServiceMcpServer(_make_user_delegate())
+
+
+def _make_order_server():
+    return OrderServiceMcpServer(_make_order_delegate())
+
+
+def _make_muxer():
+    return AsyncMcpMuxer(MERGED_INFO, _make_user_server(), _make_order_server())
+
+
+# ---------------------------------------------------------------------------
+# Test helpers (all async -- handle() returns a coroutine)
+# ---------------------------------------------------------------------------
+
+async def _init_session(mux, session, codec_ctx):
+    await mux.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "t", "version": "0"},
+            },
+        },
+        session, None, codec_ctx,
+    )
+    await mux.handle(
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        session, None, codec_ctx,
+    )
+
+
+async def _init_and_list():
+    codec_ctx = BaboonCodecContext.Default
+    mux = _make_muxer()
+    session = McpSession()
+    await _init_session(mux, session, codec_ctx)
+    resp = await mux.handle(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        session, None, codec_ctx,
+    )
+    if resp is None:
+        raise AssertionError("tools/list must return a response, got None")
+    tools = resp["result"]["tools"]
+    return tools, resp, mux, session, codec_ctx
+
+
+async def _call(mux, session, codec_ctx, name, args):
+    resp = await mux.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 99,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": args},
+        },
+        session, None, codec_ctx,
+    )
+    if resp is None:
+        raise AssertionError(f"tools/call must return a response for tool {name!r}, got None")
+    return resp
+
+
+def _run(coro):
+    """Run a coroutine to completion -- the async lane AWAITS, it does not type-check only."""
+    return asyncio.run(coro)
+
+
+# ---------------------------------------------------------------------------
+# Test 1: tools/list returns union in registration-then-declaration order
+# ---------------------------------------------------------------------------
+
+class Test1ToolsList(unittest.TestCase):
+
+    def test_union_in_registration_then_declaration_order(self):
+        async def _body():
+            tools, resp, *_ = await _init_and_list()
+            self.assertNotIn("error", resp, "tools/list must not return an error")
+            self.assertEqual(len(tools), 4, "MUST be exactly 4 tools (2 per service)")
+            names = [t["name"] for t in tools]
+            self.assertEqual(names, EXPECTED_UNION,
+                             "Tool names must be in registration-then-declaration order")
+
+        _run(_body())
+
+    def test_negative_control_union_not_interleaved(self):
+        async def _body():
+            tools, *_ = await _init_and_list()
+            names = [t["name"] for t in tools]
+            self.assertNotEqual(names, [
+                "UserService_createUser",
+                "OrderService_placeOrder",
+                "UserService_getUser",
+                "OrderService_cancelOrder",
+            ], "Interleaved order must not match")
+
+        _run(_body())
+
+
+# ---------------------------------------------------------------------------
+# Test 2: tools/call routes to the correct owning service (awaited)
+# ---------------------------------------------------------------------------
+
+class Test2Routing(unittest.TestCase):
+
+    def test_user_service_get_user_channel_a_right(self):
+        async def _body():
+            tools, _, mux, session, codec_ctx = await _init_and_list()
+            resp = await _call(mux, session, codec_ctx, "UserService_getUser", {"userId": "u1"})
+            self.assertEqual(resp["id"], 99)
+            self.assertNotIn("error", resp, "UserService_getUser must not return a JSON-RPC error")
+            result = resp["result"]
+            self.assertEqual(result.get("isError"), False, "isError must be False for Channel-A Right")
+            content = result["content"]
+            self.assertEqual(len(content), 1)
+            payload = json.loads(content[0]["text"])
+            self.assertIn("profile", payload, "UserService_getUser result must contain 'profile'")
+
+        _run(_body())
+
+    def test_order_service_cancel_order_channel_a_right(self):
+        async def _body():
+            tools, _, mux, session, codec_ctx = await _init_and_list()
+            resp = await _call(mux, session, codec_ctx, "OrderService_cancelOrder",
+                               {"orderId": "o1", "reason": None})
+            self.assertNotIn("error", resp, "OrderService_cancelOrder must not return a JSON-RPC error")
+            result = resp["result"]
+            self.assertEqual(result.get("isError"), False, "isError must be False for Channel-A Right")
+            content = result["content"]
+            self.assertEqual(len(content), 1)
+            payload = json.loads(content[0]["text"])
+            self.assertEqual(payload.get("ok"), True, "cancelOrder result must have ok=True")
+
+        _run(_body())
+
+    def test_order_service_place_order_decode_failure_channel_b(self):
+        # items=None causes a decode failure -> BaboonLeft -> Channel-B (isError=True).
+        async def _body():
+            tools, _, mux, session, codec_ctx = await _init_and_list()
+            resp = await _call(mux, session, codec_ctx, "OrderService_placeOrder",
+                               {"userId": "u1", "items": None})
+            self.assertNotIn("error", resp, "Channel-B must be a result, not a JSON-RPC error")
+            result = resp["result"]
+            self.assertEqual(result.get("isError"), True,
+                             "isError must be True for Channel-B decode failure")
+            content = result["content"]
+            self.assertGreater(len(content), 0, "content must have at least one element")
+            self.assertGreater(len(content[0]["text"]), 0, "error text must be non-empty")
+
+        _run(_body())
+
+
+# ---------------------------------------------------------------------------
+# Test 3: DuplicateTool raised on collision (synchronous -- register() is sync)
+# ---------------------------------------------------------------------------
+
+class Test3DuplicateTool(unittest.TestCase):
+
+    def test_duplicate_tool_on_ctor_collision(self):
+        raised = None
+        try:
+            AsyncMcpMuxer(MERGED_INFO, _make_user_server(), _make_user_server())
+        except BaboonMcpWiringException as e:
+            raised = e
+        self.assertIsNotNone(raised, "Must raise BaboonMcpWiringException for duplicate tool")
+        self.assertIsInstance(raised.error, DuplicateTool, "error must be DuplicateTool")
+        self.assertEqual(raised.error.tool_name, "UserService_createUser",
+                         "First collision must be UserService_createUser")
+
+    def test_duplicate_tool_on_register(self):
+        mux = AsyncMcpMuxer(MERGED_INFO, _make_user_server())
+        raised = None
+        try:
+            mux.register(_make_user_server())
+        except BaboonMcpWiringException as e:
+            raised = e
+        self.assertIsNotNone(raised, "Must raise BaboonMcpWiringException on register collision")
+        self.assertIsInstance(raised.error, DuplicateTool, "error must be DuplicateTool")
+
+
+# ---------------------------------------------------------------------------
+# Test 4: NoMatchingTool -> -32602 error response (awaited)
+# ---------------------------------------------------------------------------
+
+class Test4NoMatchingTool(unittest.TestCase):
+
+    def test_unknown_tool_returns_minus32602(self):
+        async def _body():
+            tools, _, mux, session, codec_ctx = await _init_and_list()
+            resp = await _call(mux, session, codec_ctx, "UserService_nope", {})
+            self.assertIn("error", resp, "Unknown tool must produce a JSON-RPC error")
+            self.assertNotIn("result", resp, "No result expected for unknown tool")
+            self.assertEqual(resp["error"]["code"], -32602,
+                             "Unknown tool error code MUST be -32602 (InvalidParams)")
+            self.assertGreater(len(resp["error"]["message"]), 0, "error message must be non-empty")
+
+        _run(_body())
+
+
+if __name__ == "__main__":
+    unittest.main()
