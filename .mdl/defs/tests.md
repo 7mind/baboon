@@ -3318,6 +3318,8 @@ dep action.test-cs-mcp-async
 dep action.test-rust-mcp-async
 dep action.test-python-mcp-async
 dep action.test-swift-mcp-async
+dep action.test-swift-mcp-mux
+dep action.test-swift-mcp-mux-async
 dep action.test-rs-wiring-either
 dep action.test-rs-wiring-result
 dep action.test-rs-wiring-outcome
@@ -4496,6 +4498,142 @@ if ! command -v swift &> /dev/null; then
 fi
 
 TEST_DIR="${action.test-gen-swift-mcp-async.test_dir}"
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
+
+ret success:bool=true
+```
+
+# action: test-gen-swift-mcp-mux
+
+Generate code for the Swift MCP muxer round-trip test (T113, sync).
+Uses the mcp-mux-stub-ok model (UserService + OrderService) with
+`--sw-generate-mcp-server=true` (no-errors mode) and assembles a self-contained
+Swift package: the generated `Sources/BaboonRuntime` (including the additive
+baboon_mcp_runtime.swift, which carries AbstractMcpMuxer + the
+DuplicateTool/NoMatchingTool taxonomy, emitted only when the MCP flag is on) and
+`Sources/McpMuxStub` (the two @root services + their wiring + the per-service
+UserServiceMcpServer / OrderServiceMcpServer), then overlays
+`test/swift-stub-mcp-mux-overlay/` (Package.swift + the McpMuxTests target).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-swift-mcp-mux"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sw-stub"
+mkdir -p "$TEST_DIR/sw-stub/Sources"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-swift-mcp-mux.lock \
+  :swift \
+  --output "$TEST_DIR/sw-stub/Sources" \
+  --sw-write-evolution-dict=true \
+  --sw-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --sw-generate-mcp-server=true
+
+# Apply MCP muxer overlay (Package.swift + McpMuxTests target).
+rsync -a ./test/swift-stub-mcp-mux-overlay/ "$TEST_DIR/sw-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-swift-mcp-mux
+
+Run the Swift MCP muxer round-trip tests (T113, sync).
+Validates tools/list union across UserService + OrderService in
+registration-then-declaration order, per-service routing (Channel-A success +
+per-service Channel-B), DuplicateTool on collision, and NoMatchingTool (-32602)
+against `AbstractMcpMuxer`. Composes the two generated servers strictly through
+the public T114 routable surface (`AnyRoutableMcpServer`); never a member's
+handle(). Assertions are unconditional XCTest checks (Swift `assert` is vacuous).
+
+```bash
+if ! command -v swift &> /dev/null; then
+  if [[ "$(uname)" == "Linux" ]]; then
+    echo "Swift is required on Linux but was not found in PATH" >&2
+    exit 1
+  fi
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+TEST_DIR="${action.test-gen-swift-mcp-mux.test_dir}"
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
+
+ret success:bool=true
+```
+
+# action: test-gen-swift-mcp-mux-async
+
+Generate code for the Swift ASYNC MCP muxer round-trip test (T113).
+Async sibling of `test-gen-swift-mcp-mux`: uses the mcp-mux-stub-ok model + BOTH
+`--sw-generate-mcp-server=true` AND `--sw-async-services=true` (no-errors mode),
+and overlays `test/swift-stub-mcp-mux-async-overlay/` on top of a sw-stub copy.
+Under the async axis the generated `<Svc>Wiring.invokeJson` is
+`async throws -> String` and the generated servers conform to
+`IBaboonAsyncMcpServer`, so the test composes them behind `AbstractAsyncMcpMuxer`
+(`async handle`, `async throws routeToolCall`). DO NOT modify the sync
+`test-gen-swift-mcp-mux` lane.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-swift-mcp-mux-async"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sw-stub"
+mkdir -p "$TEST_DIR/sw-stub/Sources"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
+  --lock-file=./target/baboon-swift-mcp-mux-async.lock \
+  :swift \
+  --output "$TEST_DIR/sw-stub/Sources" \
+  --sw-write-evolution-dict=true \
+  --sw-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --sw-generate-mcp-server=true \
+  --sw-async-services=true
+
+# Apply async MCP muxer overlay (Package.swift + McpMuxTests target).
+rsync -a ./test/swift-stub-mcp-mux-async-overlay/ "$TEST_DIR/sw-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-swift-mcp-mux-async
+
+Run the Swift ASYNC MCP muxer round-trip tests (T113).
+Async sibling of `test-swift-mcp-mux`. Validates the SAME four muxer behaviours
+through the genuinely-async `AbstractAsyncMcpMuxer` (each `tools/call` awaits the
+owning server's `routeToolCall` before Channel-A/B), plus an @MainActor-isolated
+round-trip (cooperative suspension, not a blocking bridge). Assertions are
+unconditional XCTest checks.
+
+```bash
+if ! command -v swift &> /dev/null; then
+  if [[ "$(uname)" == "Linux" ]]; then
+    echo "Swift is required on Linux but was not found in PATH" >&2
+    exit 1
+  fi
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+TEST_DIR="${action.test-gen-swift-mcp-mux-async.test_dir}"
 ./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
 
 ret success:bool=true

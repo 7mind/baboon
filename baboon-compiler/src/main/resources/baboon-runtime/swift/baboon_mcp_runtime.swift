@@ -448,3 +448,379 @@ public struct AnyAsyncMcpServer<Ctx> {
         return await _handle(request, session, ctx, codecCtx)
     }
 }
+
+// ===========================================================================
+// MCP-muxer error taxonomy (tasks:T113; contract §6).
+//
+// The cross-service MCP muxer composes several <Service>McpServer instances
+// behind one endpoint. `duplicateTool` is the MCP-tier analogue of the
+// service-wiring `BaboonWiringError.duplicateService` (a registration-time
+// tool-name collision); `noMatchingTool` is the analogue of `noMatchingService`
+// (a dispatch-time unknown tool name). They mirror that taxonomy and carrier
+// exactly, but live in this MCP-only runtime file rather than the always-shipped
+// service-wiring runtime (baboon_service_wiring.swift) so that with
+// `--sw-generate-mcp-server` absent the generated output is byte-identical to the
+// pre-MCP baseline (no MCP types leak into the unconditional runtime).
+// `BaboonMcpWiringException` is the MCP-tier carrier — the structural twin of the
+// service-wiring `BaboonWiringException` (a thrown programmer error carrying a
+// tagged value), so `duplicateTool` propagates to the integrator exactly as
+// `duplicateService` does, just from the MCP-only runtime.
+public enum BaboonMcpWiringError: Error {
+    case duplicateTool(String)
+    case noMatchingTool(String)
+}
+
+public struct BaboonMcpWiringException: Error {
+    public let error: BaboonMcpWiringError
+    public init(_ error: BaboonMcpWiringError) { self.error = error }
+}
+
+// --- Type-erasing routable-server box (sync) ---
+//
+// `IBaboonMcpServer` carries an `associatedtype Ctx`, so a homogeneous muxer
+// store cannot hold `[any IBaboonMcpServer]` keyed by a single `Ctx`. This box
+// captures exactly the T114 PUBLIC routable surface — `serverInfo`, `tools`, and
+// the `routeToolCall` dispatch entry — from any conforming server, mirroring the
+// `AnyJsonService<R>` precedent in the service-wiring runtime. The muxer's flat
+// storage stays `[AnyRoutableMcpServer<Ctx>]`. It NEVER captures `handle()`.
+public struct AnyRoutableMcpServer<Ctx> {
+    public let serverInfo: McpServerInfo
+    public let tools: [McpToolEntry]
+    private let _routeToolCall: (BaboonMethodId, String, Ctx, BaboonCodecContext) throws -> String
+
+    public init<S: IBaboonMcpServer>(_ s: S) where S.Ctx == Ctx {
+        self.serverInfo = s.serverInfo
+        self.tools = s.tools
+        self._routeToolCall = s.routeToolCall
+    }
+
+    public func routeToolCall(_ method: BaboonMethodId, _ data: String, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) throws -> String {
+        return try _routeToolCall(method, data, ctx, codecCtx)
+    }
+}
+
+// --- Cross-service MCP muxer (tasks:T113; contract:
+// docs/research/mcp-muxer-runtime-contract.md) ---
+//
+// `AbstractMcpMuxer<Ctx>` composes several `<Service>McpServer<Ctx>` instances
+// behind ONE MCP endpoint so a single connection serves the union of their
+// tools. It is the MCP-tier sibling of the service `JsonMuxer`: where `JsonMuxer`
+// keys `[serviceName: AnyJsonService]` and routes by `method.serviceId`, the
+// muxer keys `[toolName: owningServer]` and routes by the inbound flat MCP tool
+// name (contract §1).
+//
+// Composition seam: it depends ONLY on the PUBLIC routable surface (tasks:T114)
+// — it reads each server's `serverInfo` and `tools`, and routes each `tools/call`
+// via the public `routeToolCall`. It NEVER reads private members and NEVER calls
+// a server's `handle()` (a member's `handle` resolves only its OWN tools and
+// returns "unknown tool" for any cross-service name — contract §4). The muxer
+// owns the JSON-RPC envelope; each member owns its domain dispatch.
+//
+// The `handle` state machine is the SAME shape as the per-service base, with
+// three arms differing only in operating over the union: `tools/list` returns the
+// union, `tools/call` routes by tool name to the owning server, and `initialize`
+// returns a single merged `serverInfo` supplied to the ctor.
+public final class AbstractMcpMuxer<Ctx> {
+    // Registration order preserved (an order-preserving `_toolOrder` array
+    // alongside the routing dictionaries — JsonMuxer LinkedHashMap precedent).
+    // `_route`/`_entries`/`_toolOrder` are built at registration (contract §2),
+    // never per request.
+    private var _servers: [AnyRoutableMcpServer<Ctx>] = []
+    private var _route: [String: AnyRoutableMcpServer<Ctx>] = [:]
+    private var _entries: [String: McpToolEntry] = [:]
+    private var _toolOrder: [String] = []
+    private let _mergedServerInfo: McpServerInfo
+
+    // varargs ctor mirrors `JsonMuxer(_ services: ...)`. `mergedServerInfo` is the
+    // composed endpoint's single identity returned by `initialize` (§3.1).
+    public init(_ mergedServerInfo: McpServerInfo, _ servers: AnyRoutableMcpServer<Ctx>...) throws {
+        self._mergedServerInfo = mergedServerInfo
+        for s in servers { try register(s) }
+    }
+
+    public init(_ mergedServerInfo: McpServerInfo, _ servers: [AnyRoutableMcpServer<Ctx>]) throws {
+        self._mergedServerInfo = mergedServerInfo
+        for s in servers { try register(s) }
+    }
+
+    // Folds the server's declaration-ordered `tools` into the union table; throws
+    // duplicateTool on a tool-name collision across servers (the exact MCP-tier
+    // analogue of JsonMuxer.register throwing duplicateService).
+    public func register(_ server: AnyRoutableMcpServer<Ctx>) throws {
+        for t in server.tools {
+            if _route[t.name] != nil {
+                throw BaboonMcpWiringException(BaboonMcpWiringError.duplicateTool(t.name))
+            }
+            _route[t.name] = server
+            _entries[t.name] = t
+            _toolOrder.append(t.name)
+        }
+        _servers.append(server)
+    }
+
+    private func errorResponse(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {
+        return JsonRpcResponse(id, error: JsonRpcError(code, message))
+    }
+
+    public func handle(_ request: JsonRpcRequest, _ session: McpSession, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) -> JsonRpcResponse? {
+        let id = request.id
+        switch request.method {
+        case "initialize":
+            guard let params = request.params as? [String: Any] else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing params")
+            }
+            if params["protocolVersion"] == nil {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing protocolVersion")
+            }
+            session.initialized = true
+            let result: [String: Any] = [
+                "protocolVersion": mcpProtocolVersion,
+                "capabilities": ["tools": [String: Any]()],
+                "serverInfo": ["name": _mergedServerInfo.name, "version": _mergedServerInfo.version],
+            ]
+            return JsonRpcResponse(id, result: result)
+
+        case "notifications/initialized":
+            return nil
+
+        case "tools/list":
+            if !session.initialized {
+                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/list before initialize")
+            }
+            return JsonRpcResponse(id, result: ["tools": toolsListUnion()])
+
+        case "tools/call":
+            if !session.initialized {
+                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/call before initialize")
+            }
+            guard let params = request.params as? [String: Any] else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing params")
+            }
+            guard let toolName = params["name"] as? String else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing tool name")
+            }
+            guard let server = _route[toolName], let entry = _entries[toolName] else {
+                // NoMatchingTool: surfaced as the SAME wire response the per-service
+                // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
+                // so the bytes are identical whether one server or the muxer rejects.
+                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '\(toolName)'")
+            }
+            let argsRaw: Any = params["arguments"] ?? [String: Any]()
+            let argsJson: String
+            do {
+                let data = try JSONSerialization.data(withJSONObject: argsRaw, options: [.sortedKeys, .fragmentsAllowed])
+                argsJson = String(data: data, encoding: .utf8)!
+            } catch {
+                return errorResponse(id, jsonRpcErrorInternalError, "tools/call: failed to serialize arguments: \(error)")
+            }
+            do {
+                let resultStr = try server.routeToolCall(entry.method, argsJson, ctx, codecCtx)
+                let result: [String: Any] = [
+                    "content": [["type": "text", "text": resultStr]],
+                    "isError": false,
+                ]
+                return JsonRpcResponse(id, result: result)
+            } catch let e as BaboonWiringException {
+                // Channel B: a valid protocol call whose domain payload failed.
+                let result: [String: Any] = [
+                    "content": [["type": "text", "text": describeWiringError(e.error)]],
+                    "isError": true,
+                ]
+                return JsonRpcResponse(id, result: result)
+            } catch {
+                // Channel B: unexpected error during dispatch.
+                let result: [String: Any] = [
+                    "content": [["type": "text", "text": "\(error)"]],
+                    "isError": true,
+                ]
+                return JsonRpcResponse(id, result: result)
+            }
+
+        default:
+            return errorResponse(id, jsonRpcErrorMethodNotFound, "Method not found: \(request.method)")
+        }
+    }
+
+    // Backs tools/list (§3.2): the union of all registered servers' tool entries
+    // in registration-then-declaration order (the insertion order of `_toolOrder`),
+    // each in the same shape the per-service base emits.
+    private func toolsListUnion() -> [[String: Any]] {
+        var toolsArr: [[String: Any]] = []
+        for name in _toolOrder {
+            guard let t = _entries[name] else { continue }
+            var entry: [String: Any] = [
+                "name": t.name,
+                "inputSchema": t.inputSchema,
+            ]
+            if let d = t.description {
+                entry["description"] = d
+            }
+            toolsArr.append(entry)
+        }
+        return toolsArr
+    }
+
+    private func describeWiringError(_ e: BaboonWiringError) -> String {
+        return "\(e)"
+    }
+}
+
+// --- Type-erasing routable-server box (async) ---
+//
+// Async analogue of `AnyRoutableMcpServer`: captures the T114 PUBLIC async
+// routable surface from any `IBaboonAsyncMcpServer` (whose `routeToolCall` is
+// `async throws`). The async muxer's flat storage is
+// `[AnyAsyncRoutableMcpServer<Ctx>]`.
+public struct AnyAsyncRoutableMcpServer<Ctx> {
+    public let serverInfo: McpServerInfo
+    public let tools: [McpToolEntry]
+    private let _routeToolCall: (BaboonMethodId, String, Ctx, BaboonCodecContext) async throws -> String
+
+    public init<S: IBaboonAsyncMcpServer>(_ s: S) where S.Ctx == Ctx {
+        self.serverInfo = s.serverInfo
+        self.tools = s.tools
+        self._routeToolCall = s.routeToolCall
+    }
+
+    public func routeToolCall(_ method: BaboonMethodId, _ data: String, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) async throws -> String {
+        return try await _routeToolCall(method, data, ctx, codecCtx)
+    }
+}
+
+// --- Async cross-service MCP muxer (tasks:T113; contract §7) ---
+//
+// Async sibling of `AbstractMcpMuxer`, for backends generated with
+// `--sw-async-services=true`: it composes `AnyAsyncRoutableMcpServer<Ctx>` members
+// (whose `routeToolCall` is `async throws`), so the single `tools/call` dispatch
+// hop is awaited directly in the caller's task (no synchronous bridge) and
+// `handle` is itself `async`. The registration / union-table build (duplicateTool
+// on collision), the merged `initialize`, the ordering rule, and the
+// noMatchingTool wire mapping are identical to the sync muxer; only the
+// `tools/call` hop awaits.
+public final class AbstractAsyncMcpMuxer<Ctx> {
+    private var _servers: [AnyAsyncRoutableMcpServer<Ctx>] = []
+    private var _route: [String: AnyAsyncRoutableMcpServer<Ctx>] = [:]
+    private var _entries: [String: McpToolEntry] = [:]
+    private var _toolOrder: [String] = []
+    private let _mergedServerInfo: McpServerInfo
+
+    public init(_ mergedServerInfo: McpServerInfo, _ servers: AnyAsyncRoutableMcpServer<Ctx>...) throws {
+        self._mergedServerInfo = mergedServerInfo
+        for s in servers { try register(s) }
+    }
+
+    public init(_ mergedServerInfo: McpServerInfo, _ servers: [AnyAsyncRoutableMcpServer<Ctx>]) throws {
+        self._mergedServerInfo = mergedServerInfo
+        for s in servers { try register(s) }
+    }
+
+    public func register(_ server: AnyAsyncRoutableMcpServer<Ctx>) throws {
+        for t in server.tools {
+            if _route[t.name] != nil {
+                throw BaboonMcpWiringException(BaboonMcpWiringError.duplicateTool(t.name))
+            }
+            _route[t.name] = server
+            _entries[t.name] = t
+            _toolOrder.append(t.name)
+        }
+        _servers.append(server)
+    }
+
+    private func errorResponse(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {
+        return JsonRpcResponse(id, error: JsonRpcError(code, message))
+    }
+
+    public func handle(_ request: JsonRpcRequest, _ session: McpSession, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) async -> JsonRpcResponse? {
+        let id = request.id
+        switch request.method {
+        case "initialize":
+            guard let params = request.params as? [String: Any] else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing params")
+            }
+            if params["protocolVersion"] == nil {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing protocolVersion")
+            }
+            session.initialized = true
+            let result: [String: Any] = [
+                "protocolVersion": mcpProtocolVersion,
+                "capabilities": ["tools": [String: Any]()],
+                "serverInfo": ["name": _mergedServerInfo.name, "version": _mergedServerInfo.version],
+            ]
+            return JsonRpcResponse(id, result: result)
+
+        case "notifications/initialized":
+            return nil
+
+        case "tools/list":
+            if !session.initialized {
+                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/list before initialize")
+            }
+            return JsonRpcResponse(id, result: ["tools": toolsListUnion()])
+
+        case "tools/call":
+            if !session.initialized {
+                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/call before initialize")
+            }
+            guard let params = request.params as? [String: Any] else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing params")
+            }
+            guard let toolName = params["name"] as? String else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing tool name")
+            }
+            guard let server = _route[toolName], let entry = _entries[toolName] else {
+                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '\(toolName)'")
+            }
+            let argsRaw: Any = params["arguments"] ?? [String: Any]()
+            let argsJson: String
+            do {
+                let data = try JSONSerialization.data(withJSONObject: argsRaw, options: [.sortedKeys, .fragmentsAllowed])
+                argsJson = String(data: data, encoding: .utf8)!
+            } catch {
+                return errorResponse(id, jsonRpcErrorInternalError, "tools/call: failed to serialize arguments: \(error)")
+            }
+            do {
+                let resultStr = try await server.routeToolCall(entry.method, argsJson, ctx, codecCtx)
+                let result: [String: Any] = [
+                    "content": [["type": "text", "text": resultStr]],
+                    "isError": false,
+                ]
+                return JsonRpcResponse(id, result: result)
+            } catch let e as BaboonWiringException {
+                let result: [String: Any] = [
+                    "content": [["type": "text", "text": describeWiringError(e.error)]],
+                    "isError": true,
+                ]
+                return JsonRpcResponse(id, result: result)
+            } catch {
+                let result: [String: Any] = [
+                    "content": [["type": "text", "text": "\(error)"]],
+                    "isError": true,
+                ]
+                return JsonRpcResponse(id, result: result)
+            }
+
+        default:
+            return errorResponse(id, jsonRpcErrorMethodNotFound, "Method not found: \(request.method)")
+        }
+    }
+
+    private func toolsListUnion() -> [[String: Any]] {
+        var toolsArr: [[String: Any]] = []
+        for name in _toolOrder {
+            guard let t = _entries[name] else { continue }
+            var entry: [String: Any] = [
+                "name": t.name,
+                "inputSchema": t.inputSchema,
+            ]
+            if let d = t.description {
+                entry["description"] = d
+            }
+            toolsArr.append(entry)
+        }
+        return toolsArr
+    }
+
+    private func describeWiringError(_ e: BaboonWiringError) -> String {
+        return "\(e)"
+    }
+}
