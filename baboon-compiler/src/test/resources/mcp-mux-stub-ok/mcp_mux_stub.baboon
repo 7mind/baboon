@@ -1,0 +1,91 @@
+// MCP muxer test stub model.
+//
+// Purpose: fixture for the multi-service MCP muxer (T103 and beyond).
+// Declares at least TWO @root services so a cross-service MCP muxer can be
+// exercised. Each service has its own distinct methods, producing globally
+// non-overlapping tool names of the form <Service>_<method>.
+//
+// Services:
+//   - UserService  — user-management methods (createUser, getUser)
+//   - OrderService — order-management methods (placeOrder, cancelOrder)
+//
+// Model mirrors the structure of mcp-stub-ok/mcp_stub.baboon but is kept
+// minimal — only the types each service actually needs.
+//
+// D9 isolation: this model-dir is OUTSIDE the shared baboon/ model-dir to
+// avoid cross-namespace fixture-reference failures in the regular/wiring
+// test lanes (same rationale as mcp-stub-ok/).
+
+model mcp.mux.stub
+
+version "1.0.0"
+
+// ── Shared enum ───────────────────────────────────────────────────────────────
+enum UserStatus { Active  Suspended  Deleted }
+
+// ── UserService DTOs ──────────────────────────────────────────────────────────
+data UserProfile {
+  userId:   str
+  email:    str
+  status:   UserStatus
+}
+
+// ── OrderService DTOs ─────────────────────────────────────────────────────────
+enum OrderStatus { Pending  Confirmed  Shipped  Cancelled }
+
+data OrderItem {
+  productId: str
+  quantity:  i32
+  unitPrice: f64
+}
+
+data OrderSummary {
+  orderId: str
+  status:  OrderStatus
+  total:   f64
+}
+
+// ── Service 1: UserService ────────────────────────────────────────────────────
+// Produces MCP tool names: UserService_createUser, UserService_getUser
+root service UserService {
+
+  // Create a new user account.
+  def createUser (
+    data in {
+      email:  str
+      name:   str
+    }
+    data out { profile: UserProfile }
+  )
+
+  // Look up an existing user by id.
+  def getUser (
+    data in {
+      userId: str
+    }
+    data out { profile: opt[UserProfile] }
+  )
+}
+
+// ── Service 2: OrderService ───────────────────────────────────────────────────
+// Produces MCP tool names: OrderService_placeOrder, OrderService_cancelOrder
+root service OrderService {
+
+  // Place a new order for a given user.
+  def placeOrder (
+    data in {
+      userId: str
+      items:  lst[OrderItem]
+    }
+    data out { summary: OrderSummary }
+  )
+
+  // Cancel an existing order.
+  def cancelOrder (
+    data in {
+      orderId: str
+      reason:  opt[str]
+    }
+    data out { ok: bit }
+  )
+}
