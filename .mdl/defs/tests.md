@@ -5115,3 +5115,77 @@ bash test/editors/test-tree-sitter.sh .
 
 ret success:bool=true
 ```
+
+# action: test-gen-ts-wiring-collision
+
+Generate TypeScript service wiring for the T115 name-collision fixture model
+(`baboon-compiler/src/test/resources/ts-wiring-collision-ok/`) in BaboonEither
+errors mode. This is the REPRODUCTION step for D32 (T116): the output wiring.ts
+contains `let input: BaboonEither<BaboonWiringError, In>` with the bare alias-
+dangling `In` name at the decode-step, which `tsc --noEmit` will reject with
+`error TS2304: Cannot find name 'In'`.
+
+The generated code goes into an ISOLATED stub directory (`target/test-ts-wiring-
+collision/ts-wiring-collision-stub/src/`) with its own `tsconfig.typecheck.json`.
+The shared `test/ts-stub` is NOT used.
+
+NOT aggregated into `:test` — this lane stays RED (reproduction only) until
+T117 (fix) + T118 (wire into `:test`).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-wiring-collision"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-wiring-collision-stub"
+
+rsync -a --exclude='node_modules' \
+  ./test/ts-wiring-collision-stub/ "$TEST_DIR/ts-wiring-collision-stub/"
+
+mkdir -p "$TEST_DIR/ts-wiring-collision-stub/src"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/ts-wiring-collision-ok/ \
+  --meta-write-evolution-json "$TEST_DIR/baboon-ts-collision-meta.json" \
+  --lock-file="$TEST_DIR/baboon-ts-collision.lock" \
+  :typescript \
+  --output "$TEST_DIR/ts-wiring-collision-stub/src" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>'
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-ts-wiring-collision
+
+RED reproduction lane for D32 (T116): runs `tsc --noEmit` over the generated
+collision wiring.ts using an ISOLATED `tsconfig.typecheck.json` (NOT the shared
+`test/ts-stub`).
+
+With the UNFIXED translator this action FAILS with:
+  error TS2304: Cannot find name 'In'
+at `let input: BaboonEither<BaboonWiringError, In>` in the generated
+`tswc/collision/svc-mux/wiring.ts` — the alias-dangling bare `In` name.
+
+This is the expected RED state.  T117 fixes the translator; T118 wires this
+lane into `:test` once it turns GREEN.
+
+NOT aggregated into `:test`/`:ci`.
+
+```bash
+TEST_DIR="${action.test-gen-ts-wiring-collision.test_dir}"
+pushd "$TEST_DIR/ts-wiring-collision-stub"
+npm install
+npx tsc --noEmit -p tsconfig.typecheck.json
+popd
+
+ret success:bool=true
+```
