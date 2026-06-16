@@ -5,7 +5,7 @@ import baboon.runtime.shared.LEDataInputStream
 import baboon.runtime.shared.LEDataOutputStream
 import petstore.api.PetStatus
 import petstore.api.PetStoreWiring
-import petstore.api.BaboonMethodId
+import baboon.runtime.shared.BaboonMethodId
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import java.io.ByteArrayInputStream

@@ -28,10 +28,14 @@ public final class Driver {
         BaboonCodecContext ctx = BaboonCodecContext.Default;
         PetStoreAsyncImpl impl = new PetStoreAsyncImpl();
 
-        BaboonClientTransport.UebaAsync uebaTransport =
-            (svc, method, data) -> PetStoreWiring.invokeUeba(new BaboonMethodId(svc, method), data, impl, ctx);
-        BaboonClientTransport.JsonAsync jsonTransport =
-            (svc, method, data) -> PetStoreWiring.invokeJson(new BaboonMethodId(svc, method), data, impl, ctx);
+        BaboonClientTransport.UebaAsync uebaTransport = (svc, method, data) -> {
+            try { return PetStoreWiring.invokeUeba(new BaboonMethodId(svc, method), data, impl, ctx); }
+            catch (Exception e) { throw new RuntimeException(e); }
+        };
+        BaboonClientTransport.JsonAsync jsonTransport = (svc, method, data) -> {
+            try { return PetStoreWiring.invokeJson(new BaboonMethodId(svc, method), data, impl, ctx); }
+            catch (Exception e) { throw new RuntimeException(e); }
+        };
 
         PetStoreClient client = new PetStoreClient(uebaTransport, jsonTransport, ctx);
 
