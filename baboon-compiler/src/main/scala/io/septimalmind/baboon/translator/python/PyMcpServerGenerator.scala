@@ -4,7 +4,7 @@ import io.circe.Json
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
+import io.septimalmind.baboon.translator.mcp.{McpDocs, McpInputSchemaEmitter}
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
 import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -110,7 +110,8 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
         val schemaJson = schema.noSpaces
           .replace("\\", "\\\\")
           .replace("\"", "\\\"")
-        s"""            McpToolEntry(${pyString(toolName)}, BaboonMethodId(${pyString(serviceName)}, ${pyString(m.name.name)}), json.loads("$schemaJson")),"""
+        val descArg    = McpDocs.flatten(m.docs).map(d => s", ${pyString(d)}").getOrElse("")
+        s"""            McpToolEntry(${pyString(toolName)}, BaboonMethodId(${pyString(serviceName)}, ${pyString(m.name.name)}), json.loads("$schemaJson")$descArg),"""
     }
 
     val invokeFnName = s"invoke_json_$serviceName"

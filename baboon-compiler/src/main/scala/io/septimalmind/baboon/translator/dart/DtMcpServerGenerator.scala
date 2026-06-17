@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.dart
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
+import io.septimalmind.baboon.translator.mcp.{McpDocs, McpInputSchemaEmitter}
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
 import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -101,7 +101,8 @@ class DtMcpServerGenerator[F[+_, +_]: Error2](
           .replace("\\", "\\\\")
           .replace("'", "\\'")
           .replace("$", "\\$")
-        s"    McpToolEntry(${dartString(toolName)}, const BaboonMethodId(${dartString(serviceName)}, ${dartString(m.name.name)}), jsonDecode('$schemaLiteral') as Map<String, dynamic>),"
+        val descArg   = McpDocs.flatten(m.docs).map(d => s", ${dartString(d)}").getOrElse("")
+        s"    McpToolEntry(${dartString(toolName)}, const BaboonMethodId(${dartString(serviceName)}, ${dartString(m.name.name)}), jsonDecode('$schemaLiteral') as Map<String, dynamic>$descArg),"
     }
 
     val content =

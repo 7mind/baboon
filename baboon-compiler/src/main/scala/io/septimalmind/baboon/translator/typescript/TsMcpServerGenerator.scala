@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.typescript
 import io.circe.Json
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
+import io.septimalmind.baboon.translator.mcp.{McpDocs, McpInputSchemaEmitter}
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
 import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -95,10 +95,12 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
     // Declaration-ordered tool entries (K4 §2.3): one per method.
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
-        val toolName = s"${serviceName}_${m.name.name}"
-        val schema   = schemaEmitter.emitInputSchema(m.sig, domain)
+        val toolName   = s"${serviceName}_${m.name.name}"
+        val schema     = schemaEmitter.emitInputSchema(m.sig, domain)
+        val descField  = McpDocs.flatten(m.docs).map(d => s" description: ${jsString(d)},").getOrElse("")
         // The self-contained JSON Schema is carried as a constant literal value.
-        s"""        { name: ${jsString(toolName)}, method: { serviceName: ${jsString(serviceName)}, methodName: ${jsString(m.name.name)} }, inputSchema: ${jsonLiteral(schema)} },"""
+        // description is only emitted when present (TS `description?: string` — key must be absent, not undefined/null, for undocumented tools).
+        s"""        { name: ${jsString(toolName)}, method: { serviceName: ${jsString(serviceName)}, methodName: ${jsString(m.name.name)} },$descField inputSchema: ${jsonLiteral(schema)} },"""
     }
 
     // Async axis (`--ts-async-services=true`): the errors-mode wiring entry

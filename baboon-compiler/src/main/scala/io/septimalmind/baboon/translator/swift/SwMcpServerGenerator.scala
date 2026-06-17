@@ -2,7 +2,7 @@ package io.septimalmind.baboon.translator.swift
 
 import io.septimalmind.baboon.CompilerTarget.SwTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
+import io.septimalmind.baboon.translator.mcp.{McpDocs, McpInputSchemaEmitter}
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
 import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -117,7 +117,8 @@ class SwMcpServerGenerator[F[+_, +_]: Error2](
         val toolName      = s"${serviceName}_${m.name.name}"
         val schema        = schemaEmitter.emitInputSchema(m.sig, domain)
         val schemaLiteral = swiftStringLiteral(schema.noSpaces)
-        s"""        McpToolEntry(${swiftString(toolName)}, BaboonMethodId(serviceId: ${swiftString(serviceName)}, methodName: ${swiftString(m.name.name)}), $className._parseSchema($schemaLiteral)),"""
+        val descArg       = McpDocs.flatten(m.docs).map(d => s", ${swiftString(d)}").getOrElse("")
+        s"""        McpToolEntry(${swiftString(toolName)}, BaboonMethodId(serviceId: ${swiftString(serviceName)}, methodName: ${swiftString(m.name.name)}), $className._parseSchema($schemaLiteral)$descArg),"""
     }
 
     // Async axis (D24/T67): the delegate type, the conformed protocol, and the

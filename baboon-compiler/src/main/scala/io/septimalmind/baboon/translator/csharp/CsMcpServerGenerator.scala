@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.circe.Json
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
+import io.septimalmind.baboon.translator.mcp.{McpDocs, McpInputSchemaEmitter}
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
 import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -102,9 +102,10 @@ class CsMcpServerGenerator[F[+_, +_]: Error2](
     // lowercase model names; only C# symbols are PascalCase.
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
-        val toolName = s"${serviceName}_${m.name.name}"
-        val schema   = schemaEmitter.emitInputSchema(m.sig, domain)
-        s"""        new Baboon.Runtime.Shared.McpToolEntry(${csString(toolName)}, new Baboon.Runtime.Shared.BaboonMethodId(${csString(serviceName)}, ${csString(m.name.name)}), Newtonsoft.Json.Linq.JToken.Parse(${csVerbatimJson(schema)})),"""
+        val toolName    = s"${serviceName}_${m.name.name}"
+        val schema      = schemaEmitter.emitInputSchema(m.sig, domain)
+        val descArg     = McpDocs.flatten(m.docs).map(d => s", ${csString(d)}").getOrElse("")
+        s"""        new Baboon.Runtime.Shared.McpToolEntry(${csString(toolName)}, new Baboon.Runtime.Shared.BaboonMethodId(${csString(serviceName)}, ${csString(m.name.name)}), Newtonsoft.Json.Linq.JToken.Parse(${csVerbatimJson(schema)})$descArg),"""
     }
 
     // Async axis (`--cs-async-services=true`): the errors-mode wiring entry
