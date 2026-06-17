@@ -171,4 +171,24 @@ root service McpTools {
     }
     data out { ok: bit }
   )
+
+  // Method 6: multi-line doc comment fixture (D34/T125)
+  // Exercises: multi-line /** */ doc on a service method whose body text
+  // contains a literal $ (dollar), a literal " (double-quote), and a literal
+  // \ (backslash) — hazard chars that trigger downstream interpolation defects
+  // in Kotlin/Dart and escaping defects in C#/other backends.
+  // The embedded blank line exercises the \n\n join path in McpDocs.flatten.
+  /**
+   * Returns the fee schedule for the requested service tier.
+   * Base cost is $5 per call; "premium" tier costs $20 per call.
+   *
+   * Pass the tier name using the \\ delimiter convention documented in
+   * the API guide (e.g. "standard\\premium").
+   */
+  def describePricing (
+    data in {
+      tier: str
+    }
+    data out { ok: bit }
+  )
 }
