@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.java
 import io.circe.Json
 import io.septimalmind.baboon.CompilerTarget.JvTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
+import io.septimalmind.baboon.translator.mcp.{McpDocs, McpInputSchemaEmitter}
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
 import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -126,8 +126,9 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
         val schema      = schemaEmitter.emitInputSchema(m.sig, domain)
         // Embed schema as a Java string literal via javaString which handles
         // all escaping (`\` → `\\`, `"` → `\"`). `$` is literal in Java.
-        val schemaJson  = schema.noSpaces
-        s"""            new McpToolEntry(${javaString(toolName)}, new BaboonMethodId(${javaString(serviceName)}, ${javaString(m.name.name)}), parseSchema(${javaString(schemaJson)}))"""
+        val schemaJson   = schema.noSpaces
+        val descArg      = McpDocs.flatten(m.docs).map(d => s", ${javaString(d)}").getOrElse("")
+        s"""            new McpToolEntry(${javaString(toolName)}, new BaboonMethodId(${javaString(serviceName)}, ${javaString(m.name.name)}), parseSchema(${javaString(schemaJson)})$descArg)"""
     }
 
     val content =

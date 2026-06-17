@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.kotlin
 import io.circe.Json
 import io.septimalmind.baboon.CompilerTarget.KtTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
+import io.septimalmind.baboon.translator.mcp.{McpDocs, McpInputSchemaEmitter}
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
 import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -115,7 +115,8 @@ class KtMcpServerGenerator[F[+_, +_]: Error2](
           .replace("\\", "\\\\")
           .replace("\"", "\\\"")
           .replace("$", "\\$")
-        s"""        McpToolEntry(${ktString(toolName)}, BaboonMethodId(${ktString(serviceName)}, ${ktString(m.name.name)}), Json.parseToJsonElement("$schemaLiteral")),"""
+        val descArg = McpDocs.flatten(m.docs).map(d => s", description = ${ktString(d)}").getOrElse("")
+        s"""        McpToolEntry(${ktString(toolName)}, BaboonMethodId(${ktString(serviceName)}, ${ktString(m.name.name)}), Json.parseToJsonElement("$schemaLiteral")$descArg),"""
     }
 
     val content =

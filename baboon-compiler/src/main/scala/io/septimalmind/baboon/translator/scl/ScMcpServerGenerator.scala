@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.scl
 import io.circe.Json
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
+import io.septimalmind.baboon.translator.mcp.{McpDocs, McpInputSchemaEmitter}
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
 import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, ServiceResultResolver, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -148,10 +148,13 @@ class ScMcpServerGenerator[F[+_, +_]: Error2](
         val schema   = schemaEmitter.emitInputSchema(m.sig, domain)
         // The self-contained JSON Schema is carried as a constant literal value.
         // io.circe.Json literals are produced by io.circe.parser.parse.
+        val descArg = McpDocs.flatten(m.docs)
+          .map(d => s"\n      description = Some(${scalaString(d)}),")
+          .getOrElse("")
         s"""    _root_.baboon.runtime.shared.McpToolEntry(
            |      name = ${scalaString(toolName)},
            |      method = _root_.baboon.runtime.shared.BaboonMethodId(${scalaString(serviceName)}, ${scalaString(m.name.name)}),
-           |      inputSchema = io.circe.parser.parse(${scalaMultilineString(schema.noSpaces)}).fold(throw _, identity),
+           |      inputSchema = io.circe.parser.parse(${scalaMultilineString(schema.noSpaces)}).fold(throw _, identity),$descArg
            |    ),""".stripMargin
     }
 
