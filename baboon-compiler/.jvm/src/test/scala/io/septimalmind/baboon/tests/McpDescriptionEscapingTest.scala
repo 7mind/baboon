@@ -381,15 +381,20 @@ abstract class KotlinMcpDescriptionEscapingTestBase[F[+_, +_]: Error2: TagKK: Ba
           assert(serverPaths.size == 1, s"expected one McpToolsMcpServer.kt, got: ${serverPaths}")
           val server = srcs.files(serverPaths.head).content
 
-          // After the fix, "$5" and "$20" must appear as "\$5" / "\$20" in the source.
-          // Before the fix they appear as bare "$5" / "$20" (interpolation hazard).
+          // Assert the ESCAPED form is present: RED now (absent before fix), GREEN after fix.
+          // "\\$5" in Scala = the 3-char string backslash + dollar + '5'.
+          // Satisfiability: before T129/T130 ktString emits bare "$5" (no backslash prefix),
+          // so server.contains("\\$5") is false → assertion fails (RED). After the fix
+          // ktString calls .replace("$", "\\$"), emitting "\$5" → contains returns true (GREEN).
+          // (The negation form !server.contains("$5") was unsatisfiable: "\$5" still
+          // contains "$5" as a substring, so the assertion would stay RED after the fix.)
           assert(
-            !server.contains(McpDescFixture.dollarHazard5),
-            s"[T127 RED] Kotlin server contains unescaped '$$5' in description — ktString must escape $$ as \\$$",
+            server.contains("\\$5"),
+            s"[T127 RED] Kotlin server missing escaped '\\$$5' in description — ktString must escape $$ as \\$$",
           )
           assert(
-            !server.contains(McpDescFixture.dollarHazard20),
-            s"[T127 RED] Kotlin server contains unescaped '$$20' in description — ktString must escape $$ as \\$$",
+            server.contains("\\$20"),
+            s"[T127 RED] Kotlin server missing escaped '\\$$20' in description — ktString must escape $$ as \\$$",
           )
         }
     }
@@ -592,14 +597,20 @@ abstract class DartMcpDescriptionEscapingTestBase[F[+_, +_]: Error2: TagKK: Babo
           assert(serverPaths.size == 1, s"expected one mcp_tools_mcp_server.dart, got: ${serverPaths}")
           val server = srcs.files(serverPaths.head).content
 
-          // After T129/T130: "$5" must appear as "\$5" in the Dart source.
+          // Assert the ESCAPED form is present: RED now (absent before fix), GREEN after fix.
+          // "\\$5" in Scala = the 3-char string backslash + dollar + '5'.
+          // Satisfiability: before T129/T130 dartString emits bare "$5" (no backslash prefix),
+          // so server.contains("\\$5") is false → assertion fails (RED). After the fix
+          // dartString calls .replace("$", "\\$"), emitting "\$5" → contains returns true (GREEN).
+          // (The negation form !server.contains("$5") was unsatisfiable: "\$5" still
+          // contains "$5" as a substring, so the assertion would stay RED after the fix.)
           assert(
-            !server.contains(McpDescFixture.dollarHazard5),
-            s"[T127 RED] Dart server contains unescaped '$$5' in description — dartString must escape $$ as \\$$",
+            server.contains("\\$5"),
+            s"[T127 RED] Dart server missing escaped '\\$$5' in description — dartString must escape $$ as \\$$",
           )
           assert(
-            !server.contains(McpDescFixture.dollarHazard20),
-            s"[T127 RED] Dart server contains unescaped '$$20' in description — dartString must escape $$ as \\$$",
+            server.contains("\\$20"),
+            s"[T127 RED] Dart server missing escaped '\\$$20' in description — dartString must escape $$ as \\$$",
           )
         }
     }
