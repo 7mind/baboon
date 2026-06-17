@@ -264,10 +264,21 @@ void main() {
       // No "nextCursor" key (§2.2)
       expect(toolsResult.containsKey('nextCursor'), isFalse,
           reason: 'nextCursor must not be present');
-      // No "description" key for any tool (stub model has no doc comments)
+      // T119: McpTools_ping carries a distinctive doc comment in
+      // mcp_stub.baboon; its tools/list entry must expose that text as
+      // 'description'. Every other (undocumented) tool must have no
+      // description key.
+      const documentedToolName = 'McpTools_ping';
+      const documentedToolDescription =
+          'Liveness probe returning a fixed acknowledgement token.';
       for (final t in tools) {
-        expect(t.containsKey('description'), isFalse,
-            reason: 'Tool ${t["name"]} must have no description');
+        if (t['name'] == documentedToolName) {
+          expect(t['description'], equals(documentedToolDescription),
+              reason: 'Tool ${t["name"]} must carry its doc-comment description');
+        } else {
+          expect(t.containsKey('description'), isFalse,
+              reason: 'Tool ${t["name"]} must have no description');
+        }
       }
     });
 

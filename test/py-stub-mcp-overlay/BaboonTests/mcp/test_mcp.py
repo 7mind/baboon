@@ -403,9 +403,21 @@ class Sec2ToolsListTests(unittest.TestCase):
         # No "nextCursor" key (§2.2)
         self.assertNotIn("nextCursor", resp["result"], "nextCursor must not be present")
 
-        # No "description" key for any tool (stub model has no doc comments)
+        # T119: McpTools_ping carries a distinctive doc comment in
+        # mcp_stub.baboon; its tools/list entry must expose that text as
+        # "description". Every other (undocumented) tool must have no
+        # description key.
+        documented_tool_name = "McpTools_ping"
+        documented_tool_description = "Liveness probe returning a fixed acknowledgement token."
         for t in tools:
-            self.assertNotIn("description", t, f"Tool {t['name']} must have no description")
+            if t["name"] == documented_tool_name:
+                self.assertEqual(
+                    documented_tool_description,
+                    t.get("description"),
+                    f"Tool {t['name']} must carry its doc-comment description",
+                )
+            else:
+                self.assertNotIn("description", t, f"Tool {t['name']} must have no description")
 
     def test_each_inputSchema_has_draft202012_schema_uri(self):
         tools, *_ = _init_and_list()

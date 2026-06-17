@@ -251,9 +251,19 @@ final class McpTests: XCTestCase {
         for (i, name) in expectedToolNames.enumerated() {
             XCTAssertEqual(tools[i]["name"] as? String, name, "tool position \(i) must be \(name)")
         }
-        // No "description" key for any tool (stub model has no doc comments).
+        // T119: McpTools_ping carries a distinctive doc comment in
+        // mcp_stub.baboon; its tools/list entry must expose that text as
+        // "description". Every other (undocumented) tool must have no
+        // description key.
+        let documentedToolName = "McpTools_ping"
+        let documentedToolDescription = "Liveness probe returning a fixed acknowledgement token."
         for t in tools {
-            XCTAssertNil(t["description"], "tool \(t["name"] ?? "?") must have no description")
+            if t["name"] as? String == documentedToolName {
+                XCTAssertEqual(t["description"] as? String, documentedToolDescription,
+                    "tool \(t["name"] ?? "?") must carry its doc-comment description")
+            } else {
+                XCTAssertNil(t["description"], "tool \(t["name"] ?? "?") must have no description")
+            }
         }
     }
 

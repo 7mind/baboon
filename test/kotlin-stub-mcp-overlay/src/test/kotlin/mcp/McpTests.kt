@@ -413,9 +413,19 @@ class McpTests {
         // No "nextCursor" key (§2.2)
         assertNull(resp.result!!.jsonObject["nextCursor"], "nextCursor must not be present")
 
-        // No "description" key for any tool (stub model has no doc comments)
+        // T119: McpTools_ping carries a distinctive doc comment in
+        // mcp_stub.baboon; its tools/list entry must expose that text as
+        // "description". Every other (undocumented) tool must have no
+        // description key.
+        val documentedToolName = "McpTools_ping"
+        val documentedToolDescription = "Liveness probe returning a fixed acknowledgement token."
         for (t in tools) {
-            assertNull(t["description"], "Tool ${t["name"]} must have no description")
+            if (t["name"]!!.jsonPrimitive.content == documentedToolName) {
+                assertEquals(documentedToolDescription, t["description"]!!.jsonPrimitive.content,
+                    "Tool ${t["name"]} must carry its doc-comment description")
+            } else {
+                assertNull(t["description"], "Tool ${t["name"]} must have no description")
+            }
         }
     }
 

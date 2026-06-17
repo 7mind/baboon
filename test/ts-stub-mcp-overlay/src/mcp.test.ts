@@ -282,9 +282,17 @@ describe("MCP §2: tools/list and AJV inputSchema validation", () => {
         // No "nextCursor" key (§2.2)
         expect((resp.result as Record<string, unknown>)["nextCursor"]).toBeUndefined();
 
-        // No "description" key for any tool (stub model has no doc comments)
+        // T119: ping carries a distinctive doc comment in mcp_stub.baboon;
+        // its tools/list entry must expose that text as `description`. Every
+        // other (undocumented) tool must still have NO description key.
+        const documentedToolName = "McpTools_ping";
+        const documentedToolDescription = "Liveness probe returning a fixed acknowledgement token.";
         for (const t of tools) {
-            expect(t.description).toBeUndefined();
+            if (t.name === documentedToolName) {
+                expect(t.description).toBe(documentedToolDescription);
+            } else {
+                expect(t.description).toBeUndefined();
+            }
         }
     });
 

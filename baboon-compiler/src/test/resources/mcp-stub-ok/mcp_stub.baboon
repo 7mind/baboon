@@ -160,6 +160,10 @@ root service McpTools {
 
   // Method 5: empty / scalar-only baseline (for comparison)
   // Exercises: all-scalar DTO (i32, str, bit) — the trivially standalone case.
+  // T119: this method carries a distinctive doc comment; all others are
+  // undocumented, so the same fixture exercises both the present-description
+  // and absent-description tools/list paths.
+  /** Liveness probe returning a fixed acknowledgement token. */
   def ping (
     data in {
       seqno: i32

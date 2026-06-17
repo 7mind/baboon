@@ -223,9 +223,18 @@ class McpTests extends AnyFlatSpec with Matchers {
     // No "nextCursor" key (§2.2)
     resp.result.flatMap(_.hcursor.downField("nextCursor").focus) shouldBe None
 
-    // No "description" key for any tool (stub model has no doc comments)
+    // T119: McpTools_ping carries a distinctive doc comment in mcp_stub.baboon;
+    // its tools/list entry must expose that text as "description". Every other
+    // (undocumented) tool must have no description key.
+    val documentedToolName        = "McpTools_ping"
+    val documentedToolDescription = "Liveness probe returning a fixed acknowledgement token."
     for (t <- tools) {
-      t.hcursor.downField("description").focus shouldBe None
+      val name = t.hcursor.downField("name").as[String].getOrElse(fail("tool.name missing"))
+      if (name == documentedToolName) {
+        t.hcursor.downField("description").as[String].toOption shouldBe Some(documentedToolDescription)
+      } else {
+        t.hcursor.downField("description").focus shouldBe None
+      }
     }
   }
 

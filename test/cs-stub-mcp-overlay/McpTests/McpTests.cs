@@ -260,11 +260,24 @@ namespace McpTest
             Assert.IsNull(((JObject)resp.Result!)["nextCursor"],
                 "nextCursor must not be present");
 
-            // No "description" key for any tool (stub model has no doc comments)
+            // T119: McpTools_ping carries a distinctive doc comment in
+            // mcp_stub.baboon; its tools/list entry must expose that text as
+            // "description". Every other (undocumented) tool must have no
+            // description key.
+            const string documentedToolName = "McpTools_ping";
+            const string documentedToolDescription = "Liveness probe returning a fixed acknowledgement token.";
             foreach (var t in tools)
             {
-                Assert.IsNull(t["description"],
-                    $"Tool {t["name"]} must have no description");
+                if (t["name"]!.Value<string>() == documentedToolName)
+                {
+                    Assert.AreEqual(documentedToolDescription, t["description"]!.Value<string>(),
+                        $"Tool {t["name"]} must carry its doc-comment description");
+                }
+                else
+                {
+                    Assert.IsNull(t["description"],
+                        $"Tool {t["name"]} must have no description");
+                }
             }
         }
 

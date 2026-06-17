@@ -453,9 +453,20 @@ public class McpTests {
         // No "nextCursor" key (§2.2)
         assertNull(resp.result.get("nextCursor"), "nextCursor must not be present");
 
-        // No "description" key for any tool (stub model has no doc comments)
+        // T119: McpTools_ping carries a distinctive doc comment in
+        // mcp_stub.baboon; its tools/list entry must expose that text as
+        // "description". Every other (undocumented) tool must have no
+        // description key.
+        final String documentedToolName = "McpTools_ping";
+        final String documentedToolDescription = "Liveness probe returning a fixed acknowledgement token.";
         for (var t : tools) {
-            assertNull(t.get("description"), "Tool " + t.get("name") + " must have no description");
+            if (documentedToolName.equals(t.get("name").textValue())) {
+                assertNotNull(t.get("description"), "Tool " + t.get("name") + " must carry its doc-comment description");
+                assertEquals(documentedToolDescription, t.get("description").textValue(),
+                    "Tool " + t.get("name") + " must carry its doc-comment description");
+            } else {
+                assertNull(t.get("description"), "Tool " + t.get("name") + " must have no description");
+            }
         }
     }
 

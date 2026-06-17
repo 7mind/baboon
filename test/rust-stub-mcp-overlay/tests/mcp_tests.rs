@@ -218,9 +218,20 @@ fn sec2_tools_list_exactly_six_tools_in_declaration_order() {
     // No "nextCursor" key (§2.2)
     assert!(resp["result"]["nextCursor"].is_null(), "nextCursor must not be present");
 
-    // No "description" key for any tool (stub model has no doc comments)
+    // T119: McpTools_ping carries a distinctive doc comment in mcp_stub.baboon;
+    // its tools/list entry must expose that text as "description". Every other
+    // (undocumented) tool must have no description key.
+    let documented_tool_name = "McpTools_ping";
+    let documented_tool_description = "Liveness probe returning a fixed acknowledgement token.";
     for t in tools {
-        assert!(t["description"].is_null(), "tool {} must have no description", t["name"]);
+        if t["name"] == serde_json::json!(documented_tool_name) {
+            assert_eq!(
+                t["description"], serde_json::json!(documented_tool_description),
+                "tool {} must carry its doc-comment description", t["name"]
+            );
+        } else {
+            assert!(t["description"].is_null(), "tool {} must have no description", t["name"]);
+        }
     }
 }
 
