@@ -141,7 +141,7 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
         val schema      = schemaEmitter.emitInputSchema(m.sig, domain)
         val schemaLiteral = rustJsonLiteral(schema)
         val descriptionLiteral = McpDocs.flatten(m.docs) match {
-          case Some(text) => s"Some(${rustStr(text)})"
+          case Some(text) => s"Some(${jsonString(text)})"
           case None       => "None"
         }
         s"""        crate::baboon_mcp_server::McpToolEntry {
@@ -300,6 +300,13 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
     * JSON literals verbatim, so we can embed the schema text directly.
     */
   private def rustJsonLiteral(j: Json): String = j.noSpaces
+
+  /** Embed a description string as a Rust double-quoted literal.
+    * Uses Circe's JSON encoding so that control characters (including `\n`)
+    * are escaped to their JSON escape sequences. Rust `"..."` accepts JSON
+    * escape sequences (`\n`, `\"`, `\\`) and never interpolates `$`.
+    */
+  private def jsonString(s: String): String = Json.fromString(s).noSpaces
 
   private def rustStr(s: String): String =
     "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""

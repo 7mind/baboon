@@ -115,7 +115,7 @@ class KtMcpServerGenerator[F[+_, +_]: Error2](
           .replace("\\", "\\\\")
           .replace("\"", "\\\"")
           .replace("$", "\\$")
-        val descArg = McpDocs.flatten(m.docs).map(d => s", description = ${ktString(d)}").getOrElse("")
+        val descArg = McpDocs.flatten(m.docs).map(d => s", description = ${ktDescString(d)}").getOrElse("")
         s"""        McpToolEntry(${ktString(toolName)}, BaboonMethodId(${ktString(serviceName)}, ${ktString(m.name.name)}), Json.parseToJsonElement("$schemaLiteral")$descArg),"""
     }
 
@@ -156,6 +156,15 @@ class KtMcpServerGenerator[F[+_, +_]: Error2](
 
     path -> OutputFile(content, io.septimalmind.baboon.CompilerProduct.Definition)
   }
+
+  /** Embed a description string as a Kotlin non-raw double-quoted literal.
+    * Uses Circe's JSON encoding to handle control characters (including `\n`),
+    * then additionally escapes `$` → `\$` because Kotlin non-raw `"..."` literals
+    * interpret bare `$` as string-template interpolation starts.
+    * JSON encoding does not escape `$`, so the extra replace is required.
+    */
+  private def ktDescString(s: String): String =
+    Json.fromString(s).noSpaces.replace("$", "\\$")
 
   private def ktString(s: String): String =
     "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""

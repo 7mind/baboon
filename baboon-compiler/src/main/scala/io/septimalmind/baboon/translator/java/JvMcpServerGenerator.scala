@@ -127,7 +127,7 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
         // Embed schema as a Java string literal via javaString which handles
         // all escaping (`\` → `\\`, `"` → `\"`). `$` is literal in Java.
         val schemaJson   = schema.noSpaces
-        val descArg      = McpDocs.flatten(m.docs).map(d => s", ${javaString(d)}").getOrElse("")
+        val descArg      = McpDocs.flatten(m.docs).map(d => s", ${jsonString(d)}").getOrElse("")
         s"""            new McpToolEntry(${javaString(toolName)}, new BaboonMethodId(${javaString(serviceName)}, ${javaString(m.name.name)}), parseSchema(${javaString(schemaJson)})$descArg)"""
     }
 
@@ -190,6 +190,13 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
 
     path -> OutputFile(content, io.septimalmind.baboon.CompilerProduct.Definition)
   }
+
+  /** Embed a description string as a Java double-quoted literal.
+    * Uses Circe's JSON encoding so that control characters (including `\n`)
+    * are escaped to their JSON escape sequences. Java `"..."` accepts JSON
+    * escape sequences (`\n`, `\"`, `\\`) and never interpolates `$`.
+    */
+  private def jsonString(s: String): String = Json.fromString(s).noSpaces
 
   private def javaString(s: String): String =
     "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""

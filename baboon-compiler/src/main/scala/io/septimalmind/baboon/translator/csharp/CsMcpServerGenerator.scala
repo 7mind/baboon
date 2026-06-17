@@ -104,7 +104,7 @@ class CsMcpServerGenerator[F[+_, +_]: Error2](
       m =>
         val toolName    = s"${serviceName}_${m.name.name}"
         val schema      = schemaEmitter.emitInputSchema(m.sig, domain)
-        val descArg     = McpDocs.flatten(m.docs).map(d => s", ${csString(d)}").getOrElse("")
+        val descArg     = McpDocs.flatten(m.docs).map(d => s", ${jsonString(d)}").getOrElse("")
         s"""        new Baboon.Runtime.Shared.McpToolEntry(${csString(toolName)}, new Baboon.Runtime.Shared.BaboonMethodId(${csString(serviceName)}, ${csString(m.name.name)}), Newtonsoft.Json.Linq.JToken.Parse(${csVerbatimJson(schema)})$descArg),"""
     }
 
@@ -186,6 +186,14 @@ class CsMcpServerGenerator[F[+_, +_]: Error2](
     val text = j.noSpaces
     "@\"" + text.replace("\"", "\"\"") + "\""
   }
+
+  /** Embed a description string as a plain C# double-quoted literal.
+    * Uses Circe's JSON encoding so that control characters (including `\n`)
+    * are escaped to their JSON escape sequences (`\n`, `\t`, etc.).
+    * C# does NOT interpolate `$` in a plain `"..."` literal (only `$"..."` does),
+    * so JSON-encoded output is a valid, safe C# string literal.
+    */
+  private def jsonString(s: String): String = Json.fromString(s).noSpaces
 
   private def csString(s: String): String =
     "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""

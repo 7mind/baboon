@@ -101,7 +101,7 @@ class DtMcpServerGenerator[F[+_, +_]: Error2](
           .replace("\\", "\\\\")
           .replace("'", "\\'")
           .replace("$", "\\$")
-        val descArg   = McpDocs.flatten(m.docs).map(d => s", ${dartString(d)}").getOrElse("")
+        val descArg   = McpDocs.flatten(m.docs).map(d => s", ${dartDescString(d)}").getOrElse("")
         s"    McpToolEntry(${dartString(toolName)}, const BaboonMethodId(${dartString(serviceName)}, ${dartString(m.name.name)}), jsonDecode('$schemaLiteral') as Map<String, dynamic>$descArg),"
     }
 
@@ -150,6 +150,25 @@ class DtMcpServerGenerator[F[+_, +_]: Error2](
     }
     sb.toString()
   }
+
+  /** Embed a description string as a Dart single-quoted literal.
+    * Escapes all characters that are hazardous in a Dart non-raw single-quoted string:
+    *   `\`  → `\\`  (must be first to avoid double-escaping)
+    *   `'`  → `\'`  (string terminator)
+    *   `$`  → `\$`  (Dart string interpolation start)
+    *   LF   → `\n`  (raw newline is a syntax error in a single-quoted literal)
+    *   CR   → `\r`
+    *   TAB  → `\t`
+    */
+  private def dartDescString(s: String): String =
+    "'" + s
+      .replace("\\", "\\\\")
+      .replace("'", "\\'")
+      .replace("$", "\\$")
+      .replace("\n", "\\n")
+      .replace("\r", "\\r")
+      .replace("\t", "\\t")
+      + "'"
 
   private def dartString(s: String): String =
     "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'"
