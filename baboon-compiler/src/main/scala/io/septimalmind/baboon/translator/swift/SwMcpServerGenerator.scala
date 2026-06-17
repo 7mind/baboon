@@ -117,7 +117,7 @@ class SwMcpServerGenerator[F[+_, +_]: Error2](
         val toolName      = s"${serviceName}_${m.name.name}"
         val schema        = schemaEmitter.emitInputSchema(m.sig, domain)
         val schemaLiteral = swiftStringLiteral(schema.noSpaces)
-        val descArg       = McpDocs.flatten(m.docs).map(d => s", ${swiftString(d)}").getOrElse("")
+        val descArg       = McpDocs.flatten(m.docs).map(d => s", ${swiftStringLiteral(d)}").getOrElse("")
         s"""        McpToolEntry(${swiftString(toolName)}, BaboonMethodId(serviceId: ${swiftString(serviceName)}, methodName: ${swiftString(m.name.name)}), $className._parseSchema($schemaLiteral)$descArg),"""
     }
 
