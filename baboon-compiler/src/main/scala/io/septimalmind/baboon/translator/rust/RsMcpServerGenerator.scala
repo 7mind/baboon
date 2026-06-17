@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.rust
 import io.circe.Json
 import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.mcp.McpInputSchemaEmitter
+import io.septimalmind.baboon.translator.mcp.{McpDocs, McpInputSchemaEmitter}
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
 import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{toSnakeCaseFileName, toSnakeCaseRaw}
 import io.septimalmind.baboon.translator.{BaboonRuntimeResources, McpServerGeneratorHook, OutputFile, Sources}
@@ -137,16 +137,20 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
     // The schema is carried as a parsed serde_json::Value constant.
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
-        val toolName = s"${serviceName}_${m.name.name}"
-        val schema   = schemaEmitter.emitInputSchema(m.sig, domain)
+        val toolName    = s"${serviceName}_${m.name.name}"
+        val schema      = schemaEmitter.emitInputSchema(m.sig, domain)
         val schemaLiteral = rustJsonLiteral(schema)
+        val descriptionLiteral = McpDocs.flatten(m.docs) match {
+          case Some(text) => s"Some(${rustStr(text)})"
+          case None       => "None"
+        }
         s"""        crate::baboon_mcp_server::McpToolEntry {
            |            name: ${rustStr(toolName)},
            |            method: crate::baboon_service_wiring::BaboonMethodId {
            |                service_name: ${rustStr(serviceName)}.to_string(),
            |                method_name: ${rustStr(m.name.name)}.to_string(),
            |            },
-           |            description: None,
+           |            description: $descriptionLiteral,
            |            input_schema: serde_json::json!($schemaLiteral),
            |        },""".stripMargin
     }
