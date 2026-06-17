@@ -171,5 +171,23 @@ class DtMcpServerGenerator[F[+_, +_]: Error2](
       + "'"
 
   private def dartString(s: String): String =
+    DtMcpServerGenerator.dartString(s)
+}
+
+object DtMcpServerGenerator {
+
+  /** Embed `s` as a Dart single-quoted string literal.
+    *
+    * Escape rules currently applied:
+    *   - `\` → `\\` (backslash)
+    *   - `'` → `\'` (single quote — closes the single-quoted literal)
+    *
+    * KNOWN DEFECT (D36): C0 control characters other than `\n`, `\r`, `\t`
+    * (e.g. vertical tab 0x0B, form feed 0x0C, NUL 0x00) are passed
+    * VERBATIM into the Dart single-quoted string literal. Dart does not allow
+    * bare C0 bytes in string literals; the fix (T136) is to escape every
+    * code point below 0x20 as `\uXXXX`.
+    */
+  def dartString(s: String): String =
     "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'"
 }
