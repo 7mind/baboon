@@ -789,14 +789,16 @@ public class McpTests {
         assertFalse(info.version.isEmpty(), "serverInfo.version must be non-empty");
 
         List<McpToolEntry> tools = routable.tools();
-        assertEquals(6, tools.size(), "public tool registry must list all 6 tools");
+        assertEquals(7, tools.size(), "public tool registry must list all 7 tools");
         // Declaration order (matches §2 tools/list).
+        // describePricing (D34/T125) is declared after ping at index 6.
         assertEquals("McpTools_listCollections", tools.get(0).name);
         assertEquals("McpTools_submitComposite", tools.get(1).name);
         assertEquals("McpTools_processShape",    tools.get(2).name);
         assertEquals("McpTools_processTagged",   tools.get(3).name);
         assertEquals("McpTools_pagePoints",      tools.get(4).name);
         assertEquals("McpTools_ping",            tools.get(5).name);
+        assertEquals("McpTools_describePricing", tools.get(6).name);
         for (var t : tools) {
             assertEquals("McpTools", t.method.serviceName(), "method.serviceName must be McpTools");
             assertFalse(t.method.methodName().isEmpty(), "method.methodName must be non-empty");

@@ -242,8 +242,8 @@ abstract class PyMcpServerEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestM
 
           // K1 negative control: ensure we actually parsed some schemas (not vacuously green).
           assert(inlineSchemas.nonEmpty, s"K1 negative control: no inputSchema literals extracted — K1 gate is vacuous:\n$server")
-          // 5 original methods + processTagged added in D1/T26.
-          assert(inlineSchemas.size == 6, s"K1: expected 6 inputSchema literals (one per method), got ${inlineSchemas.size}:\n$server")
+          // 5 original methods + processTagged added in D1/T26 + describePricing added in D34/T125.
+          assert(inlineSchemas.size == 7, s"K1: expected 7 inputSchema literals (one per method), got ${inlineSchemas.size}:\n$server")
         }
     }
 

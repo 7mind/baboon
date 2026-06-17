@@ -141,7 +141,7 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
           val domain = stubDomain(family)
           val tools  = emitAllTools(domain)
           assert(
-            tools.keySet == Set("listCollections", "submitComposite", "processShape", "processTagged", "pagePoints", "ping"),
+            tools.keySet == Set("listCollections", "submitComposite", "processShape", "processTagged", "pagePoints", "ping", "describePricing"),
             s"unexpected tool set: ${tools.keySet}",
           )
           // (b) EVERY emitted inputSchema must be well-formed JSON Schema.
