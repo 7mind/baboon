@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.dart
 
+import io.septimalmind.baboon.translator.DocCommentEscaping
 import io.septimalmind.baboon.typer.model.Docs
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -42,9 +43,12 @@ object DtTreeTools {
         else if (prefixLines.isEmpty) suffixLines
         else prefixLines ++ List("") ++ suffixLines
 
+      // D35: renderDocs introduces no backslashes (plain `///`), so the
+      // backslash-escape is applied at the renderDocs boundary. See
+      // DocCommentEscaping.escapeBackslashForQInterpolation.
       val rendered = allLines.map {
         case "" => s"$indent///"
-        case l  => s"$indent/// $l"
+        case l  => s"$indent/// ${DocCommentEscaping.escapeBackslashForQInterpolation(l)}"
       }.mkString("\n")
 
       s"$rendered\n"

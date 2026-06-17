@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.python
 
+import io.septimalmind.baboon.translator.DocCommentEscaping
 import io.septimalmind.baboon.typer.model.Docs
 
 /** Python docstring emission helpers per spec §7.6 / Q2 lock.
@@ -137,8 +138,18 @@ object PyTreeTools {
     private def splitLines(s: String): List[String] =
       s.replace("\r\n", "\n").split("\n", -1).toList
 
-    /** Escape literal `"""` sequences in doc body text. */
+    /** Escape doc body text for embedding in a Python `"""…"""` docstring that
+      * is interpolated into an izumi `q"…"` quote.
+      *
+      * D35 ORDERING: the lone-backslash escape MUST run on the RAW line FIRST,
+      * BEFORE the `"""` -> `\"\"\"` replacement — because that triple-quote
+      * replacement INTRODUCES backslashes. Escaping after it would double-escape
+      * those introduced backslashes, corrupting the Python triple-quote
+      * escaping. See DocCommentEscaping.escapeBackslashForQInterpolation.
+      */
     private def escape(s: String): String =
-      s.replace("\"\"\"", "\\\"\\\"\\\"")
+      DocCommentEscaping
+        .escapeBackslashForQInterpolation(s)
+        .replace("\"\"\"", "\\\"\\\"\\\"")
   }
 }

@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.translator.DocCommentEscaping
 import io.septimalmind.baboon.typer.model.Docs
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -48,8 +49,14 @@ object CSTreeTools {
       if (prefixLines.isEmpty && suffixLines.isEmpty) return ""
 
       // Inline XML-escape: spec §7.5 — applied to every text fragment emitted.
+      // D35: backslash-escape the PROSE FIRST (before the XML entity
+      // replacements, which never introduce backslashes), so a lone `\`
+      // survives the downstream izumi q-interpolation render. See
+      // DocCommentEscaping.escapeBackslashForQInterpolation.
       def xmlEscape(s: String): String =
-        s.replace("&", "&amp;")
+        DocCommentEscaping
+          .escapeBackslashForQInterpolation(s)
+          .replace("&", "&amp;")
           .replace("<", "&lt;")
           .replace(">", "&gt;")
           .replace("\"", "&quot;")

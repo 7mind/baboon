@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.java
 
+import io.septimalmind.baboon.translator.DocCommentEscaping
 import io.septimalmind.baboon.typer.model.Docs
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -69,7 +70,13 @@ object JvTreeTools {
       rendered
     }
 
+    // D35: backslash-escape the PROSE FIRST (before the HTML entity
+    // replacements, which never introduce backslashes), so a lone `\`
+    // survives the downstream izumi q-interpolation render. See
+    // DocCommentEscaping.escapeBackslashForQInterpolation.
     private def htmlEscape(s: String): String =
-      s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+      DocCommentEscaping
+        .escapeBackslashForQInterpolation(s)
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
   }
 }

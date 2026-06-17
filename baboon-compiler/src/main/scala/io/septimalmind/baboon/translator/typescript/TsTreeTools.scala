@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.typescript
 
+import io.septimalmind.baboon.translator.DocCommentEscaping
 import io.septimalmind.baboon.typer.model.Docs
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -36,10 +37,16 @@ object TsTreeTools {
 
       if (prefixLines.isEmpty && suffixLines.isEmpty) return ""
 
-      val allLines: List[String] =
+      val mergedLines: List[String] =
         if (suffixLines.isEmpty) prefixLines
         else if (prefixLines.isEmpty) suffixLines
         else prefixLines ++ List("") ++ suffixLines
+
+      // D35: renderDocs introduces no backslashes (plain `/** */`), so the
+      // backslash-escape is applied at the renderDocs boundary. See
+      // DocCommentEscaping.escapeBackslashForQInterpolation.
+      val allLines: List[String] =
+        mergedLines.map(DocCommentEscaping.escapeBackslashForQInterpolation)
 
       // Single-line compact form: /** text */
       val rendered =
