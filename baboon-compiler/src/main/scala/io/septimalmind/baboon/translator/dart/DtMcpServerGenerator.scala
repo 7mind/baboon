@@ -159,16 +159,10 @@ class DtMcpServerGenerator[F[+_, +_]: Error2](
     *   LF   → `\n`  (raw newline is a syntax error in a single-quoted literal)
     *   CR   → `\r`
     *   TAB  → `\t`
+    *   other C0 (<0x20) → `\uXXXX` (Dart unicode escape, lowercase hex)
     */
   private def dartDescString(s: String): String =
-    "'" + s
-      .replace("\\", "\\\\")
-      .replace("'", "\\'")
-      .replace("$", "\\$")
-      .replace("\n", "\\n")
-      .replace("\r", "\\r")
-      .replace("\t", "\\t")
-      + "'"
+    DtMcpServerGenerator.dartDescString(s)
 
   private def dartString(s: String): String =
     DtMcpServerGenerator.dartString(s)
@@ -178,16 +172,34 @@ object DtMcpServerGenerator {
 
   /** Embed `s` as a Dart single-quoted string literal.
     *
-    * Escape rules currently applied:
-    *   - `\` → `\\` (backslash)
-    *   - `'` → `\'` (single quote — closes the single-quoted literal)
-    *
-    * KNOWN DEFECT (D36): C0 control characters other than `\n`, `\r`, `\t`
-    * (e.g. vertical tab 0x0B, form feed 0x0C, NUL 0x00) are passed
-    * VERBATIM into the Dart single-quoted string literal. Dart does not allow
-    * bare C0 bytes in string literals; the fix (T136) is to escape every
-    * code point below 0x20 as `\uXXXX`.
+    * Escape rules (applied in order to avoid double-escaping):
+    *   1. `\` → `\\`           (backslash — must be first)
+    *   2. `'` → `\'`           (single quote — closes the literal)
+    *   3. `$` → `\$`           (Dart string interpolation start)
+    *   4. LF (0x0A) → `\n`    (common short escape)
+    *   5. CR (0x0D) → `\r`    (common short escape)
+    *   6. HT (0x09) → `\t`    (common short escape)
+    *   7. other C0 (<0x20) → `\uXXXX` (Dart unicode escape, lowercase hex)
+    *      fixes D36: bare C0 bytes are invalid in Dart single-quoted literals.
     */
-  def dartString(s: String): String =
-    "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'"
+  def dartString(s: String): String = {
+    val sb = new StringBuilder("'")
+    s.foreach {
+      case '\\'  => sb.append("\\\\")
+      case '\''  => sb.append("\\'")
+      case '$'   => sb.append("\\$")
+      case '\n'  => sb.append("\\n")
+      case '\r'  => sb.append("\\r")
+      case '\t'  => sb.append("\\t")
+      case c if c < 0x20 => sb.append(f"\\u${c.toInt}%04x")
+      case c     => sb.append(c)
+    }
+    sb.append('\'').toString()
+  }
+
+  /** Embed a description string as a Dart single-quoted literal.
+    * Delegates to [[dartString]] — same escape rules apply.
+    */
+  def dartDescString(s: String): String =
+    dartString(s)
 }
