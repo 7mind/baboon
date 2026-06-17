@@ -72,6 +72,9 @@ namespace McpTest
 
         public Task<McpTools.Ping.Out> Ping(McpTools.Ping.In arg)
             => Task.FromResult(new McpTools.Ping.Out(true));
+
+        public Task<McpTools.DescribePricing.Out> DescribePricing(McpTools.DescribePricing.In arg)
+            => Task.FromResult(new McpTools.DescribePricing.Out(true));
     }
 
     [TestFixture]
@@ -188,7 +191,7 @@ namespace McpTest
 
             Assert.AreEqual(2, resp.Id!.Value<int>());
             Assert.IsNull(resp.Error);
-            Assert.AreEqual(6, tools.Count, "MUST be exactly 6 tools");
+            Assert.AreEqual(7, tools.Count, "MUST be exactly 7 tools");
 
             Assert.AreEqual("McpTools_listCollections", tools[0]["name"]!.Value<string>());
             Assert.AreEqual("McpTools_submitComposite",  tools[1]["name"]!.Value<string>());

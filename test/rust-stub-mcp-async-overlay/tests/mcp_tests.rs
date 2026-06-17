@@ -56,6 +56,8 @@ use baboon_rs_stub::mcp::stub::mcptools::pagepoints::input::In as PagePointsIn;
 use baboon_rs_stub::mcp::stub::mcptools::pagepoints::out::Out as PagePointsOut;
 use baboon_rs_stub::mcp::stub::mcptools::ping::input::In as PingIn;
 use baboon_rs_stub::mcp::stub::mcptools::ping::out::Out as PingOut;
+use baboon_rs_stub::mcp::stub::mcptools::describepricing::input::In as DescribePricingIn;
+use baboon_rs_stub::mcp::stub::mcptools::describepricing::out::Out as DescribePricingOut;
 
 // ---------------------------------------------------------------------------
 // Stub McpTools service. Under `--rs-async-services=true` the generated
@@ -84,6 +86,9 @@ impl McpTools for StubMcpTools {
     }
     async fn ping(&self, _arg: PingIn) -> PingOut {
         PingOut { ok: true }
+    }
+    async fn describe_pricing(&self, _arg: DescribePricingIn) -> DescribePricingOut {
+        DescribePricingOut { ok: true }
     }
 }
 

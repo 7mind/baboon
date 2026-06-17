@@ -43,6 +43,7 @@ from BaboonDefinitions.Generated.mcp.stub.mcptools.processshape.Out import Out a
 from BaboonDefinitions.Generated.mcp.stub.mcptools.processtagged.Out import Out as ProcessTaggedOut
 from BaboonDefinitions.Generated.mcp.stub.mcptools.pagepoints.Out import Out as PagePointsOut
 from BaboonDefinitions.Generated.mcp.stub.mcptools.ping.Out import Out as PingOut
+from BaboonDefinitions.Generated.mcp.stub.mcptools.describepricing.Out import Out as DescribePricingOut
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +59,7 @@ class _StubMcpTools(McpTools):
     async def processTagged(self, arg): return ProcessTaggedOut(ok=True)
     async def pagePoints(self, arg): return PagePointsOut(ok=True)
     async def ping(self, arg): return PingOut(ok=True)
+    async def describePricing(self, arg): return DescribePricingOut(ok=True)
 
 
 def _make_server():

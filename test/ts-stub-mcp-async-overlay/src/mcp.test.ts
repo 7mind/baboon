@@ -44,6 +44,8 @@ import {
 
 import { Out as PingOut } from "./baboondefinitions/generated/mcp/stub/mcp-tools/ping/out";
 import { In as PingIn } from "./baboondefinitions/generated/mcp/stub/mcp-tools/ping/in";
+import { Out as DescribePricingOut } from "./baboondefinitions/generated/mcp/stub/mcp-tools/describepricing/out";
+import { In as DescribePricingIn } from "./baboondefinitions/generated/mcp/stub/mcp-tools/describepricing/in";
 import { FFancyStr_JsonCodec } from "./baboondefinitions/generated/mcp/stub/FFancyStr";
 import { Lazy } from "./baboondefinitions/generated/BaboonSharedRuntime";
 import { In as ListCollectionsIn } from "./baboondefinitions/generated/mcp/stub/mcp-tools/listcollections/in";
@@ -94,6 +96,9 @@ const stubMcpTools: McpTools = {
     },
     async ping(_arg: PingIn): Promise<PingOut> {
         return new PingOut(true);
+    },
+    async describePricing(_arg: DescribePricingIn): Promise<DescribePricingOut> {
+        return new DescribePricingOut(true);
     },
 };
 
@@ -205,7 +210,7 @@ describe("MCP async §2: tools/list AJV well-formedness", () => {
         const result = resp.result as {
             tools: Array<{ name: string; inputSchema: unknown }>;
         };
-        expect(result.tools).toHaveLength(6);
+        expect(result.tools).toHaveLength(7);
         for (const t of result.tools) {
             const validate = ajv.compile(t.inputSchema as object);
             expect(typeof validate).toBe("function");

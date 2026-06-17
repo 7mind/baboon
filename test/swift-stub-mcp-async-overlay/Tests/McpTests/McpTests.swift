@@ -59,6 +59,9 @@ final class McpTests: XCTestCase {
         func ping(arg: mcptools.ping.`in`) async throws -> mcptools.ping.out {
             return mcptools.ping.out(ok: true)
         }
+        func describePricing(arg: mcptools.describepricing.`in`) async throws -> mcptools.describepricing.out {
+            return mcptools.describepricing.out(ok: true)
+        }
     }
 
     // Server factory: Ctx = McpTools (the service impl), so the no-errors
