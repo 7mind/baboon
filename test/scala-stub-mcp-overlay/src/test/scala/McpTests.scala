@@ -51,6 +51,7 @@ import mcp.stub.mcptools.listcollections.{In => ListCollectionsIn, Out => ListCo
 import mcp.stub.mcptools.processshape.{In => ProcessShapeIn, Out => ProcessShapeOut}
 import mcp.stub.mcptools.pagepoints.{In => PagePointsIn, Out => PagePointsOut}
 import mcp.stub.mcptools.ping.{In => PingIn, Out => PingOut}
+import mcp.stub.mcptools.describepricing.{In => DescribePricingIn, Out => DescribePricingOut}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -75,6 +76,7 @@ class StubMcpTools extends mcp.stub.McpTools {
     mcp.stub.mcptools.processtagged.Out(ok = true)
   def pagePoints(arg: PagePointsIn): PagePointsOut = PagePointsOut(ok = true)
   def ping(arg: PingIn): PingOut = PingOut(ok = true)
+  def describePricing(arg: DescribePricingIn): DescribePricingOut = DescribePricingOut(ok = true)
 }
 
 // ---------------------------------------------------------------------------
@@ -199,18 +201,19 @@ class McpTests extends AnyFlatSpec with Matchers {
     (toolsArr, resp)
   }
 
-  "MCP §2: tools/list" should "return exactly 6 tools in declaration order (positions 0–5)" in {
+  "MCP §2: tools/list" should "return exactly 7 tools in declaration order (positions 0–6)" in {
     val (tools, resp) = initAndList()
 
     resp.id shouldBe Some(JsonRpcId.LongId(2L))
     resp.error shouldBe None
-    tools should have length 6
+    tools should have length 7
 
     def toolName(i: Int): String = tools(i).hcursor.downField("name").as[String].getOrElse(fail(s"tools[$i].name missing"))
 
     // Exact position assertions per §0 (model declaration order).
     // processTagged is declared between processShape and pagePoints (T26/D11),
     // so it occupies index 3 and shifts pagePoints→4, ping→5.
+    // describePricing (D34/T125) is declared after ping at index 6.
     // DELIBERATE-NEGATIVE-CONTROL: changing "McpTools_ping" → "McpTools_WRONG"
     // on the next line makes this test fail, proving position[5] check is live.
     toolName(0) shouldBe "McpTools_listCollections"
@@ -219,19 +222,36 @@ class McpTests extends AnyFlatSpec with Matchers {
     toolName(3) shouldBe "McpTools_processTagged"
     toolName(4) shouldBe "McpTools_pagePoints"
     toolName(5) shouldBe "McpTools_ping"
+    toolName(6) shouldBe "McpTools_describePricing"
 
     // No "nextCursor" key (§2.2)
     resp.result.flatMap(_.hcursor.downField("nextCursor").focus) shouldBe None
 
-    // T119: McpTools_ping carries a distinctive doc comment in mcp_stub.baboon;
-    // its tools/list entry must expose that text as "description". Every other
-    // (undocumented) tool must have no description key.
-    val documentedToolName        = "McpTools_ping"
-    val documentedToolDescription = "Liveness probe returning a fixed acknowledgement token."
+    // T119: McpTools_ping carries a single-line doc comment in mcp_stub.baboon.
+    // T128: McpTools_describePricing carries a multi-line doc comment; its tools/list
+    // entry must expose the flattened text including embedded newlines and hazard chars
+    // ($, ", \). Both documented tools must have a description. Every other tool must not.
+    val pingDescription = "Liveness probe returning a fixed acknowledgement token."
+    // T128: Expected description for McpTools_describePricing.
+    // DocFormat.cleanPrefix strips " * " prefix, collapses leading/trailing blank lines,
+    // preserves internal blank line. Two literal backslashes (\\) in the baboon source
+    // survive as two backslashes in the description string.
+    val describePricingDescription =
+      "Returns the fee schedule for the requested service tier.\n" +
+      "Base cost is $5 per call; \"premium\" tier costs $20 per call.\n" +
+      "\n" +
+      "Pass the tier name using the \\\\ delimiter convention documented in\n" +
+      "the API guide (e.g. \"standard\\\\premium\")."
     for (t <- tools) {
       val name = t.hcursor.downField("name").as[String].getOrElse(fail("tool.name missing"))
-      if (name == documentedToolName) {
-        t.hcursor.downField("description").as[String].toOption shouldBe Some(documentedToolDescription)
+      if (name == "McpTools_ping") {
+        t.hcursor.downField("description").as[String].toOption shouldBe Some(pingDescription)
+      } else if (name == "McpTools_describePricing") {
+        // T128: unconditional throw on mismatch — proves $, ", \, \n survive round-trip.
+        val actual = t.hcursor.downField("description").as[String].toOption
+        if (!actual.contains(describePricingDescription)) {
+          fail(s"T128: McpTools_describePricing description round-trip FAILED.\nExpected: ${describePricingDescription}\nActual: ${actual}")
+        }
       } else {
         t.hcursor.downField("description").focus shouldBe None
       }
@@ -442,6 +462,17 @@ class McpTests extends AnyFlatSpec with Matchers {
       |  }
       |}""".stripMargin)
 
+  // D34/T125: scalar-only, single string field, no $defs
+  private val refDescribePricing: Json = parseRef("McpTools_describePricing",
+    """{
+      |  "$schema": "https://json-schema.org/draft/2020-12/schema",
+      |  "type": "object",
+      |  "properties": {
+      |    "tier": { "type": "string" }
+      |  },
+      |  "required": ["tier"]
+      |}""".stripMargin)
+
   // ---------------------------------------------------------------------------
   // K1 structural-equality helpers (T7 §5.4).
   // Circe `Json` object equality is key-order-insensitive (backed by a Map).
@@ -525,12 +556,13 @@ class McpTests extends AnyFlatSpec with Matchers {
     def inputSchema(i: Int): Json =
       tools(i).hcursor.downField("inputSchema").as[Json].getOrElse(fail(s"tools[$i].inputSchema missing"))
 
-    assertSchemaEqualsReference("McpTools_listCollections", inputSchema(0), refListCollections)
-    assertSchemaEqualsReference("McpTools_submitComposite", inputSchema(1), refSubmitComposite)
-    assertSchemaEqualsReference("McpTools_processShape",    inputSchema(2), refProcessShape)
-    assertSchemaEqualsReference("McpTools_processTagged",   inputSchema(3), refProcessTagged)
-    assertSchemaEqualsReference("McpTools_pagePoints",      inputSchema(4), refPagePoints)
-    assertSchemaEqualsReference("McpTools_ping",            inputSchema(5), refPing)
+    assertSchemaEqualsReference("McpTools_listCollections",  inputSchema(0), refListCollections)
+    assertSchemaEqualsReference("McpTools_submitComposite",  inputSchema(1), refSubmitComposite)
+    assertSchemaEqualsReference("McpTools_processShape",     inputSchema(2), refProcessShape)
+    assertSchemaEqualsReference("McpTools_processTagged",    inputSchema(3), refProcessTagged)
+    assertSchemaEqualsReference("McpTools_pagePoints",       inputSchema(4), refPagePoints)
+    assertSchemaEqualsReference("McpTools_ping",             inputSchema(5), refPing)
+    assertSchemaEqualsReference("McpTools_describePricing",  inputSchema(6), refDescribePricing)
   }
 
   it should "fail K1 structural equality when given a deliberately wrong reference (negative control)" in {

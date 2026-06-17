@@ -50,6 +50,8 @@ import '../../lib/mcp/stub/mcptools/pagepoints/in.dart' as pagepoints_in;
 import '../../lib/mcp/stub/mcptools/pagepoints/out.dart' as pagepoints_out;
 import '../../lib/mcp/stub/mcptools/ping/in.dart' as ping_in;
 import '../../lib/mcp/stub/mcptools/ping/out.dart' as ping_out;
+import '../../lib/mcp/stub/mcptools/describepricing/in.dart' as describepricing_in;
+import '../../lib/mcp/stub/mcptools/describepricing/out.dart' as describepricing_out;
 
 // ---------------------------------------------------------------------------
 // T7 §2.3 reference inputSchema values (authoritative: McpInputSchemaEmitter
@@ -77,6 +79,24 @@ final _refPagePoints = jsonDecode(r'{"$schema":"https://json-schema.org/draft/20
 
 // Tool 6: McpTools_ping — scalar-only, no $defs
 final _refPing = jsonDecode(r'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"seqno":{"type":"integer","format":"int32"},"label":{"type":"string"}},"required":["seqno","label"]}') as Map<String, dynamic>;
+
+// Tool 7: McpTools_describePricing — single scalar field tier: str (D34/T125)
+final _refDescribePricing = jsonDecode(r'{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tier":{"type":"string"}},"required":["tier"]}') as Map<String, dynamic>;
+
+// T128: Expected description for McpTools_describePricing.
+// This is the output of McpDocs.flatten on the multi-line /** ... */ doc in
+// mcp_stub.baboon: DocFormat.cleanPrefix strips " * " leading prefix and
+// collapses leading/trailing blank lines, preserving internal blank line.
+// Hazard chars: literal $ (dollar), " (double-quote), \\ (two backslashes).
+// Use Dart raw-string r'' for dollar signs, normal strings for backslash escapes.
+// Concatenation avoids string-interpolation of $ and handles \\ correctly.
+const _describePricingDescription =
+    'Returns the fee schedule for the requested service tier.\n'
+    // ignore: unnecessary_string_interpolations
+    'Base cost is \$5 per call; "premium" tier costs \$20 per call.\n'
+    '\n'
+    'Pass the tier name using the \\\\ delimiter convention documented in\n'
+    'the API guide (e.g. "standard\\\\premium").';
 
 // ---------------------------------------------------------------------------
 // Structural equality helper (T7 §5.4):
@@ -141,6 +161,9 @@ class _StubMcpTools implements McpTools {
       pagepoints_out.out(ok: true);
   @override
   ping_out.out ping(ping_in.in_ arg) => ping_out.out(ok: true);
+  @override
+  describepricing_out.out describePricing(describepricing_in.in_ arg) =>
+      describepricing_out.out(ok: true);
 }
 
 // ---------------------------------------------------------------------------
@@ -247,11 +270,12 @@ void main() {
           .toList();
     });
 
-    test('exactlySixToolsInDeclarationOrder', () {
-      expect(tools.length, equals(6), reason: 'MUST be exactly 6 tools');
+    test('exactlySevenToolsInDeclarationOrder', () {
+      expect(tools.length, equals(7), reason: 'MUST be exactly 7 tools');
       // Exact position assertions (model declaration order, T7 §0).
       // processTagged is declared between processShape and pagePoints (T26/D11),
       // so it occupies index 3 and shifts pagePoints→4, ping→5.
+      // describePricing (D34/T125) is declared after ping at index 6.
       // DELIBERATE-NEGATIVE-CONTROL: replacing "McpTools_ping" with
       // "McpTools_WRONG" on the last expect line makes this test fail,
       // proving position[5] check is live.
@@ -261,23 +285,32 @@ void main() {
       expect(tools[3]['name'], equals('McpTools_processTagged'));
       expect(tools[4]['name'], equals('McpTools_pagePoints'));
       expect(tools[5]['name'], equals('McpTools_ping'));
+      expect(tools[6]['name'], equals('McpTools_describePricing'));
       // No "nextCursor" key (§2.2)
       expect(toolsResult.containsKey('nextCursor'), isFalse,
           reason: 'nextCursor must not be present');
-      // T119: McpTools_ping carries a distinctive doc comment in
-      // mcp_stub.baboon; its tools/list entry must expose that text as
-      // 'description'. Every other (undocumented) tool must have no
-      // description key.
-      const documentedToolName = 'McpTools_ping';
-      const documentedToolDescription =
+      // T119: McpTools_ping carries a single-line doc comment in mcp_stub.baboon.
+      // T125/D34: McpTools_describePricing carries a multi-line doc comment.
+      // Both documented tools must expose their text as 'description'.
+      // Every undocumented tool must have no description key.
+      const pingDescription =
           'Liveness probe returning a fixed acknowledgement token.';
       for (final t in tools) {
-        if (t['name'] == documentedToolName) {
-          expect(t['description'], equals(documentedToolDescription),
-              reason: 'Tool ${t["name"]} must carry its doc-comment description');
+        final toolName = t['name'] as String;
+        if (toolName == 'McpTools_ping') {
+          expect(t['description'], equals(pingDescription),
+              reason: 'Tool $toolName must carry its doc-comment description');
+        } else if (toolName == 'McpTools_describePricing') {
+          // T128: unconditional throw on mismatch — proves $, ", \, \n survive.
+          final actualDesc = t['description'] as String?;
+          if (actualDesc != _describePricingDescription) {
+            fail('T128: McpTools_describePricing description round-trip FAILED.\n'
+                'Expected: ${_describePricingDescription.replaceAll('\n', r'\n')}\n'
+                'Actual:   ${actualDesc?.replaceAll('\n', r'\n') ?? 'null'}');
+          }
         } else {
           expect(t.containsKey('description'), isFalse,
-              reason: 'Tool ${t["name"]} must have no description');
+              reason: 'Tool $toolName must have no description');
         }
       }
     });
@@ -306,20 +339,21 @@ void main() {
       }
     });
 
-    test('k1_allSixTools_structuralEqualityToT7Reference', () {
+    test('k1_allSevenTools_structuralEqualityToT7Reference', () {
       // K1 part (b) — structural equality to T7 §2.3 reference.
       // Each inputSchema is re-encoded and re-decoded via dart:convert
       // (codec-divergence coverage) and compared key-by-key recursively.
       // `required` arrays compared as SETS per §5.4.
       final refs = [
-        _refListCollections, // tools[0] = McpTools_listCollections
-        _refSubmitComposite, // tools[1] = McpTools_submitComposite
-        _refProcessShape,    // tools[2] = McpTools_processShape
-        _refProcessTagged,   // tools[3] = McpTools_processTagged
-        _refPagePoints,      // tools[4] = McpTools_pagePoints
-        _refPing,            // tools[5] = McpTools_ping
+        _refListCollections,  // tools[0] = McpTools_listCollections
+        _refSubmitComposite,  // tools[1] = McpTools_submitComposite
+        _refProcessShape,     // tools[2] = McpTools_processShape
+        _refProcessTagged,    // tools[3] = McpTools_processTagged
+        _refPagePoints,       // tools[4] = McpTools_pagePoints
+        _refPing,             // tools[5] = McpTools_ping
+        _refDescribePricing,  // tools[6] = McpTools_describePricing
       ];
-      for (int i = 0; i < 6; i++) {
+      for (int i = 0; i < 7; i++) {
         final toolName = tools[i]['name'] as String;
         // Re-encode and re-decode to exercise full dart:convert round-trip.
         final actualJson = jsonEncode(tools[i]['inputSchema']);

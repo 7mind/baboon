@@ -47,6 +47,8 @@ use baboon_rs_stub::mcp::stub::mcptools::pagepoints::input::In as PagePointsIn;
 use baboon_rs_stub::mcp::stub::mcptools::pagepoints::out::Out as PagePointsOut;
 use baboon_rs_stub::mcp::stub::mcptools::ping::input::In as PingIn;
 use baboon_rs_stub::mcp::stub::mcptools::ping::out::Out as PingOut;
+use baboon_rs_stub::mcp::stub::mcptools::describepricing::input::In as DescribePricingIn;
+use baboon_rs_stub::mcp::stub::mcptools::describepricing::out::Out as DescribePricingOut;
 
 // ---------------------------------------------------------------------------
 // Stub McpTools service: every method returns ok=true (T7 §3 convention).
@@ -72,6 +74,9 @@ impl McpTools for StubMcpTools {
     }
     fn ping(&self, _arg: PingIn) -> PingOut {
         PingOut { ok: true }
+    }
+    fn describe_pricing(&self, _arg: DescribePricingIn) -> DescribePricingOut {
+        DescribePricingOut { ok: true }
     }
 }
 
@@ -196,16 +201,17 @@ fn init_and_list() -> serde_json::Value {
 }
 
 #[test]
-fn sec2_tools_list_exactly_six_tools_in_declaration_order() {
+fn sec2_tools_list_exactly_seven_tools_in_declaration_order() {
     let resp = init_and_list();
     assert_eq!(resp["id"], serde_json::json!(2));
     assert!(resp["error"].is_null());
     let tools = resp["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 6, "MUST be exactly 6 tools");
+    assert_eq!(tools.len(), 7, "MUST be exactly 7 tools");
 
     // Exact position assertions (model declaration order, T7 §0).
     // processTagged is declared between processShape and pagePoints (T26/D11),
     // so it occupies index 3 and shifts pagePoints→4, ping→5.
+    // describePricing (D34/T125) is declared after ping at index 6.
     // DELIBERATE-NEGATIVE-CONTROL: changing "McpTools_ping" to "McpTools_WRONG"
     // on the next line makes this test fail, proving position[5] check is live.
     assert_eq!(tools[0]["name"], "McpTools_listCollections");
@@ -214,23 +220,43 @@ fn sec2_tools_list_exactly_six_tools_in_declaration_order() {
     assert_eq!(tools[3]["name"], "McpTools_processTagged");
     assert_eq!(tools[4]["name"], "McpTools_pagePoints");
     assert_eq!(tools[5]["name"], "McpTools_ping");
+    assert_eq!(tools[6]["name"], "McpTools_describePricing");
 
     // No "nextCursor" key (§2.2)
     assert!(resp["result"]["nextCursor"].is_null(), "nextCursor must not be present");
 
-    // T119: McpTools_ping carries a distinctive doc comment in mcp_stub.baboon;
-    // its tools/list entry must expose that text as "description". Every other
-    // (undocumented) tool must have no description key.
-    let documented_tool_name = "McpTools_ping";
-    let documented_tool_description = "Liveness probe returning a fixed acknowledgement token.";
+    // T119: McpTools_ping carries a single-line doc comment in mcp_stub.baboon.
+    // T125/D34: McpTools_describePricing carries a multi-line doc comment.
+    // Both documented tools must expose their text as "description".
+    // Every undocumented tool must have no description key.
+    let ping_description = "Liveness probe returning a fixed acknowledgement token.";
+    // T128: Expected description for McpTools_describePricing.
+    // Output of McpDocs.flatten on the multi-line /** ... */ doc: DocFormat.cleanPrefix
+    // strips " * " prefix, collapses leading/trailing blank lines, preserves internal
+    // blank line. Hazard chars: literal $ (dollar), " (double-quote), \\ (two backslashes).
+    let describe_pricing_description =
+        "Returns the fee schedule for the requested service tier.\n\
+         Base cost is $5 per call; \"premium\" tier costs $20 per call.\n\
+         \n\
+         Pass the tier name using the \\\\ delimiter convention documented in\n\
+         the API guide (e.g. \"standard\\\\premium\").";
     for t in tools {
-        if t["name"] == serde_json::json!(documented_tool_name) {
+        let tool_name = t["name"].as_str().unwrap();
+        if tool_name == "McpTools_ping" {
             assert_eq!(
-                t["description"], serde_json::json!(documented_tool_description),
-                "tool {} must carry its doc-comment description", t["name"]
+                t["description"], serde_json::json!(ping_description),
+                "tool {} must carry its doc-comment description", tool_name
+            );
+        } else if tool_name == "McpTools_describePricing" {
+            // T128: unconditional panic on mismatch — proves $, ", \, \n survive.
+            let actual_desc = t["description"].as_str().unwrap_or("<null>");
+            assert_eq!(
+                actual_desc,
+                describe_pricing_description,
+                "T128: McpTools_describePricing description round-trip FAILED"
             );
         } else {
-            assert!(t["description"].is_null(), "tool {} must have no description", t["name"]);
+            assert!(t["description"].is_null(), "tool {} must have no description", tool_name);
         }
     }
 }
@@ -265,6 +291,7 @@ fn sec2_each_input_schema_has_draft2020_12_schema_uri() {
 //   [3] McpTools_processTagged
 //   [4] McpTools_pagePoints
 //   [5] McpTools_ping
+//   [6] McpTools_describePricing  (D34/T125)
 // ---------------------------------------------------------------------------
 
 fn ref_schema_list_collections() -> serde_json::Value {
@@ -455,6 +482,18 @@ fn ref_schema_ping() -> serde_json::Value {
     })
 }
 
+fn ref_schema_describe_pricing() -> serde_json::Value {
+    // D34/T125: scalar-only, single string field, no $defs
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "tier": { "type": "string" }
+        },
+        "required": ["tier"]
+    })
+}
+
 /// Helper: compare the `required` array in a JSON schema as a set.
 /// Panics if the schema has no `required` array at the top level.
 fn required_set(schema: &serde_json::Value) -> std::collections::HashSet<String> {
@@ -497,10 +536,12 @@ fn sec2_k1_each_input_schema_is_well_formed_json_via_serde() {
         ref_schema_process_tagged(),    // [3] McpTools_processTagged
         ref_schema_page_points(),       // [4] McpTools_pagePoints
         ref_schema_ping(),              // [5] McpTools_ping
+        ref_schema_describe_pricing(),  // [6] McpTools_describePricing
     ];
     let tool_names = ["McpTools_listCollections", "McpTools_submitComposite",
                       "McpTools_processShape", "McpTools_processTagged",
-                      "McpTools_pagePoints", "McpTools_ping"];
+                      "McpTools_pagePoints", "McpTools_ping",
+                      "McpTools_describePricing"];
 
     for (i, (t, reference)) in tools.iter().zip(refs.iter()).enumerate() {
         assert_eq!(

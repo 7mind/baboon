@@ -71,6 +71,8 @@ import { In as ProcessTaggedIn } from "./baboondefinitions/generated/mcp/stub/mc
 import { Out as ProcessTaggedOut } from "./baboondefinitions/generated/mcp/stub/mcp-tools/processtagged/out";
 import { In as PagePointsIn } from "./baboondefinitions/generated/mcp/stub/mcp-tools/pagepoints/in";
 import { Out as PagePointsOut } from "./baboondefinitions/generated/mcp/stub/mcp-tools/pagepoints/out";
+import { In as DescribePricingIn } from "./baboondefinitions/generated/mcp/stub/mcp-tools/describepricing/in";
+import { Out as DescribePricingOut } from "./baboondefinitions/generated/mcp/stub/mcp-tools/describepricing/out";
 
 // ---------------------------------------------------------------------------
 // Register a passthrough codec for FFancyStr (foreign type → string identity).
@@ -113,6 +115,9 @@ const stubMcpTools: McpTools = {
     },
     ping(_arg: PingIn): PingOut {
         return new PingOut(true);
+    },
+    describePricing(_arg: DescribePricingIn): DescribePricingOut {
+        return new DescribePricingOut(true);
     },
 };
 
@@ -261,15 +266,16 @@ describe("MCP §2: tools/list and AJV inputSchema validation", () => {
     // Shared result — computed once for all tests in this describe block.
     const { tools, resp } = initAndList();
 
-    test("§2.2: exactly 6 tools in declaration order (positions 0–5)", () => {
+    test("§2.2: exactly 7 tools in declaration order (positions 0–6)", () => {
         expect(resp.id).toBe(2);
         expect(resp.error).toBeUndefined();
         expect(Array.isArray(tools)).toBe(true);
-        expect(tools).toHaveLength(6);
+        expect(tools).toHaveLength(7);
 
         // Exact position assertions per §0 (model declaration order).
         // processTagged is declared between processShape and pagePoints (T26/D11),
         // so it occupies index 3 and shifts pagePoints→4, ping→5.
+        // describePricing (D34/T125) is declared after ping at index 6.
         // DELIBERATE-NEGATIVE-CONTROL: changing "McpTools_ping" → "McpTools_WRONG"
         // on the next line makes this test fail, proving position[5] check is live.
         expect(tools[0].name).toBe("McpTools_listCollections");
@@ -278,18 +284,40 @@ describe("MCP §2: tools/list and AJV inputSchema validation", () => {
         expect(tools[3].name).toBe("McpTools_processTagged");
         expect(tools[4].name).toBe("McpTools_pagePoints");
         expect(tools[5].name).toBe("McpTools_ping");
+        expect(tools[6].name).toBe("McpTools_describePricing");
 
         // No "nextCursor" key (§2.2)
         expect((resp.result as Record<string, unknown>)["nextCursor"]).toBeUndefined();
 
-        // T119: ping carries a distinctive doc comment in mcp_stub.baboon;
-        // its tools/list entry must expose that text as `description`. Every
-        // other (undocumented) tool must still have NO description key.
-        const documentedToolName = "McpTools_ping";
-        const documentedToolDescription = "Liveness probe returning a fixed acknowledgement token.";
+        // T119: McpTools_ping carries a single-line doc comment in mcp_stub.baboon;
+        // T125/D34: McpTools_describePricing carries a multi-line doc comment.
+        // Both documented tools must expose their text as `description`.
+        // Every undocumented tool must have NO description key.
+        const pingDescription = "Liveness probe returning a fixed acknowledgement token.";
+        // T128: The describePricing description must survive round-trip through
+        // tools/list with newlines and hazard characters ($, ", \) intact.
+        // This assertion is unconditional (throws on mismatch — not a vacuous assert).
+        // The expected text is the output of McpDocs.flatten on the multi-line
+        // /** … */ doc in mcp_stub.baboon (DocFormat.cleanPrefix strips " * " prefix,
+        // collapses leading/trailing blank lines, preserves internal blank line).
+        const describePricingDescription =
+            "Returns the fee schedule for the requested service tier.\n" +
+            "Base cost is $5 per call; \"premium\" tier costs $20 per call.\n" +
+            "\n" +
+            "Pass the tier name using the \\\\ delimiter convention documented in\n" +
+            "the API guide (e.g. \"standard\\\\premium\").";
         for (const t of tools) {
-            if (t.name === documentedToolName) {
-                expect(t.description).toBe(documentedToolDescription);
+            if (t.name === "McpTools_ping") {
+                expect(t.description).toBe(pingDescription);
+            } else if (t.name === "McpTools_describePricing") {
+                // T128: unconditional throw on mismatch — proves $ / " / \ / \n survive.
+                if (t.description !== describePricingDescription) {
+                    throw new Error(
+                        `T128: McpTools_describePricing description round-trip FAILED.\n` +
+                        `Expected: ${JSON.stringify(describePricingDescription)}\n` +
+                        `Actual:   ${JSON.stringify(t.description)}`
+                    );
+                }
             } else {
                 expect(t.description).toBeUndefined();
             }
@@ -387,6 +415,20 @@ describe("MCP §2: tools/list and AJV inputSchema validation", () => {
         // Negative control: proves the `required: ["seqno","label"]` constraint is live.
         const validate = ajv.compile(tools[5].inputSchema as object);
         const valid = validate({ seqno: 7 });   // missing required "label"
+        expect(valid).toBe(false);  // MUST be rejected
+    });
+
+    test("§2.3 AJV tool[6] McpTools_describePricing: conforming instance is valid", () => {
+        // D34/T125: describePricing has a single scalar field `tier: str`.
+        const validate = ajv.compile(tools[6].inputSchema as object);
+        const valid = validate({ tier: "standard" });
+        expect(valid).toBe(true);
+    });
+
+    test("§2.3 AJV tool[6] McpTools_describePricing: required-field negative control — missing 'tier' is rejected", () => {
+        // Negative control: proves the `required: ["tier"]` constraint is live.
+        const validate = ajv.compile(tools[6].inputSchema as object);
+        const valid = validate({});   // missing required "tier"
         expect(valid).toBe(false);  // MUST be rejected
     });
 });
@@ -611,7 +653,7 @@ describe("MCP T114: public routable-server surface (no handle, no subclass)", ()
 
     test("tool registry is readable publicly and declaration-ordered", () => {
         const names = routable.tools.map(t => t.name);
-        // The 6 stub methods, in declaration order (matches §2 tools/list).
+        // The 7 stub methods, in declaration order (matches §2 tools/list).
         expect(names).toStrictEqual([
             "McpTools_listCollections",
             "McpTools_submitComposite",
@@ -619,6 +661,7 @@ describe("MCP T114: public routable-server surface (no handle, no subclass)", ()
             "McpTools_processTagged",
             "McpTools_pagePoints",
             "McpTools_ping",
+            "McpTools_describePricing",
         ]);
         // Each entry carries a BaboonMethodId the muxer routes by.
         for (const t of routable.tools) {

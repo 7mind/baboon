@@ -70,6 +70,9 @@ final class McpTests: XCTestCase {
 
     private let refPing = #"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"seqno":{"type":"integer","format":"int32"},"label":{"type":"string"}},"required":["seqno","label"]}"#
 
+    // D34/T125: scalar-only, single string field, no $defs
+    private let refDescribePricing = #"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tier":{"type":"string"}},"required":["tier"]}"#
+
     // -----------------------------------------------------------------------
     // Recursive structural-equality helper (T7 §5.4):
     //   - Dictionary: compare key-by-key (key-order-insensitive); equal key sets.
@@ -148,6 +151,9 @@ final class McpTests: XCTestCase {
         func ping(arg: mcptools.ping.`in`) -> mcptools.ping.out {
             return mcptools.ping.out(ok: true)
         }
+        func describePricing(arg: mcptools.describepricing.`in`) -> mcptools.describepricing.out {
+            return mcptools.describepricing.out(ok: true)
+        }
     }
 
     // Server factory: Ctx = McpTools (the service impl), so the no-errors
@@ -179,6 +185,7 @@ final class McpTests: XCTestCase {
 
     // processTagged is declared between processShape and pagePoints (T26/D11),
     // so it occupies index 3 and shifts pagePoints→4, ping→5.
+    // describePricing (D34/T125) is declared after ping at index 6.
     private let expectedToolNames = [
         "McpTools_listCollections",
         "McpTools_submitComposite",
@@ -186,6 +193,7 @@ final class McpTests: XCTestCase {
         "McpTools_processTagged",
         "McpTools_pagePoints",
         "McpTools_ping",
+        "McpTools_describePricing",
     ]
 
     // =======================================================================
@@ -245,24 +253,41 @@ final class McpTests: XCTestCase {
         return (result["tools"] as! [[String: Any]])
     }
 
-    func test_sec2_exactlySixToolsInDeclarationOrder() {
+    func test_sec2_exactlySevenToolsInDeclarationOrder() {
         let tools = listedTools()
-        XCTAssertEqual(tools.count, 6, "MUST be exactly 6 tools")
+        XCTAssertEqual(tools.count, 7, "MUST be exactly 7 tools")
         for (i, name) in expectedToolNames.enumerated() {
             XCTAssertEqual(tools[i]["name"] as? String, name, "tool position \(i) must be \(name)")
         }
-        // T119: McpTools_ping carries a distinctive doc comment in
-        // mcp_stub.baboon; its tools/list entry must expose that text as
-        // "description". Every other (undocumented) tool must have no
-        // description key.
-        let documentedToolName = "McpTools_ping"
-        let documentedToolDescription = "Liveness probe returning a fixed acknowledgement token."
+        // T119: McpTools_ping carries a single-line doc comment in mcp_stub.baboon.
+        // T128: McpTools_describePricing carries a multi-line doc comment including
+        // hazard chars (dollar signs, double-quotes, backslashes). The flattened
+        // description must survive the tools/list round-trip intact.
+        let pingDescription = "Liveness probe returning a fixed acknowledgement token."
+        // T128: Expected description for McpTools_describePricing.
+        // DocFormat.cleanPrefix strips " * " prefix, collapses leading/trailing blank
+        // lines, preserves internal blank line. Two literal backslashes (\\) in the
+        // baboon source survive as two backslashes in the description string.
+        // Swift raw strings: \\ in regular string = two backslashes.
+        let describePricingDescription =
+            "Returns the fee schedule for the requested service tier.\n" +
+            "Base cost is $5 per call; \"premium\" tier costs $20 per call.\n" +
+            "\n" +
+            "Pass the tier name using the \\\\ delimiter convention documented in\n" +
+            "the API guide (e.g. \"standard\\\\premium\")."
         for t in tools {
-            if t["name"] as? String == documentedToolName {
-                XCTAssertEqual(t["description"] as? String, documentedToolDescription,
-                    "tool \(t["name"] ?? "?") must carry its doc-comment description")
+            let toolName = t["name"] as? String ?? "?"
+            if toolName == "McpTools_ping" {
+                XCTAssertEqual(t["description"] as? String, pingDescription,
+                    "tool \(toolName) must carry its doc-comment description")
+            } else if toolName == "McpTools_describePricing" {
+                // T128: unconditional throw on mismatch — proves $, ", \, \n survive.
+                let actual = t["description"] as? String
+                if actual != describePricingDescription {
+                    XCTFail("T128: McpTools_describePricing description round-trip FAILED.\nExpected: \(describePricingDescription)\nActual: \(String(describing: actual))")
+                }
             } else {
-                XCTAssertNil(t["description"], "tool \(t["name"] ?? "?") must have no description")
+                XCTAssertNil(t["description"], "tool \(toolName) must have no description")
             }
         }
     }
@@ -290,11 +315,11 @@ final class McpTests: XCTestCase {
         }
     }
 
-    func test_sec2_k1_allSixTools_structuralEqualityToT7Reference() {
+    func test_sec2_k1_allSevenTools_structuralEqualityToT7Reference() {
         // K1 part (b) — structural equality to T7 §2.3 reference literals.
         let tools = listedTools()
-        let refs = [refListCollections, refSubmitComposite, refProcessShape, refProcessTagged, refPagePoints, refPing]
-        for i in 0..<6 {
+        let refs = [refListCollections, refSubmitComposite, refProcessShape, refProcessTagged, refPagePoints, refPing, refDescribePricing]
+        for i in 0..<7 {
             let toolName = tools[i]["name"] as! String
             // Re-serialize and re-parse via JSONSerialization to exercise the
             // full codec round-trip (codec-rendering divergence coverage, K1 §3).

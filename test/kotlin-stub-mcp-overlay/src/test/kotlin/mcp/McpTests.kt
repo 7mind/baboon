@@ -202,6 +202,31 @@ private val REF_PING = Json.parseToJsonElement(
     "}"
 )
 
+// Tool 7: McpTools_describePricing — single scalar field tier: str (D34/T125)
+private val REF_DESCRIBE_PRICING = Json.parseToJsonElement(
+    "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+    "\"type\":\"object\"," +
+    "\"properties\":{" +
+      "\"tier\":{\"type\":\"string\"}" +
+    "}," +
+    "\"required\":[\"tier\"]" +
+    "}"
+)
+
+// T128: Expected description for McpTools_describePricing.
+// This is the output of McpDocs.flatten on the multi-line /** ... */ doc in
+// mcp_stub.baboon: DocFormat.cleanPrefix strips " * " leading prefix and
+// collapses leading/trailing blank lines, preserving internal blank line.
+// Hazard chars: literal $ (dollar), " (double-quote), \\ (two backslashes).
+// Dollar signs are safe in Kotlin triple-quoted strings ONLY when there is no
+// { after them; to be safe we use concatenation to avoid any \$ confusion.
+private val DESCRIBE_PRICING_DESCRIPTION: String =
+    "Returns the fee schedule for the requested service tier.\n" +
+    "Base cost is " + "\$" + "5 per call; \"premium\" tier costs " + "\$" + "20 per call.\n" +
+    "\n" +
+    "Pass the tier name using the \\\\ delimiter convention documented in\n" +
+    "the API guide (e.g. \"standard\\\\premium\")."
+
 // ---------------------------------------------------------------------------
 // Structural equality helper (T7 §5.4):
 //   - JsonObject: compare by key lookup (key-order-insensitive).
@@ -262,6 +287,8 @@ private class StubMcpTools : McpTools {
     override fun pagePoints(arg: mcp.stub.mcptools.pagepoints.In): PagePointsOut =
         PagePointsOut(true)
     override fun ping(arg: mcp.stub.mcptools.ping.In): PingOut = PingOut(true)
+    override fun describePricing(arg: mcp.stub.mcptools.describepricing.In): mcp.stub.mcptools.describepricing.Out =
+        mcp.stub.mcptools.describepricing.Out(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -391,16 +418,17 @@ class McpTests {
     // ---------------------------------------------------------------------------
 
     @Test
-    fun sec2_toolsList_exactlySixToolsInDeclarationOrder() {
+    fun sec2_toolsList_exactlySevenToolsInDeclarationOrder() {
         val (tools, resp) = initAndList()
 
         assertEquals(2, resp.id!!.jsonPrimitive.int, "id must be 2")
         assertNull(resp.error)
-        assertEquals(6, tools.size, "MUST be exactly 6 tools")
+        assertEquals(7, tools.size, "MUST be exactly 7 tools")
 
         // Exact position assertions (model declaration order, T7 §0).
         // processTagged is declared between processShape and pagePoints (T26/D11),
         // so it occupies index 3 and shifts pagePoints→4, ping→5.
+        // describePricing (D34/T125) is declared after ping at index 6.
         // DELIBERATE-NEGATIVE-CONTROL: replacing "McpTools_ping" with "McpTools_WRONG"
         // on the next line makes this test fail, proving position[5] check is live.
         assertEquals("McpTools_listCollections", tools[0]["name"]!!.jsonPrimitive.content)
@@ -409,22 +437,32 @@ class McpTests {
         assertEquals("McpTools_processTagged", tools[3]["name"]!!.jsonPrimitive.content)
         assertEquals("McpTools_pagePoints", tools[4]["name"]!!.jsonPrimitive.content)
         assertEquals("McpTools_ping", tools[5]["name"]!!.jsonPrimitive.content)
+        assertEquals("McpTools_describePricing", tools[6]["name"]!!.jsonPrimitive.content)
 
         // No "nextCursor" key (§2.2)
         assertNull(resp.result!!.jsonObject["nextCursor"], "nextCursor must not be present")
 
-        // T119: McpTools_ping carries a distinctive doc comment in
-        // mcp_stub.baboon; its tools/list entry must expose that text as
-        // "description". Every other (undocumented) tool must have no
-        // description key.
-        val documentedToolName = "McpTools_ping"
-        val documentedToolDescription = "Liveness probe returning a fixed acknowledgement token."
+        // T119: McpTools_ping carries a single-line doc comment in mcp_stub.baboon.
+        // T125/D34: McpTools_describePricing carries a multi-line doc comment.
+        // Both documented tools must expose their text as "description".
+        // Every undocumented tool must have no description key.
+        val pingDescription = "Liveness probe returning a fixed acknowledgement token."
         for (t in tools) {
-            if (t["name"]!!.jsonPrimitive.content == documentedToolName) {
-                assertEquals(documentedToolDescription, t["description"]!!.jsonPrimitive.content,
-                    "Tool ${t["name"]} must carry its doc-comment description")
-            } else {
-                assertNull(t["description"], "Tool ${t["name"]} must have no description")
+            when (t["name"]!!.jsonPrimitive.content) {
+                "McpTools_ping" ->
+                    assertEquals(pingDescription, t["description"]!!.jsonPrimitive.content,
+                        "Tool ${t["name"]} must carry its doc-comment description")
+                "McpTools_describePricing" -> {
+                    // T128: unconditional throw on mismatch — proves $, ", \, \n survive.
+                    val actualDesc = t["description"]?.jsonPrimitive?.content
+                    check(actualDesc == DESCRIBE_PRICING_DESCRIPTION) {
+                        "T128: McpTools_describePricing description round-trip FAILED.\n" +
+                        "Expected: ${DESCRIBE_PRICING_DESCRIPTION.replace("\n", "\\n")}\n" +
+                        "Actual:   ${actualDesc?.replace("\n", "\\n")}"
+                    }
+                }
+                else ->
+                    assertNull(t["description"], "Tool ${t["name"]} must have no description")
             }
         }
     }
@@ -457,7 +495,7 @@ class McpTests {
     }
 
     @Test
-    fun sec2_k1_allSixTools_structuralEqualityToT7Reference() {
+    fun sec2_k1_allSevenTools_structuralEqualityToT7Reference() {
         // K1 part (b) — structural equality to T7 §2.3 reference.
         // Each returned inputSchema is parsed via kotlinx-serialization
         // (codec-divergence coverage) and compared key-by-key recursively
@@ -473,9 +511,10 @@ class McpTests {
             REF_PROCESS_TAGGED,    // tools[3] = McpTools_processTagged
             REF_PAGE_POINTS,       // tools[4] = McpTools_pagePoints
             REF_PING,              // tools[5] = McpTools_ping
+            REF_DESCRIBE_PRICING,  // tools[6] = McpTools_describePricing
         )
 
-        for (i in 0..5) {
+        for (i in 0..6) {
             val toolName = tools[i]["name"]!!.jsonPrimitive.content
             // Re-parse through kotlinx-serialization to exercise codec round-trip.
             val actual = Json.parseToJsonElement(tools[i]["inputSchema"]!!.toString())

@@ -90,6 +90,9 @@ namespace McpTest
 
         public McpTools.Ping.Out Ping(McpTools.Ping.In arg)
             => new McpTools.Ping.Out(true);
+
+        public McpTools.DescribePricing.Out DescribePricing(McpTools.DescribePricing.In arg)
+            => new McpTools.DescribePricing.Out(true);
     }
 
     // ---------------------------------------------------------------------------
@@ -236,17 +239,18 @@ namespace McpTest
         }
 
         [Test]
-        public void Sec2_ToolsList_ExactlySixToolsInDeclarationOrder()
+        public void Sec2_ToolsList_ExactlySevenToolsInDeclarationOrder()
         {
             var (tools, resp) = InitAndList();
 
             Assert.AreEqual(2, resp.Id!.Value<int>());
             Assert.IsNull(resp.Error);
-            Assert.AreEqual(6, tools.Count, "MUST be exactly 6 tools");
+            Assert.AreEqual(7, tools.Count, "MUST be exactly 7 tools");
 
             // Exact position assertions (model declaration order, T7 §0).
             // processTagged is declared between processShape and pagePoints (T26/D11),
             // so it occupies index 3 and shifts pagePoints→4, ping→5.
+            // describePricing (D34/T125) is declared after ping at index 6.
             // DELIBERATE-NEGATIVE-CONTROL: replacing "McpTools_ping" with "McpTools_WRONG"
             // on the next line makes this test fail, proving position[5] check is live.
             Assert.AreEqual("McpTools_listCollections", tools[0]["name"]!.Value<string>());
@@ -255,28 +259,48 @@ namespace McpTest
             Assert.AreEqual("McpTools_processTagged",    tools[3]["name"]!.Value<string>());
             Assert.AreEqual("McpTools_pagePoints",       tools[4]["name"]!.Value<string>());
             Assert.AreEqual("McpTools_ping",             tools[5]["name"]!.Value<string>());
+            Assert.AreEqual("McpTools_describePricing",  tools[6]["name"]!.Value<string>());
 
             // No "nextCursor" key (§2.2)
             Assert.IsNull(((JObject)resp.Result!)["nextCursor"],
                 "nextCursor must not be present");
 
-            // T119: McpTools_ping carries a distinctive doc comment in
-            // mcp_stub.baboon; its tools/list entry must expose that text as
-            // "description". Every other (undocumented) tool must have no
-            // description key.
-            const string documentedToolName = "McpTools_ping";
-            const string documentedToolDescription = "Liveness probe returning a fixed acknowledgement token.";
+            // T119: McpTools_ping carries a single-line doc comment in mcp_stub.baboon.
+            // T125/D34: McpTools_describePricing carries a multi-line doc comment.
+            // Both documented tools must expose their text as "description".
+            // Every undocumented tool must have no description key.
+            const string pingDescription = "Liveness probe returning a fixed acknowledgement token.";
+            // T128: The describePricing description must survive round-trip through
+            // tools/list with newlines and hazard characters ($, ", \) intact.
+            // C# verbatim strings do not support \n; use string concatenation.
+            const string describePricingDescription =
+                "Returns the fee schedule for the requested service tier.\n" +
+                "Base cost is $5 per call; \"premium\" tier costs $20 per call.\n" +
+                "\n" +
+                "Pass the tier name using the \\\\ delimiter convention documented in\n" +
+                "the API guide (e.g. \"standard\\\\premium\").";
             foreach (var t in tools)
             {
-                if (t["name"]!.Value<string>() == documentedToolName)
+                var toolName = t["name"]!.Value<string>();
+                if (toolName == "McpTools_ping")
                 {
-                    Assert.AreEqual(documentedToolDescription, t["description"]!.Value<string>(),
-                        $"Tool {t["name"]} must carry its doc-comment description");
+                    Assert.AreEqual(pingDescription, t["description"]!.Value<string>(),
+                        $"Tool {toolName} must carry its doc-comment description");
+                }
+                else if (toolName == "McpTools_describePricing")
+                {
+                    // T128: unconditional throw on mismatch — proves $, ", \, \n survive.
+                    var actualDesc = t["description"]?.Value<string>();
+                    if (actualDesc != describePricingDescription)
+                        throw new Exception(
+                            $"T128: McpTools_describePricing description round-trip FAILED.\n" +
+                            $"Expected: {describePricingDescription.Replace("\n", "\\n")}\n" +
+                            $"Actual:   {actualDesc?.Replace("\n", "\\n") ?? "null"}");
                 }
                 else
                 {
                     Assert.IsNull(t["description"],
-                        $"Tool {t["name"]} must have no description");
+                        $"Tool {toolName} must have no description");
                 }
             }
         }

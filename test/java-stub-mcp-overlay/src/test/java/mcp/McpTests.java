@@ -211,6 +211,29 @@ public class McpTests {
         "}"
     );
 
+    // Tool 7: McpTools_describePricing — single scalar field tier: str (D34/T125)
+    private static final JsonNode REF_DESCRIBE_PRICING = ref(
+        "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\"," +
+        "\"type\":\"object\"," +
+        "\"properties\":{" +
+          "\"tier\":{\"type\":\"string\"}" +
+        "}," +
+        "\"required\":[\"tier\"]" +
+        "}"
+    );
+
+    // T128: Expected description for McpTools_describePricing.
+    // This is the output of McpDocs.flatten on the multi-line /** ... */ doc in
+    // mcp_stub.baboon: DocFormat.cleanPrefix strips " * " leading prefix and
+    // collapses leading/trailing blank lines, preserving internal blank line.
+    // Hazard chars: literal $ (dollar), " (double-quote), \\ (two backslashes).
+    private static final String DESCRIBE_PRICING_DESCRIPTION =
+        "Returns the fee schedule for the requested service tier.\n" +
+        "Base cost is $5 per call; \"premium\" tier costs $20 per call.\n" +
+        "\n" +
+        "Pass the tier name using the \\\\ delimiter convention documented in\n" +
+        "the API guide (e.g. \"standard\\\\premium\").";
+
     // ---------------------------------------------------------------------------
     // Structural equality helper (T7 §5.4):
     //   - JsonObject: compare by key lookup (key-order-insensitive).
@@ -282,6 +305,10 @@ public class McpTests {
         @Override
         public mcp.stub.mcptools.ping.Out ping(mcp.stub.mcptools.ping.In arg) {
             return new mcp.stub.mcptools.ping.Out(true);
+        }
+        @Override
+        public mcp.stub.mcptools.describepricing.Out describePricing(mcp.stub.mcptools.describepricing.In arg) {
+            return new mcp.stub.mcptools.describepricing.Out(true);
         }
     }
 
@@ -429,18 +456,19 @@ public class McpTests {
     // ---------------------------------------------------------------------------
 
     @Test
-    public void sec2_toolsList_exactlySixToolsInDeclarationOrder() throws Exception {
+    public void sec2_toolsList_exactlySevenToolsInDeclarationOrder() throws Exception {
         var r = initAndList();
         var tools = r.tools();
         var resp = r.resp();
 
         assertEquals(2, resp.id.intValue(), "id must be 2");
         assertNull(resp.error);
-        assertEquals(6, tools.size(), "MUST be exactly 6 tools");
+        assertEquals(7, tools.size(), "MUST be exactly 7 tools");
 
         // Exact position assertions (model declaration order, T7 §0).
         // processTagged is declared between processShape and pagePoints (T26/D11),
         // so it occupies index 3 and shifts pagePoints→4, ping→5.
+        // describePricing (D34/T125) is declared after ping at index 6.
         // DELIBERATE-NEGATIVE-CONTROL: replacing "McpTools_ping" with "McpTools_WRONG"
         // on the next line makes this test fail, proving position[5] check is live.
         assertEquals("McpTools_listCollections", tools.get(0).get("name").textValue());
@@ -449,23 +477,34 @@ public class McpTests {
         assertEquals("McpTools_processTagged",   tools.get(3).get("name").textValue());
         assertEquals("McpTools_pagePoints",       tools.get(4).get("name").textValue());
         assertEquals("McpTools_ping",             tools.get(5).get("name").textValue());
+        assertEquals("McpTools_describePricing",  tools.get(6).get("name").textValue());
 
         // No "nextCursor" key (§2.2)
         assertNull(resp.result.get("nextCursor"), "nextCursor must not be present");
 
-        // T119: McpTools_ping carries a distinctive doc comment in
-        // mcp_stub.baboon; its tools/list entry must expose that text as
-        // "description". Every other (undocumented) tool must have no
-        // description key.
-        final String documentedToolName = "McpTools_ping";
-        final String documentedToolDescription = "Liveness probe returning a fixed acknowledgement token.";
+        // T119: McpTools_ping carries a single-line doc comment in mcp_stub.baboon.
+        // T125/D34: McpTools_describePricing carries a multi-line doc comment.
+        // Both documented tools must expose their text as "description".
+        // Every undocumented tool must have no description key.
+        final String pingDescription = "Liveness probe returning a fixed acknowledgement token.";
         for (var t : tools) {
-            if (documentedToolName.equals(t.get("name").textValue())) {
-                assertNotNull(t.get("description"), "Tool " + t.get("name") + " must carry its doc-comment description");
-                assertEquals(documentedToolDescription, t.get("description").textValue(),
-                    "Tool " + t.get("name") + " must carry its doc-comment description");
+            String toolName = t.get("name").textValue();
+            if ("McpTools_ping".equals(toolName)) {
+                assertNotNull(t.get("description"), "Tool " + toolName + " must carry its doc-comment description");
+                assertEquals(pingDescription, t.get("description").textValue(),
+                    "Tool " + toolName + " must carry its doc-comment description");
+            } else if ("McpTools_describePricing".equals(toolName)) {
+                // T128: unconditional throw on mismatch — proves $, ", \, \n survive.
+                String actualDesc = t.get("description") != null ? t.get("description").textValue() : null;
+                if (!DESCRIBE_PRICING_DESCRIPTION.equals(actualDesc)) {
+                    throw new AssertionError(
+                        "T128: McpTools_describePricing description round-trip FAILED.\n" +
+                        "Expected: " + DESCRIBE_PRICING_DESCRIPTION.replace("\n", "\\n") + "\n" +
+                        "Actual:   " + (actualDesc != null ? actualDesc.replace("\n", "\\n") : "null")
+                    );
+                }
             } else {
-                assertNull(t.get("description"), "Tool " + t.get("name") + " must have no description");
+                assertNull(t.get("description"), "Tool " + toolName + " must have no description");
             }
         }
     }
@@ -498,7 +537,7 @@ public class McpTests {
     }
 
     @Test
-    public void sec2_k1_allSixTools_structuralEqualityToT7Reference() throws Exception {
+    public void sec2_k1_allSevenTools_structuralEqualityToT7Reference() throws Exception {
         // K1 part (b) — structural equality to T7 §2.3 reference.
         // Each returned inputSchema is re-parsed via Jackson (codec-divergence
         // coverage) and compared key-by-key recursively to the embedded T7 reference.
@@ -513,10 +552,11 @@ public class McpTests {
             REF_PROCESS_SHAPE,     // tools[2] = McpTools_processShape
             REF_PROCESS_TAGGED,    // tools[3] = McpTools_processTagged
             REF_PAGE_POINTS,       // tools[4] = McpTools_pagePoints
-            REF_PING               // tools[5] = McpTools_ping
+            REF_PING,              // tools[5] = McpTools_ping
+            REF_DESCRIBE_PRICING   // tools[6] = McpTools_describePricing
         );
 
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 7; i++) {
             String toolName = tools.get(i).get("name").textValue();
             // Re-parse through Jackson to exercise codec round-trip.
             JsonNode actual   = MAPPER.readTree(tools.get(i).get("inputSchema").toString());
