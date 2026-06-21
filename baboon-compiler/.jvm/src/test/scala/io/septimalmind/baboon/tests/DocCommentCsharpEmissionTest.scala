@@ -121,12 +121,13 @@ abstract class DocCommentCsharpEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
             s"Expected type-level XML doc before DocItem.\n$itemFile",
           )
 
-          // Field-level docs (with suffix merged into <remarks>)
+          // Field-level docs — D38: emitted as <param> tags on the type doc block,
+          // NOT as /// <summary> before the positional constructor parameters.
           assert(
-            itemFile.contains("/// <summary>Display name of the item.</summary>"),
-            s"Expected field doc for DocItem.Name.\n$itemFile",
+            itemFile.contains("""/// <param name="Name">Display name of the item.</param>"""),
+            s"Expected <param name=\"Name\"> field doc for DocItem.Name.\n$itemFile",
           )
-          // price has both prefix doc and suffix `//!` — merged: prefix in <summary>, suffix in <remarks>
+          // price has both prefix doc and suffix `//!` — both appear inside the <param> body.
           assert(
             itemFile.contains("Unit price in store currency."),
             s"Expected prefix part of merged doc for DocItem.Price.\n$itemFile",
@@ -167,10 +168,14 @@ abstract class DocCommentCsharpEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
             itemFile.contains("""/// <param name="Name">Display name of the item.</param>"""),
             s"""Expected <param name="Name"> tag for DocItem.name field doc, but not found.\n$itemFile""",
           )
-          // DocItem.price => C# property Price; doc includes "Unit price in store currency."
+          // DocItem.price => C# property Price; prefix doc "Unit price in store currency."
+          // plus the `//!` suffix "never negative" form two paragraphs, so renderParamDocs
+          // emits the multi-line wrapped <param> form (open tag, body lines, close tag).
           assert(
-            itemFile.contains("""/// <param name="Price">Unit price in store currency."""),
-            s"""Expected <param name="Price"> tag for DocItem.price field doc, but not found.\n$itemFile""",
+            itemFile.contains("""/// <param name="Price">""") &&
+              itemFile.contains("/// Unit price in store currency.") &&
+              itemFile.contains("/// never negative"),
+            s"""Expected <param name="Price"> wrapped tag for DocItem.price field doc, but not found.\n$itemFile""",
           )
 
           // (b) NO `/// <summary>` block must appear immediately before a positional constructor
@@ -272,10 +277,11 @@ abstract class DocCommentCsharpEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
             resultFile.contains("/// <summary>Successful payload variant.</summary>"),
             s"Expected arm-level XML doc before DocOk.\n$resultFile",
           )
-          // Field-level doc inside DocOk arm
+          // Field-level doc inside DocOk arm — D38: rendered as a <param> tag on the
+          // arm record's type doc block, NOT as /// <summary> before the positional param.
           assert(
-            resultFile.contains("/// <summary>the carried payload</summary>"),
-            s"Expected field doc for DocOk.Value.\n$resultFile",
+            resultFile.contains("""/// <param name="Value">the carried payload</param>"""),
+            s"""Expected <param name="Value"> tag for DocOk.value field doc.\n$resultFile""",
           )
         }
     }

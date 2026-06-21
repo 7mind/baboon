@@ -32,6 +32,11 @@ object CSDefnTranslator {
   case class DefnRepr(
     defn: TextTree[CSValue],
     codecs: List[CodecReg],
+    // D38: rendered `<param name="...">...</param>` doc lines (already `///`-prefixed,
+    // escaped) to be folded into the type's contiguous doc block at the prepend site,
+    // immediately after the type `<summary>` and ABOVE any `[Obsolete]`/`[Serializable]`
+    // attribute. Empty for every non-DTO branch.
+    paramDocs: String = "",
   )
 
   sealed trait OutputOrigin
@@ -239,7 +244,12 @@ object CSDefnTranslator {
       // D01 fix: apply obsoletePrevious BEFORE prependDocs so the emitted order
       // is /// <summary>doc</summary> then [Obsolete] then the declaration,
       // matching C# XML doc convention (doc-then-annotation-then-symbol).
-      val defnRepr = prependDocs(defn.docs, obsoletePrevious(repr.defn))
+      // D38: fold the DTO's `<param>` doc lines (repr.paramDocs) into the SAME
+      // contiguous `///` block as the type `<summary>`, immediately after it and
+      // ABOVE the [Obsolete]/[Serializable] attributes — so the recognized C# doc
+      // block is `<summary>` + `<param>`* then attributes then the declaration
+      // (a `<param>` run sandwiched between attributes would trigger CS1587).
+      val defnRepr = prependDocs(defn.docs, repr.paramDocs, obsoletePrevious(repr.defn))
 
       assert(defn.id.pkg == domain.id)
 
@@ -278,6 +288,16 @@ object CSDefnTranslator {
       if (block.isEmpty) tree else q"${block}$tree"
     }
 
+    /** D38: prepend the type `<summary>` block followed by the `<param>` block as
+      * one contiguous `///` doc run before `tree`. Both arguments are already
+      * `///`-prefixed, escaped, newline-terminated strings (`""` when empty).
+      */
+    private def prependDocs(docs: Docs, paramDocs: String, tree: TextTree[CSValue]): TextTree[CSValue] = {
+      val summaryBlock = csTrees.renderDocs(docs, "")
+      val block        = summaryBlock + paramDocs
+      if (block.isEmpty) tree else q"${block}$tree"
+    }
+
     private def makeRepr(defn: DomainMember.User, name: CSValue.CSType, isLatestVersion: Boolean): DefnRepr = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
       val mainMeta  = csDomTrees.makeDataMeta(defn)
@@ -305,11 +325,25 @@ object CSDefnTranslator {
               (mname, tpe, f)
           }
 
+          // D38: positional record parameters carry NO `/// <summary>` doc (C# does
+          // not associate `///` on a positional parameter with the synthesized
+          // property — CS1587). Per-field docs are emitted as `<param>` tags on the
+          // record TYPE doc block instead (see `paramDocsBlock` below).
           val constructorArgs = outs.map {
-            case (fname, tpe, f) =>
-              val fieldEx = q"$tpe $fname"
-              prependDocs(f.docs, fieldEx)
+            case (fname, tpe, _) =>
+              q"$tpe $fname"
           }.join(",\n")
+
+          // D38: build the `<param name="...">...</param>` block in field order. The
+          // `<param>` name MUST match the C# property name (`mname`). This block is
+          // prepended to the TOP of `mainTree` (above the `[$serializable]` line). The
+          // L242 prepend site then prepends the type `<summary>` (defn.docs) ABOVE the
+          // whole mainTree, yielding the contiguous C# doc block order:
+          // type `<summary>` -> `<param>` tags -> `[Serializable]` attribute -> record.
+          val paramDocsBlock = outs.collect {
+            case (mname, _, f) if csTrees.renderParamDocs(mname, f.docs, "").nonEmpty =>
+              csTrees.renderParamDocs(mname, f.docs, "")
+          }.mkString
 
           val contractParents = dto.contracts.toSeq.map(c => q"${trans.asCsType(c, domain, evo)}")
 
@@ -387,7 +421,7 @@ object CSDefnTranslator {
                                      |$identifierCodecObject""".stripMargin
             else mainTree
 
-          DefnRepr(combined, List.empty)
+          DefnRepr(combined, List.empty, paramDocsBlock)
 
         case e: Typedef.Enum =>
           val branches =
