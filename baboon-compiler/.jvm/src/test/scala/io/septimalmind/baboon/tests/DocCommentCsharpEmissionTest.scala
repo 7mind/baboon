@@ -138,6 +138,62 @@ abstract class DocCommentCsharpEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
         }
     }
 
+    // D38 RED assertions — encode the CORRECT post-fix shape.
+    // After the fix, CSDefnTranslator must emit per-field docs as
+    // `/// <param name="X">...</param>` tags on the record TYPE doc block,
+    // NOT as `/// <summary>` comments before positional constructor parameters
+    // (which C# does not associate with positional record properties — CS1587).
+    "emit field docs as <param> tags on the record type doc block, not as /// <summary> before positional params (D38)" in {
+      (loader: BaboonLoader[F], translator: BaboonAbstractTranslator[F]) =>
+        for {
+          family <- loadDocsFamily(loader)
+          srcs   <- translator.translate(family)
+        } yield {
+          val all = srcs.files.iterator.map { case (path, of) => (path, of.content) }.toList
+
+          val itemFile = all.collectFirst {
+            case (_, c) if c.contains("sealed record DocItem") => c
+          }.getOrElse(fail(s"DocItem not found. Paths: ${all.map(_._1)}"))
+
+          // (c) The record TYPE-level <summary> must still be present before `public sealed record`.
+          assert(
+            itemFile.contains("/// <summary>A simple item with field-level docs.</summary>"),
+            s"Expected type-level <summary> still present before DocItem record.\n$itemFile",
+          )
+
+          // (a) Field docs must appear as <param> tags on the type doc block, not inside the ctor.
+          // DocItem.name => C# property Name; doc text: "Display name of the item."
+          assert(
+            itemFile.contains("""/// <param name="Name">Display name of the item.</param>"""),
+            s"""Expected <param name="Name"> tag for DocItem.name field doc, but not found.\n$itemFile""",
+          )
+          // DocItem.price => C# property Price; doc includes "Unit price in store currency."
+          assert(
+            itemFile.contains("""/// <param name="Price">Unit price in store currency."""),
+            s"""Expected <param name="Price"> tag for DocItem.price field doc, but not found.\n$itemFile""",
+          )
+
+          // (b) NO `/// <summary>` block must appear immediately before a positional constructor
+          // parameter inside the `public sealed record ...(` header (CS1587).
+          // The current (broken) output has `/// <summary>Display name of the item.</summary>`
+          // between `(` and `String Name,` — this must no longer be present in that position.
+          val ctorRegion = {
+            val open  = itemFile.indexOf("public sealed record DocItem(")
+            val close = itemFile.indexOf(")", open)
+            if (open < 0 || close < 0) ""
+            else itemFile.substring(open, close + 1)
+          }
+          assert(
+            !ctorRegion.contains("/// <summary>Display name of the item.</summary>"),
+            s"Field doc must NOT appear as /// <summary> inside the positional constructor parameter list.\nCtor region:\n$ctorRegion",
+          )
+          assert(
+            !ctorRegion.contains("/// <summary>Unit price in store currency.</summary>"),
+            s"Field doc must NOT appear as /// <summary> inside the positional constructor parameter list.\nCtor region:\n$ctorRegion",
+          )
+        }
+    }
+
     "emit /// <summary> type-level doc before enum (spec §7.5)" in {
       (loader: BaboonLoader[F], translator: BaboonAbstractTranslator[F]) =>
         for {
