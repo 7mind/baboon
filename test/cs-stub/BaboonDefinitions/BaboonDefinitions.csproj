@@ -6,6 +6,13 @@
         <RootNamespace>Definitions</RootNamespace>
         <LangVersion>9</LangVersion>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <!-- CS1591: generated code does not carry doc-comments on every public member.
+             CS1573: generated code documents only the fields that carry baboon doc-comments;
+             undocumented parameters intentionally have no <param> tag.
+             Both are suppressed so the /doc build succeeds while still catching CS1587
+             (XML doc comment not allowed on this language element). -->
+        <NoWarn>CS1591;CS1573</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
