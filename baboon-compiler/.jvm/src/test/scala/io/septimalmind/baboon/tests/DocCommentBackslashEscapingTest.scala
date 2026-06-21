@@ -153,6 +153,79 @@ class DocCommentBackslashEscapingTest extends AnyFlatSpec with Matchers {
     result should not include (tq + " inside")
   }
 
+  // ─── (d) renderParamDocs: T145 / D38 unit coverage ──────────────────────
+  //
+  // Asserts that `CSTreeTools.renderParamDocs` (added in T145):
+  //  1. emits a well-formed `/// <param name="X">` opening tag;
+  //  2. round-trips a lone backslash in the body (same xmlEscape as renderDocs);
+  //  3. XML-escapes `<` in the body to `&lt;`;
+  //  4. returns empty string for `Docs.empty`.
+  //
+  // The shared `xmlEscape` helper is the one referenced by both `renderDocs`
+  // and `renderParamDocs` inside `CSTreeToolsImpl`.
+
+  "CSTreeTools.renderParamDocs" should
+    "emit a well-formed <param name=\"X\"> opening tag" in {
+    val docs = Docs(
+      prefix = Some(DocComment(raw = "Some body text.", cleaned = "Some body text.")),
+      suffix = None,
+    )
+    val result = csTrees.renderParamDocs("Name", docs, "")
+    result should include("""/// <param name="Name">""")
+  }
+
+  it should "round-trip a lone backslash in the body through q-interpolation (D35 post-fix contract)" in {
+    // Body with a lone backslash: e.g. "C:\Windows".
+    val body = "Windows path example: C:" + ("\\" + "Windows") + " directory."
+    val docs = Docs(
+      prefix = Some(DocComment(raw = body, cleaned = body)),
+      suffix = None,
+    )
+    val block: String           = csTrees.renderParamDocs("Name", docs, "")
+    val tree: TextTree[CSValue] = q"public sealed record DocItem;"
+    // The rendered output after q-interpolation must contain the literal backslash.
+    val rendered = q"${block}$tree".dump
+    rendered should include("C:" + ("\\" + "Windows"))
+  }
+
+  it should "XML-escape < in the body to &lt;" in {
+    val body = "value < threshold"
+    val docs = Docs(
+      prefix = Some(DocComment(raw = body, cleaned = body)),
+      suffix = None,
+    )
+    val result = csTrees.renderParamDocs("Name", docs, "")
+    result should include("value &lt; threshold")
+    result should not include "<threshold"
+  }
+
+  it should "XML-escape & in the body to &amp;" in {
+    val body = "foo & bar"
+    val docs = Docs(
+      prefix = Some(DocComment(raw = body, cleaned = body)),
+      suffix = None,
+    )
+    val result = csTrees.renderParamDocs("Name", docs, "")
+    result should include("foo &amp; bar")
+  }
+
+  it should "return empty string for Docs.empty" in {
+    val result = csTrees.renderParamDocs("Name", Docs.empty, "")
+    result shouldBe ""
+  }
+
+  it should "prepend indent to every emitted line" in {
+    val docs = Docs(
+      prefix = Some(DocComment(raw = "Some text.", cleaned = "Some text.")),
+      suffix = None,
+    )
+    val result = csTrees.renderParamDocs("MyParam", docs, "    ")
+    // Every line must start with the indent.
+    result.linesIterator.filter(_.nonEmpty).foreach { line =>
+      line should startWith("    ///")
+    }
+  }
+
   private def countOccurrences(haystack: String, needle: String): Int = {
     var count = 0
     var idx   = haystack.indexOf(needle)

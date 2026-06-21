@@ -28,6 +28,25 @@ trait CSTreeTools {
     * the indentation of the surrounding context.
     */
   def renderDocs(docs: Docs, indent: String): String
+
+  /** Render a C# XML `<param name="…">…</param>` doc comment block for a
+    * field/parameter.
+    *
+    * Returns the empty string when `docs` is `Docs.empty`, matching the
+    * empty-handling contract of `renderDocs`.
+    *
+    * The `paramName` is XML-escaped and written as the `name` attribute value.
+    * All paragraphs from `docs` are joined into the `<param>` body (there is no
+    * `<summary>`/`<remarks>` substructure inside `<param>`). Multiple paragraphs
+    * are separated by a blank `///` line. A single-line single-paragraph body is
+    * emitted inline: `/// <param name="X">text</param>`. Multi-line or
+    * multi-paragraph bodies wrap between `/// <param name="X">` and
+    * `/// </param>`.
+    *
+    * The `indent` parameter is prepended to every emitted `///` line, matching
+    * the indentation of the surrounding context.
+    */
+  def renderParamDocs(paramName: String, docs: Docs, indent: String): String
 }
 
 object CSTreeTools {
@@ -42,39 +61,41 @@ object CSTreeTools {
       }
     }
 
+    // Shared XML-escape helper: spec §7.5 — applied to every text fragment
+    // emitted. D35: backslash-escape the PROSE FIRST (before the XML entity
+    // replacements, which never introduce backslashes), so a lone `\` survives
+    // the downstream izumi q-interpolation render. See
+    // DocCommentEscaping.escapeBackslashForQInterpolation. D36: C0 control
+    // characters (other than tab/newline) are also neutralised by the backslash
+    // escape pass that runs first.
+    private def xmlEscape(s: String): String =
+      DocCommentEscaping
+        .escapeBackslashForQInterpolation(s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+
+    // Split cleaned lines into paragraphs (blank-line separated).
+    private def toParagraphs(lines: List[String]): List[List[String]] = {
+      val result = scala.collection.mutable.ListBuffer[List[String]]()
+      val cur    = scala.collection.mutable.ListBuffer[String]()
+      for (line <- lines) {
+        if (line.isEmpty) {
+          if (cur.nonEmpty) { result += cur.toList; cur.clear() }
+        } else {
+          cur += line
+        }
+      }
+      if (cur.nonEmpty) result += cur.toList
+      result.toList
+    }
+
     def renderDocs(docs: Docs, indent: String): String = {
       val prefixLines = docs.prefix.map(_.cleaned.split("\n", -1).toList).getOrElse(Nil)
       val suffixLines = docs.suffix.map(_.cleaned.split("\n", -1).toList).getOrElse(Nil)
 
       if (prefixLines.isEmpty && suffixLines.isEmpty) return ""
-
-      // Inline XML-escape: spec §7.5 — applied to every text fragment emitted.
-      // D35: backslash-escape the PROSE FIRST (before the XML entity
-      // replacements, which never introduce backslashes), so a lone `\`
-      // survives the downstream izumi q-interpolation render. See
-      // DocCommentEscaping.escapeBackslashForQInterpolation.
-      def xmlEscape(s: String): String =
-        DocCommentEscaping
-          .escapeBackslashForQInterpolation(s)
-          .replace("&", "&amp;")
-          .replace("<", "&lt;")
-          .replace(">", "&gt;")
-          .replace("\"", "&quot;")
-
-      // Split cleaned lines into paragraphs (blank-line separated).
-      def toParagraphs(lines: List[String]): List[List[String]] = {
-        val result = scala.collection.mutable.ListBuffer[List[String]]()
-        val cur    = scala.collection.mutable.ListBuffer[String]()
-        for (line <- lines) {
-          if (line.isEmpty) {
-            if (cur.nonEmpty) { result += cur.toList; cur.clear() }
-          } else {
-            cur += line
-          }
-        }
-        if (cur.nonEmpty) result += cur.toList
-        result.toList
-      }
 
       val prefixParas = toParagraphs(prefixLines)
       val suffixParas = toParagraphs(suffixLines)
@@ -106,6 +127,37 @@ object CSTreeTools {
             para.foreach(l => sb.append(s"$indent/// ${xmlEscape(l)}\n"))
         }
         sb.append(s"$indent/// </remarks>\n")
+      }
+
+      sb.toString()
+    }
+
+    def renderParamDocs(paramName: String, docs: Docs, indent: String): String = {
+      val prefixLines = docs.prefix.map(_.cleaned.split("\n", -1).toList).getOrElse(Nil)
+      val suffixLines = docs.suffix.map(_.cleaned.split("\n", -1).toList).getOrElse(Nil)
+
+      if (prefixLines.isEmpty && suffixLines.isEmpty) return ""
+
+      val allParas = toParagraphs(prefixLines) ++ toParagraphs(suffixLines)
+
+      if (allParas.isEmpty) return ""
+
+      val escapedName = xmlEscape(paramName)
+      val sb          = new StringBuilder
+
+      if (allParas.size == 1 && allParas.head.size == 1) {
+        // Single-line single-paragraph: inline form.
+        val body = xmlEscape(allParas.head.head)
+        sb.append(s"""$indent/// <param name="$escapedName">$body</param>\n""")
+      } else {
+        // Multi-line or multi-paragraph: wrapped form.
+        sb.append(s"""$indent/// <param name="$escapedName">\n""")
+        allParas.zipWithIndex.foreach {
+          case (para, idx) =>
+            if (idx > 0) sb.append(s"$indent///\n")
+            para.foreach(l => sb.append(s"$indent/// ${xmlEscape(l)}\n"))
+        }
+        sb.append(s"$indent/// </param>\n")
       }
 
       sb.toString()
