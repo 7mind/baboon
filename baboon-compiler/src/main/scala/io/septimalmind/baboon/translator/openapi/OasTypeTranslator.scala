@@ -211,4 +211,32 @@ class OasTypeTranslator {
       case c             => c.toString
     }
   }
+
+  /** Return the canonical human-readable description of the ADT
+    * discriminator-wrapper wire encoding.
+    *
+    * An ADT value is encoded as a single-key JSON object whose key is the
+    * chosen branch's SHORT name and whose value is that branch's field object:
+    * `{"<Branch>": { ...branch fields... }}`. Exactly one branch key is present.
+    *
+    * When `branchShortNames` is non-empty the description also enumerates the
+    * known branch names. When the list is empty only the generic encoding
+    * sentence is returned.
+    *
+    * The returned string is RAW (unescaped). Callers are responsible for
+    * JSON-escaping with `escapeJson` before embedding in a JSON string literal,
+    * or via `Json.fromString` in circe contexts.
+    */
+  def adtWrapperDoc(branchShortNames: List[String]): String = {
+    val generic =
+      """ADT discriminator-wrapper encoding: encoded as a single-key JSON object """ +
+      """{"<Branch>": { ...branch fields... }} where the key is the branch's short name """ +
+      """and the value is that branch's field object. Exactly one branch key is present."""
+    if (branchShortNames.isEmpty) {
+      generic
+    } else {
+      val enumerated = branchShortNames.mkString(", ")
+      s"$generic Known branches: $enumerated."
+    }
+  }
 }
