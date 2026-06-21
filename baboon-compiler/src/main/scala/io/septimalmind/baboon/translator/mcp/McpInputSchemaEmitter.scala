@@ -219,8 +219,13 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
   }
 
   private def adtSchema(adt: Typedef.Adt, domain: Domain): Json = {
-    val branchRefs = adtDataMembers(adt, domain).map(localRef)
-    Json.obj(oneOfKeyword -> Json.arr(branchRefs*))
+    val members    = adtDataMembers(adt, domain)
+    val branchRefs = members.map(localRef)
+    val shortNames = members.map(_.name.name)
+    mergeObjects(
+      Json.obj(oneOfKeyword -> Json.arr(branchRefs*)),
+      Json.obj(descriptionKeyword -> Json.fromString(typeTranslator.adtWrapperDoc(shortNames))),
+    )
   }
 
   private def foreignOpaqueSchema(name: String): Json =
