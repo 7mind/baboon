@@ -127,7 +127,7 @@ private val REF_PROCESS_SHAPE = Json.parseToJsonElement(
     "}," +
     "\"required\":[\"shape\",\"tree\"]," +
     "\"\$defs\":{" +
-      "\"mcp_stub_Shape\":{\"oneOf\":[{\"\$ref\":\"#/\$defs/mcp_stub_Shape_Circle\"},{\"\$ref\":\"#/\$defs/mcp_stub_Shape_Rect\"}]}," +
+      "\"mcp_stub_Shape\":{\"oneOf\":[{\"\$ref\":\"#/\$defs/mcp_stub_Shape_Circle\"},{\"\$ref\":\"#/\$defs/mcp_stub_Shape_Rect\"}],\"description\":\"ADT discriminator-wrapper encoding: encoded as a single-key JSON object {\\\"<Branch>\\\": { ...branch fields... }} where the key is the branch's short name and the value is that branch's field object. Exactly one branch key is present. Known branches: Circle, Rect.\"}," +
       "\"mcp_stub_Tree\":{\"type\":\"object\",\"properties\":{" +
         "\"value\":{\"type\":\"integer\",\"format\":\"int32\"}," +
         "\"left\":{\"oneOf\":[{\"\$ref\":\"#/\$defs/mcp_stub_Tree\"},{\"type\":\"null\"}]}," +
@@ -156,7 +156,7 @@ private val REF_PROCESS_TAGGED = Json.parseToJsonElement(
     "}," +
     "\"required\":[\"tagged\"]," +
     "\"\$defs\":{" +
-      "\"mcp_stub_Tagged\":{\"oneOf\":[{\"\$ref\":\"#/\$defs/mcp_stub_Tagged_TagA\"},{\"\$ref\":\"#/\$defs/mcp_stub_Tagged_TagB\"}]}," +
+      "\"mcp_stub_Tagged\":{\"oneOf\":[{\"\$ref\":\"#/\$defs/mcp_stub_Tagged_TagA\"},{\"\$ref\":\"#/\$defs/mcp_stub_Tagged_TagB\"}],\"description\":\"ADT discriminator-wrapper encoding: encoded as a single-key JSON object {\\\"<Branch>\\\": { ...branch fields... }} where the key is the branch's short name and the value is that branch's field object. Exactly one branch key is present. Known branches: TagA, TagB.\"}," +
       "\"mcp_stub_Tagged_TagA\":{\"type\":\"object\",\"properties\":{" +
         "\"id\":{\"type\":\"string\"}," +
         "\"tag\":{\"type\":\"string\"}" +

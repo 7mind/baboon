@@ -365,7 +365,8 @@ class McpTests extends AnyFlatSpec with Matchers {
       |      "oneOf": [
       |        { "$ref": "#/$defs/mcp_stub_Shape_Circle" },
       |        { "$ref": "#/$defs/mcp_stub_Shape_Rect" }
-      |      ]
+      |      ],
+      |      "description": "ADT discriminator-wrapper encoding: encoded as a single-key JSON object {\"<Branch>\": { ...branch fields... }} where the key is the branch's short name and the value is that branch's field object. Exactly one branch key is present. Known branches: Circle, Rect."
       |    },
       |    "mcp_stub_Shape_Circle": {
       |      "type": "object",
@@ -413,7 +414,8 @@ class McpTests extends AnyFlatSpec with Matchers {
       |      "oneOf": [
       |        { "$ref": "#/$defs/mcp_stub_Tagged_TagA" },
       |        { "$ref": "#/$defs/mcp_stub_Tagged_TagB" }
-      |      ]
+      |      ],
+      |      "description": "ADT discriminator-wrapper encoding: encoded as a single-key JSON object {\"<Branch>\": { ...branch fields... }} where the key is the branch's short name and the value is that branch's field object. Exactly one branch key is present. Known branches: TagA, TagB."
       |    },
       |    "mcp_stub_Tagged_TagA": {
       |      "type": "object",
