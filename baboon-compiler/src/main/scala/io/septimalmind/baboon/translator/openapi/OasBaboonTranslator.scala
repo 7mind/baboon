@@ -214,10 +214,16 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
     enumKeys: Set[TypeId.User],
   ): String = {
     import Typedef.Adt.AdtSyntax
-    val name        = typeTranslator.schemaName(adt.id)
-    val esc         = typeTranslator.escapeJson _
-    val descJson    = typeTranslator.renderOasDescription(docs).map(d => s""", "description": "${esc(d)}"""").getOrElse("")
-    val dataMembers = adt.dataMembers(domain)
+    val name             = typeTranslator.schemaName(adt.id)
+    val esc              = typeTranslator.escapeJson _
+    val dataMembers      = adt.dataMembers(domain)
+    val branchShortNames = dataMembers.map(_.name.name).toList
+    val wrapperNote      = typeTranslator.adtWrapperDoc(branchShortNames)
+    val rawDesc          = typeTranslator.renderOasDescription(docs) match {
+      case Some(d) => s"$d\n\n$wrapperNote"
+      case None    => wrapperNote
+    }
+    val descJson         = s""", "description": "${esc(rawDesc)}""""
 
     // Emit each branch schema inline, then the union
     val branchSchemas = dataMembers.flatMap {
