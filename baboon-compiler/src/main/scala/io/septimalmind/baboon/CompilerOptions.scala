@@ -398,6 +398,32 @@ final case class OutputOptions(
   }
 }
 
+sealed trait LockfileUpdate
+object LockfileUpdate {
+  case object CreateOnly extends LockfileUpdate
+  case object Force extends LockfileUpdate
+
+  def parse(s: String): Either[String, LockfileUpdate] = s match {
+    case "create-only" => Right(CreateOnly)
+    case "force"       => Right(Force)
+    case other         => Left(s"Unrecognized lockfile-update value: '$other'. Expected one of: create-only, force")
+  }
+}
+
+sealed trait LockfileEnforcement
+object LockfileEnforcement {
+  case object None extends LockfileEnforcement
+  case object LegacyVersions extends LockfileEnforcement
+  case object AllVersions extends LockfileEnforcement
+
+  def parse(s: String): Either[String, LockfileEnforcement] = s match {
+    case "none"            => Right(None)
+    case "legacy-versions" => Right(LegacyVersions)
+    case "all-versions"    => Right(AllVersions)
+    case other             => Left(s"Unrecognized lockfile-enforcement value: '$other'. Expected one of: none, legacy-versions, all-versions")
+  }
+}
+
 final case class CompilerOptions(
   individualInputs: Set[FSPath],
   directoryInputs: Set[FSPath],
@@ -406,6 +432,8 @@ final case class CompilerOptions(
   targets: Seq[CompilerTarget],
   metaWriteEvolutionJsonTo: Option[FSPath],
   emitOnly: Option[Set[Pkg]],
+  lockfileUpdate: LockfileUpdate = LockfileUpdate.CreateOnly,
+  lockfileEnforcement: LockfileEnforcement = LockfileEnforcement.LegacyVersions,
 )
 
 sealed trait CompilerProduct
