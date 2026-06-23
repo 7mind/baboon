@@ -6,6 +6,7 @@ using System.Linq;
 using System;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 // ReSharper disable UnusedTypeParameter
@@ -165,6 +166,12 @@ namespace Baboon.Runtime.Shared
             // BAB-C04: insulates against user-supplied collections (HashMap, etc.) whose
             // iteration order depends on hash codes / runtime state.
             return new JObject(value.OrderBy(e => e.Key?.ToString() ?? string.Empty, StringComparer.Ordinal).Select(enc));
+        }
+
+        public static JToken ParseWireJson(string value)
+        {
+            using var reader = new JsonTextReader(new StringReader(value)) { DateParseHandling = DateParseHandling.None };
+            return JToken.Load(reader);
         }
     }
     
