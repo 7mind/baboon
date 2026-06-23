@@ -310,7 +310,7 @@ object CSServiceWiringTranslator {
                 val encodeIn = jsonEncodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"arg")
                 val decodeOut = m.out match {
                   case Some(outRef) =>
-                    val decExpr = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"$nsJToken.Parse(resp)")
+                    val decExpr = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"$BaboonTools.ParseWireJson(resp)")
                     q"return $decExpr;"
                   case None => q"return;"
                 }
@@ -557,7 +557,7 @@ object CSServiceWiringTranslator {
 
           q"""case "${m.name.name}":
              |{
-             |    var wire = $nsJToken.Parse(data);
+             |    var wire = $BaboonTools.ParseWireJson(data);
              |    var decoded = $decodeIn;
              |    $callExpr
              |    ${encodeOutput.shift(4).trim}
@@ -688,7 +688,7 @@ object CSServiceWiringTranslator {
             q"""${ct("BaboonWiringError", renderFq(inRef))} input;
                |try
                |{
-               |    var wire = $nsJToken.Parse(data);
+               |    var wire = $BaboonTools.ParseWireJson(data);
                |    input = rt.Pure<$baboonWiringError, $inRef>($decodeIn);
                |}
                |catch ($csException ex)
@@ -818,7 +818,7 @@ object CSServiceWiringTranslator {
         q"""$inRef decoded;
            |try
            |{
-           |    var wire = $nsJToken.Parse(data);
+           |    var wire = $BaboonTools.ParseWireJson(data);
            |    decoded = $decodeIn;
            |}
            |catch ($csException ex)
