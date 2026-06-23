@@ -32,7 +32,18 @@ object LockCodecs {
   implicit lazy val versionCodec: Codec[Version]         = Codec.from(Decoder.decodeString.map(s => Version.parse(s)), Encoder.encodeString.contramap(_.v.toString))
   implicit lazy val sigidCodec: Codec[SigId]             = Codec.from(Decoder.decodeString.map(s => SigId(s)), Encoder.encodeString.contramap(_.value))
   implicit lazy val versionLockCodec: Codec[VersionLock] = deriveCodec
-  implicit lazy val lockscodec: Codec[Locks]             = deriveCodec
+
+  private lazy val locksDecoder: Decoder[Locks] = deriveCodec[Locks]
+  private lazy val locksEncoder: Encoder[Locks] = Encoder.instance { locks =>
+    val fields = locks.locks.toSeq
+      .sortBy { case (pkg, _) => pkg.toString }
+      .map { case (pkg, versions) =>
+        val sortedVersions = versions.sortBy(_.version)(using Version.ordering).map(versionLockCodec.apply)
+        pkgKeyEncoder(pkg) -> Json.arr(sortedVersions*)
+      }
+    Json.obj("locks" -> Json.obj(fields*))
+  }
+  implicit lazy val lockscodec: Codec[Locks] = Codec.from(locksDecoder, locksEncoder)
 
 }
 
