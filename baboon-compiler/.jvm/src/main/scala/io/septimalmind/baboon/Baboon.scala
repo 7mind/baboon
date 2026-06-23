@@ -8,6 +8,7 @@ import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.BaboonModeAxis
 import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.{BaboonFamily, Pkg, Version}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.impl.BioEither
@@ -760,6 +761,17 @@ object Baboon {
                   System.err.println("Loader failed")
                   System.err.println(value.toList.stringifyIssues)
                   sys.exit(4)
+              }
+
+              // The lockfile is a global, target-independent artifact: enforce/update it EXACTLY ONCE per
+              // invocation, BEFORE the per-target loop, so an enforcement failure short-circuits before any
+              // target generates and a Force rewrite happens once, not once per target.
+              lockfileManager = new LockfileManagerImpl[F](options, loc.get[BaboonEnquiries])
+              _ <- lockfileManager.validateLock(loadedModels).catchAll {
+                value =>
+                  System.err.println("Lockfile validation failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(3)
               }
 
               _ <- F.traverse_(options.targets)(processTarget[F](loc, logger, loadedModels, _))

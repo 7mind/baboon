@@ -32,18 +32,7 @@ object LockCodecs {
   implicit lazy val versionCodec: Codec[Version]         = Codec.from(Decoder.decodeString.map(s => Version.parse(s)), Encoder.encodeString.contramap(_.v.toString))
   implicit lazy val sigidCodec: Codec[SigId]             = Codec.from(Decoder.decodeString.map(s => SigId(s)), Encoder.encodeString.contramap(_.value))
   implicit lazy val versionLockCodec: Codec[VersionLock] = deriveCodec
-
-  private lazy val locksDecoder: Decoder[Locks] = deriveCodec[Locks]
-  private lazy val locksEncoder: Encoder[Locks] = Encoder.instance { locks =>
-    val fields = locks.locks.toSeq
-      .sortBy { case (pkg, _) => pkg.toString }
-      .map { case (pkg, versions) =>
-        val sortedVersions = versions.sortBy(_.version)(using Version.ordering).map(versionLockCodec.apply)
-        pkgKeyEncoder(pkg) -> Json.arr(sortedVersions*)
-      }
-    Json.obj("locks" -> Json.obj(fields*))
-  }
-  implicit lazy val lockscodec: Codec[Locks] = Codec.from(locksDecoder, locksEncoder)
+  implicit lazy val lockscodec: Codec[Locks]             = deriveCodec
 
 }
 
@@ -54,7 +43,6 @@ trait BaboonCompiler[F[+_, +_]] {
 object BaboonCompiler {
   class BaboonCompilerImpl[F[+_, +_]: Error2: MaybeSuspend2]( // dirty, I/O happens there
     translator: BaboonAbstractTranslator[F],
-    lockfileManager: LockfileManager[F],
     options: CompilerOptions,
     logger: BLogger,
     metagen: BaboonMetagen,
@@ -65,7 +53,6 @@ object BaboonCompiler {
       for {
         _ <- cleanupTargetPaths(target.output)
         _ <- writeEvolutionJson(target, model)
-        _ <- lockfileManager.validateLock(model)
 
         maybeFiltered = options.emitOnly match {
           case Some(allowed) =>

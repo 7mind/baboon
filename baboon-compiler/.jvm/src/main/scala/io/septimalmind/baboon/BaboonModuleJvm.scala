@@ -13,7 +13,6 @@ import izumi.reflect.TagKK
 
 class SharedTranspilerJvmModule[F[+_, +_]: TagKK](implicit @annotation.unused evidence: Error2[F]) extends ModuleDef {
   make[BaboonCompiler[F]].from[BaboonCompiler.BaboonCompilerImpl[F]]
-  make[LockfileManager[F]].from[LockfileManagerImpl[F]]
 }
 
 class BaboonJvmCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleDef {
