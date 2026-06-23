@@ -736,7 +736,7 @@ namespace Baboon.Runtime.Shared
             JToken parsed;
             try
             {
-                parsed = JToken.Parse(value);
+                parsed = BaboonTools.ParseWireJson(value);
             }
             catch (Exception e)
             {
@@ -784,7 +784,7 @@ namespace Baboon.Runtime.Shared
             JToken parsed;
             try
             {
-                parsed = JToken.Parse(value);
+                parsed = BaboonTools.ParseWireJson(value);
             }
             catch (Exception e)
             {
