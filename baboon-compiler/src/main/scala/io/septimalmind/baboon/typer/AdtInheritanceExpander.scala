@@ -304,6 +304,10 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
       throw new RuntimeException(s"BUG: unexpected Exclude arm during expansion: $e")
     case it: RawAdtMember.Intersect =>
       throw new RuntimeException(s"BUG: unexpected Intersect arm during expansion: $it")
+    case k: RawAdtMember.Keep =>
+      throw new RuntimeException(s"BUG: unexpected Keep arm during expansion: $k")
+    case dr: RawAdtMember.Drop =>
+      throw new RuntimeException(s"BUG: unexpected Drop arm during expansion: $dr")
   }
 
   private def dedupByName(members: Seq[RawAdtMember]): Seq[RawAdtMember] = {

@@ -496,6 +496,10 @@ object BaboonFamilyManager {
           filesFromMeta(meta)
         case io.septimalmind.baboon.parser.model.RawAdtMember.Intersect(_, meta) =>
           filesFromMeta(meta)
+        case io.septimalmind.baboon.parser.model.RawAdtMember.Keep(_, meta) =>
+          filesFromMeta(meta)
+        case io.septimalmind.baboon.parser.model.RawAdtMember.Drop(_, meta) =>
+          filesFromMeta(meta)
       }
     }
 

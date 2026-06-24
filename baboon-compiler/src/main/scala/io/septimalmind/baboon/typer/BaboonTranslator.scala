@@ -415,6 +415,8 @@ class BaboonTranslator[F[+_, +_]: Error2](
           case _: RawAdtMember.Include   => throw new RuntimeException("BUG: RawAdtMember.Include reached convertAdt before PR-63 pre-pass")
           case _: RawAdtMember.Exclude   => throw new RuntimeException("BUG: RawAdtMember.Exclude reached convertAdt before PR-63 pre-pass")
           case _: RawAdtMember.Intersect => throw new RuntimeException("BUG: RawAdtMember.Intersect reached convertAdt before PR-63 pre-pass")
+          case _: RawAdtMember.Keep      => throw new RuntimeException("BUG: RawAdtMember.Keep reached convertAdt before materialization pre-pass")
+          case _: RawAdtMember.Drop      => throw new RuntimeException("BUG: RawAdtMember.Drop reached convertAdt before materialization pre-pass")
           case _                         =>
         }
         adt.members.collect { case d: RawAdtMemberDto => d; case d: RawAdtMemberContract => d }

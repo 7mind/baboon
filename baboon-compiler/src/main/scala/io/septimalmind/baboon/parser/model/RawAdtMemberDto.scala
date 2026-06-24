@@ -1,5 +1,7 @@
 package io.septimalmind.baboon.parser.model
 
+import izumi.fundamentals.collections.nonempty.NEList
+
 sealed trait RawAdtMember {
   def meta: RawNodeMeta
   def defn: RawDefn
@@ -49,6 +51,31 @@ object RawAdtMember {
   case class Intersect(ref: ScopedRef, meta: RawNodeMeta) extends RawAdtMember {
     override def defn: RawDefn = throw new RuntimeException(
       s"BUG: RawAdtMember.Intersect.defn must not be called; PR-63 typer-early pass must rewrite this arm before convertAdt runs: $ref"
+    )
+  }
+
+  /** `keep *` or `keep A, B` — retain only specified branches in an ADT delta body.
+    *
+    * `branches = None` encodes the wildcard form `keep *` (keep all existing branches).
+    * `branches = Some(names)` encodes selective retention `keep A, B, ...`.
+    *
+    * Consumed by the materialization pre-pass (a later task) before `convertAdt` runs.
+    * A safety-net guard in `convertAdt` will throw if this arm reaches it unexpectedly.
+    */
+  case class Keep(branches: Option[NEList[RawTypeName]], meta: RawNodeMeta) extends RawAdtMember {
+    override def defn: RawDefn = throw new RuntimeException(
+      s"BUG: RawAdtMember.Keep.defn must not be called; materialization pre-pass must consume this arm before convertAdt runs: $branches"
+    )
+  }
+
+  /** `drop X` — remove a single named branch from an ADT delta body.
+    *
+    * Consumed by the materialization pre-pass (a later task) before `convertAdt` runs.
+    * A safety-net guard in `convertAdt` will throw if this arm reaches it unexpectedly.
+    */
+  case class Drop(branch: RawTypeName, meta: RawNodeMeta) extends RawAdtMember {
+    override def defn: RawDefn = throw new RuntimeException(
+      s"BUG: RawAdtMember.Drop.defn must not be called; materialization pre-pass must consume this arm before convertAdt runs: $branch"
     )
   }
 
