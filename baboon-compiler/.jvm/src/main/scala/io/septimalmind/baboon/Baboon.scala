@@ -115,6 +115,8 @@ object Baboon {
        |  --model <file>           A *.baboon file to process (can be repeated)
        |  --model-dir <dir>        A directory to recursively read *.baboon files from (can be repeated)
        |  --lock-file <file>       A file used to track model signatures
+       |  --lockfile-update {create-only|force}                   Lockfile update policy (default: create-only; requires --lock-file)
+       |  --lockfile-enforcement {none|legacy-versions|all-versions}  Lockfile enforcement scope (default: legacy-versions; requires --lock-file)
        |  --meta-write-evolution-json <file>  Write evolution metadata as JSON
        |  --emit-only <domains>    Comma-separated list of domain names to generate code for (all are still parsed/typed)
        |  --debug                  Enable debug output
@@ -183,6 +185,47 @@ object Baboon {
        |  baboon --model-dir ./models :explore
        |  baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
        |""".stripMargin
+  }
+
+  /** Maps the parsed `--lockfile-update` / `--lockfile-enforcement` strings to their enums and
+    * enforces the two CLI invariants:
+    *   - Q37b: either flag supplied without `--lock-file` is a hard CLI error (fail-fast).
+    *   - Q37c: an unrecognized enum value is a hard CLI error, surfaced via the parse helper's Left.
+    * Absent flags fall back to the production defaults (CreateOnly / LegacyVersions).
+    */
+  private[baboon] def parseLockfileOptions(
+    lockFile: Option[String],
+    lockfileUpdate: Option[String],
+    lockfileEnforcement: Option[String],
+  ): Either[NEList[String], (LockfileUpdate, LockfileEnforcement)] = {
+    val errors = scala.collection.mutable.ListBuffer.empty[String]
+
+    if (lockFile.isEmpty && (lockfileUpdate.isDefined || lockfileEnforcement.isDefined)) {
+      errors += "--lockfile-update and --lockfile-enforcement require --lock-file to be set"
+    }
+
+    val update = lockfileUpdate match {
+      case None    => LockfileUpdate.CreateOnly
+      case Some(s) =>
+        LockfileUpdate.parse(s) match {
+          case Right(v)  => v
+          case Left(msg) => errors += msg; LockfileUpdate.CreateOnly
+        }
+    }
+
+    val enforcement = lockfileEnforcement match {
+      case None    => LockfileEnforcement.LegacyVersions
+      case Some(s) =>
+        LockfileEnforcement.parse(s) match {
+          case Right(v)  => v
+          case Left(msg) => errors += msg; LockfileEnforcement.LegacyVersions
+        }
+    }
+
+    NEList.from(errors.toList) match {
+      case Some(nel) => Left(nel)
+      case None      => Right((update, enforcement))
+    }
   }
 
   def main(args: Array[String]): Unit = {
@@ -569,6 +612,11 @@ object Baboon {
                   case r => Left(s"Unknown role id: $r")
                 }
             }
+            lockfileOptions <- parseLockfileOptions(
+              generalOptions._1.lockFile,
+              generalOptions._1.lockfileUpdate,
+              generalOptions._1.lockfileEnforcement,
+            )
           } yield {
             val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
             val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
@@ -589,6 +637,8 @@ object Baboon {
               metaWriteEvolutionJsonTo = generalOptions._1.metaWriteEvolutionJson.map(s => FSPath.parse(NEString.unsafeFrom(s))),
               lockFile                 = generalOptions._1.lockFile.map(s => FSPath.parse(NEString.unsafeFrom(s))),
               emitOnly                 = emitOnly,
+              lockfileUpdate           = lockfileOptions._1,
+              lockfileEnforcement      = lockfileOptions._2,
             )
 
             import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
