@@ -1,0 +1,15 @@
+model adtdelta.wild
+
+version "2.0.0"
+
+import "1.0.0" { * }
+
+// Motivating "add one field to one branch" case: keep ALL prior branches,
+// redefine only B2 in place to add a field. B1 and B3 carry over verbatim.
+root adt T4_A1 : derived[json] {
+  keep *
+  data B2 {
+    b: str
+    e: i32
+  }
+}

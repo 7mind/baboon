@@ -1,0 +1,17 @@
+model adtdelta.twin
+
+version "2.0.0"
+
+import "1.0.0" { * }
+
+root adt T4_A1 : derived[json] {
+  data B1 {
+    a: i32
+  }
+  data B2 {
+    b: str
+  }
+  data B4 {
+    d: f64
+  }
+}

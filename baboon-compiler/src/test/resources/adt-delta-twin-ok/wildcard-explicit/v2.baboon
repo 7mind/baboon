@@ -1,0 +1,20 @@
+model adtdelta.wild
+
+version "2.0.0"
+
+import "1.0.0" { * }
+
+// Status-quo explicit twin of the wildcard delta: whole-ADT re-declaration
+// keeping B1 and B3 verbatim and B2 with the added field.
+root adt T4_A1 : derived[json] {
+  data B1 {
+    a: i32
+  }
+  data B2 {
+    b: str
+    e: i32
+  }
+  data B3 {
+    c: bit
+  }
+}
