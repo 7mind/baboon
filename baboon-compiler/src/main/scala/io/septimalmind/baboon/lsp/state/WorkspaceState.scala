@@ -134,6 +134,7 @@ class WorkspaceState(
       case DuplicatedAdtBranches(_, _, _, meta)                 => Some(meta.pos)
       case WrongAdtInclusion(_, _, _, meta)                     => Some(meta.pos)
       case CrossVersionAdtInclusion(_, _, _, meta)              => Some(meta.pos)
+      case AdtDeltaConflict(_, _, meta)                         => Some(meta.pos)
       case BadInheritance(_, meta)                              => Some(meta.pos)
       case NonUniqueMethodNames(_, _, meta)                     => Some(meta.pos)
       case ServiceMissingOutput(_, _, meta)                     => Some(meta.pos)

@@ -318,6 +318,48 @@ object TyperIssue {
     meta: RawNodeMeta,
   ) extends TyperIssue
 
+  /** G27 (T163): a hard-error conflict in an ADT delta body (selective `keep`/`drop` over a prior
+    * `Foo`), or the import-header legality precondition for a delta body. ONE parameterized case
+    * carrying a sealed `detail` enum so a single exhaustive-match arm covers every conflict rule.
+    *
+    * This task DEFINES + WIRES the symbol; the materialization pre-pass (T162) RAISES it. No
+    * detection logic lives here.
+    *
+    * `adtId`  — the host ADT whose delta body carries the conflict.
+    * `detail` — the specific conflict rule (see `AdtDeltaConflictDetail`).
+    * `meta`   — the source position of the offending member/header.
+    */
+  case class AdtDeltaConflict(
+    adtId: TypeId.User,
+    detail: AdtDeltaConflictDetail,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
+  /** The conflict rules enumerated by `AdtDeltaConflict` (G27/T163). Each branch references the
+    * offending branch `RawTypeName` (the T160 node shapes) where applicable.
+    */
+  sealed trait AdtDeltaConflictDetail
+  object AdtDeltaConflictDetail {
+
+    /** `drop X` where X is NOT a branch of the prior `Foo`. */
+    case class DropOfAbsent(branch: RawTypeName) extends AdtDeltaConflictDetail
+
+    /** `keep` and `drop` naming the SAME branch. */
+    case class KeepDropSame(branch: RawTypeName) extends AdtDeltaConflictDetail
+
+    /** selective `keep A` AND an in-body `data A {...}`. */
+    case class KeepRedefineSame(branch: RawTypeName) extends AdtDeltaConflictDetail
+
+    /** `drop X` AND an in-body `data X {...}`. */
+    case class DropRedefineSame(branch: RawTypeName) extends AdtDeltaConflictDetail
+
+    /** a delta-body ADT (any Keep/Drop present) with NO `import "<old>" { * }` header in scope. */
+    case object MissingImportHeader extends AdtDeltaConflictDetail
+
+    /** selective `keep A` where A is not a branch of the prior `Foo`. */
+    case class KeepOfAbsent(branch: RawTypeName) extends AdtDeltaConflictDetail
+  }
+
   implicit val todoPrinter: IssuePrinter[TodoTyperIssue] =
     (issue: TodoTyperIssue) => {
       issue.descr
@@ -669,6 +711,28 @@ object TyperIssue {
       val refStr = issue.includeRef.path.toList.map(_.name).mkString(".")
       s"""${extractLocation(issue.meta)}
          |ADT ${issue.adtId.toString} cannot include '$refStr' (resolved to ${issue.includeId.toString}) — cross-version ADT inclusion is forbidden
+         |""".stripMargin
+    }
+
+  implicit val adtDeltaConflictPrinter: IssuePrinter[AdtDeltaConflict] =
+    (issue: AdtDeltaConflict) => {
+      val adt = issue.adtId.toString
+      val detailMsg = issue.detail match {
+        case AdtDeltaConflictDetail.DropOfAbsent(branch) =>
+          s"`drop ${branch.name}` names a branch that is not present in the prior version of ADT $adt — only branches of the prior ADT may be dropped"
+        case AdtDeltaConflictDetail.KeepDropSame(branch) =>
+          s"branch '${branch.name}' is named by both `keep` and `drop` in the delta body of ADT $adt — a branch cannot be simultaneously kept and dropped"
+        case AdtDeltaConflictDetail.KeepRedefineSame(branch) =>
+          s"branch '${branch.name}' is both selectively kept (`keep ${branch.name}`) and redefined in-body (`data ${branch.name} {…}`) in ADT $adt — keep the prior branch OR redefine it, not both"
+        case AdtDeltaConflictDetail.DropRedefineSame(branch) =>
+          s"branch '${branch.name}' is both dropped (`drop ${branch.name}`) and redefined in-body (`data ${branch.name} {…}`) in ADT $adt — a dropped branch cannot also be redefined"
+        case AdtDeltaConflictDetail.MissingImportHeader =>
+          s"ADT $adt uses a delta body (`keep`/`drop`) but no `import \"<old>\" { * }` header is in scope — the import is required to resolve the prior version of the ADT"
+        case AdtDeltaConflictDetail.KeepOfAbsent(branch) =>
+          s"`keep ${branch.name}` names a branch that is not present in the prior version of ADT $adt — only branches of the prior ADT may be selectively kept"
+      }
+      s"""${extractLocation(issue.meta)}
+         |ADT delta conflict in $adt: $detailMsg
          |""".stripMargin
     }
 

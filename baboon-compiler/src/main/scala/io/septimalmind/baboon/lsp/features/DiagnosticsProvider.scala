@@ -108,6 +108,16 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
         (Some(meta), s"Invalid ADT inheritance arm in ${id.name.name} referencing '${ref.path.toList.map(_.name).mkString(".")}': $reason")
       case CrossVersionAdtInclusion(id, ref, includeId, meta) =>
         (Some(meta), s"Cross-version ADT inclusion in ${id.name.name}: '${ref.path.toList.map(_.name).mkString(".")}' resolved to ${includeId.name.name}")
+      case AdtDeltaConflict(id, detail, meta) =>
+        val detailMsg = detail match {
+          case AdtDeltaConflictDetail.DropOfAbsent(branch)     => s"`drop ${branch.name}` names a branch absent from the prior version"
+          case AdtDeltaConflictDetail.KeepDropSame(branch)     => s"branch '${branch.name}' is both kept and dropped"
+          case AdtDeltaConflictDetail.KeepRedefineSame(branch) => s"branch '${branch.name}' is both kept and redefined in-body"
+          case AdtDeltaConflictDetail.DropRedefineSame(branch) => s"branch '${branch.name}' is both dropped and redefined in-body"
+          case AdtDeltaConflictDetail.MissingImportHeader      => "delta body has no `import \"<old>\" { * }` header in scope"
+          case AdtDeltaConflictDetail.KeepOfAbsent(branch)     => s"`keep ${branch.name}` names a branch absent from the prior version"
+        }
+        (Some(meta), s"ADT delta conflict in ${id.name.name}: $detailMsg")
       case BadInheritance(bad, meta)                    => (Some(meta), s"Bad inheritance: ${bad.keys.map(_.name.name).mkString(", ")}")
       case NonUniqueMethodNames(svc, dupes, meta)       => (Some(meta), s"Duplicate methods in $svc: ${dupes.keys.mkString(", ")}")
       case ServiceMissingOutput(svc, method, meta)      => (Some(meta), s"Missing output in $svc.$method")
