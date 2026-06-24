@@ -51,6 +51,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
         BLogger.Noop,
         validator,
         FileContentProviderNoop,
+        new AdtDeltaMaterializer[EitherF],
       )
 
       val inputV1    = input("/test/foo-1.baboon", "foo|1.0.0")
@@ -85,6 +86,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
         BLogger.Noop,
         validator,
         FileContentProviderNoop,
+        new AdtDeltaMaterializer[EitherF],
       )
 
       val inputV1 = input("/test/foo-1.baboon", "foo|1.0.0")

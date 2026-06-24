@@ -3,7 +3,7 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.parser.model.{FSPath, RawContent, RawDomain, RawNodeMeta, RawTLDef, RawTypeName}
-import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonFamilyCache, BaboonLineage, Domain, DomainKey}
+import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonFamilyCache, BaboonLineage, Domain, DomainKey, Pkg}
 import io.septimalmind.baboon.util.{BLogger, FileContentProvider}
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.unsafe.MaybeSuspend2
@@ -35,6 +35,7 @@ object BaboonFamilyManager {
     logger: BLogger,
     validator: BaboonValidator[F],
     fileContentProvider: FileContentProvider,
+    adtDeltaMaterializer: AdtDeltaMaterializer[F],
   ) extends BaboonFamilyManager[F] {
 
     private case class DomainEntry(
@@ -335,15 +336,32 @@ object BaboonFamilyManager {
         deps   = indexed.view.mapValues(d => d.imported.map(i => DomainKey(d.header.name.mkString("."), i.value)).toSet).toMap
         graph <- buildDomainDag(indexed, deps, parsed.head.header.meta)
         sorted = toposorted(graph)
-      } yield {
 
-        val wip = mutable.HashMap.from(indexed)
+        wip = mutable.HashMap.from(indexed)
 
-        sorted.foreach {
+        // Process domains in toposort order (immediately-prior version first). For each domain we:
+        //   1. Run the G27/T162 keep/drop materialization pre-pass, rewriting every delta-body ADT
+        //      against the SAME-NAMED ADT in the immediately-prior version (reached via THIS domain's
+        //      `import "<old>" { * }` header — already materialized + import-resolved in `wip` because
+        //      it was processed earlier in the toposort). This RAISES `AdtDeltaConflict` through the F
+        //      issue channel on a conflict and leaves NO Keep/Drop arms behind on success.
+        //   2. Flatten imports via `withImports` exactly as before. After (1) the domain carries only
+        //      materialized branch lists, so `withImports`/typing/comparator are unaffected.
+        _ <- F.traverseAccumErrors_(sorted) {
           id =>
-            wip.put(id, withImports(id, wip))
+            val current = wip(id)
+            val priorMembersOpt: Option[Seq[RawTLDef]] =
+              current.imported.map(imp => wip(DomainKey(id.id, imp.value)).members.defs)
+            val pkg = Pkg(NEList.unsafeFrom(current.header.name.toList))
+            for {
+              materializedDefs <- adtDeltaMaterializer.materialize(pkg, current.members.defs, priorMembersOpt)
+              _ <- F.maybeSuspend {
+                wip.put(id, current.copy(members = current.members.copy(defs = materializedDefs)))
+                wip.put(id, withImports(id, wip))
+              }
+            } yield ()
         }
-
+      } yield {
         wip.values.toList
       }
 
