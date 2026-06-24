@@ -2,9 +2,10 @@ package io.septimalmind.baboon.parser.defns
 
 import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
-import io.septimalmind.baboon.parser.defns.base.{kw, struct}
+import io.septimalmind.baboon.parser.defns.base.{idt, kw, struct}
 import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
 import io.septimalmind.baboon.parser.model.{RawAdt, RawAdtMember, RawAdtMemberContract, RawAdtMemberDto, RawDtoMember, RawTypeName}
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
 class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract: DefContract) {
@@ -51,6 +52,40 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
     }
   }
 
+  /** `keep *` (wildcard) or `keep A, B` (selective) — ADT delta retention (T161).
+    *
+    * D15 / soft-keyword discipline: NO cut (`~/` or `/~`) after `kw.keep`, exactly as `kw.has`
+    * in `DefDto.scala`. A branch DTO or field named `keep` must still backtrack cleanly to
+    * `adtMember`/`fieldDef`. Branch names are bare identifiers (matching the `RawTypeName` shape
+    * the T160 `Keep` node carries), so `idt.symbol.map(RawTypeName.apply)` — not the
+    * `ScopedRef`-valued `nonGenericTypeRef` — feeds the constructor.
+    */
+  private def keepWildcard[$: P]: P[Option[NEList[RawTypeName]]] =
+    P("*").map(_ => None)
+
+  private def keepSelective[$: P]: P[Option[NEList[RawTypeName]]] = {
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
+    idt.symbol.map(RawTypeName.apply).rep(min = 1, sep = ",").map(s => Some(NEList.unsafeFrom(s.toList)))
+  }
+
+  def adtKeepDef[$: P]: P[RawAdtMember.Keep] = {
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
+    P(meta.withMeta(kw.keep ~ (keepWildcard | keepSelective))).map {
+      case (m, branches) => RawAdtMember.Keep(branches, m)
+    }
+  }
+
+  /** `drop X` — remove a single named branch from an ADT delta body (T161).
+    *
+    * Same no-cut soft-keyword discipline as `adtKeepDef`: a branch/field named `drop` backtracks.
+    */
+  def adtDropDef[$: P]: P[RawAdtMember.Drop] = {
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
+    P(meta.withMeta(kw.drop ~ idt.symbol.map(RawTypeName.apply))).map {
+      case (m, branch) => RawAdtMember.Drop(branch, m)
+    }
+  }
+
   // Three-way tag for adt body members (T37):
   //   Right(m)          — a branch DTO/contract or structural +/-/^
   //   Left(Left(ref))   — `is <ContractRef>` clause
@@ -60,7 +95,7 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
   def adt[$: P]: P[Seq[AdtEntry]] = {
     import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(
-      (adtIncludeDef | adtExcludeDef | adtIntersectDef | adtMember | adtMemberContract)
+      (adtIncludeDef | adtExcludeDef | adtIntersectDef | adtKeepDef | adtDropDef | adtMember | adtMemberContract)
         .map(m => Right(m): AdtEntry) |
       defDto.extendedContractRef.map(ref => Left(Left(ref)): AdtEntry) |
       defDto.extendedExtractionDef.map(extr => Left(Right(extr)): AdtEntry)
