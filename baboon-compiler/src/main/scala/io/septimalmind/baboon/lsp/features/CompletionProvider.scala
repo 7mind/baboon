@@ -29,6 +29,8 @@ class CompletionProvider(
     "is",
     "has",
     "mirror",
+    "keep",
+    "drop",
     "service",
     "ns",
     "pragma",
