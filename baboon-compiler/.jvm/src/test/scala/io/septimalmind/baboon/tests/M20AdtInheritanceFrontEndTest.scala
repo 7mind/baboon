@@ -175,6 +175,27 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         }
     }
 
+    "keep a locally-redefined branch after `+ Base; - Base.X; data X {...}` (override form)" in {
+      // Regression: `- Shared.S2` previously excluded by NAME across both inherited AND local
+      // branches, silently dropping the local `data S2 { f1: i32 }`. The local declaration is
+      // authoritative: subtraction targets only the inherited branch, so the redefined S2 survives.
+      (loader: BaboonLoader[F]) =>
+        val paths = resolveBaboonFiles("baboon/m20-ok/redefine-after-exclude.baboon")
+        for {
+          outcome <- runPipeline(loader, paths)
+        } yield {
+          val family   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain   = domainFor(family, "my.ok.m20.redefine")
+          val adt      = adtFromDomain(domain, "A1", "my.ok.m20.redefine")
+          val branches = adt.members.toList.map(_.name.name).toSet
+          // A1 = (+ Shared {S1, S2}) − Shared.S2 + local {S2(f1), B1} = { S1, S2, B1 }.
+          assert(branches == Set("S1", "S2", "B1"), s"expected {S1, S2, B1}, got $branches")
+          // The surviving S2 is the LOCAL redefinition (carries field f1), not the inherited empty one.
+          val struct = branchStructure(adt, domain)
+          assert(struct.get("S2").exists(_.exists(_.startsWith("f1:"))), s"S2 should be the local redefinition with field f1, got ${struct.get("S2")}")
+        }
+    }
+
     "compute branch intersection via `^ X`" in {
       (loader: BaboonLoader[F]) =>
         val paths = resolveBaboonFiles("baboon/m20-ok/intersect.baboon")

@@ -1,0 +1,18 @@
+model my.ok.m20.redefine
+
+version "1.0.0"
+
+adt Shared {
+   data S1 {}
+   data S2 {}
+}
+
+// `+ Shared` pulls in {S1, S2}; `- Shared.S2` drops the INHERITED S2; the local
+// `data S2 { f1: i32 }` is an authoritative redefinition that must survive. Expected
+// branch set: { S1, S2(f1), B1 }.
+root adt A1 {
+   + Shared
+   - Shared.S2
+   data S2 { f1: i32 }
+   data B1 {}
+}

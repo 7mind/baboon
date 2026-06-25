@@ -115,22 +115,34 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
         val excludeNames: Set[String]   = excludeBranches.iterator.map(p => branchName(p._1)).toSet
         val intersectNames: Set[String] = intersectBranches.iterator.map(p => branchName(p._1)).toSet
 
-        // Collect all candidate branches (local + included), tagging the source for collision
-        // diagnostics. Local branches use the receiving ADT's id as their source.
-        val withSources: List[(RawAdtMember, TypeId)] =
-          localMembers.map(m => (m, receivingAdtId: TypeId)).toList ++ includeBranches
+        // Local branches use the receiving ADT's id as their source.
+        val localWithSources: List[(RawAdtMember, TypeId)] =
+          localMembers.map(m => (m, receivingAdtId: TypeId)).toList
 
-        val afterExclude: List[(RawAdtMember, TypeId)] =
-          withSources.filterNot(p => excludeNames.contains(branchName(p._1)))
+        // The set-algebra operators (`-` exclude / `^` intersect) compose the INHERITED
+        // (`+`-included) branches ONLY. A LOCAL declaration is authoritative — it is always
+        // present and is never removed by `-` or filtered out by `^`. This makes the idiomatic
+        // "override an inherited branch" form work:
+        //   `+ Base; - Base.X; data X { ...new shape... }`
+        // keeps the locally-redefined `X`. Previously `- Base.X` excluded by *name* across the
+        // whole `local ∪ includes` set, which silently dropped the local `X` too. A local branch
+        // colliding with an inherited one of the same name (without an explicit `- Base.X`) is
+        // still reported as DuplicatedAdtBranches below — the conflict must be disambiguated.
+        val includedAfterExclude: Seq[(RawAdtMember, TypeId)] =
+          includeBranches.filterNot(p => excludeNames.contains(branchName(p._1)))
 
         // Multiple `^` arms compose by UNION of intersect targets per plan §3 formula
         // `candidates ∩ ⋃ intersectSets`. `intersectNames` is the union of branch names across
         // ALL `^ X` arms (built via flatTraverseAccumErrors above). A branch survives if its name
         // appears in ANY referenced intersect target — NOT pairwise-intersection across arms.
-        // This matches the plan §3 literal but reads counter-intuitively; intended.
+        // This matches the plan §3 literal but reads counter-intuitively; intended. Intersection
+        // applies to the inherited set only (local branches are always retained, as above).
+        val includedAfterIntersect: Seq[(RawAdtMember, TypeId)] =
+          if (intersects.isEmpty) includedAfterExclude
+          else includedAfterExclude.filter(p => intersectNames.contains(branchName(p._1)))
+
         val afterIntersect: List[(RawAdtMember, TypeId)] =
-          if (intersects.isEmpty) afterExclude
-          else afterExclude.filter(p => intersectNames.contains(branchName(p._1)))
+          localWithSources ++ includedAfterIntersect
 
         // Detect duplicate branch names from different sources (Q-M20-2).
         val grouped: Map[String, List[(RawAdtMember, TypeId)]] = afterIntersect.groupBy(p => branchName(p._1))
