@@ -160,7 +160,60 @@ adt PublicErrors {
 
 Branch reuse is a syntactic expansion at the typer-early stage; downstream codegen sees the fully-expanded constructor list. The expanded ADTs participate in evolution like any other ADT — adding/removing branches in a later version follows the standard rules in [Evolution workflow](#evolution-workflow).
 
+Override form: a **local** branch declaration is authoritative. To replace an inherited branch with your own shape, include the family, drop the inherited branch by name, and declare a local one of the same name — the local declaration is never removed by `-`:
+
+```baboon
+adt Shared {
+  data S1 {}
+  data S2 {}
+}
+
+root adt A1 {
+  + Shared
+  - Shared.S2          // drop the INHERITED S2
+  data S2 { f1: i32 }  // ...and provide A1's own S2 — this one is kept
+  data B1 {}
+}
+// A1's branches: { S1, S2(f1), B1 }
+```
+
+(`-`/`^` compose the *inherited* set only; a local branch colliding with an inherited one of the same name **without** an explicit `- X.Branch` is still a `DuplicatedAdtBranches` error — disambiguate it.)
+
 Shipped: M20 / PR-62..PR-64.
+
+## ADT version-delta syntax (`keep` / `drop`)
+
+When you bump a model to a new version, changing one branch of an ADT no longer forces you to re-declare the whole ADT. Inside the body of an ADT in the **new** version, a delta block expresses the change against the **same-named ADT in the immediately-prior version**:
+
+```baboon
+model petstore.api
+version "2.0.0"
+
+import "1.0.0" { * }     // REQUIRED: brings the prior version into scope
+
+root adt Order {
+  keep *                 // inherit every branch of 1.0.0's Order...
+  drop Cancelled         // ...minus this one...
+  data Shipped { tracking: str }  // ...redefine (or add) this one.
+}
+```
+
+- `keep *` — inherit **all** branches of the prior-version ADT.
+- `keep A, B` — inherit only the named branches (selective).
+- `drop X` — remove an inherited branch.
+- `data Y { ... }` — redefine an inherited branch `Y` (replaces it) or add a brand-new branch.
+
+Rules:
+
+- A delta body **requires** an `import "<old>" { * }` header — that header is how the prior version is brought into scope to resolve `keep`/`drop` against. A delta body with no such import is rejected.
+- The referent is always the **same-named ADT in the immediately-prior version** (not an arbitrary same-name type elsewhere).
+- The following are hard errors: `drop X` of a branch absent from the prior ADT; `keep` and `drop` naming the same branch; `keep`/`drop` of a branch that is also redefined locally; a selective `keep A` of a branch absent from the prior ADT; and a delta body without the import header.
+
+This is **pure surface sugar**. A pre-pass materializes the delta into the full explicit branch list before typing, so the result is byte-for-byte identical to writing the whole ADT out by hand — the comparator, all backend codecs, and the evolution conversions are completely unaffected. `keep`/`drop` are soft keywords: a `data`/field named `keep` or `drop` still parses.
+
+Distinguish from the `+`/`-`/`^` operators above: those compose branches from **other ADTs in the same version**; `keep`/`drop` compose branches from the **prior version of the same ADT**.
+
+Shipped: G27.
 
 ## Identifier and DTO types as map keys
 
