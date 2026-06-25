@@ -209,7 +209,7 @@ Run C# tests with regular ADT codecs (Release configuration).
 ```bash
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/cs-stub"
-dotnet build -c Release
+dotnet build -c Release -p:Platform="Any CPU"
 dotnet test -c Release BaboonTests/BaboonTests.csproj
 popd
 
@@ -1152,7 +1152,7 @@ Run C# Either wiring tests.
 ```bash
 TEST_DIR="${action.test-gen-cs-wiring-either.test_dir}"
 pushd "$TEST_DIR/cs-stub"
-dotnet build -c Release
+dotnet build -c Release -p:Platform="Any CPU"
 dotnet test -c Release BaboonTests/BaboonTests.csproj
 popd
 
@@ -1203,7 +1203,7 @@ Run C# Result wiring tests.
 ```bash
 TEST_DIR="${action.test-gen-cs-wiring-result.test_dir}"
 pushd "$TEST_DIR/cs-stub"
-dotnet build -c Release
+dotnet build -c Release -p:Platform="Any CPU"
 dotnet test -c Release BaboonTests/BaboonTests.csproj
 popd
 
@@ -1254,7 +1254,7 @@ Run C# Outcome wiring tests.
 ```bash
 TEST_DIR="${action.test-gen-cs-wiring-outcome.test_dir}"
 pushd "$TEST_DIR/cs-stub"
-dotnet build -c Release
+dotnet build -c Release -p:Platform="Any CPU"
 dotnet test -c Release BaboonTests/BaboonTests.csproj
 popd
 
