@@ -35,6 +35,14 @@ jobs:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
     steps:
+      # The native-image build plus all nine language toolchains realized into the
+      # nix store exhaust the ~14 GB ubuntu runner ("No space left on device" while
+      # realizing store paths). Reclaim space before anything fills the disk.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          large-packages: true
       - uses: 7mind/github-env@minimal
         with:
           setup-nix: ${{ matrix.preconfigured != true }}
@@ -259,6 +267,15 @@ jobs:
       - name: Install mudyla
         shell: bash
         run: pip install git+https://github.com/7mind/mudyla.git
+      # The `bash` build step runs under Git Bash, whose C:\Program Files\Git\usr\bin
+      # holds a GNU coreutils `link.exe` that shadows the MSVC linker. The Rust
+      # `...-pc-windows-msvc` toolchain then invokes the wrong `link.exe` and the
+      # cargo lanes (test-gen-compat-rust) fail. Load the MSVC dev environment so the
+      # real link.exe precedes Git's on PATH.
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
       - name: Build (windows)
         shell: bash
         run: mdl --github-actions --without-nix :build :test
