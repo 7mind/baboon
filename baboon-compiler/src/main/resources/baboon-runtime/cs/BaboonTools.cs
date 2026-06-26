@@ -205,5 +205,58 @@ namespace Baboon.Runtime.Shared
 
             File.WriteAllBytes(filePath, data);
         }
-    }    
+
+        // Resolve the cross-language fixture root the same way the readers
+        // (Python/Scala/etc.) do, so the C# producer writes fixtures where every
+        // consumer looks for them regardless of the test runner's working directory.
+        // (The previous hardcoded "./../../../../../target/cs/..." relative path
+        // happened to resolve on Linux/macOS but not under Windows `dotnet test`.)
+        // Mirrors baboon-runtime/python/cross_language_fixture_path.py.
+        public static string CrossLanguageFixtureRoot()
+        {
+            var env = Environment.GetEnvironmentVariable("BABOON_CROSS_LANG_FIXTURE_ROOT");
+            if (!string.IsNullOrEmpty(env))
+            {
+                return env;
+            }
+
+            var startDir = Directory.GetCurrentDirectory();
+            for (var dir = new DirectoryInfo(startDir); dir != null; dir = dir.Parent)
+            {
+                var hasStubChild = HasStubChild(dir);
+                var strictMatch = hasStubChild && Directory.Exists(Path.Combine(dir.FullName, "target"));
+                var namedMatch = hasStubChild && dir.Name.StartsWith("test-");
+                if (strictMatch || namedMatch)
+                {
+                    return Path.Combine(dir.FullName, "target");
+                }
+            }
+
+            throw new InvalidOperationException(
+                "Could not locate the cross-language fixture root. Walked up from '" + startDir +
+                "' looking for an ancestor that has a *-stub child and either a target/ subdirectory " +
+                "or a name starting with test-. Set BABOON_CROSS_LANG_FIXTURE_ROOT to override.");
+        }
+
+        public static string CrossLanguageFixturePath(string lang, string tpe, string format)
+        {
+            return Path.Combine(CrossLanguageFixtureRoot(), lang, format, tpe);
+        }
+
+        private static bool HasStubChild(DirectoryInfo dir)
+        {
+            try
+            {
+                return dir.EnumerateDirectories().Any(d => d.Name.EndsWith("-stub"));
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+    }
 }

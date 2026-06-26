@@ -134,7 +134,7 @@ object CSCodecTestsTranslator {
         q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
            |var $decoded = $codecName.Instance.Decode(context, $serialized);
            |Assert.That($fieldName, Is.EqualTo($decoded));
-           |$BaboonTestTools.WriteBinaryFile($$"./../../../../../target/cs/json-{clue}/${definition.id.render}.json", $csEncoding.UTF8.GetBytes($nsJsonConvert.SerializeObject($serialized)));
+           |$BaboonTestTools.WriteBinaryFile($BaboonTestTools.CrossLanguageFixturePath("cs", "${definition.id.render}.json", $$"json-{clue}"), $csEncoding.UTF8.GetBytes($nsJsonConvert.SerializeObject($serialized)));
            |""".stripMargin.trim
       }
 
@@ -170,7 +170,7 @@ object CSCodecTestsTranslator {
            |    var $decoded = $codecName.Instance.Decode(context, binaryReader);
            |    Assert.That($fieldName, Is.EqualTo($decoded));
            |    
-           |    $BaboonTestTools.WriteBinaryFile($$"./../../../../../target/cs/ueba-{clue}/${definition.id.render}.uebin", $serialized);
+           |    $BaboonTestTools.WriteBinaryFile($BaboonTestTools.CrossLanguageFixturePath("cs", "${definition.id.render}.uebin", $$"ueba-{clue}"), $serialized);
            |}
            |""".stripMargin
       }
