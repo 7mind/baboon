@@ -112,6 +112,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # Same as the windows job: the kt service stubs pin Gradle's jvmToolchain(21).
+      - name: Set up JDK 21 (Gradle toolchain for kt service stubs)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Set up GraalVM (Java ${{ matrix.java-version }})
         uses: graalvm/setup-graalvm@v1
         with:
@@ -235,6 +241,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # The kt service stubs (test/services/kt*) pin Gradle's jvmToolchain(21); the runner
+      # otherwise has only GraalVM 23, so Gradle can't resolve a Java 21 toolchain. Install
+      # JDK 21 BEFORE GraalVM (which then sets the primary JAVA_HOME=23 for native-image);
+      # Gradle auto-detects the 21 toolchain via JAVA_HOME_21_X64.
+      - name: Set up JDK 21 (Gradle toolchain for kt service stubs)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Set up GraalVM (Java ${{ matrix.java-version }})
         uses: graalvm/setup-graalvm@v1
         with:
