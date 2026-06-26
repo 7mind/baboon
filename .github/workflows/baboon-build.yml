@@ -267,23 +267,23 @@ jobs:
       - name: Install mudyla
         shell: bash
         run: pip install git+https://github.com/7mind/mudyla.git
-      # The `bash` build step runs under Git Bash, whose C:\Program Files\Git\usr\bin
-      # holds a GNU coreutils `link.exe` that shadows the MSVC linker, so the Rust
-      # `...-pc-windows-msvc` toolchain links with the wrong `link.exe` and the cargo
-      # lanes (test-gen-compat-rust) fail. msvc-dev-cmd loads the MSVC toolchain and
-      # exports VCToolsInstallDir; the build step below prepends its linker dir to PATH
-      # *inside* bash (msvc-dev-cmd's PATH edits alone don't survive Git Bash's startup,
-      # which re-prioritizes /usr/bin).
+      # Git Bash's C:\Program Files\Git\usr\bin holds a GNU coreutils `link.exe` that
+      # shadows the MSVC linker, so the Rust `...-pc-windows-msvc` cargo lanes
+      # (test-gen-compat-rust) link with the wrong `link.exe` and fail. msvc-dev-cmd puts
+      # the real MSVC linker on PATH; an in-shell PATH tweak does NOT survive because mdl
+      # spawns fresh login bash shells per action that re-prioritize /usr/bin. So remove the
+      # GNU shim outright (in pwsh, not subject to bash's reshuffle) — `link.exe` then
+      # resolves to the MSVC one for every subsequent action.
       - name: Set up MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+      - name: Remove Git Bash link.exe shim (shadows the MSVC linker)
+        shell: pwsh
+        run: Remove-Item "C:\Program Files\Git\usr\bin\link.exe" -Force -ErrorAction SilentlyContinue
       - name: Build (windows)
         shell: bash
-        run: |
-          # Put the MSVC host linker ahead of Git Bash's GNU /usr/bin/link on PATH.
-          export PATH="$(cygpath -u "${VCToolsInstallDir}bin/Hostx64/x64"):$PATH"
-          mdl --github-actions --without-nix :build :test
+        run: mdl --github-actions --without-nix :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
