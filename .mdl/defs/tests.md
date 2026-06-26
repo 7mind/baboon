@@ -516,7 +516,7 @@ Run C# tests with wrapped ADT codecs (Debug configuration).
 ```bash
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/cs-stub"
-dotnet build -c Debug
+dotnet build -c Debug -p:Platform="Any CPU"
 dotnet test -c Debug BaboonTests/BaboonTests.csproj
 popd
 
@@ -888,8 +888,8 @@ dep action.test-gen-compat-dart
 dep action.test-gen-compat-swift
 
 pushd ./test/conv-test-cs
-dotnet build
-dotnet test
+dotnet build -p:Platform="Any CPU"
+dotnet test -p:Platform="Any CPU"
 popd
 
 ret success:bool=true
