@@ -268,17 +268,22 @@ jobs:
         shell: bash
         run: pip install git+https://github.com/7mind/mudyla.git
       # The `bash` build step runs under Git Bash, whose C:\Program Files\Git\usr\bin
-      # holds a GNU coreutils `link.exe` that shadows the MSVC linker. The Rust
-      # `...-pc-windows-msvc` toolchain then invokes the wrong `link.exe` and the
-      # cargo lanes (test-gen-compat-rust) fail. Load the MSVC dev environment so the
-      # real link.exe precedes Git's on PATH.
+      # holds a GNU coreutils `link.exe` that shadows the MSVC linker, so the Rust
+      # `...-pc-windows-msvc` toolchain links with the wrong `link.exe` and the cargo
+      # lanes (test-gen-compat-rust) fail. msvc-dev-cmd loads the MSVC toolchain and
+      # exports VCToolsInstallDir; the build step below prepends its linker dir to PATH
+      # *inside* bash (msvc-dev-cmd's PATH edits alone don't survive Git Bash's startup,
+      # which re-prioritizes /usr/bin).
       - name: Set up MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
       - name: Build (windows)
         shell: bash
-        run: mdl --github-actions --without-nix :build :test
+        run: |
+          # Put the MSVC host linker ahead of Git Bash's GNU /usr/bin/link on PATH.
+          export PATH="$(cygpath -u "${VCToolsInstallDir}bin/Hostx64/x64"):$PATH"
+          mdl --github-actions --without-nix :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
