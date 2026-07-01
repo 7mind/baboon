@@ -3411,6 +3411,29 @@ dep action.test-rs-wiring-async
 dep action.test-rs-wiring-async-errors
 dep action.test-diff
 
+# D40/T182: zero-service MCP lanes — permanent regression guard that the MCP
+# runtime is emitted (and the overlay compiles) even for a model with @root
+# types but NO RPC block. gen-only lanes (post-fix positive-generation check)
+# + self-contained overlay run lanes (empty-muxer runtime assertions).
+dep action.test-gen-ts-mcp-zero
+dep action.test-gen-cs-mcp-zero
+dep action.test-gen-rust-mcp-zero
+dep action.test-gen-kotlin-mcp-zero
+dep action.test-gen-java-mcp-zero
+dep action.test-gen-scala-mcp-zero
+dep action.test-gen-python-mcp-zero
+dep action.test-gen-dart-mcp-zero
+dep action.test-gen-swift-mcp-zero
+dep action.test-ts-mcp-zero
+dep action.test-cs-mcp-zero
+dep action.test-rust-mcp-zero
+dep action.test-kotlin-mcp-zero
+dep action.test-java-mcp-zero
+dep action.test-scala-mcp-zero
+dep action.test-python-mcp-zero
+dep action.test-dart-mcp-zero
+dep action.test-swift-mcp-zero
+
 ret success:bool=true
 ```
 
