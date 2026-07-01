@@ -3244,6 +3244,71 @@ popd
 ret success:bool=true
 ```
 
+# action: test-diff
+
+End-to-end smoke test for the `:diff` CLI (T173, goal G29). Runs the built
+native binary against the shared model-dir, diffing `testpkg.pkg0` from 2.0.0
+to 3.0.0, in both text and JSON output modes. Pins that the three types
+introduced in v3 — `S1` (contract), `I1` (root service), `T7_D1` (root data)
+— surface in each mode's `added` set. Checks are UNCONDITIONAL `if … exit 1`
+guards (NOT shell asserts, which are vacuous) so a regression fails the lane.
+
+The compiler prints a fixed log banner + input listing to stdout ahead of the
+diff payload (no quiet/log-level flag exists), so JSON well-formedness is
+validated against the trailing JSON object (from its first `{`-column line to
+EOF, extracted with `sed`) rather than the whole raw stdout.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+MODEL_DIR="./baboon-compiler/src/test/resources/baboon/"
+
+# --- Text mode -----------------------------------------------------------
+TEXT_OUT="$("$BABOON_BIN" --model-dir "$MODEL_DIR" :diff --domain testpkg.pkg0 --from 2.0.0 --to 3.0.0)"
+TEXT_RC=$?
+if [ "$TEXT_RC" -ne 0 ]; then
+  echo "FAIL: :diff (text) exited with $TEXT_RC" >&2
+  echo "$TEXT_OUT" >&2
+  exit 1
+fi
+for name in S1 I1 T7_D1; do
+  if ! printf '%s' "$TEXT_OUT" | grep -qF "$name"; then
+    echo "FAIL: :diff (text) output missing added type '$name'" >&2
+    echo "$TEXT_OUT" >&2
+    exit 1
+  fi
+done
+
+# --- JSON mode -----------------------------------------------------------
+JSON_OUT="$("$BABOON_BIN" --model-dir "$MODEL_DIR" :diff --domain testpkg.pkg0 --from 2.0.0 --to 3.0.0 --format json)"
+JSON_RC=$?
+if [ "$JSON_RC" -ne 0 ]; then
+  echo "FAIL: :diff (json) exited with $JSON_RC" >&2
+  echo "$JSON_OUT" >&2
+  exit 1
+fi
+# Extract the trailing JSON object (first `{`-column line .. EOF), skipping the
+# compiler's stdout log banner, then validate well-formedness (python3 is
+# available in all test lanes).
+JSON_BODY="$(printf '%s\n' "$JSON_OUT" | sed -n '/^{/,$p')"
+if ! printf '%s' "$JSON_BODY" | python3 -c 'import sys, json; json.load(sys.stdin)'; then
+  echo "FAIL: :diff (json) did not emit valid JSON" >&2
+  echo "$JSON_OUT" >&2
+  exit 1
+fi
+for name in S1 I1 T7_D1; do
+  if ! printf '%s' "$JSON_OUT" | grep -qF "$name"; then
+    echo "FAIL: :diff (json) output missing added type '$name'" >&2
+    echo "$JSON_OUT" >&2
+    exit 1
+  fi
+done
+
+echo "test-diff: :diff text + json both surface S1, I1, T7_D1"
+ret success:bool=true
+```
+
 # action: test
 
 Run complete test suite (orchestrator action).
@@ -3344,6 +3409,7 @@ dep action.test-jv-wiring-errors-async
 dep action.test-cs-wiring-errors-async
 dep action.test-rs-wiring-async
 dep action.test-rs-wiring-async-errors
+dep action.test-diff
 
 ret success:bool=true
 ```
