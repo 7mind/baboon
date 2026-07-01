@@ -918,10 +918,19 @@ object Baboon {
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
 
+    // TARGET PRESENT: Compiler axis (BLoggerImpl => stdout diagnostics + file write).
+    // TARGET ABSENT: Explorer axis, which BaboonModuleJvm binds to the Noop BLogger,
+    // so neither the 'Inputs:' line nor typer output reaches stdout; only the rendered
+    // scheme is printed to System.out and no file is written.
+    val activation = schemeOptions.target match {
+      case Some(_) => Activation(BaboonModeAxis.Compiler)
+      case None    => Activation(BaboonModeAxis.Explorer)
+    }
+
     runner.run {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
-        .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
+        .produceRun(m, activation) {
           (loader: BaboonLoader[EitherF], logger: BLogger, renderer: BaboonSchemeRenderer) =>
             for {
               inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
@@ -947,13 +956,18 @@ object Baboon {
               result <- F.fromEither(renderer.render(loadedModels, pkg, version).left.map(e => new RuntimeException(e)))
 
               _ <- F.maybeSuspend {
-                val targetPath = Paths.get(schemeOptions.target)
-                val parent     = targetPath.getParent
-                if (parent != null) {
-                  java.nio.file.Files.createDirectories(parent)
+                schemeOptions.target match {
+                  case Some(target) =>
+                    val targetPath = Paths.get(target)
+                    val parent     = targetPath.getParent
+                    if (parent != null) {
+                      java.nio.file.Files.createDirectories(parent)
+                    }
+                    java.nio.file.Files.writeString(targetPath, result)
+                    logger.message(s"Scheme written to: ${targetPath.toAbsolutePath}")
+                  case None =>
+                    System.out.println(result)
                 }
-                java.nio.file.Files.writeString(targetPath, result)
-                logger.message(s"Scheme written to: ${targetPath.toAbsolutePath}")
               }
             } yield {}
         }

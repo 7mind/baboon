@@ -452,8 +452,8 @@ case class SchemeCLIOptions(
   domain: String,
   @HelpMessage("Version (e.g., '1.0.0')")
   version: String,
-  @HelpMessage("Target output file path")
-  target: String,
+  @HelpMessage("Target output file path (when absent, the scheme is printed to stdout)")
+  target: Option[String],
 )
 
 case class SwCLIOptions(
