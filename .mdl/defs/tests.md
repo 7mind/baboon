@@ -4400,6 +4400,494 @@ ret success:bool=true
 ret test_dir:string="$TEST_DIR"
 ```
 
+# action: test-cs-mcp-zero
+
+Run the C# ZERO-SERVICE MCP overlay test (D40/T178) — RED baseline.
+Sibling of `test-cs-mcp`, but gens the zero-service fixture
+`mcp-stub-zero-services-ok/` (declares @root types, NO RPC block) into a full
+cs-stub copy and overlays `test/cs-stub-mcp-zero-overlay/`. This lane is
+SELF-CONTAINED (it gens + overlays + compiles, exactly like `test-gen-cs-mcp`
++ `test-cs-mcp` folded into one) — the T177 `test-gen-cs-mcp-zero` gen-only lane
+is a separate bare-dir RED-baseline gen check.
+
+The overlay test imports ONLY the static MCP runtime namespace
+`Baboon.Runtime.Shared` (AbstractMcpMuxer / McpServerInfo / McpSession /
+JsonRpcRequest / JsonRpcResponse) — with zero services there is NO generated
+`<Service>McpServer` to reference, so those types resolve ONLY from the static
+`BaboonMcpRuntime.cs`. PRE-FIX (RED) the generator emits NO `BaboonMcpRuntime.cs`
+for a zero-service model, so the overlay FAILS TO COMPILE with CS0246/CS0234
+(missing runtime type / missing namespace) — the D40 reproduction. POST-FIX the
+runtime is emitted, the overlay compiles, and the empty-muxer runtime assertions
+(tools/list empty; unknown-tool call → -32602) pass.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-mcp-zero-overlay"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-cs-mcp-zero-overlay.lock \
+  :cs \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Baboon.Runtime.Shared.Either" \
+  --service-result-pattern="<\$error, \$success>" \
+  --cs-generate-mcp-server=true
+
+rsync -a ./test/cs-stub-mcp-zero-overlay/ "$TEST_DIR/cs-stub/"
+
+pushd "$TEST_DIR/cs-stub"
+dotnet build -c Release McpZeroTests/McpZeroTests.csproj
+dotnet test -c Release McpZeroTests/McpZeroTests.csproj
+popd
+
+ret success:bool=true
+```
+
+# action: test-rust-mcp-zero
+
+Run the Rust ZERO-SERVICE MCP overlay test (D40/T178) — RED baseline.
+Sibling of `test-rust-mcp`; gens the zero-service fixture into a rs-stub copy
+(Cargo.toml only, generated tree into src/) and overlays
+`test/rust-stub-mcp-zero-overlay/`. Self-contained (gen + overlay + compile).
+
+The overlay imports ONLY the static runtime module
+`baboon_rs_stub::baboon_mcp_server` (AbstractMcpMuxer / McpServerInfo /
+McpSession / JsonRpcRequest / json_rpc_error_codes) — with zero services there is
+NO `<Service>McpServer` module, so the runtime resolves ONLY from the static
+`baboon_mcp_server.rs` (and its `pub mod` declaration). PRE-FIX (RED) that file
+is NOT emitted, so `cargo test` FAILS with E0432/E0433 (unresolved import /
+failed to resolve module `baboon_mcp_server`) — the D40 reproduction. POST-FIX
+the runtime is emitted and the empty-muxer assertions pass.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-rust-mcp-zero-overlay"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/rs-stub"
+mkdir -p "$TEST_DIR/rs-stub"
+
+cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-rust-mcp-zero-overlay.lock \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type=Result \
+  '--service-result-pattern=<$success, $error>' \
+  --rs-generate-mcp-server=true
+
+rsync -a ./test/rust-stub-mcp-zero-overlay/ "$TEST_DIR/rs-stub/"
+
+pushd "$TEST_DIR/rs-stub"
+RUSTFLAGS="-D warnings" cargo test --test mcp_zero_tests
+popd
+
+ret success:bool=true
+```
+
+# action: test-kotlin-mcp-zero
+
+Run the Kotlin ZERO-SERVICE MCP overlay test (D40/T178) — RED baseline.
+Sibling of `test-kotlin-mcp`; gens the zero-service fixture into a kt-stub copy
+and overlays `test/kotlin-stub-mcp-zero-overlay/`. Self-contained.
+
+The overlay imports ONLY the static runtime package `baboon.runtime.shared`
+(AbstractMcpMuxer / McpServerInfo / McpSession / JsonRpcRequest) — with zero
+services there is NO generated `<Service>McpServer`, so those types resolve ONLY
+from the static `BaboonMcpRuntime.kt`. PRE-FIX (RED) that file is NOT emitted, so
+`gradle test` FAILS to compile (unresolved reference: AbstractMcpMuxer) — the D40
+reproduction. POST-FIX the runtime is emitted and the empty-muxer assertions pass.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-kotlin-mcp-zero-overlay"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/kt-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --exclude='.gradle' \
+  ./test/kt-stub/ "$TEST_DIR/kt-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-kotlin-mcp-zero-overlay.lock \
+  :kotlin \
+  --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
+  --kt-write-evolution-dict=true \
+  --kt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Either" \
+  '--service-result-pattern=<$error, $success>' \
+  --kt-generate-mcp-server=true
+
+rsync -a ./test/kotlin-stub-mcp-zero-overlay/ "$TEST_DIR/kt-stub/"
+
+pushd "$TEST_DIR/kt-stub"
+gradle --no-daemon clean test --tests "mcpzero.McpZeroTests"
+popd
+
+ret success:bool=true
+```
+
+# action: test-java-mcp-zero
+
+Run the Java ZERO-SERVICE MCP overlay test (D40/T178) — RED baseline.
+Sibling of `test-java-mcp`; gens the zero-service fixture into a jv-stub copy
+and overlays `test/java-stub-mcp-zero-overlay/`. Self-contained.
+
+The overlay imports ONLY the static runtime package `baboon.runtime.shared`
+(AbstractMcpMuxer / McpServerInfo / McpSession / JsonRpcRequest / JsonRpcResponse)
+— with zero services there is NO generated `<Service>McpServer`, so those types
+resolve ONLY from the 14 static `baboon.runtime.shared` MCP `.java` files.
+PRE-FIX (RED) NONE of those files are emitted, so `mvn test` FAILS to compile
+(`package baboon.runtime.shared does not exist` / `cannot find symbol
+AbstractMcpMuxer`) — the D40 reproduction. POST-FIX the runtime is emitted and
+the empty-muxer assertions pass.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-java-mcp-zero-overlay"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/jv-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
+  ./test/jv-stub/ "$TEST_DIR/jv-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-java-mcp-zero-overlay.lock \
+  :java \
+  --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
+  --jv-write-evolution-dict=true \
+  --jv-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="baboon.runtime.shared.BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --jv-generate-mcp-server=true
+
+rsync -a ./test/java-stub-mcp-zero-overlay/ "$TEST_DIR/jv-stub/"
+
+pushd "$TEST_DIR/jv-stub"
+mvn clean test -Dtest=mcpzero.McpZeroTests
+popd
+
+ret success:bool=true
+```
+
+# action: test-scala-mcp-zero
+
+Run the Scala ZERO-SERVICE MCP overlay test (D40/T178) — RED baseline.
+Sibling of `test-scala-mcp`; gens the zero-service fixture into a scala-stub-mcp
+copy and overlays `test/scala-stub-mcp-zero-overlay/`. Self-contained.
+(D24: Scala MCP requires Either service-result mode.)
+
+The overlay imports ONLY the static runtime package `baboon.runtime.shared`
+(AbstractMcpMuxer / McpServerInfo / McpSession / JsonRpcRequest) — with zero
+services there is NO generated `<Service>McpServer`, so those types resolve ONLY
+from the static `BaboonMcpRuntime.scala`. PRE-FIX (RED) that file is NOT emitted,
+so `sbt test` FAILS to compile (not found: type AbstractMcpMuxer) — the D40
+reproduction. POST-FIX the runtime is emitted and the empty-muxer assertions pass.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-scala-mcp-zero-overlay"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/scala-stub-mcp"
+
+rsync -a --exclude='target' --exclude='project/target' \
+  ./test/scala-stub-mcp/ "$TEST_DIR/scala-stub-mcp/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-scala-mcp-zero-overlay.lock \
+  :scala \
+  --output "$TEST_DIR/scala-stub-mcp/src/main/scala/generated-main" \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Either" \
+  "--service-result-pattern=[\$error, \$success]" \
+  --scala-generate-mcp-server=true
+
+rsync -a ./test/scala-stub-mcp-zero-overlay/ "$TEST_DIR/scala-stub-mcp/"
+
+pushd "$TEST_DIR/scala-stub-mcp"
+sbt test
+popd
+
+ret success:bool=true
+```
+
+# action: test-python-mcp-zero
+
+Run the Python ZERO-SERVICE MCP overlay test (D40/T178) — RED baseline.
+Sibling of `test-python-mcp`; gens the zero-service fixture into a py-stub copy
+and overlays `test/py-stub-mcp-zero-overlay/`. Self-contained.
+
+The overlay imports ONLY the static runtime module `baboon_mcp_runtime`
+(AbstractMcpMuxer / McpServerInfo / McpSession / JsonRpcRequest) — with zero
+services there is NO generated `<service>_mcp_server` module, so those symbols
+resolve ONLY from the static `baboon_mcp_runtime.py`. PRE-FIX (RED) that file is
+NOT emitted, so the test FAILS with `ModuleNotFoundError: baboon_mcp_runtime`
+(collected as an import error, not a test failure) — the D40 reproduction.
+POST-FIX the runtime is emitted and the empty-muxer assertions pass.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-python-mcp-zero-overlay"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/py-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' \
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-python-mcp-zero-overlay.lock \
+  :python \
+  --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --py-generate-mcp-server=true
+
+rsync -a ./test/py-stub-mcp-zero-overlay/ "$TEST_DIR/py-stub/"
+
+pushd "$TEST_DIR/py-stub"
+python3 -m venv .venv
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
+python3 -m pip install -r requirements.txt
+python3 -m unittest BaboonTests.mcp_zero.test_mcp_zero
+popd
+
+ret success:bool=true
+```
+
+# action: test-ts-mcp-zero
+
+Run the TypeScript ZERO-SERVICE MCP overlay test (D40/T178) — RED baseline.
+Sibling of `test-ts-mcp`; gens the zero-service fixture into a ts-stub copy and
+overlays `test/ts-stub-mcp-zero-overlay/`. Self-contained.
+
+The overlay imports ONLY the static runtime module `BaboonMcpRuntime`
+(AbstractMcpMuxer / McpServerInfo / McpSession / JsonRpcRequest / JsonRpcResponse
+/ JsonRpcErrorCodes) — with zero services there is NO generated per-service
+`mcp-server` module, so those symbols resolve ONLY from the static
+`BaboonMcpRuntime.ts`. PRE-FIX (RED) that file is NOT emitted, so `vitest`/`tsc`
+FAILS with "Cannot find module './Generated/BaboonMcpRuntime'" — the D40
+reproduction. POST-FIX the runtime is emitted and the empty-muxer assertions pass.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-mcp-zero-overlay"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-ts-mcp-zero-overlay.lock \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --ts-generate-mcp-server=true
+
+rsync -a ./test/ts-stub-mcp-zero-overlay/ "$TEST_DIR/ts-stub/"
+
+pushd "$TEST_DIR/ts-stub"
+npm install
+npx vitest run src/mcp.zero.test.ts
+popd
+
+ret success:bool=true
+```
+
+# action: test-dart-mcp-zero
+
+Run the Dart ZERO-SERVICE MCP overlay test (D40/T178) — RED baseline.
+Sibling of `test-dart-mcp` (no-errors mode); gens the zero-service fixture into a
+dt-stub copy and overlays `test/dart-stub-mcp-zero-overlay/`. Self-contained.
+
+The sibling `test-gen-dart-mcp` lane `mv`s `baboon_mcp_runtime.dart` into the
+baboon_runtime package post-codegen; on a ZERO-SERVICE model that file is NOT
+emitted pre-fix, so the `mv` is DELIBERATELY OMITTED here (there is nothing to
+move — mirrors the T177 gen-lane note). The other four runtime files are moved
+as usual so the domain lib still resolves.
+
+The overlay imports ONLY the static runtime `package:baboon_runtime/
+baboon_mcp_runtime.dart` (AbstractMcpMuxer / McpServerInfo / McpSession /
+JsonRpcRequest / JsonRpcResponse) — with zero services there is NO generated
+`<service>_mcp_server`, so those symbols resolve ONLY from that static file.
+PRE-FIX (RED) it is NOT emitted, so `dart analyze`/`dart test` FAILS with
+"Target of URI doesn't exist: 'package:baboon_runtime/baboon_mcp_runtime.dart'"
+(and undefined class AbstractMcpMuxer) — the D40 reproduction. POST-FIX the
+runtime is emitted and moved, and the empty-muxer assertions pass.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-dart-mcp-zero-overlay"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/dt-stub"
+
+rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
+  ./test/dt-stub/ "$TEST_DIR/dt-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-dart-mcp-zero-overlay.lock \
+  :dart \
+  --output "$TEST_DIR/dt-stub/lib" \
+  --dt-write-evolution-dict=true \
+  --dt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --dt-generate-mcp-server=true
+
+# Move the domain runtime files into the baboon_runtime package (same as regular-adt).
+# NOTE: baboon_mcp_runtime.dart is DELIBERATELY NOT moved — on a zero-service model
+# it is not emitted pre-fix (D40 RED baseline), so there is nothing to move.
+mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+
+rsync -a ./test/dart-stub-mcp-zero-overlay/ "$TEST_DIR/dt-stub/"
+
+pushd "$TEST_DIR/dt-stub"
+dart pub get
+dart analyze --fatal-warnings lib/ test/mcp_zero/
+dart test test/mcp_zero/mcp_zero_tests.dart
+popd
+
+ret success:bool=true
+```
+
+# action: test-swift-mcp-zero
+
+Run the Swift ZERO-SERVICE MCP overlay test (D40/T178) — RED baseline.
+Sibling of `test-swift-mcp` (no-errors mode); gens the zero-service fixture into
+a self-contained Swift package and overlays `test/swift-stub-mcp-zero-overlay/`.
+Self-contained.
+
+The overlay imports the generated `BaboonRuntime` module and references ONLY the
+static MCP runtime types (AbstractMcpMuxer / McpServerInfo / McpSession /
+JsonRpcRequest / JsonRpcResponse) that live in `baboon_mcp_runtime.swift`. With
+zero services there is NO generated `<Service>McpServer`, so those types come
+ONLY from that static file. PRE-FIX (RED) `baboon_mcp_runtime.swift` is NOT
+emitted, so `swift test` FAILS with "cannot find 'AbstractMcpMuxer' in scope" —
+the D40 reproduction. POST-FIX the runtime is emitted and the empty-muxer
+assertions pass.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-swift-mcp-zero-overlay"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sw-stub"
+mkdir -p "$TEST_DIR/sw-stub/Sources"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-swift-mcp-zero-overlay.lock \
+  :swift \
+  --output "$TEST_DIR/sw-stub/Sources" \
+  --sw-write-evolution-dict=true \
+  --sw-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --sw-generate-mcp-server=true
+
+# Swift SPM per-module fixture fan-out (mirrors test-gen-swift-mcp) — guarded no-op
+# on this MCP pass which emits no --test-output helper.
+SW_BTESTS="$TEST_DIR/sw-stub/Tests/BaboonTests"
+if [ -f "$SW_BTESTS/CrossLanguageFixturePath.swift" ]; then
+  for sub in "$SW_BTESTS"/*/; do
+    [ -d "$sub" ] || continue
+    cp "$SW_BTESTS/CrossLanguageFixturePath.swift" "$sub"
+  done
+  rm -f "$SW_BTESTS/CrossLanguageFixturePath.swift"
+fi
+
+rsync -a ./test/swift-stub-mcp-zero-overlay/ "$TEST_DIR/sw-stub/"
+
+if ! command -v swift &> /dev/null; then
+  if [[ "$(uname)" == "Linux" ]]; then
+    echo "Swift is required on Linux but was not found in PATH" >&2
+    exit 1
+  fi
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
+
+ret success:bool=true
+```
+
 # action: test-gen-ts-mcp-async
 
 Generate code for the TypeScript ASYNC MCP round-trip overlay test (D24/G11).
