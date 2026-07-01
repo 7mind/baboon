@@ -138,6 +138,7 @@ object Baboon {
        |  :lsp                     Start LSP server
        |  :explore                 Start interactive explorer
        |  :scheme                  Emit a cleaned-up single .baboon file for a domain version
+       |  :diff                    Report the schema diff between two versions of a domain
        |
        |Common transpiler options (apply to all language modalities):
        |  --output <dir>           Output directory for generated code (required)
@@ -175,6 +176,13 @@ object Baboon {
        |  --version <version>      Version string (e.g., '1.0.0')
        |  --target <file>          Target output file path
        |
+       |Diff options (:diff):
+       |  --domain <name>          Domain name (e.g., 'my.domain.name')
+       |  --from <version>         Older version (e.g., '1.0.0')
+       |  --to <version>           Newer version (e.g., '2.0.0')
+       |  --target <file>          Target output file path (when absent, the diff is printed to stdout)
+       |  --format {text|json}     Output format (default: text)
+       |
        |LSP options (:lsp):
        |  --port <port>            TCP port to listen on (default: stdio)
        |
@@ -185,6 +193,7 @@ object Baboon {
        |  baboon --model-dir ./models :lsp --port 5007
        |  baboon --model-dir ./models :explore
        |  baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
+       |  baboon --model-dir ./models :diff --domain=my.pkg --from=1.0.0 --to=2.0.0 --format=json
        |""".stripMargin
   }
 
