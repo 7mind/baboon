@@ -15,6 +15,11 @@ trait BaboonComparator[F[+_, +_]] {
     pkg: Pkg,
     versions: NEMap[Version, Domain],
   ): F[NEList[BaboonIssue], BaboonEvolution]
+
+  def compare(
+    last: Domain,
+    prev: Domain,
+  ): F[NEList[BaboonIssue], BaboonDiff]
 }
 
 object BaboonComparator {
@@ -157,7 +162,7 @@ object BaboonComparator {
       }
     }
 
-    private def compare(
+    override def compare(
       last: Domain,
       prev: Domain,
     ): F[NEList[BaboonIssue], BaboonDiff] = {

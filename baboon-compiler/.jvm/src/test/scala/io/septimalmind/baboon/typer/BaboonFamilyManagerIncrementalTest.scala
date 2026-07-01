@@ -173,6 +173,23 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
       val latest = versions.keySet.toList.sorted(Version.ordering).last
       F.pure(BaboonEvolution(pkg, latest, Map.empty, Map.empty, Map.empty))
     }
+
+    override def compare(
+      last: Domain,
+      prev: Domain,
+    ): F[NEList[BaboonIssue], BaboonDiff] = {
+      val F = implicitly[Error2[F]]
+      val changes = BaboonChanges(
+        Set.empty,
+        Set.empty,
+        Set.empty,
+        Set.empty,
+        Set.empty,
+        Set.empty,
+        Map.empty,
+      )
+      F.pure(BaboonDiff(EvolutionStep(prev.version, last.version), changes, Map.empty))
+    }
   }
 
   private final class NoopValidator[F[+_, +_]: Error2] extends BaboonValidator[F] {
