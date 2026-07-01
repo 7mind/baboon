@@ -52,16 +52,12 @@ class DtMcpServerGenerator[F[+_, +_]: Error2](
         servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
     }
 
-    if (perService.isEmpty) {
-      F.pure(Sources(Map.empty))
-    } else {
-      val runtimeFile =
-        "baboon_mcp_runtime.dart" -> OutputFile(
-          BaboonRuntimeResources.read("baboon-runtime/dart/baboon_mcp_runtime.dart"),
-          io.septimalmind.baboon.CompilerProduct.Runtime,
-        )
-      F.pure(Sources((runtimeFile :: perService).toMap))
-    }
+    val runtimeFile =
+      "baboon_mcp_runtime.dart" -> OutputFile(
+        BaboonRuntimeResources.read("baboon-runtime/dart/baboon_mcp_runtime.dart"),
+        io.septimalmind.baboon.CompilerProduct.Runtime,
+      )
+    F.pure(Sources((runtimeFile :: perService).toMap))
   }
 
   private def servicesOf(domain: Domain): List[Typedef.Service] =

@@ -58,16 +58,12 @@ class KtMcpServerGenerator[F[+_, +_]: Error2](
         servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
     }
 
-    if (perService.isEmpty) {
-      F.pure(Sources(Map.empty))
-    } else {
-      val runtimeFile =
-        "BaboonMcpRuntime.kt" -> OutputFile(
-          BaboonRuntimeResources.read("baboon-runtime/kotlin/BaboonMcpRuntime.kt"),
-          io.septimalmind.baboon.CompilerProduct.Runtime,
-        )
-      F.pure(Sources((runtimeFile :: perService).toMap))
-    }
+    val runtimeFile =
+      "BaboonMcpRuntime.kt" -> OutputFile(
+        BaboonRuntimeResources.read("baboon-runtime/kotlin/BaboonMcpRuntime.kt"),
+        io.septimalmind.baboon.CompilerProduct.Runtime,
+      )
+    F.pure(Sources((runtimeFile :: perService).toMap))
   }
 
   private def servicesOf(domain: Domain): List[Typedef.Service] =

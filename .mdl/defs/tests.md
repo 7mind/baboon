@@ -4765,16 +4765,16 @@ Sibling of `test-dart-mcp` (no-errors mode); gens the zero-service fixture into 
 dt-stub copy and overlays `test/dart-stub-mcp-zero-overlay/`. Self-contained.
 
 The sibling `test-gen-dart-mcp` lane `mv`s `baboon_mcp_runtime.dart` into the
-baboon_runtime package post-codegen; on a ZERO-SERVICE model that file is NOT
-emitted pre-fix, so the `mv` is DELIBERATELY OMITTED here (there is nothing to
-move — mirrors the T177 gen-lane note). The other four runtime files are moved
-as usual so the domain lib still resolves.
+baboon_runtime package post-codegen; POST-FIX (D40/T179) the zero-service model
+emits that runtime file unconditionally, so — like the sibling — it is moved into
+the baboon_runtime package here. The other four runtime files are moved as usual
+so the domain lib still resolves.
 
 The overlay imports ONLY the static runtime `package:baboon_runtime/
 baboon_mcp_runtime.dart` (AbstractMcpMuxer / McpServerInfo / McpSession /
 JsonRpcRequest / JsonRpcResponse) — with zero services there is NO generated
 `<service>_mcp_server`, so those symbols resolve ONLY from that static file.
-PRE-FIX (RED) it is NOT emitted, so `dart analyze`/`dart test` FAILS with
+PRE-FIX (RED, T178) it was NOT emitted, so `dart analyze`/`dart test` FAILED with
 "Target of URI doesn't exist: 'package:baboon_runtime/baboon_mcp_runtime.dart'"
 (and undefined class AbstractMcpMuxer) — the D40 reproduction. POST-FIX the
 runtime is emitted and moved, and the empty-muxer assertions pass.
@@ -4804,12 +4804,13 @@ $BABOON_BIN \
   --dt-generate-mcp-server=true
 
 # Move the domain runtime files into the baboon_runtime package (same as regular-adt).
-# NOTE: baboon_mcp_runtime.dart is DELIBERATELY NOT moved — on a zero-service model
-# it is not emitted pre-fix (D40 RED baseline), so there is nothing to move.
+# POST-FIX (D40/T179): baboon_mcp_runtime.dart is now emitted unconditionally on a
+# zero-service model, so it is moved into the package like the sibling test-gen-dart-mcp lane.
 mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_mcp_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 
 rsync -a ./test/dart-stub-mcp-zero-overlay/ "$TEST_DIR/dt-stub/"
 

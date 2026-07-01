@@ -55,16 +55,12 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
         servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
     }
 
-    if (perService.isEmpty) {
-      F.pure(Sources(Map.empty))
-    } else {
-      val runtimeFile =
-        "BaboonMcpRuntime.ts" -> OutputFile(
-          BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonMcpRuntime.ts"),
-          io.septimalmind.baboon.CompilerProduct.Runtime,
-        )
-      F.pure(Sources((runtimeFile :: perService).toMap))
-    }
+    val runtimeFile =
+      "BaboonMcpRuntime.ts" -> OutputFile(
+        BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonMcpRuntime.ts"),
+        io.septimalmind.baboon.CompilerProduct.Runtime,
+      )
+    F.pure(Sources((runtimeFile :: perService).toMap))
   }
 
   private def servicesOf(domain: Domain): List[Typedef.Service] =
