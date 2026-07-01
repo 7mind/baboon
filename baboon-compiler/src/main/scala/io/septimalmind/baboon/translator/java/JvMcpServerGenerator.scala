@@ -58,33 +58,29 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
         servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
     }
 
-    if (perService.isEmpty) {
-      F.pure(Sources(Map.empty))
-    } else {
-      // Additive MCP runtime files (one class per file, all in baboon.runtime.shared).
-      val mcpRuntimeFiles: List[(String, OutputFile)] = List(
-        "JsonRpcRequest.java",
-        "JsonRpcError.java",
-        "JsonRpcResponse.java",
-        "McpProtocol.java",
-        "McpSession.java",
-        "McpToolEntry.java",
-        "McpServerInfo.java",
-        "IBaboonMcpServer.java",
-        "IBaboonRoutableMcpServer.java",
-        "McpJsonInvoke.java",
-        "AbstractBaboonMcpServer.java",
-        "BaboonMcpWiringError.java",
-        "BaboonMcpWiringException.java",
-        "AbstractMcpMuxer.java",
-      ).map { fname =>
-        fname -> OutputFile(
-          BaboonRuntimeResources.read(s"baboon-runtime/java/$fname"),
-          io.septimalmind.baboon.CompilerProduct.Runtime,
-        )
-      }
-      F.pure(Sources((mcpRuntimeFiles ++ perService).toMap))
+    // Additive MCP runtime files (one class per file, all in baboon.runtime.shared).
+    val mcpRuntimeFiles: List[(String, OutputFile)] = List(
+      "JsonRpcRequest.java",
+      "JsonRpcError.java",
+      "JsonRpcResponse.java",
+      "McpProtocol.java",
+      "McpSession.java",
+      "McpToolEntry.java",
+      "McpServerInfo.java",
+      "IBaboonMcpServer.java",
+      "IBaboonRoutableMcpServer.java",
+      "McpJsonInvoke.java",
+      "AbstractBaboonMcpServer.java",
+      "BaboonMcpWiringError.java",
+      "BaboonMcpWiringException.java",
+      "AbstractMcpMuxer.java",
+    ).map { fname =>
+      fname -> OutputFile(
+        BaboonRuntimeResources.read(s"baboon-runtime/java/$fname"),
+        io.septimalmind.baboon.CompilerProduct.Runtime,
+      )
     }
+    F.pure(Sources((mcpRuntimeFiles ++ perService).toMap))
   }
 
   private def servicesOf(domain: Domain): List[Typedef.Service] =

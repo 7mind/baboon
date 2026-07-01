@@ -39,7 +39,7 @@ class McpZeroTests extends AnyFlatSpec with Matchers {
     val session = new McpSession()
     mux.handle(
       JsonRpcRequest(
-        Some(Json.fromInt(0)),
+        Some(JsonRpcId.LongId(0)),
         "initialize",
         Some(Json.obj(
           "protocolVersion" -> Json.fromString("2025-06-18"),
@@ -59,7 +59,7 @@ class McpZeroTests extends AnyFlatSpec with Matchers {
     val session = initedSession(mux)
 
     val resp = mux.handle(
-      JsonRpcRequest(Some(Json.fromInt(1)), "tools/list", None),
+      JsonRpcRequest(Some(JsonRpcId.LongId(1)), "tools/list", None),
       session, null.asInstanceOf[Any], codecCtx,
     )
     resp should not be empty
@@ -77,7 +77,7 @@ class McpZeroTests extends AnyFlatSpec with Matchers {
 
     val resp = mux.handle(
       JsonRpcRequest(
-        Some(Json.fromInt(2)),
+        Some(JsonRpcId.LongId(2)),
         "tools/call",
         Some(Json.obj("name" -> Json.fromString("anything_at_all"), "arguments" -> Json.obj())),
       ),
