@@ -456,6 +456,19 @@ case class SchemeCLIOptions(
   target: Option[String],
 )
 
+case class DiffCLIOptions(
+  @HelpMessage("Domain name (e.g., 'my.domain.name')")
+  domain: String,
+  @HelpMessage("Older version (e.g., '1.0.0')")
+  from: String,
+  @HelpMessage("Newer version (e.g., '2.0.0')")
+  to: String,
+  @HelpMessage("Target output file path (when absent, the diff is printed to stdout)")
+  target: Option[String],
+  @HelpMessage("Output format: text|json (default: text)")
+  format: Option[String],
+)
+
 case class SwCLIOptions(
   @Recurse
   generic: GenericTranspilerCLIOptions,
