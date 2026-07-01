@@ -7,8 +7,9 @@ import io.septimalmind.baboon.lsp._
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.BaboonModeAxis
+import io.septimalmind.baboon.diff.BaboonDiffRenderer
 import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonComparator, BaboonEnquiries}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, Pkg, Version}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.impl.BioEither
@@ -245,6 +246,7 @@ object Baboon {
       case MultiModalArgs(generalArgs, modalities) =>
         val isExploreMode = modalities.exists { case ModalityArgs(id, _) => id == "explore" }
         val isSchemeMode  = modalities.exists { case ModalityArgs(id, _) => id == "scheme" }
+        val isDiffMode    = modalities.exists { case ModalityArgs(id, _) => id == "diff" }
         val _             = isLspMode || modalities.exists { case ModalityArgs(id, _) => id == "lsp" }
 
         if (isLspMode) {
@@ -312,6 +314,29 @@ object Baboon {
             import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
 
             schemeEntrypoint(directoryInputs, individualInputs, schemeOptions._1)
+          }
+          out match {
+            case Left(value) =>
+              System.err.println(value.toList.niceList())
+              System.exit(1)
+              ()
+            case Right(_) =>
+              System.exit(0)
+              ()
+          }
+        } else if (isDiffMode) {
+          val diffModality = modalities.find(_.id == "diff").get
+          val out = for {
+            generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
+            diffOptions    <- CaseApp.parse[DiffCLIOptions](diffModality.args).leftMap(e => NEList(s"Can't parse diff CLI: $e"))
+          } yield {
+            val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+
+            import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
+            import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+            diffEntrypoint(directoryInputs, individualInputs, diffOptions._1)
           }
           out match {
             case Left(value) =>
@@ -916,6 +941,132 @@ object Baboon {
       case None =>
         // TARGET ABSENT: Explorer axis (Noop BLogger) + scheme printed to Console.out.
         schemeEntrypointToStdout(directoryInputs, individualInputs, pkg, version)
+    }
+  }
+
+  /** `:diff` seam, modeled on [[schemeEntrypoint]]. Loads the family, resolves the
+    * domain lineage + both endpoint versions, compares newer-vs-older
+    * (`compare(last = to, prev = from)` per Q47 from->to), and renders the whole-domain
+    * diff via [[BaboonDiffRenderer]] (text default; JSON when `--format json`).
+    * Writes to `--target` file if present (mkdirs + writeString, as schemeEntrypointToFile)
+    * else prints to stdout. Missing domain/version exits nonzero with an actionable message
+    * that lists what IS available.
+    */
+  private def diffEntrypoint(
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    diffOptions: DiffCLIOptions,
+  )(implicit
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
+  ): Unit = {
+    val pkg         = Pkg(NEList.unsafeFrom(diffOptions.domain.split("\\.").toList))
+    val fromVersion = Version.parse(diffOptions.from)
+    val toVersion   = Version.parse(diffOptions.to)
+    val emitJson    = diffOptions.format.contains("json")
+
+    val options = CompilerOptions(
+      debug                    = false,
+      individualInputs         = individualInputs,
+      directoryInputs          = directoryInputs,
+      targets                  = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockFile                 = None,
+      emitOnly                 = None,
+    )
+    val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
+    import PathTools.*
+
+    runner.run {
+      Injector
+        .NoCycles[EitherF[Throwable, _]]()
+        .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
+          (loader: BaboonLoader[EitherF], logger: BLogger, comparator: BaboonComparator[EitherF]) =>
+            for {
+              inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
+                dir =>
+                  IzFiles
+                    .walk(dir.toFile)
+                    .filter(_.toFile.getName.endsWith(".baboon"))
+              })
+              _ <- F.maybeSuspend {
+                logger.message(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
+              }
+
+              family <- loader.load(inputModels.toList).catchAll {
+                value =>
+                  System.err.println("Loader failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(4)
+              }
+
+              lineage <- F.maybeSuspend {
+                family.domains.toMap.get(pkg) match {
+                  case Some(l) => l
+                  case None =>
+                    val available = family.domains.toMap.keys.map(_.path.mkString(".")).toList.sorted
+                    System.err.println(s"Domain not found: ${diffOptions.domain}")
+                    System.err.println(s"Available domains: ${available.niceList()}")
+                    sys.exit(5)
+                }
+              }
+
+              versions = lineage.versions.toMap
+
+              fromDomain <- F.maybeSuspend {
+                versions.get(fromVersion) match {
+                  case Some(d) => d
+                  case None =>
+                    val available = versions.keys.map(_.toString).toList.sorted
+                    System.err.println(s"Version not found in domain ${diffOptions.domain}: ${diffOptions.from}")
+                    System.err.println(s"Available versions: ${available.niceList()}")
+                    sys.exit(5)
+                }
+              }
+
+              toDomain <- F.maybeSuspend {
+                versions.get(toVersion) match {
+                  case Some(d) => d
+                  case None =>
+                    val available = versions.keys.map(_.toString).toList.sorted
+                    System.err.println(s"Version not found in domain ${diffOptions.domain}: ${diffOptions.to}")
+                    System.err.println(s"Available versions: ${available.niceList()}")
+                    sys.exit(5)
+                }
+              }
+
+              // Q47 from->to: the newer version is `last`, the older is `prev`.
+              diff <- comparator.compare(last = toDomain, prev = fromDomain).catchAll {
+                value =>
+                  System.err.println("Comparison failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(6)
+              }
+
+              renderer = new BaboonDiffRenderer
+              result   = if (emitJson) renderer.renderJson(diff) else renderer.renderText(diff)
+
+              _ <- F.maybeSuspend {
+                diffOptions.target match {
+                  case Some(target) =>
+                    val targetPath = Paths.get(target)
+                    val parent     = targetPath.getParent
+                    if (parent != null) {
+                      java.nio.file.Files.createDirectories(parent)
+                    }
+                    java.nio.file.Files.writeString(targetPath, result)
+                    logger.message(s"Diff written to: ${targetPath.toAbsolutePath}")
+                  case None =>
+                    println(result)
+                }
+              }
+            } yield {}
+        }
     }
   }
 
