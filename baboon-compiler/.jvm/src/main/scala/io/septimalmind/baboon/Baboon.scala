@@ -906,6 +906,34 @@ object Baboon {
     tag: TagKK[EitherF],
     defaultModule2: DefaultModule2[EitherF],
   ): Unit = {
+    val pkg     = Pkg(NEList.unsafeFrom(schemeOptions.domain.split("\\.").toList))
+    val version = Version.parse(schemeOptions.version)
+
+    schemeOptions.target match {
+      case Some(target) =>
+        // TARGET PRESENT: Compiler axis (BLoggerImpl => stdout diagnostics + file write).
+        schemeEntrypointToFile(directoryInputs, individualInputs, pkg, version, target)
+      case None =>
+        // TARGET ABSENT: Explorer axis (Noop BLogger) + scheme printed to Console.out.
+        schemeEntrypointToStdout(directoryInputs, individualInputs, pkg, version)
+    }
+  }
+
+  private def schemeEntrypointToFile(
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    pkg: Pkg,
+    version: Version,
+    target: String,
+  )(implicit
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
+  ): Unit = {
     val options = CompilerOptions(
       debug                    = false,
       individualInputs         = individualInputs,
@@ -918,19 +946,10 @@ object Baboon {
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
 
-    // TARGET PRESENT: Compiler axis (BLoggerImpl => stdout diagnostics + file write).
-    // TARGET ABSENT: Explorer axis, which BaboonModuleJvm binds to the Noop BLogger,
-    // so neither the 'Inputs:' line nor typer output reaches stdout; only the rendered
-    // scheme is printed to System.out and no file is written.
-    val activation = schemeOptions.target match {
-      case Some(_) => Activation(BaboonModeAxis.Compiler)
-      case None    => Activation(BaboonModeAxis.Explorer)
-    }
-
     runner.run {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
-        .produceRun(m, activation) {
+        .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
           (loader: BaboonLoader[EitherF], logger: BLogger, renderer: BaboonSchemeRenderer) =>
             for {
               inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
@@ -950,24 +969,93 @@ object Baboon {
                   sys.exit(4)
               }
 
-              pkg     = Pkg(NEList.unsafeFrom(schemeOptions.domain.split("\\.").toList))
-              version = Version.parse(schemeOptions.version)
+              result <- F.fromEither(renderer.render(loadedModels, pkg, version).left.map(e => new RuntimeException(e)))
+
+              _ <- F.maybeSuspend {
+                val targetPath = Paths.get(target)
+                val parent     = targetPath.getParent
+                if (parent != null) {
+                  java.nio.file.Files.createDirectories(parent)
+                }
+                java.nio.file.Files.writeString(targetPath, result)
+                logger.message(s"Scheme written to: ${targetPath.toAbsolutePath}")
+              }
+            } yield {}
+        }
+    }
+  }
+
+  /** Absent-target scheme seam, factored out (T175) so an in-process test can drive the REAL
+    * `produceRun` (Explorer axis) WITHOUT launching an OS process, and capture BOTH the logger's
+    * output and the rendered scheme in ONE buffer.
+    *
+    * The rendered scheme is printed via `Console.println`, i.e. the dynamically-rebindable
+    * `scala.Console.out` — the SAME stream `BLoggerImpl.writeLine` writes to (BLogger.scala). This is
+    * deliberate and load-bearing: a test wrapping the whole call in
+    * `Console.withOut(new ByteArrayOutputStream){ schemeEntrypointToStdout(...) }` observes, in that
+    * single captured buffer, any logger lines AND the scheme text. That makes the "no log line
+    * precedes the scheme on stdout" purity assertion falsifiable — reverting this seam to the
+    * Compiler axis (live BLoggerImpl) would leak the 'Inputs:' line into the same buffer and the
+    * assertion would fail. A private scheme-only PrintStream/sink here would NOT capture the logger
+    * and would make that assertion vacuously true, so it is intentionally avoided.
+    *
+    * Single-thread contract: the `Either` runner is synchronous on the caller thread, so
+    * `Console.withOut`'s thread-local `DynamicVariable` intercepts the logger's `Console.println`.
+    * It would NOT intercept output emitted from a forked thread.
+    */
+  private[baboon] def schemeEntrypointToStdout(
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    pkg: Pkg,
+    version: Version,
+  )(implicit
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
+  ): Unit = {
+    val options = CompilerOptions(
+      debug                    = false,
+      individualInputs         = individualInputs,
+      directoryInputs          = directoryInputs,
+      targets                  = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockFile                 = None,
+      emitOnly                 = None,
+    )
+    val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
+    import PathTools.*
+
+    runner.run {
+      Injector
+        .NoCycles[EitherF[Throwable, _]]()
+        .produceRun(m, Activation(BaboonModeAxis.Explorer)) {
+          (loader: BaboonLoader[EitherF], logger: BLogger, renderer: BaboonSchemeRenderer) =>
+            for {
+              inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
+                dir =>
+                  IzFiles
+                    .walk(dir.toFile)
+                    .filter(_.toFile.getName.endsWith(".baboon"))
+              })
+              _ <- F.maybeSuspend {
+                logger.message(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
+              }
+
+              loadedModels <- loader.load(inputModels.toList).catchAll {
+                value =>
+                  System.err.println("Loader failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(4)
+              }
 
               result <- F.fromEither(renderer.render(loadedModels, pkg, version).left.map(e => new RuntimeException(e)))
 
               _ <- F.maybeSuspend {
-                schemeOptions.target match {
-                  case Some(target) =>
-                    val targetPath = Paths.get(target)
-                    val parent     = targetPath.getParent
-                    if (parent != null) {
-                      java.nio.file.Files.createDirectories(parent)
-                    }
-                    java.nio.file.Files.writeString(targetPath, result)
-                    logger.message(s"Scheme written to: ${targetPath.toAbsolutePath}")
-                  case None =>
-                    System.out.println(result)
-                }
+                Console.println(result)
               }
             } yield {}
         }
