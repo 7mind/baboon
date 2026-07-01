@@ -31,8 +31,8 @@ use baboon_rs_stub::baboon_runtime::BaboonCodecContext;
 // baboon_mcp_server.rs.
 fn make_empty_muxer() -> AbstractMcpMuxer<()> {
     AbstractMcpMuxer::<()>::new(McpServerInfo {
-        name: "ZeroEndpoint".to_string(),
-        version: "1.0.0".to_string(),
+        name: "ZeroEndpoint",
+        version: "1.0.0",
     })
 }
 

@@ -55,16 +55,17 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
         servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
     }
 
-    if (perService.isEmpty) {
-      F.pure(Sources(Map.empty))
-    } else {
-      val runtimeFile =
-        "baboon_mcp_server.rs" -> OutputFile(
-          mcpServerRuntime,
-          io.septimalmind.baboon.CompilerProduct.Runtime,
-        )
-      F.pure(Sources((runtimeFile :: perService).toMap))
-    }
+    // The runtime file is emitted unconditionally (D40/T180): even a family with
+    // zero services must ship `baboon_mcp_server.rs` so the crate's declared
+    // `baboon_mcp_server` module resolves. The runtime string still comes from
+    // the `mcpServerRuntime` val, so the async McpJsonInvoke alias swap continues
+    // to apply in `--rs-async-services=true` mode (the val is reused, not bypassed).
+    val runtimeFile =
+      "baboon_mcp_server.rs" -> OutputFile(
+        mcpServerRuntime,
+        io.septimalmind.baboon.CompilerProduct.Runtime,
+      )
+    F.pure(Sources((runtimeFile :: perService).toMap))
   }
 
   /** The static MCP server runtime resource. In SYNC mode it is emitted
