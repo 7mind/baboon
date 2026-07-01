@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.explore.commands
 
+import io.septimalmind.baboon.diff.OpDiffFormatter
 import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.*
@@ -94,55 +95,11 @@ object EvoCommand extends Command {
     }
   }
 
-  private def formatOp(op: AbstractOp): String = op match {
-    case DtoOp.AddField(f) =>
-      s"${Colors.GREEN}+ ${f.name.name}${Colors.RESET}: ${formatTypeRef(f.tpe)}"
-    case DtoOp.RemoveField(f) =>
-      s"${Colors.RED}- ${f.name.name}${Colors.RESET}: ${formatTypeRef(f.tpe)}"
-    case DtoOp.ChangeField(f, newType) =>
-      s"${Colors.YELLOW}~ ${f.name.name}${Colors.RESET}: ${formatTypeRef(f.tpe)} -> ${formatTypeRef(newType)}"
-    case DtoOp.KeepField(f, modification) =>
-      val modStr = modification match {
-        case RefModification.Unchanged => s"${Colors.DIM}unchanged${Colors.RESET}"
-        case RefModification.Shallow   => s"${Colors.CYAN}shallow change${Colors.RESET}"
-        case RefModification.Deep      => s"${Colors.CYAN}deep change${Colors.RESET}"
-        case RefModification.Full      => s"${Colors.YELLOW}full change${Colors.RESET}"
-      }
-      s"${Colors.DIM}= ${f.name.name}${Colors.RESET}: ${formatTypeRef(f.tpe)} ($modStr)"
-    case DtoOp.RenameField(oldField, newField, modification) =>
-      val modStr = modification match {
-        case RefModification.Unchanged => s"${Colors.DIM}unchanged${Colors.RESET}"
-        case RefModification.Shallow   => s"${Colors.CYAN}shallow change${Colors.RESET}"
-        case RefModification.Deep      => s"${Colors.CYAN}deep change${Colors.RESET}"
-        case RefModification.Full      => s"${Colors.YELLOW}full change${Colors.RESET}"
-      }
-      val typeChangeStr = if (oldField.tpe != newField.tpe) {
-        s" (${formatTypeRef(oldField.tpe)} -> ${formatTypeRef(newField.tpe)})"
-      } else {
-        s": ${formatTypeRef(newField.tpe)}"
-      }
-      s"${Colors.MAGENTA}* ${oldField.name.name} -> ${newField.name.name}${Colors.RESET}$typeChangeStr ($modStr)"
-    case EnumOp.AddBranch(m) =>
-      s"${Colors.GREEN}+ ${m.name}${Colors.RESET}"
-    case EnumOp.RemoveBranch(m) =>
-      s"${Colors.RED}- ${m.name}${Colors.RESET}"
-    case EnumOp.KeepBranch(m) =>
-      s"${Colors.DIM}= ${m.name}${Colors.RESET}"
-    case AdtOp.AddBranch(id) =>
-      s"${Colors.GREEN}+ branch ${id.name.name}${Colors.RESET}"
-    case AdtOp.RemoveBranch(id) =>
-      s"${Colors.RED}- branch ${id.name.name}${Colors.RESET}"
-    case AdtOp.KeepBranch(id, modification) =>
-      val modStr = modification match {
-        case RefModification.Unchanged => s"${Colors.DIM}unchanged${Colors.RESET}"
-        case RefModification.Shallow   => s"${Colors.CYAN}shallow change${Colors.RESET}"
-        case RefModification.Deep      => s"${Colors.CYAN}deep change${Colors.RESET}"
-        case RefModification.Full      => s"${Colors.YELLOW}full change${Colors.RESET}"
-      }
-      s"${Colors.DIM}= branch ${id.name.name}${Colors.RESET} ($modStr)"
-    case other =>
-      s"${Colors.DIM}$other${Colors.RESET}"
-  }
+  // Op-formatting is delegated to the shared, color-optional renderer so there
+  // is one source of truth. `useColor=true` reproduces the explorer's palette.
+  private val opFormatter = new OpDiffFormatter(useColor = true)
+
+  private def formatOp(op: AbstractOp): String = opFormatter.formatOp(op)
 
   private def formatConversionShort(conv: Conversion): String = conv match {
     case CustomConversionRequired(_, reason, _) =>
@@ -171,18 +128,6 @@ object EvoCommand extends Command {
       s"${Colors.DIM}Conversion: none (non-data type)${Colors.RESET}"
     case _ =>
       s"${Colors.DIM}Conversion: unknown${Colors.RESET}"
-  }
-
-  private def formatTypeRef(ref: TypeRef): String = ref match {
-    case TypeRef.Scalar(id) => formatTypeId(id)
-    case TypeRef.Constructor(id, args) =>
-      s"${Colors.CYAN}${id.name.name}${Colors.RESET}[${args.toList.map(formatTypeRef).mkString(", ")}]"
-    case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("EvoCommand.formatTypeRef")
-  }
-
-  private def formatTypeId(id: TypeId): String = id match {
-    case b: TypeId.Builtin => s"${Colors.CYAN}${b.name.name}${Colors.RESET}"
-    case u: TypeId.User    => s"${Colors.GREEN}${u.name.name}${Colors.RESET}"
   }
 
   def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
