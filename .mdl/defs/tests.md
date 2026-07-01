@@ -4073,6 +4073,333 @@ TEST_DIR="${action.test-gen-swift-mcp.test_dir}"
 ret success:bool=true
 ```
 
+# action: test-gen-ts-mcp-zero
+
+Generate code for the TypeScript zero-service MCP RED baseline (D40/T177).
+Sibling of `test-gen-ts-mcp` but points `--model-dir` at the zero-service
+fixture `mcp-stub-zero-services-ok/` (declares @root types, NO RPC block) and
+emits into an isolated output dir. Every other flag — including
+`--ts-generate-mcp-server=true` and the Either service-result mode — is
+identical to `test-gen-ts-mcp`. This is a gen-only RED-baseline lane (no overlay
+copy, no run lane): pre-fix, servicesOf(domain) is empty so NO MCP runtime file
+is emitted into the output dir.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-mcp-zero"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-ts-mcp-zero.lock \
+  :typescript \
+  --output "$TEST_DIR/gen" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --ts-generate-mcp-server=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-gen-cs-mcp-zero
+
+Generate code for the C# zero-service MCP RED baseline (D40/T177).
+Sibling of `test-gen-cs-mcp` but points `--model-dir` at the zero-service
+fixture `mcp-stub-zero-services-ok/` and emits into an isolated output dir.
+Every other flag — including `--cs-generate-mcp-server=true` and the Either
+service-result mode — is identical to `test-gen-cs-mcp`. Gen-only RED-baseline
+lane: pre-fix, NO `BaboonMcpRuntime.cs` is emitted into the output dir.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-mcp-zero"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-cs-mcp-zero.lock \
+  :cs \
+  --output "$TEST_DIR/gen" \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Baboon.Runtime.Shared.Either" \
+  --service-result-pattern="<\$error, \$success>" \
+  --cs-generate-mcp-server=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-gen-rust-mcp-zero
+
+Generate code for the Rust zero-service MCP RED baseline (D40/T177).
+Sibling of `test-gen-rust-mcp` but points `--model-dir` at the zero-service
+fixture `mcp-stub-zero-services-ok/` and emits into an isolated output dir.
+Every other flag — including `--rs-generate-mcp-server=true` and the Result
+service-result mode — is identical to `test-gen-rust-mcp`. Gen-only RED-baseline
+lane: pre-fix, NO MCP runtime file is emitted into the output dir.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-rust-mcp-zero"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-rust-mcp-zero.lock \
+  :rust \
+  --output "$TEST_DIR/gen" \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type=Result \
+  '--service-result-pattern=<$success, $error>' \
+  --rs-generate-mcp-server=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-gen-kotlin-mcp-zero
+
+Generate code for the Kotlin zero-service MCP RED baseline (D40/T177).
+Sibling of `test-gen-kotlin-mcp` but points `--model-dir` at the zero-service
+fixture `mcp-stub-zero-services-ok/` and emits into an isolated output dir.
+Every other flag — including `--kt-generate-mcp-server=true` and the Either
+service-result mode — is identical to `test-gen-kotlin-mcp`. Gen-only
+RED-baseline lane: pre-fix, NO MCP runtime file is emitted into the output dir.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-kotlin-mcp-zero"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-kotlin-mcp-zero.lock \
+  :kotlin \
+  --output "$TEST_DIR/gen" \
+  --kt-write-evolution-dict=true \
+  --kt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Either" \
+  '--service-result-pattern=<$error, $success>' \
+  --kt-generate-mcp-server=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-gen-java-mcp-zero
+
+Generate code for the Java zero-service MCP RED baseline (D40/T177).
+Sibling of `test-gen-java-mcp` but points `--model-dir` at the zero-service
+fixture `mcp-stub-zero-services-ok/` and emits into an isolated output dir.
+Every other flag — including `--jv-generate-mcp-server=true` and the Either
+service-result mode — is identical to `test-gen-java-mcp`. Gen-only RED-baseline
+lane: pre-fix, none of the 14 Java MCP runtime files are emitted into the
+output dir.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-java-mcp-zero"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-java-mcp-zero.lock \
+  :java \
+  --output "$TEST_DIR/gen" \
+  --jv-write-evolution-dict=true \
+  --jv-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="baboon.runtime.shared.BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --jv-generate-mcp-server=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-gen-scala-mcp-zero
+
+Generate code for the Scala zero-service MCP RED baseline (D40/T177).
+Sibling of `test-gen-scala-mcp` but points `--model-dir` at the zero-service
+fixture `mcp-stub-zero-services-ok/` and emits into an isolated output dir.
+Every other flag — including `--scala-generate-mcp-server=true` and the Either
+service-result mode (D24: Scala MCP requires Either) — is identical to
+`test-gen-scala-mcp`. Gen-only RED-baseline lane: pre-fix, NO MCP runtime file
+is emitted into the output dir.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-scala-mcp-zero"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-scala-mcp-zero.lock \
+  :scala \
+  --output "$TEST_DIR/gen" \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Either" \
+  "--service-result-pattern=[\$error, \$success]" \
+  --scala-generate-mcp-server=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-gen-python-mcp-zero
+
+Generate code for the Python zero-service MCP RED baseline (D40/T177).
+Sibling of `test-gen-python-mcp` but points `--model-dir` at the zero-service
+fixture `mcp-stub-zero-services-ok/` and emits into an isolated output dir.
+Every other flag — including `--py-generate-mcp-server=true` and the Either
+service-result mode — is identical to `test-gen-python-mcp`. Gen-only
+RED-baseline lane: pre-fix, NO MCP runtime file is emitted into the output dir.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-python-mcp-zero"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-python-mcp-zero.lock \
+  :python \
+  --output "$TEST_DIR/gen" \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>' \
+  --py-generate-mcp-server=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-gen-dart-mcp-zero
+
+Generate code for the Dart zero-service MCP RED baseline (D40/T177).
+Sibling of `test-gen-dart-mcp` but points `--model-dir` at the zero-service
+fixture `mcp-stub-zero-services-ok/` and emits into an isolated output dir.
+Every other flag — including `--dt-generate-mcp-server=true` and the no-errors
+service-result mode — is identical to `test-gen-dart-mcp`. Gen-only RED-baseline
+lane: pre-fix, NO `baboon_mcp_runtime.dart` is emitted into the output dir
+(hence the sibling lane's post-codegen `mv` of that runtime file is deliberately
+NOT replicated here — there is nothing to move).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-dart-mcp-zero"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-dart-mcp-zero.lock \
+  :dart \
+  --output "$TEST_DIR/gen" \
+  --dt-write-evolution-dict=true \
+  --dt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --dt-generate-mcp-server=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-gen-swift-mcp-zero
+
+Generate code for the Swift zero-service MCP RED baseline (D40/T177).
+Sibling of `test-gen-swift-mcp` but points `--model-dir` at the zero-service
+fixture `mcp-stub-zero-services-ok/` and emits into an isolated output dir.
+Every other flag — including `--sw-generate-mcp-server=true` and the no-errors
+service-result mode — is identical to `test-gen-swift-mcp`. Gen-only
+RED-baseline lane: pre-fix, NO `baboon_mcp_runtime.swift` is emitted into the
+output dir.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-swift-mcp-zero"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/gen"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
+  --lock-file=./target/baboon-swift-mcp-zero.lock \
+  :swift \
+  --output "$TEST_DIR/gen" \
+  --sw-write-evolution-dict=true \
+  --sw-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true \
+  --sw-generate-mcp-server=true
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
 # action: test-gen-ts-mcp-async
 
 Generate code for the TypeScript ASYNC MCP round-trip overlay test (D24/G11).

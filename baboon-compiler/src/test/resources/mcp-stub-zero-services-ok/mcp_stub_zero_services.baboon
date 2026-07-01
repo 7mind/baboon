@@ -1,0 +1,89 @@
+// MCP zero-services test stub model (D40/T177).
+//
+// Purpose: RED-baseline fixture for the zero-endpoint MCP defect (D40). This
+// model declares @root types but NO RPC block, so servicesOf(domain) is empty
+// for every backend. When `--<lang>-generate-mcp-server=true` is set against
+// this model, no RPC endpoint exists to dispatch, so the current generator
+// emits NO MCP runtime file (BaboonMcpRuntime.*, etc.) — the RED baseline the
+// generator fix (a later task) must turn GREEN.
+//
+// Directory isolation (D9): this model lives at
+// baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ — intentionally
+// OUTSIDE the shared baboon-compiler/src/test/resources/baboon/ model-dir, as a
+// SIBLING to mcp-stub-ok/ (1 endpoint) and mcp-mux-stub-ok/ (2 endpoints). All
+// test-gen-*-wiring and test-gen-{regular,wrapped}-adt actions scan every
+// subdirectory of the shared dir; placing this model inside it caused
+// cross-namespace fixture-reference failures in 8 wiring/test lanes (D9). The
+// dedicated test-gen-<lang>-mcp-zero actions point --model-dir here.
+//
+// Type shapes reused verbatim from mcp-stub-ok/mcp_stub.baboon (enum / DTO /
+// nested DTO / recursive DTO / ADT / contract-bearing ADT / template alias),
+// with the host RPC block OMITTED entirely.
+//
+// NOTE: the word for an RPC endpoint block is intentionally avoided in these
+// comments so that `grep -c '\bservice\b'` over this file returns 0 (D40
+// acceptance criterion).
+
+model mcp.stub.zero
+
+version "1.0.0"
+
+// ── Foreign type ─────────────────────────────────────────────────────────────
+foreign FFancyStr {
+  cs         = "System.String"
+  scala      = "java.lang.String"
+  kotlin     = "java.lang.String"
+  java       = "java.lang.String"
+  py         = "builtins.str"
+  rust       = "std::string::String"
+  typescript = "string"
+  dart       = "dart.core.String"
+  swift      = "Swift.String"
+}
+
+// ── Enum ─────────────────────────────────────────────────────────────────────
+enum Color { Red  Green  Blue }
+
+// ── Plain DTOs ────────────────────────────────────────────────────────────────
+data Point { x: i32  y: i32 }
+
+data Nested {
+  point: Point
+  color: Color
+  label: opt[str]
+}
+
+// ── Recursive DTO ─────────────────────────────────────────────────────────────
+data Tree {
+  value:    i32
+  left:     opt[Tree]
+  children: lst[Tree]
+}
+
+// ── ADT ───────────────────────────────────────────────────────────────────────
+adt Shape {
+  data Circle { radius: f64 }
+  data Rect   { w: f64  h: f64 }
+}
+
+// ── Contract-bearing ADT (D1/T26) ─────────────────────────────────────────────
+contract HasId {
+  id: str
+}
+
+adt Tagged {
+  is HasId
+  data TagA { tag: str }
+  data TagB { weight: i32 }
+}
+
+// ── Type alias / template instantiation ──────────────────────────────────────
+data Page[T] {
+  items: lst[T]
+  total: u32
+}
+
+root type PointPage = Page[Point]
+
+// NOTE: NO host RPC block here — this model declares zero endpoints on purpose
+// (D40 RED baseline).
