@@ -115,9 +115,9 @@ object Baboon {
        |Global options:
        |  --model <file>           A *.baboon file to process (can be repeated)
        |  --model-dir <dir>        A directory to recursively read *.baboon files from (can be repeated)
-       |  --lock-file <file>       A file used to track model signatures
-       |  --lockfile-update {create-only|force}                   Lockfile update policy (default: create-only; requires --lock-file)
-       |  --lockfile-enforcement {none|legacy-versions|all-versions}  Lockfile enforcement scope (default: legacy-versions; requires --lock-file)
+       |  --lockfile <file>       A file used to track model signatures
+       |  --lockfile-update {create-only|force}                   Lockfile update policy (default: create-only; requires --lockfile)
+       |  --lockfile-enforcement {none|legacy-versions|all-versions}  Lockfile enforcement scope (default: legacy-versions; requires --lockfile)
        |  --meta-write-evolution-json <file>  Write evolution metadata as JSON
        |  --emit-only <domains>    Comma-separated list of domain names to generate code for (all are still parsed/typed)
        |  --debug                  Enable debug output
@@ -199,7 +199,7 @@ object Baboon {
 
   /** Maps the parsed `--lockfile-update` / `--lockfile-enforcement` strings to their enums and
     * enforces the two CLI invariants:
-    *   - Q37b: either flag supplied without `--lock-file` is a hard CLI error (fail-fast).
+    *   - Q37b: either flag supplied without `--lockfile` is a hard CLI error (fail-fast).
     *   - Q37c: an unrecognized enum value is a hard CLI error, surfaced via the parse helper's Left.
     * Absent flags fall back to the production defaults (CreateOnly / LegacyVersions).
     */
@@ -211,7 +211,7 @@ object Baboon {
     val errors = scala.collection.mutable.ListBuffer.empty[String]
 
     if (lockFile.isEmpty && (lockfileUpdate.isDefined || lockfileEnforcement.isDefined)) {
-      errors += "--lockfile-update and --lockfile-enforcement require --lock-file to be set"
+      errors += "--lockfile-update and --lockfile-enforcement require --lockfile to be set"
     }
 
     val update = lockfileUpdate match {

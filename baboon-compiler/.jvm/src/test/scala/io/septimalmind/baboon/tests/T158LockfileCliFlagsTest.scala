@@ -11,7 +11,7 @@ import org.scalatest.wordspec.AnyWordSpec
   *   (a) absent flags  => CreateOnly / LegacyVersions
   *   (b) force + all-versions threads through as Force / AllVersions
   *   (c) bad enum value => Left (Q37c hard CLI error)
-  *   (d) flag without --lock-file => Left (Q37b fail-fast)
+  *   (d) flag without --lockfile => Left (Q37b fail-fast)
   *
   * Plus: feeding the parsed pair into a CLI-shaped CompilerOptions construction yields
   * the expected lockfileUpdate / lockfileEnforcement (mirrors the threading at the
@@ -28,7 +28,7 @@ class T158LockfileCliFlagsTest extends AnyWordSpec {
       assert(result == Right((LockfileUpdate.CreateOnly, LockfileEnforcement.LegacyVersions)))
     }
 
-    "yield (CreateOnly, LegacyVersions) when both flags AND --lock-file are absent" in {
+    "yield (CreateOnly, LegacyVersions) when both flags AND --lockfile are absent" in {
       val result = Baboon.parseLockfileOptions(None, None, None)
       assert(result == Right((LockfileUpdate.CreateOnly, LockfileEnforcement.LegacyVersions)))
     }
@@ -52,18 +52,18 @@ class T158LockfileCliFlagsTest extends AnyWordSpec {
       assert(msg.contains("sometimes"), s"error should mention the bad value, got: $msg")
     }
 
-    "reject --lockfile-update without --lock-file as a hard error (Q37b)" in {
+    "reject --lockfile-update without --lockfile as a hard error (Q37b)" in {
       val result = Baboon.parseLockfileOptions(None, Some("force"), None)
-      assert(result.isLeft, s"expected Left for --lockfile-update without --lock-file, got: $result")
+      assert(result.isLeft, s"expected Left for --lockfile-update without --lockfile, got: $result")
       val msg = result.left.getOrElse(throw new AssertionError()).toList.mkString
-      assert(msg.contains("--lock-file"), s"error should mention --lock-file, got: $msg")
+      assert(msg.contains("--lockfile"), s"error should mention --lockfile, got: $msg")
     }
 
-    "reject --lockfile-enforcement without --lock-file as a hard error (Q37b)" in {
+    "reject --lockfile-enforcement without --lockfile as a hard error (Q37b)" in {
       val result = Baboon.parseLockfileOptions(None, None, Some("all-versions"))
-      assert(result.isLeft, s"expected Left for --lockfile-enforcement without --lock-file, got: $result")
+      assert(result.isLeft, s"expected Left for --lockfile-enforcement without --lockfile, got: $result")
       val msg = result.left.getOrElse(throw new AssertionError()).toList.mkString
-      assert(msg.contains("--lock-file"), s"error should mention --lock-file, got: $msg")
+      assert(msg.contains("--lockfile"), s"error should mention --lockfile, got: $msg")
     }
   }
 

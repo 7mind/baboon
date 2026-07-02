@@ -188,7 +188,7 @@ The design spec locks the wire format, JSON envelope, language-surface ADT, vali
 - `mdl :build :test-scala-wrapped` passes.
 - `mdl :build :test-gen-compat-scala` passes.
 
-**Risks.** Evolution test requires baboon-meta / lock-file updates; follow existing evolution-test patterns in `test/conv-test-sc`.
+**Risks.** Evolution test requires baboon-meta / lockfile updates; follow existing evolution-test patterns in `test/conv-test-sc`.
 
 **Dependencies.** PR 2.1, 2.2, 2.3.
 

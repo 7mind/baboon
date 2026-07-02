@@ -20,7 +20,7 @@ baboon [global options] :target [target options] [:target [target options] ...]
 ```bash
 baboon \
   --model-dir ./models \
-  --lock-file ./target/baboon.lock \
+  --lockfile ./target/baboon.lock \
   :cs     --output ./out/cs \
   :scala  --output ./out/scala --service-result-hkt \
   :openapi --output ./out/oas
@@ -38,7 +38,7 @@ are passed multiple times.
 |---|---|---|
 | `--model <file>` | — | A single `*.baboon` file to process. Repeatable; can be combined with `--model-dir`. |
 | `--model-dir <dir>` | — | A directory to read `*.baboon` files from, recursively. Repeatable. |
-| `--lock-file <file>` | none | Version-signature lockfile. Created on first run; on later runs the compiler verifies that every *non-latest* version's signature still matches and fails with `LockedVersionModified` if a frozen version was edited. The latest version of each domain is exempt (it is still in flux). |
+| `--lockfile <file>` | none | Version-signature lockfile. Created on first run; on later runs the compiler verifies that every *non-latest* version's signature still matches and fails with `LockedVersionModified` if a frozen version was edited. The latest version of each domain is exempt (it is still in flux). |
 | `--meta-write-evolution-json <file>` | none | Write evolution metadata (version lineage and per-version type identifiers for every domain) as a JSON file. |
 | `--emit-only <pkgs>` | all | Comma-separated list of domain (package) names, e.g. `my.domain,other.pkg`. Every input is still parsed, typed and validated, but only the listed domains emit code. |
 | `--debug` | `false` | Additional debug output (written file paths, etc.). |
@@ -311,7 +311,7 @@ the global `--model`/`--model-dir` options. No modality-specific options.
 
 ```bash
 # Generate all 9 languages plus both schema formats in one run
-baboon --model-dir ./models --lock-file ./target/baboon.lock \
+baboon --model-dir ./models --lockfile ./target/baboon.lock \
   :cs --output ./out/cs \
   :scala --output ./out/scala \
   :python --output ./out/py \

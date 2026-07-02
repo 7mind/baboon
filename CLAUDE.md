@@ -99,7 +99,7 @@ sbt "testOnly *SpecificTestSpec"
 baboon \
   --model-dir ./src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon.lock \
+  --lockfile=./target/baboon.lock \
   :cs \
   --output ./output/cs \
   :scala \

@@ -74,7 +74,7 @@ rsync -a --exclude='.build' --exclude='.swiftpm' \
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon.lock \
+  --lockfile=./target/baboon.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
@@ -187,7 +187,7 @@ fi
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon.lock \
+  --lockfile=./target/baboon.lock \
   :kotlin \
   --output "$TEST_DIR/kt-stub-kmp/src/main/kotlin/generated-main" \
   --test-output "$TEST_DIR/kt-stub-kmp/src/test/kotlin/generated-tests" \
@@ -231,7 +231,7 @@ ret success:bool=true
 
 # action: test-python-regular
 
-Run Python tests with regular adt codecs. 
+Run Python tests with regular adt codecs.
 
 ```bash
 dep action.test-cs-regular
@@ -392,7 +392,7 @@ rsync -a --exclude='.build' --exclude='.swiftpm' \
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon.lock \
+  --lockfile=./target/baboon.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
@@ -494,7 +494,7 @@ fi
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon.lock \
+  --lockfile=./target/baboon.lock \
   :kotlin \
   --output "$TEST_DIR/kt-stub-kmp/src/main/kotlin/generated-main" \
   --test-output "$TEST_DIR/kt-stub-kmp/src/test/kotlin/generated-tests" \
@@ -756,7 +756,7 @@ ret success:bool=true
 
 # action: test-gen-compat-python
 
-Generate compatibility test files using Python. 
+Generate compatibility test files using Python.
 
 ```bash
 dep action.test-gen-manual
@@ -1128,7 +1128,7 @@ rsync -a ./test/cs-stub-either-overlay/ "$TEST_DIR/cs-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-either.lock \
+  --lockfile=./target/baboon-either.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
@@ -1179,7 +1179,7 @@ rsync -a ./test/cs-stub-result-overlay/ "$TEST_DIR/cs-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-result.lock \
+  --lockfile=./target/baboon-result.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
@@ -1230,7 +1230,7 @@ rsync -a ./test/cs-stub-outcome-overlay/ "$TEST_DIR/cs-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-outcome.lock \
+  --lockfile=./target/baboon-outcome.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
@@ -1279,7 +1279,7 @@ rsync -a ./test/sc-stub-either-overlay/ "$TEST_DIR/sc-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-sc-either.lock \
+  --lockfile=./target/baboon-sc-either.lock \
   :scala \
   --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
@@ -1327,7 +1327,7 @@ rsync -a ./test/sc-stub-result-overlay/ "$TEST_DIR/sc-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-sc-result.lock \
+  --lockfile=./target/baboon-sc-result.lock \
   :scala \
   --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
@@ -1375,7 +1375,7 @@ rsync -a ./test/sc-stub-outcome-overlay/ "$TEST_DIR/sc-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-sc-outcome.lock \
+  --lockfile=./target/baboon-sc-outcome.lock \
   :scala \
   --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
@@ -1423,7 +1423,7 @@ rsync -a ./test/sc-stub-hkt-overlay/ "$TEST_DIR/sc-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-sc-hkt.lock \
+  --lockfile=./target/baboon-sc-hkt.lock \
   :scala \
   --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
@@ -1473,7 +1473,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-ts-either.lock \
+  --lockfile=./target/baboon-ts-either.lock \
   :typescript \
   --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
   --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
@@ -1523,7 +1523,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-ts-result.lock \
+  --lockfile=./target/baboon-ts-result.lock \
   :typescript \
   --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
   --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
@@ -1573,7 +1573,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-ts-outcome.lock \
+  --lockfile=./target/baboon-ts-outcome.lock \
   :typescript \
   --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
   --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
@@ -1626,7 +1626,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-ts-mcp.lock \
+  --lockfile=./target/baboon-ts-mcp.lock \
   :typescript \
   --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
   --ts-write-evolution-dict=true \
@@ -1680,7 +1680,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-cs-mcp.lock \
+  --lockfile=./target/baboon-cs-mcp.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --cs-wrapped-adt-branch-codecs=false \
@@ -1737,7 +1737,7 @@ cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-rust-mcp.lock \
+  --lockfile=./target/baboon-rust-mcp.lock \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --rs-write-evolution-dict=true \
@@ -1790,7 +1790,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --excl
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-kotlin-mcp.lock \
+  --lockfile=./target/baboon-kotlin-mcp.lock \
   :kotlin \
   --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
   --kt-write-evolution-dict=true \
@@ -1847,7 +1847,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --excl
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-kt-mcp-mux.lock \
+  --lockfile=./target/baboon-kt-mcp-mux.lock \
   :kotlin \
   --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
   --kt-write-evolution-dict=true \
@@ -1901,7 +1901,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-java-mcp.lock \
+  --lockfile=./target/baboon-java-mcp.lock \
   :java \
   --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
   --jv-write-evolution-dict=true \
@@ -1958,7 +1958,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-jv-mcp-mux.lock \
+  --lockfile=./target/baboon-jv-mcp-mux.lock \
   :java \
   --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
   --jv-write-evolution-dict=true \
@@ -2009,7 +2009,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-rs-either.lock \
+  --lockfile=./target/baboon-rs-either.lock \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --test-output "$TEST_DIR/rs-stub/src" \
@@ -2058,7 +2058,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-rs-result.lock \
+  --lockfile=./target/baboon-rs-result.lock \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --test-output "$TEST_DIR/rs-stub/src" \
@@ -2108,7 +2108,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-rs-outcome.lock \
+  --lockfile=./target/baboon-rs-outcome.lock \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --test-output "$TEST_DIR/rs-stub/src" \
@@ -2159,7 +2159,7 @@ rsync -a ./test/py-stub-either-overlay/ "$TEST_DIR/py-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-py-either.lock \
+  --lockfile=./target/baboon-py-either.lock \
   :python \
   --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
@@ -2210,7 +2210,7 @@ rsync -a ./test/py-stub-result-overlay/ "$TEST_DIR/py-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-py-result.lock \
+  --lockfile=./target/baboon-py-result.lock \
   :python \
   --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
@@ -2261,7 +2261,7 @@ rsync -a ./test/py-stub-outcome-overlay/ "$TEST_DIR/py-stub/"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-py-outcome.lock \
+  --lockfile=./target/baboon-py-outcome.lock \
   :python \
   --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
@@ -2313,7 +2313,7 @@ mkdir -p "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore.baboon \
-  --lock-file=./target/baboon-py-async.lock \
+  --lockfile=./target/baboon-py-async.lock \
   :python \
   --output "$TEST_DIR/gen" \
   --py-async-services=true \
@@ -2353,7 +2353,7 @@ mkdir -p "$TEST_DIR/ts-async/src/generated"
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore.baboon \
-  --lock-file="$TEST_DIR/baboon-ts-wiring-async.lock" \
+  --lockfile="$TEST_DIR/baboon-ts-wiring-async.lock" \
   :typescript \
   --output "$TEST_DIR/ts-async/src/generated" \
   --ts-async-services=true \
@@ -2401,7 +2401,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --excl
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-kt-wiring.lock \
+  --lockfile=./target/baboon-kt-wiring.lock \
   :kotlin \
   --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
   --test-output "$TEST_DIR/kt-stub/src/test/kotlin/generated-tests" \
@@ -2448,7 +2448,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-jv-wiring.lock \
+  --lockfile=./target/baboon-jv-wiring.lock \
   :java \
   --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
   --test-output "$TEST_DIR/jv-stub/src/test/java/generated-tests" \
@@ -2504,7 +2504,7 @@ mkdir -p "$TEST_DIR/jv-async/src/main/java/generated"
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore.baboon \
-  --lock-file="$TEST_DIR/baboon-jv-async.lock" \
+  --lockfile="$TEST_DIR/baboon-jv-async.lock" \
   :java \
   --output "$TEST_DIR/jv-async/src/main/java/generated" \
   --jv-async-services=true \
@@ -2561,7 +2561,7 @@ mkdir -p "$TEST_DIR/kt-async/src/main/kotlin/generated"
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore.baboon \
-  --lock-file="$TEST_DIR/baboon-kt-async.lock" \
+  --lockfile="$TEST_DIR/baboon-kt-async.lock" \
   :kotlin \
   --output "$TEST_DIR/kt-async/src/main/kotlin/generated" \
   --kt-async-services=true \
@@ -2613,7 +2613,7 @@ mkdir -p "$TEST_DIR/kt-errors-async/src/main/kotlin/generated"
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore-errors.baboon \
-  --lock-file="$TEST_DIR/baboon-kt-errors-async.lock" \
+  --lockfile="$TEST_DIR/baboon-kt-errors-async.lock" \
   :kotlin \
   --output "$TEST_DIR/kt-errors-async/src/main/kotlin/generated" \
   --kt-async-services=true \
@@ -2664,7 +2664,7 @@ mkdir -p "$TEST_DIR/jv-errors-async/src/main/java/generated"
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore-errors.baboon \
-  --lock-file="$TEST_DIR/baboon-jv-errors-async.lock" \
+  --lockfile="$TEST_DIR/baboon-jv-errors-async.lock" \
   :java \
   --output "$TEST_DIR/jv-errors-async/src/main/java/generated" \
   --jv-async-services=true \
@@ -2713,7 +2713,7 @@ rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock'
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-dt-wiring.lock \
+  --lockfile=./target/baboon-dt-wiring.lock \
   :dart \
   --output "$TEST_DIR/dt-stub/lib" \
   --test-output "$TEST_DIR/dt-stub/test" \
@@ -2780,7 +2780,7 @@ mkdir -p "$TEST_DIR/dt-async/lib/generated"
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore.baboon \
-  --lock-file="$TEST_DIR/baboon-dt-async.lock" \
+  --lockfile="$TEST_DIR/baboon-dt-async.lock" \
   :dart \
   --output "$TEST_DIR/dt-async/lib/generated" \
   --dt-async-services=true \
@@ -2837,7 +2837,7 @@ rsync -a --exclude='.build' --exclude='.swiftpm' \
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
-  --lock-file=./target/baboon-sw-wiring.lock \
+  --lockfile=./target/baboon-sw-wiring.lock \
   :swift \
   --output "$TEST_DIR/sw-stub/Sources" \
   --test-output "$TEST_DIR/sw-stub/Tests/BaboonTests" \
@@ -2906,7 +2906,7 @@ rsync -a --exclude='.build' --exclude='.swiftpm' --exclude='Sources/Generated' \
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore.baboon \
-  --lock-file="$TEST_DIR/baboon-sw-wiring-async.lock" \
+  --lockfile="$TEST_DIR/baboon-sw-wiring-async.lock" \
   :swift \
   --output "$TEST_DIR/sw-async/Sources/Generated" \
   --sw-async-services=true \
@@ -2963,7 +2963,7 @@ rsync -a --exclude='.build' --exclude='.swiftpm' --exclude='Sources/Generated' \
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore-errors.baboon \
-  --lock-file="$TEST_DIR/baboon-sw-wiring-errors.lock" \
+  --lockfile="$TEST_DIR/baboon-sw-wiring-errors.lock" \
   :swift \
   --output "$TEST_DIR/sw-errors/Sources/Generated" \
   --service-result-no-errors=false \
@@ -3095,7 +3095,7 @@ rsync -a --exclude='target' --exclude='project/target' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-scala-mcp.lock \
+  --lockfile=./target/baboon-scala-mcp.lock \
   :scala \
   --output "$TEST_DIR/scala-stub-mcp/src/main/scala/generated-main" \
   --sc-write-evolution-dict=true \
@@ -3151,7 +3151,7 @@ rsync -a --exclude='target' --exclude='project/target' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-scala-mcp-mux.lock \
+  --lockfile=./target/baboon-scala-mcp-mux.lock \
   :scala \
   --output "$TEST_DIR/scala-stub-mcp-mux/src/main/scala/generated-main" \
   --sc-write-evolution-dict=true \
@@ -3205,7 +3205,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-python-mcp.lock \
+  --lockfile=./target/baboon-python-mcp.lock \
   :python \
   --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
@@ -3930,7 +3930,7 @@ cp ./test/services/petstore.baboon "$TEST_DIR/model/"
 
 $BABOON_BIN \
   --model-dir "$TEST_DIR/model" \
-  --lock-file="$TEST_DIR/baboon.lock" \
+  --lockfile="$TEST_DIR/baboon.lock" \
   :java \
   --output "$TEST_DIR/jv-client/src/main/java/generated" \
   --jv-write-evolution-dict=true \
@@ -3967,7 +3967,7 @@ rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock'
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-dart-mcp.lock \
+  --lockfile=./target/baboon-dart-mcp.lock \
   :dart \
   --output "$TEST_DIR/dt-stub/lib" \
   --dt-write-evolution-dict=true \
@@ -4035,7 +4035,7 @@ rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock'
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-dt-mcp-mux.lock \
+  --lockfile=./target/baboon-dt-mcp-mux.lock \
   :dart \
   --output "$TEST_DIR/dt-stub/lib" \
   --dt-write-evolution-dict=true \
@@ -4105,7 +4105,7 @@ mkdir -p "$TEST_DIR/sw-stub/Sources"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-swift-mcp.lock \
+  --lockfile=./target/baboon-swift-mcp.lock \
   :swift \
   --output "$TEST_DIR/sw-stub/Sources" \
   --sw-write-evolution-dict=true \
@@ -4184,7 +4184,7 @@ rm -rf "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-ts-mcp-zero.lock \
+  --lockfile=./target/baboon-ts-mcp-zero.lock \
   :typescript \
   --output "$TEST_DIR/gen" \
   --ts-write-evolution-dict=true \
@@ -4220,7 +4220,7 @@ rm -rf "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-cs-mcp-zero.lock \
+  --lockfile=./target/baboon-cs-mcp-zero.lock \
   :cs \
   --output "$TEST_DIR/gen" \
   --cs-wrapped-adt-branch-codecs=false \
@@ -4256,7 +4256,7 @@ rm -rf "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-rust-mcp-zero.lock \
+  --lockfile=./target/baboon-rust-mcp-zero.lock \
   :rust \
   --output "$TEST_DIR/gen" \
   --rs-write-evolution-dict=true \
@@ -4292,7 +4292,7 @@ rm -rf "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-kotlin-mcp-zero.lock \
+  --lockfile=./target/baboon-kotlin-mcp-zero.lock \
   :kotlin \
   --output "$TEST_DIR/gen" \
   --kt-write-evolution-dict=true \
@@ -4329,7 +4329,7 @@ rm -rf "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-java-mcp-zero.lock \
+  --lockfile=./target/baboon-java-mcp-zero.lock \
   :java \
   --output "$TEST_DIR/gen" \
   --jv-write-evolution-dict=true \
@@ -4366,7 +4366,7 @@ rm -rf "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-scala-mcp-zero.lock \
+  --lockfile=./target/baboon-scala-mcp-zero.lock \
   :scala \
   --output "$TEST_DIR/gen" \
   --sc-write-evolution-dict=true \
@@ -4402,7 +4402,7 @@ rm -rf "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-python-mcp-zero.lock \
+  --lockfile=./target/baboon-python-mcp-zero.lock \
   :python \
   --output "$TEST_DIR/gen" \
   --py-write-evolution-dict=true \
@@ -4440,7 +4440,7 @@ rm -rf "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-dart-mcp-zero.lock \
+  --lockfile=./target/baboon-dart-mcp-zero.lock \
   :dart \
   --output "$TEST_DIR/gen" \
   --dt-write-evolution-dict=true \
@@ -4475,7 +4475,7 @@ rm -rf "$TEST_DIR/gen"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-swift-mcp-zero.lock \
+  --lockfile=./target/baboon-swift-mcp-zero.lock \
   :swift \
   --output "$TEST_DIR/gen" \
   --sw-write-evolution-dict=true \
@@ -4523,7 +4523,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-cs-mcp-zero-overlay.lock \
+  --lockfile=./target/baboon-cs-mcp-zero-overlay.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --cs-wrapped-adt-branch-codecs=false \
@@ -4575,7 +4575,7 @@ cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-rust-mcp-zero-overlay.lock \
+  --lockfile=./target/baboon-rust-mcp-zero-overlay.lock \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --rs-write-evolution-dict=true \
@@ -4623,7 +4623,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --excl
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-kotlin-mcp-zero-overlay.lock \
+  --lockfile=./target/baboon-kotlin-mcp-zero-overlay.lock \
   :kotlin \
   --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
   --kt-write-evolution-dict=true \
@@ -4673,7 +4673,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-java-mcp-zero-overlay.lock \
+  --lockfile=./target/baboon-java-mcp-zero-overlay.lock \
   :java \
   --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
   --jv-write-evolution-dict=true \
@@ -4722,7 +4722,7 @@ rsync -a --exclude='target' --exclude='project/target' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-scala-mcp-zero-overlay.lock \
+  --lockfile=./target/baboon-scala-mcp-zero-overlay.lock \
   :scala \
   --output "$TEST_DIR/scala-stub-mcp/src/main/scala/generated-main" \
   --sc-write-evolution-dict=true \
@@ -4771,7 +4771,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-python-mcp-zero-overlay.lock \
+  --lockfile=./target/baboon-python-mcp-zero-overlay.lock \
   :python \
   --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
@@ -4825,7 +4825,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-ts-mcp-zero-overlay.lock \
+  --lockfile=./target/baboon-ts-mcp-zero-overlay.lock \
   :typescript \
   --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
   --ts-write-evolution-dict=true \
@@ -4882,7 +4882,7 @@ rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock'
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-dart-mcp-zero-overlay.lock \
+  --lockfile=./target/baboon-dart-mcp-zero-overlay.lock \
   :dart \
   --output "$TEST_DIR/dt-stub/lib" \
   --dt-write-evolution-dict=true \
@@ -4940,7 +4940,7 @@ mkdir -p "$TEST_DIR/sw-stub/Sources"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-zero-services-ok/ \
-  --lock-file=./target/baboon-swift-mcp-zero-overlay.lock \
+  --lockfile=./target/baboon-swift-mcp-zero-overlay.lock \
   :swift \
   --output "$TEST_DIR/sw-stub/Sources" \
   --sw-write-evolution-dict=true \
@@ -5003,7 +5003,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-ts-mcp-async.lock \
+  --lockfile=./target/baboon-ts-mcp-async.lock \
   :typescript \
   --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
   --ts-write-evolution-dict=true \
@@ -5070,7 +5070,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-cs-mcp-async.lock \
+  --lockfile=./target/baboon-cs-mcp-async.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --cs-wrapped-adt-branch-codecs=false \
@@ -5133,7 +5133,7 @@ cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-rust-mcp-async.lock \
+  --lockfile=./target/baboon-rust-mcp-async.lock \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --rs-write-evolution-dict=true \
@@ -5189,7 +5189,7 @@ mkdir -p "$TEST_DIR/rs-async/src"
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore.baboon \
-  --lock-file="$TEST_DIR/baboon-rs-wiring-async.lock" \
+  --lockfile="$TEST_DIR/baboon-rs-wiring-async.lock" \
   :rust \
   --output "$TEST_DIR/rs-async/src" \
   --rs-write-evolution-dict=true \
@@ -5239,7 +5239,7 @@ mkdir -p "$TEST_DIR/rs-async-errors/src"
 
 $BABOON_BIN \
   --model-dir ./test/services/petstore-errors.baboon \
-  --lock-file="$TEST_DIR/baboon-rs-wiring-async-errors.lock" \
+  --lockfile="$TEST_DIR/baboon-rs-wiring-async-errors.lock" \
   :rust \
   --output "$TEST_DIR/rs-async-errors/src" \
   --rs-write-evolution-dict=true \
@@ -5293,7 +5293,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-python-mcp-async.lock \
+  --lockfile=./target/baboon-python-mcp-async.lock \
   :python \
   --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
@@ -5355,7 +5355,7 @@ mkdir -p "$TEST_DIR/sw-stub/Sources"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-stub-ok/ \
-  --lock-file=./target/baboon-swift-mcp-async.lock \
+  --lockfile=./target/baboon-swift-mcp-async.lock \
   :swift \
   --output "$TEST_DIR/sw-stub/Sources" \
   --sw-write-evolution-dict=true \
@@ -5433,7 +5433,7 @@ mkdir -p "$TEST_DIR/sw-stub/Sources"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-swift-mcp-mux.lock \
+  --lockfile=./target/baboon-swift-mcp-mux.lock \
   :swift \
   --output "$TEST_DIR/sw-stub/Sources" \
   --sw-write-evolution-dict=true \
@@ -5501,7 +5501,7 @@ mkdir -p "$TEST_DIR/sw-stub/Sources"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-swift-mcp-mux-async.lock \
+  --lockfile=./target/baboon-swift-mcp-mux-async.lock \
   :swift \
   --output "$TEST_DIR/sw-stub/Sources" \
   --sw-write-evolution-dict=true \
@@ -5566,7 +5566,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-ts-mcp-mux.lock \
+  --lockfile=./target/baboon-ts-mcp-mux.lock \
   :typescript \
   --output "$TEST_DIR/ts-stub/src/mux-generated" \
   --ts-write-evolution-dict=true \
@@ -5623,7 +5623,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-ts-mcp-mux-async.lock \
+  --lockfile=./target/baboon-ts-mcp-mux-async.lock \
   :typescript \
   --output "$TEST_DIR/ts-stub/src/mux-async-generated" \
   --ts-write-evolution-dict=true \
@@ -5680,7 +5680,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-cs-mcp-mux.lock \
+  --lockfile=./target/baboon-cs-mcp-mux.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --cs-wrapped-adt-branch-codecs=false \
@@ -5735,7 +5735,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-cs-mcp-mux-async.lock \
+  --lockfile=./target/baboon-cs-mcp-mux-async.lock \
   :cs \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --cs-wrapped-adt-branch-codecs=false \
@@ -5791,7 +5791,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-py-mcp-mux.lock \
+  --lockfile=./target/baboon-py-mcp-mux.lock \
   :python \
   --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
@@ -5851,7 +5851,7 @@ rsync -a --exclude='Generated*' --exclude='generated-*' \
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-py-mcp-mux-async.lock \
+  --lockfile=./target/baboon-py-mcp-mux-async.lock \
   :python \
   --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
@@ -5916,7 +5916,7 @@ cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-rs-mcp-mux.lock \
+  --lockfile=./target/baboon-rs-mcp-mux.lock \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --rs-write-evolution-dict=true \
@@ -5975,7 +5975,7 @@ cp ./test/rs-stub/Cargo.toml "$TEST_DIR/rs-stub/Cargo.toml"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/mcp-mux-stub-ok/ \
-  --lock-file=./target/baboon-rs-mcp-mux-async.lock \
+  --lockfile=./target/baboon-rs-mcp-mux-async.lock \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --rs-write-evolution-dict=true \
@@ -6050,7 +6050,7 @@ mkdir -p "$TEST_DIR/ts-wiring-collision-stub/src"
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/ts-wiring-collision-ok/ \
   --meta-write-evolution-json "$TEST_DIR/baboon-ts-collision-meta.json" \
-  --lock-file="$TEST_DIR/baboon-ts-collision.lock" \
+  --lockfile="$TEST_DIR/baboon-ts-collision.lock" \
   :typescript \
   --output "$TEST_DIR/ts-wiring-collision-stub/src" \
   --ts-write-evolution-dict=true \
