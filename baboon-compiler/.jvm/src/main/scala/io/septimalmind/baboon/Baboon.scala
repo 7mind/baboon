@@ -979,6 +979,37 @@ object Baboon {
     val toVersion   = Version.parse(diffOptions.to)
     val emitJson    = diffOptions.format.contains("json")
 
+    diffOptions.target match {
+      case Some(target) =>
+        // TARGET PRESENT: Compiler axis (BLoggerImpl => stdout diagnostics + file write).
+        diffEntrypointToFile(directoryInputs, individualInputs, diffOptions, pkg, fromVersion, toVersion, emitJson, target)
+      case None =>
+        // TARGET ABSENT: Explorer axis (Noop BLogger) + diff printed to Console.out.
+        diffEntrypointToStdout(directoryInputs, individualInputs, diffOptions, pkg, fromVersion, toVersion, emitJson)
+    }
+  }
+
+  /** Target-present diff seam. Compiler axis (live BLoggerImpl) + `Files.writeString` + a
+    * `logger.message("Diff written to: ...")` diagnostic, byte-identical to the pre-split behaviour.
+    */
+  private[baboon] def diffEntrypointToFile(
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    diffOptions: DiffCLIOptions,
+    pkg: Pkg,
+    fromVersion: Version,
+    toVersion: Version,
+    emitJson: Boolean,
+    target: String,
+  )(implicit
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
+  ): Unit = {
     val options = CompilerOptions(
       debug                    = false,
       individualInputs         = individualInputs,
@@ -1061,18 +1092,124 @@ object Baboon {
               result   = if (emitJson) renderer.renderJson(diff) else renderer.renderText(diff)
 
               _ <- F.maybeSuspend {
-                diffOptions.target match {
-                  case Some(target) =>
-                    val targetPath = Paths.get(target)
-                    val parent     = targetPath.getParent
-                    if (parent != null) {
-                      java.nio.file.Files.createDirectories(parent)
-                    }
-                    java.nio.file.Files.writeString(targetPath, result)
-                    logger.message(s"Diff written to: ${targetPath.toAbsolutePath}")
-                  case None =>
-                    println(result)
+                val targetPath = Paths.get(target)
+                val parent     = targetPath.getParent
+                if (parent != null) {
+                  java.nio.file.Files.createDirectories(parent)
                 }
+                java.nio.file.Files.writeString(targetPath, result)
+                logger.message(s"Diff written to: ${targetPath.toAbsolutePath}")
+              }
+            } yield {}
+        }
+    }
+  }
+
+  /** Target-absent diff seam. Explorer axis (Noop BLogger silences the `Inputs:` banner) so ONLY
+    * the rendered diff reaches stdout, printed via `Console.println` (the dynamically-rebindable
+    * `scala.Console.out`, NOT bare `println`). Mirrors [[schemeEntrypointToStdout]] and keeps the
+    * stdout stream clean for the `test-diff` lane's round-trip assertions.
+    */
+  private[baboon] def diffEntrypointToStdout(
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    diffOptions: DiffCLIOptions,
+    pkg: Pkg,
+    fromVersion: Version,
+    toVersion: Version,
+    emitJson: Boolean,
+  )(implicit
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
+  ): Unit = {
+    val options = CompilerOptions(
+      debug                    = false,
+      individualInputs         = individualInputs,
+      directoryInputs          = directoryInputs,
+      targets                  = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockFile                 = None,
+      emitOnly                 = None,
+    )
+    val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
+    import PathTools.*
+
+    runner.run {
+      Injector
+        .NoCycles[EitherF[Throwable, _]]()
+        .produceRun(m, Activation(BaboonModeAxis.Explorer)) {
+          (loader: BaboonLoader[EitherF], logger: BLogger, comparator: BaboonComparator[EitherF]) =>
+            for {
+              inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
+                dir =>
+                  IzFiles
+                    .walk(dir.toFile)
+                    .filter(_.toFile.getName.endsWith(".baboon"))
+              })
+              _ <- F.maybeSuspend {
+                logger.message(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
+              }
+
+              family <- loader.load(inputModels.toList).catchAll {
+                value =>
+                  System.err.println("Loader failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(4)
+              }
+
+              lineage <- F.maybeSuspend {
+                family.domains.toMap.get(pkg) match {
+                  case Some(l) => l
+                  case None =>
+                    val available = family.domains.toMap.keys.map(_.path.mkString(".")).toList.sorted
+                    System.err.println(s"Domain not found: ${diffOptions.domain}")
+                    System.err.println(s"Available domains: ${available.niceList()}")
+                    sys.exit(5)
+                }
+              }
+
+              versions = lineage.versions.toMap
+
+              fromDomain <- F.maybeSuspend {
+                versions.get(fromVersion) match {
+                  case Some(d) => d
+                  case None =>
+                    val available = versions.keys.map(_.toString).toList.sorted
+                    System.err.println(s"Version not found in domain ${diffOptions.domain}: ${diffOptions.from}")
+                    System.err.println(s"Available versions: ${available.niceList()}")
+                    sys.exit(5)
+                }
+              }
+
+              toDomain <- F.maybeSuspend {
+                versions.get(toVersion) match {
+                  case Some(d) => d
+                  case None =>
+                    val available = versions.keys.map(_.toString).toList.sorted
+                    System.err.println(s"Version not found in domain ${diffOptions.domain}: ${diffOptions.to}")
+                    System.err.println(s"Available versions: ${available.niceList()}")
+                    sys.exit(5)
+                }
+              }
+
+              // Q47 from->to: the newer version is `last`, the older is `prev`.
+              diff <- comparator.compare(last = toDomain, prev = fromDomain).catchAll {
+                value =>
+                  System.err.println("Comparison failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(6)
+              }
+
+              renderer = new BaboonDiffRenderer
+              result   = if (emitJson) renderer.renderJson(diff) else renderer.renderText(diff)
+
+              _ <- F.maybeSuspend {
+                Console.println(result)
               }
             } yield {}
         }
