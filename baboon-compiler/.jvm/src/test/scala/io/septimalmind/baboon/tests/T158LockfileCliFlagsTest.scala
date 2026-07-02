@@ -73,7 +73,7 @@ class T158LockfileCliFlagsTest extends AnyWordSpec {
       CompilerOptions(
         individualInputs         = Set.empty,
         directoryInputs          = Set.empty,
-        lockFile                 = None,
+        lockfile                 = None,
         debug                    = false,
         targets                  = Seq.empty,
         metaWriteEvolutionJsonTo = None,

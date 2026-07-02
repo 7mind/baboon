@@ -427,7 +427,7 @@ object LockfileEnforcement {
 final case class CompilerOptions(
   individualInputs: Set[FSPath],
   directoryInputs: Set[FSPath],
-  lockFile: Option[FSPath],
+  lockfile: Option[FSPath],
   debug: Boolean,
   targets: Seq[CompilerTarget],
   metaWriteEvolutionJsonTo: Option[FSPath],

@@ -74,7 +74,7 @@ abstract class IdentifierScalaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonT
         individualInputs         = Set.empty,
         directoryInputs          = Set(FSPath.parse(NEString.unsafeFrom("./baboon-compiler/src/test/resources/baboon"))),
         metaWriteEvolutionJsonTo = None,
-        lockFile                 = Some(FSPath.parse(NEString.unsafeFrom("./target/baboon.lock"))),
+        lockfile                 = Some(FSPath.parse(NEString.unsafeFrom("./target/baboon.lock"))),
         emitOnly                 = None,
         targets                  = Seq(scTarget),
       ),

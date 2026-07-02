@@ -174,7 +174,7 @@ abstract class T165AdtDeltaTwinAcceptanceTestBase[F[+_, +_]: Error2: TagKK: Babo
         individualInputs         = Set.empty,
         directoryInputs          = Set(FSPath.parse(NEString.unsafeFrom("./baboon-compiler/src/test/resources/baboon"))),
         metaWriteEvolutionJsonTo = None,
-        lockFile                 = None,
+        lockfile                 = None,
         emitOnly                 = None,
         targets                  = Seq(target),
       ),

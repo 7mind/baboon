@@ -512,7 +512,7 @@ case class CLIOptions(
   @HelpMessage("A list of *.baboon files to process (can be combined with --model-dir)")
   model: List[String],
   @HelpMessage("A file used to track model signatures")
-  lockFile: Option[String],
+  lockfile: Option[String],
   @HelpMessage("Lockfile update policy: create-only (write only when absent) or force (always rewrite). Default: create-only. Requires --lockfile.")
   lockfileUpdate: Option[String],
   @HelpMessage("Lockfile enforcement scope: none, legacy-versions, or all-versions. Default: legacy-versions. Requires --lockfile.")

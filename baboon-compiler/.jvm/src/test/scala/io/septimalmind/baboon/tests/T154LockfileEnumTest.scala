@@ -59,7 +59,7 @@ class T154LockfileEnumTest extends AnyWordSpec {
       val opts = CompilerOptions(
         individualInputs       = Set.empty,
         directoryInputs        = Set.empty,
-        lockFile               = scala.None,
+        lockfile               = scala.None,
         debug                  = false,
         targets                = Seq.empty,
         metaWriteEvolutionJsonTo = scala.None,
@@ -73,7 +73,7 @@ class T154LockfileEnumTest extends AnyWordSpec {
       val opts = CompilerOptions(
         individualInputs       = Set.empty,
         directoryInputs        = Set.empty,
-        lockFile               = scala.None,
+        lockfile               = scala.None,
         debug                  = false,
         targets                = Seq.empty,
         metaWriteEvolutionJsonTo = scala.None,

@@ -80,7 +80,7 @@ class T156LockfileEnforcementMatrixTest extends AnyWordSpec with Matchers {
     CompilerOptions(
       individualInputs = Set.empty,
       directoryInputs = Set.empty,
-      lockFile = Some(fsPathOf(lockPath)),
+      lockfile = Some(fsPathOf(lockPath)),
       debug = false,
       targets = Seq.empty,
       metaWriteEvolutionJsonTo = None,

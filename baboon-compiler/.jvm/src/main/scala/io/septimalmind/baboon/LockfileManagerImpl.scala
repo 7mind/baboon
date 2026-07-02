@@ -44,7 +44,7 @@ class LockfileManagerImpl[F[+_, +_]: Error2: MaybeSuspend2](
     def writeCurrent(lockfilePath: FSPath): F[NEList[BaboonIssue], Unit] =
       F.maybeSuspend(IzFiles.writeUtfString(lockfilePath.toPath, currentSigs.asJson.spaces2))
 
-    options.lockFile match {
+    options.lockfile match {
       case None =>
         F.unit
 

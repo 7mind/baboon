@@ -813,7 +813,7 @@ object BaboonJS {
     CompilerOptions(
       individualInputs         = inputs.map(_.path).toSet,
       directoryInputs          = collectInputDirectories(inputs),
-      lockFile                 = None,
+      lockfile                 = None,
       debug                    = debug,
       targets                  = toCompilerTargets(targets),
       metaWriteEvolutionJsonTo = None,

@@ -69,7 +69,7 @@ abstract class DocCommentRustEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
         individualInputs         = Set.empty,
         directoryInputs          = Set(FSPath.parse(NEString.unsafeFrom("./baboon-compiler/src/test/resources/baboon"))),
         metaWriteEvolutionJsonTo = None,
-        lockFile                 = Some(FSPath.parse(NEString.unsafeFrom("./target/baboon.lock"))),
+        lockfile                 = Some(FSPath.parse(NEString.unsafeFrom("./target/baboon.lock"))),
         emitOnly                 = None,
         targets                  = Seq(rsTarget),
       ),

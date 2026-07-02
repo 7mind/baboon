@@ -204,13 +204,13 @@ object Baboon {
     * Absent flags fall back to the production defaults (CreateOnly / LegacyVersions).
     */
   private[baboon] def parseLockfileOptions(
-    lockFile: Option[String],
+    lockfile: Option[String],
     lockfileUpdate: Option[String],
     lockfileEnforcement: Option[String],
   ): Either[NEList[String], (LockfileUpdate, LockfileEnforcement)] = {
     val errors = scala.collection.mutable.ListBuffer.empty[String]
 
-    if (lockFile.isEmpty && (lockfileUpdate.isDefined || lockfileEnforcement.isDefined)) {
+    if (lockfile.isEmpty && (lockfileUpdate.isDefined || lockfileEnforcement.isDefined)) {
       errors += "--lockfile-update and --lockfile-enforcement require --lockfile to be set"
     }
 
@@ -647,7 +647,7 @@ object Baboon {
                 }
             }
             lockfileOptions <- parseLockfileOptions(
-              generalOptions._1.lockFile,
+              generalOptions._1.lockfile,
               generalOptions._1.lockfileUpdate,
               generalOptions._1.lockfileEnforcement,
             )
@@ -669,7 +669,7 @@ object Baboon {
               directoryInputs          = directoryInputs,
               targets                  = launchArgs,
               metaWriteEvolutionJsonTo = generalOptions._1.metaWriteEvolutionJson.map(s => FSPath.parse(NEString.unsafeFrom(s))),
-              lockFile                 = generalOptions._1.lockFile.map(s => FSPath.parse(NEString.unsafeFrom(s))),
+              lockfile                 = generalOptions._1.lockfile.map(s => FSPath.parse(NEString.unsafeFrom(s))),
               emitOnly                 = emitOnly,
               lockfileUpdate           = lockfileOptions._1,
               lockfileEnforcement      = lockfileOptions._2,
@@ -882,7 +882,7 @@ object Baboon {
       directoryInputs          = directoryInputs,
       targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
-      lockFile                 = None,
+      lockfile                 = None,
       emitOnly                 = None,
     )
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
@@ -1016,7 +1016,7 @@ object Baboon {
       directoryInputs          = directoryInputs,
       targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
-      lockFile                 = None,
+      lockfile                 = None,
       emitOnly                 = None,
     )
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
@@ -1133,7 +1133,7 @@ object Baboon {
       directoryInputs          = directoryInputs,
       targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
-      lockFile                 = None,
+      lockfile                 = None,
       emitOnly                 = None,
     )
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
@@ -1237,7 +1237,7 @@ object Baboon {
       directoryInputs          = directoryInputs,
       targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
-      lockFile                 = None,
+      lockfile                 = None,
       emitOnly                 = None,
     )
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
@@ -1320,7 +1320,7 @@ object Baboon {
       directoryInputs          = directoryInputs,
       targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
-      lockFile                 = None,
+      lockfile                 = None,
       emitOnly                 = None,
     )
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
@@ -1373,7 +1373,7 @@ object Baboon {
       directoryInputs          = directoryInputs,
       targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
-      lockFile                 = None,
+      lockfile                 = None,
       emitOnly                 = None,
     )
     val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F])

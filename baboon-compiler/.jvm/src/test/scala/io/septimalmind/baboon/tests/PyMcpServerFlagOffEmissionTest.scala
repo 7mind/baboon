@@ -71,7 +71,7 @@ abstract class PyMcpServerFlagOffEmissionTestBase[F[+_, +_]: Error2: TagKK: Babo
           individualInputs         = Set.empty,
           directoryInputs          = Set(FSPath.parse(NEString.unsafeFrom("./baboon-compiler/src/test/resources/mcp-stub-ok"))),
           metaWriteEvolutionJsonTo = None,
-          lockFile                 = Some(FSPath.parse(NEString.unsafeFrom("./target/baboon.lock"))),
+          lockfile                 = Some(FSPath.parse(NEString.unsafeFrom("./target/baboon.lock"))),
           emitOnly                 = None,
           targets                  = Seq(pyTargetOff),
         ),
