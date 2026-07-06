@@ -7,10 +7,11 @@ import io.septimalmind.baboon.lsp._
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.BaboonModeAxis
-import io.septimalmind.baboon.diff.BaboonDiffRenderer
+import io.septimalmind.baboon.diff.{BaboonDiffRenderer, VersionRef}
+import io.septimalmind.baboon.git.{GitInvokerImpl, GitModelMaterializer, GitModelMaterializerErrors, TempWorktreeFactory}
 import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
 import io.septimalmind.baboon.typer.{BaboonComparator, BaboonEnquiries}
-import io.septimalmind.baboon.typer.model.{BaboonFamily, Pkg, Version}
+import io.septimalmind.baboon.typer.model.{BaboonFamily, Domain, Pkg, Version}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.impl.BioEither
 import izumi.functional.bio.unsafe.MaybeSuspend2
@@ -24,7 +25,7 @@ import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
 import izumi.distage.model.definition.Activation
 
-import java.nio.file.Paths
+import java.nio.file.{Path, Paths}
 
 object Baboon {
   private type EitherF[+e, +a] = Either[e, a]
@@ -1022,18 +1023,217 @@ object Baboon {
     tag: TagKK[EitherF],
     defaultModule2: DefaultModule2[EitherF],
   ): Unit = {
-    val pkg         = Pkg(NEList.unsafeFrom(diffOptions.domain.split("\\.").toList))
-    val fromVersion = Version.parse(diffOptions.from)
-    val toVersion   = Version.parse(diffOptions.to)
-    val emitJson    = diffOptions.format.contains("json")
+    val pkg      = Pkg(NEList.unsafeFrom(diffOptions.domain.split("\\.").toList))
+    val emitJson = diffOptions.format.contains("json")
 
-    diffOptions.target match {
-      case Some(target) =>
-        // TARGET PRESENT: Compiler axis (BLoggerImpl => stdout diagnostics + file write).
-        diffEntrypointToFile(directoryInputs, individualInputs, diffOptions, pkg, fromVersion, toVersion, emitJson, target)
-      case None =>
-        // TARGET ABSENT: Explorer axis (Noop BLogger) + diff printed to Console.out.
-        diffEntrypointToStdout(directoryInputs, individualInputs, diffOptions, pkg, fromVersion, toVersion, emitJson)
+    // Parse from/to via T189 VersionRef.parse so a `version@ref` on either side pins that side at a
+    // git ref (T192 GitModelMaterializer); a bare `version` loads the working tree. A parse error is
+    // an actionable exit here, before any load.
+    val fromRef = VersionRef.parse(diffOptions.from) match {
+      case Right(vr) => vr
+      case Left(err) =>
+        System.err.println(s"Invalid --from '${diffOptions.from}': ${err.message}")
+        sys.exit(2)
+    }
+    val toRef = VersionRef.parse(diffOptions.to) match {
+      case Right(vr) => vr
+      case Left(err) =>
+        System.err.println(s"Invalid --to '${diffOptions.to}': ${err.message}")
+        sys.exit(2)
+    }
+
+    if (fromRef.ref.isEmpty && toRef.ref.isEmpty) {
+      // (1) NEITHER side has @ref: preserve the single-load / one-lineage fast path
+      // BYTE-IDENTICALLY (G29/G32 behaviour unchanged; the `test-diff` lane stays green).
+      diffOptions.target match {
+        case Some(target) =>
+          // TARGET PRESENT: Compiler axis (BLoggerImpl => stdout diagnostics + file write).
+          diffEntrypointToFile(directoryInputs, individualInputs, diffOptions, pkg, fromRef.version, toRef.version, emitJson, target)
+        case None =>
+          // TARGET ABSENT: Explorer axis (Noop BLogger) + diff printed to Console.out.
+          diffEntrypointToStdout(directoryInputs, individualInputs, diffOptions, pkg, fromRef.version, toRef.version, emitJson)
+      }
+    } else {
+      // (2) EITHER side has @ref: per-side load (a bare side loads the working tree; an @ref side is
+      // materialized at that ref) feeding the SAME comparator. Lives in one place (no file/stdout
+      // divergence); the comparator + renderer are untouched.
+      diffEntrypointPerSide(directoryInputs, individualInputs, diffOptions, pkg, fromRef, toRef, emitJson)
+    }
+  }
+
+  /** Per-side diff seam (T195/G33): resolve each side's inputs independently — a bare side walks the
+    * working-tree `--model-dir`/`--model`; an @ref side is materialized at that ref by the T192
+    * [[GitModelMaterializer]] (whose git pre-flight runs BEFORE the distage injector) and its
+    * re-rooted paths are walked instead. Each side is loaded into its OWN family+lineage; the from
+    * side yields `fromVersion`'s [[Domain]] and the to side yields `toVersion`'s. The UNCHANGED
+    * `comparator.compare(last = toDomain, prev = fromDomain)` then renders the diff, writing to the
+    * `--target` file when present else printing to stdout. Comparator + [[BaboonDiffRenderer]] are
+    * NOT touched — this is input resolution only.
+    */
+  private[baboon] def diffEntrypointPerSide(
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    diffOptions: DiffCLIOptions,
+    pkg: Pkg,
+    fromRef: VersionRef,
+    toRef: VersionRef,
+    emitJson: Boolean,
+  )(implicit
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
+  ): Unit = {
+    import PathTools.*
+
+    // Working-tree inputs, expressed as the raw `--model-dir` dirs and `--model` files (NOT walked)
+    // so the materializer can re-root them under the throwaway worktree.
+    val workingModelDirs = directoryInputs.map(_.toPath).toList
+    val workingModels    = individualInputs.map(_.toPath).toList
+    val cwd              = Paths.get("").toAbsolutePath
+
+    val materializer = new GitModelMaterializer[EitherF](
+      new GitInvokerImpl[EitherF],
+      new TempWorktreeFactory.SystemTempWorktreeFactory[EitherF],
+    )
+
+    // Walk a set of model directories + individual model files into the flat `.baboon` path list
+    // that BaboonLoader.load expects — the same rule the single-load fast path applies.
+    def walkBaboon(modelDirs: List[Path], models: List[Path]): List[Path] = {
+      val fromDirs = modelDirs.flatMap(dir => IzFiles.walk(dir.toFile).filter(_.toFile.getName.endsWith(".baboon")))
+      (models ++ fromDirs).distinct
+    }
+
+    // Resolve one side's `.baboon` inputs: a bare side (no ref) walks the working tree directly; an
+    // @ref side runs the materializer (pre-flight + detached worktree) and walks the re-rooted paths
+    // INSIDE the bracket so the worktree stays alive for the duration of `use`.
+    def withSidePaths[A](ref: Option[String])(use: List[Path] => EitherF[GitModelMaterializer.MaterializeFailure, A]): EitherF[GitModelMaterializer.MaterializeFailure, A] = {
+      ref match {
+        case None =>
+          F.maybeSuspend(walkBaboon(workingModelDirs, workingModels)).flatMap(use)
+        case Some(r) =>
+          materializer.withModelsAtRef(r, workingModelDirs, workingModels, cwd) {
+            materialized =>
+              F.maybeSuspend(walkBaboon(materialized.modelDirs, materialized.models)).flatMap(use)
+          }
+      }
+    }
+
+    // Load a family from a side's `.baboon` paths and extract the requested version's Domain,
+    // reusing the same loader (from the injector) for both sides. Loader/version-not-found failures
+    // exit with the SAME codes/messages as the single-load fast path.
+    def resolveDomain(
+      loader: BaboonLoader[EitherF],
+      paths: List[Path],
+      version: Version,
+      versionLabel: String,
+    ): EitherF[Throwable, Domain] = {
+      for {
+        family <- loader.load(paths).catchAll {
+          value =>
+            System.err.println("Loader failed")
+            System.err.println(value.toList.stringifyIssues)
+            sys.exit(4)
+        }
+        lineage <- F.maybeSuspend {
+          family.domains.toMap.get(pkg) match {
+            case Some(l) => l
+            case None =>
+              val available = family.domains.toMap.keys.map(_.path.mkString(".")).toList.sorted
+              System.err.println(s"Domain not found: ${diffOptions.domain}")
+              System.err.println(s"Available domains: ${available.niceList()}")
+              sys.exit(5)
+          }
+        }
+        domain <- F.maybeSuspend {
+          lineage.versions.toMap.get(version) match {
+            case Some(d) => d
+            case None =>
+              val available = lineage.versions.toMap.keys.map(_.toString).toList.sorted
+              System.err.println(s"Version not found in domain ${diffOptions.domain}: $versionLabel")
+              System.err.println(s"Available versions: ${available.niceList()}")
+              sys.exit(5)
+          }
+        }
+      } yield domain
+    }
+
+    val options = CompilerOptions(
+      debug                    = false,
+      individualInputs         = individualInputs,
+      directoryInputs          = directoryInputs,
+      targets                  = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockfile                 = None,
+      emitOnly                 = None,
+    )
+    val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
+
+    // TARGET PRESENT => Compiler axis (live BLoggerImpl + file write); ABSENT => Explorer axis (Noop
+    // BLogger, diff to stdout). Mirrors the fast-path seam split, but the load/resolve/compare/render
+    // body lives ONCE here.
+    val activation = diffOptions.target match {
+      case Some(_) => Activation(BaboonModeAxis.Compiler)
+      case None    => Activation(BaboonModeAxis.Explorer)
+    }
+
+    def runInjector(fromPaths: List[Path], toPaths: List[Path]): Unit = {
+      runner.run {
+        Injector
+          .NoCycles[EitherF[Throwable, _]]()
+          .produceRun(m, activation) {
+            (loader: BaboonLoader[EitherF], logger: BLogger, comparator: BaboonComparator[EitherF]) =>
+              for {
+                fromDomain <- resolveDomain(loader, fromPaths, fromRef.version, diffOptions.from)
+                toDomain   <- resolveDomain(loader, toPaths, toRef.version, diffOptions.to)
+
+                // Q47 from->to: the newer version is `last`, the older is `prev`. UNCHANGED.
+                diff <- comparator.compare(last = toDomain, prev = fromDomain).catchAll {
+                  value =>
+                    System.err.println("Comparison failed")
+                    System.err.println(value.toList.stringifyIssues)
+                    sys.exit(6)
+                }
+
+                renderer = new BaboonDiffRenderer
+                result   = if (emitJson) renderer.renderJson(diff) else renderer.renderText(diff)
+
+                _ <- F.maybeSuspend {
+                  diffOptions.target match {
+                    case Some(target) =>
+                      val targetPath = Paths.get(target)
+                      val parent     = targetPath.getParent
+                      if (parent != null) {
+                        java.nio.file.Files.createDirectories(parent)
+                      }
+                      java.nio.file.Files.writeString(targetPath, result)
+                      logger.message(s"Diff written to: ${targetPath.toAbsolutePath}")
+                    case None =>
+                      Console.println(result)
+                  }
+                }
+              } yield {}
+          }
+      }
+    }
+
+    // The materializer git pre-flight (both sides, if pinned) runs BEFORE the injector; the injector
+    // then runs INSIDE the still-live worktree bracket(s). A MaterializeFailure is rendered to a
+    // distinct nonzero exit code by GitModelMaterializerErrors.
+    runner.run {
+      withSidePaths(fromRef.ref) {
+        fromPaths =>
+          withSidePaths(toRef.ref) {
+            toPaths =>
+              F.maybeSuspend(runInjector(fromPaths, toPaths))
+          }
+      }.catchAll {
+        failure =>
+          F.maybeSuspend(GitModelMaterializerErrors.reportAndExit(failure))
+      }
     }
   }
 
