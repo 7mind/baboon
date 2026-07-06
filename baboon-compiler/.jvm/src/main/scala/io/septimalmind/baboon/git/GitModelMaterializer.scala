@@ -105,17 +105,30 @@ final class GitModelMaterializer[F[+_, +_]: Error2: MaybeSuspend2](
   }
 
   /** Relativize a single working-tree input to `root`. A relative input is resolved against `cwd`
-    * first; an input whose normalized absolute form escapes `root` is rejected. */
+    * first; an input whose CANONICAL absolute form escapes `root` is rejected. Both sides are
+    * canonicalized via `toRealPath` (not merely `normalize`) so that two different string spellings
+    * of the SAME directory are not falsely judged to be in different trees — this matters because
+    * `root` comes from `git rev-parse --show-toplevel` while `in` comes from the `--model-dir` CLI
+    * arg, and on Windows these differ by separator/drive-case/8.3-short-vs-long name and on macOS by
+    * the `/var`->`/private/var` (and `/tmp`->`/private/tmp`) symlink. `normalize` resolves none of
+    * those; `toRealPath` resolves all of them. (Reproduced on Windows CI as a false
+    * `PathOutsideRepo`/exit-10 for a temp `git init` model-dir that IS its own repo root.) */
   private def relativizeUnderRoot(root: Path, cwd: Path, in: Path): Either[MaterializeFailure, Path] = {
-    val absIn    = abs(cwd, in)
-    val normRoot = root.toAbsolutePath.normalize()
-    val normIn   = absIn.normalize()
-    if (!normIn.startsWith(normRoot)) {
-      Left(MaterializeFailure.PathOutsideRepo(in, normRoot))
+    val canonRoot = canonicalize(root.toAbsolutePath)
+    val canonIn   = canonicalize(abs(cwd, in))
+    if (!canonIn.startsWith(canonRoot)) {
+      Left(MaterializeFailure.PathOutsideRepo(in, canonRoot))
     } else {
-      Right(normRoot.relativize(normIn))
+      Right(canonRoot.relativize(canonIn))
     }
   }
+
+  /** Canonicalize a path via `toRealPath` (resolves symlinks + the OS-canonical spelling of every
+    * component); fall back to `toAbsolutePath.normalize()` if it cannot be realpath'd (e.g. the
+    * path does not exist yet). */
+  private def canonicalize(p: Path): Path =
+    try p.toRealPath()
+    catch { case _: java.io.IOException => p.toAbsolutePath.normalize() }
 
   private def abs(cwd: Path, p: Path): Path =
     if (p.isAbsolute) p else cwd.resolve(p)
