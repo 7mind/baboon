@@ -32,6 +32,11 @@ may be passed bare (`--debug`) or with an explicit value (`--debug=false`).
 Repeatable options (`--model`, `--model-dir`, `--pragma`, `--ext-allow-cleanup`)
 are passed multiple times.
 
+Invoked with **no arguments** (no modality and no inputs), `baboon` prints this
+help and exits `0`. A `--model-dir` pointing at a path that **does not exist**
+fails fast with an actionable message (exit `2`); a `--model-dir` may be a
+directory *or* a single `*.baboon` file.
+
 ## Global options
 
 | Option | Default | Description |
@@ -62,6 +67,8 @@ are passed multiple times.
 | `:lsp` | Start the LSP server ([docs](lsp-integration.md)) |
 | `:explore` | Start the interactive explorer ([docs](explorer-mode.md)) |
 | `:scheme` | Emit a cleaned-up single `.baboon` file for one domain version |
+| `:diff` | Report the schema diff between two versions of a domain |
+| `:bincompat` | Check wire/binary compatibility between two versions of a domain (exit code is the verdict) |
 
 ## Common transpiler options
 
@@ -287,10 +294,87 @@ nested, dependency comments added).
 |---|---|
 | `--domain <name>` | Domain name, e.g. `my.domain.name`. |
 | `--version <version>` | Version string, e.g. `1.0.0`. |
-| `--target <file>` | Output file path. |
+| `--target <file>` | Output file path. **Optional** — when omitted, the scheme is printed to **stdout** with no log output around it, so it can be piped. |
 
 ```bash
 baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
+baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 > cleaned.baboon
+```
+
+### `:diff`
+
+Reports the schema diff between two versions of one domain (added / removed /
+renamed / modified types, and per-type field / branch / method changes),
+reusing the same comparator the evolution engine uses. Output goes to **stdout**
+(clean, no log banner) unless `--target` is given.
+
+| Option | Description |
+|---|---|
+| `--domain <name>` | Domain name, e.g. `my.domain.name`. |
+| `--from <version[@ref]>` | Older version. Optionally pinned to a git revision — see [Pinning a side to a git revision](#pinning-a-side-to-a-git-revision). |
+| `--to <version[@ref]>` | Newer version, same `@ref` support. |
+| `--target <file>` | Output file path. Optional — when omitted, the diff is printed to stdout. |
+| `--format <text\|json>` | Output format (default `text`). `json` is machine-readable and pipeable. |
+
+```bash
+baboon --model-dir ./models :diff --domain=my.pkg --from=1.0.0 --to=2.0.0 --format=json
+```
+
+### `:bincompat`
+
+Checks whether the changes between two versions of a domain break **wire /
+serialization compatibility**, exposing baboon's evolution-derivability analysis
+as a CLI. The **exit code is the verdict** (so it is scriptable in CI); a
+human/JSON summary is printed to stdout.
+
+| Option | Description |
+|---|---|
+| `--domain <name>` | Domain name. |
+| `--from <version[@ref]>` | The "old" version to read data as. Optionally pinned to a git revision (the common use is same-version-different-commit, e.g. `3.0.0@HEAD~3`). |
+| `--to <version[@ref]>` | The "new" version, same `@ref` support. |
+| `--format <text\|json>` | Output format (default `text`). |
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| `0` | No breaking changes — data written by `--from` still reads under `--to`. |
+| `1` | Breaking changes, but **all** conversions are auto-derivable (the summary lists them). |
+| `2` | At least one **non-derivable** breaking change (the summary explains what broke). |
+
+Broadly: adding a new type is compatible (`0`); a derivable structural change to
+an existing type is `1`; a change that leaves no auto-derivable conversion
+(e.g. an enum/ADT branch removal, an incompatible field-type change) is `2`.
+Operational failures use a separate band (`4` loader, `5` domain/version not
+found, `6` comparison failed, plus the git codes below); invalid usage (identical
+`--from`/`--to`) is `3`.
+
+```bash
+# Did anything since HEAD~3 break reading 3.0.0 data? (still tagged 3.0.0)
+baboon --model-dir ./models :bincompat --domain=my.pkg --from=3.0.0@HEAD~3 --to=3.0.0
+echo $?   # 0 / 1 / 2
+```
+
+### Pinning a side to a git revision
+
+For `:diff` and `:bincompat`, either `--from` or `--to` may carry an optional
+`@<gitref>` suffix — `<version>@<gitref>` — where `<gitref>` is any revision the
+`git` binary understands (`HEAD`, `HEAD~1`, a tag, a commit SHA). That side's
+models are loaded from the given revision instead of the working tree; a side
+with no `@` uses the working tree as usual. This lets you diff/verify across
+history even when both sides carry the *same* version string.
+
+- Implemented by shelling out to the **`git` binary** (no embedded git library);
+  it **fails fast** with a distinct exit code if `git` is unavailable (`7`), the
+  path is not a git repo (`8`), the ref cannot be resolved (`9`), the model-dir
+  is outside the repo root (`10`), or no `.baboon` files exist at that ref (`11`).
+- The `@ref` side is materialized via `git worktree add --detach` into a temp
+  directory that is removed afterward.
+- This is a **JVM-only** feature (the native binary and the JVM build); it is not
+  part of the Scala.js build.
+
+```bash
+baboon --model-dir ./models :diff --domain=my.pkg --from=2.0.0@HEAD~1 --to=2.0.0
 ```
 
 ### `:lsp`

@@ -459,9 +459,9 @@ case class SchemeCLIOptions(
 case class DiffCLIOptions(
   @HelpMessage("Domain name (e.g., 'my.domain.name')")
   domain: String,
-  @HelpMessage("Older version (e.g., '1.0.0')")
+  @HelpMessage("Older version, optionally pinned to a git revision (e.g., '1.0.0' or '1.0.0@HEAD~1')")
   from: String,
-  @HelpMessage("Newer version (e.g., '2.0.0')")
+  @HelpMessage("Newer version, optionally pinned to a git revision (e.g., '2.0.0' or '2.0.0@deadbeef')")
   to: String,
   @HelpMessage("Target output file path (when absent, the diff is printed to stdout)")
   target: Option[String],

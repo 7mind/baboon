@@ -177,20 +177,25 @@ object Baboon {
        |Scheme options (:scheme):
        |  --domain <name>          Domain name (e.g., 'my.domain.name')
        |  --version <version>      Version string (e.g., '1.0.0')
-       |  --target <file>          Target output file path
+       |  --target <file>          Target output file path (when absent, the scheme is printed to stdout)
        |
        |Diff options (:diff):
        |  --domain <name>          Domain name (e.g., 'my.domain.name')
-       |  --from <version>         Older version (e.g., '1.0.0')
-       |  --to <version>           Newer version (e.g., '2.0.0')
+       |  --from <version[@ref]>   Older version, optionally pinned to a git revision (e.g., '1.0.0' or '1.0.0@HEAD~1')
+       |  --to <version[@ref]>     Newer version, optionally pinned to a git revision (e.g., '2.0.0' or '2.0.0@deadbeef')
        |  --target <file>          Target output file path (when absent, the diff is printed to stdout)
        |  --format {text|json}     Output format (default: text)
        |
        |Bincompat options (:bincompat):
        |  --domain <name>          Domain name (e.g., 'my.domain.name')
-       |  --from <version>         From version (e.g., '1.0.0' or '1.0.0@ref')
-       |  --to <version>           To version (e.g., '2.0.0' or '2.0.0@ref')
+       |  --from <version[@ref]>   From version, optionally pinned to a git revision (e.g., '3.0.0@HEAD~3')
+       |  --to <version[@ref]>     To version, optionally pinned to a git revision (e.g., '3.0.0')
        |  --format {text|json}     Output format (default: text)
+       |  Exit codes: 0 = compatible, 1 = breaking but auto-derivable, 2 = non-derivable breaking change.
+       |
+       |  A '<version>@<gitref>' suffix on :diff/:bincompat --from/--to loads that side's models from
+       |  the given git commit/tag/ref (HEAD, HEAD~1, a tag, a SHA) via the 'git' binary; it fails fast
+       |  if 'git' is unavailable or the ref/path cannot be resolved. A side without '@' uses the working tree.
        |
        |LSP options (:lsp):
        |  --port <port>            TCP port to listen on (default: stdio)
@@ -203,6 +208,8 @@ object Baboon {
        |  baboon --model-dir ./models :explore
        |  baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
        |  baboon --model-dir ./models :diff --domain=my.pkg --from=1.0.0 --to=2.0.0 --format=json
+       |  baboon --model-dir ./models :diff --domain=my.pkg --from=2.0.0@HEAD~1 --to=2.0.0
+       |  baboon --model-dir ./models :bincompat --domain=my.pkg --from=3.0.0@HEAD~3 --to=3.0.0
        |""".stripMargin
   }
 
