@@ -231,6 +231,7 @@ object BaboonFamilyManager {
       retypeKeys: Set[DomainKey],
     ): F[NEList[BaboonIssue], BuildResult] = {
       for {
+        _ <- F.fromOption(emptyFamilyIssue)(NEList.from(parsed))
         resolvedImports <- resolveImports(parsed)
         domains <- F.parTraverseAccumErrors(resolvedImports) {
           raw =>
