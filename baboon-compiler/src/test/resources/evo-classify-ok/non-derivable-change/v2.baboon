@@ -1,0 +1,16 @@
+model evo.classify.non_derivable_change
+
+version "2.0.0"
+
+import "1.0.0" { * }
+
+// Status loses the Pending branch — this is a DerivationFailure.EnumBranchRemoved,
+// which forces CustomConversionRequired (the classifier's NonDerivable / exit 2 verdict).
+root data StatusHolder {
+  status: Status
+}
+
+enum Status {
+  Active
+  Inactive
+}

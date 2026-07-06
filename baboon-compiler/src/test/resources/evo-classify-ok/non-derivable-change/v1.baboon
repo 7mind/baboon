@@ -1,0 +1,15 @@
+model evo.classify.non_derivable_change
+
+version "1.0.0"
+
+// An enum with two branches; v2 removes one — yielding EnumBranchRemoved
+// (CustomConversionRequired) which requires a hand-written conversion.
+root data StatusHolder {
+  status: Status
+}
+
+enum Status {
+  Active
+  Inactive
+  Pending
+}

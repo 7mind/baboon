@@ -1,0 +1,13 @@
+model evo.classify.safe_add
+
+version "2.0.0"
+
+import "1.0.0" { * }
+
+// Item is inherited unchanged from v1.
+// Only a brand-new type is introduced — no existing type is modified.
+// Expected verdict: NoBreak (exit 0) — all conversions are trivial transfers.
+root data NewItem {
+  name: str
+  quantity: i32
+}

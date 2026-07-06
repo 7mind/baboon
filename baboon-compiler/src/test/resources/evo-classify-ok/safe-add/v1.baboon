@@ -1,0 +1,10 @@
+model evo.classify.safe_add
+
+version "1.0.0"
+
+// A minimal DTO that remains completely unmodified in v2.
+// Expected verdict: NoBreak (exit 0) — no existing type is altered.
+root data Item {
+  id: str
+  value: i32
+}

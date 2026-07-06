@@ -1,0 +1,19 @@
+model evo.classify.derivable_change
+
+version "1.0.0"
+
+// A DTO that will receive an opt field in v2 (derivable addition).
+root data Record {
+  name: str
+  value: i32
+}
+
+// An ADT that will gain a new branch in v2 (derivable branch-add).
+root adt Shape {
+  data Circle {
+    radius: i32
+  }
+  data Square {
+    side: i32
+  }
+}
