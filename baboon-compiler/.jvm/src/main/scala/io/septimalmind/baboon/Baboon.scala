@@ -251,6 +251,13 @@ object Baboon {
       System.exit(0)
     }
 
+    val hasModality = args.exists(_.startsWith(":"))
+    val hasInput    = args.contains("--model-dir") || args.contains("--model")
+    if (!hasModality && !hasInput) {
+      println(helpText)
+      System.exit(0)
+    }
+
     new MultiModalArgsParserImpl().parse(args).merge match {
       case MultiModalArgs(generalArgs, modalities) =>
         val isExploreMode = modalities.exists { case ModalityArgs(id, _) => id == "explore" }
@@ -830,6 +837,16 @@ object Baboon {
         .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
           (loader: BaboonLoader[F], logger: BLogger, loc: Locator) =>
             for {
+              _ <- F.maybeSuspend {
+                options.directoryInputs.foreach {
+                  dir =>
+                    val f = dir.toFile
+                    if (!f.exists() || !f.isDirectory) {
+                      System.err.println(s"--model-dir does not exist or is not a directory: ${f.getAbsolutePath}")
+                      sys.exit(2)
+                    }
+                }
+              }
               inputModels <- F.maybeSuspend(options.individualInputs.map(_.toPath) ++ options.directoryInputs.flatMap {
                 dir =>
                   IzFiles

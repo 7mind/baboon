@@ -3309,6 +3309,34 @@ echo "test-diff: :diff text + json both surface S1, I1, T7_D1"
 ret success:bool=true
 ```
 
+# action: test-no-args-help
+
+Smoke test for D42 Part A: `baboon` with no arguments must print help text and
+exit 0. Uses the built native binary. Checks are unconditional `if … exit 1`
+guards (not shell asserts, which are vacuous) so a regression fails the lane.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+
+HELP_OUT="$("$BABOON_BIN" 2>/dev/null)"
+HELP_RC=$?
+if [ "$HELP_RC" -ne 0 ]; then
+  echo "FAIL: baboon (no args) exited with $HELP_RC, expected 0" >&2
+  echo "$HELP_OUT" >&2
+  exit 1
+fi
+if ! printf '%s' "$HELP_OUT" | grep -qF "Usage: baboon"; then
+  echo "FAIL: baboon (no args) did not print help text (missing 'Usage: baboon')" >&2
+  echo "$HELP_OUT" >&2
+  exit 1
+fi
+
+echo "test-no-args-help: baboon with no args prints help and exits 0"
+ret success:bool=true
+```
+
 # action: test
 
 Run complete test suite (orchestrator action).
@@ -3410,6 +3438,7 @@ dep action.test-cs-wiring-errors-async
 dep action.test-rs-wiring-async
 dep action.test-rs-wiring-async-errors
 dep action.test-diff
+dep action.test-no-args-help
 
 # D40/T182: zero-service MCP lanes — permanent regression guard that the MCP
 # runtime is emitted (and the overlay compiles) even for a model with @root
