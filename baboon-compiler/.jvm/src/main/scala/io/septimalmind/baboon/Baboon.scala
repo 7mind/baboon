@@ -874,8 +874,13 @@ object Baboon {
                 options.directoryInputs.foreach {
                   dir =>
                     val f = dir.toFile
-                    if (!f.exists() || !f.isDirectory) {
-                      System.err.println(s"--model-dir does not exist or is not a directory: ${f.getAbsolutePath}")
+                    // Guard only against a NONEXISTENT path (the D42/T184 concern: IzFiles.walk on a
+                    // missing path throws an uncaught exception). Do NOT require a directory —
+                    // `--model-dir` historically also accepts a single `.baboon` FILE (IzFiles.walk
+                    // on a file yields that file), which many service/wiring lanes rely on
+                    // (e.g. `--model-dir ./test/services/petstore.baboon`).
+                    if (!f.exists()) {
+                      System.err.println(s"--model-dir does not exist: ${f.getAbsolutePath}")
                       sys.exit(2)
                     }
                 }
