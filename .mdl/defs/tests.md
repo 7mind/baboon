@@ -3337,7 +3337,11 @@ BABOON_BIN="${action.build.binary}"
 
 # --- Create a self-contained throwaway git repo in a temp dir ----------------
 DIFF_REPO="$(mktemp -d)"
-trap 'rm -rf "$DIFF_REPO"' EXIT
+# Do NOT install an EXIT trap here: mudyla's runtime.sh already sets
+# `trap 'mudyla_write_outputs' EXIT` to write output.json on exit, and a second
+# `trap ... EXIT` REPLACES it — output.json would never be written ("No output.json
+# generated"). Clean the temp repo explicitly on every exit path instead.
+cleanup_diff_repo() { [ -n "${DIFF_REPO:-}" ] && rm -rf "$DIFF_REPO"; }
 
 git -C "$DIFF_REPO" init -q
 git -C "$DIFF_REPO" config user.email "test@baboon-ci"
@@ -3378,11 +3382,12 @@ git -C "$DIFF_REPO" add v2.baboon
 git -C "$DIFF_REPO" commit -q -m "v2: AddedRecord"
 
 # --- Run :diff with @ref pinning the from-side at HEAD~1 ---------------------
-DIFF_OUT="$("$BABOON_BIN" --model-dir "$DIFF_REPO" :diff --domain diff.ref.fixture --from 1.0.0@HEAD~1 --to 2.0.0 2>&1)"
-DIFF_RC=$?
+# set-e-safe capture (a plain VAR="$(cmd)" aborts under `set -e` if cmd exits nonzero).
+if DIFF_OUT="$("$BABOON_BIN" --model-dir "$DIFF_REPO" :diff --domain diff.ref.fixture --from 1.0.0@HEAD~1 --to 2.0.0 2>&1)"; then DIFF_RC=0; else DIFF_RC=$?; fi
 if [ "$DIFF_RC" -ne 0 ]; then
   echo "FAIL: :diff --from 1.0.0@HEAD~1 exited with $DIFF_RC" >&2
   echo "$DIFF_OUT" >&2
+  cleanup_diff_repo
   exit 1
 fi
 
@@ -3390,6 +3395,7 @@ fi
 if ! printf '%s' "$DIFF_OUT" | grep -qF "AddedRecord"; then
   echo "FAIL: :diff --from 1.0.0@HEAD~1 output missing added type 'AddedRecord'" >&2
   echo "$DIFF_OUT" >&2
+  cleanup_diff_repo
   exit 1
 fi
 
@@ -3400,9 +3406,11 @@ WT_COUNT="$(git -C "$DIFF_REPO" worktree list --porcelain | grep -c '^worktree '
 if [ "$WT_COUNT" -ne 1 ]; then
   echo "FAIL: expected 1 worktree entry after diff, got $WT_COUNT (worktree leak)" >&2
   git -C "$DIFF_REPO" worktree list >&2
+  cleanup_diff_repo
   exit 1
 fi
 
+cleanup_diff_repo
 echo "test-diff-ref: :diff --from 1.0.0@HEAD~1 surfaces AddedRecord; no worktree leak"
 ret success:bool=true
 ```
@@ -3456,8 +3464,12 @@ BABOON_BIN="${action.build.binary}"
 BASE_MODEL_DIR="./baboon-compiler/src/test/resources/evo-classify-ok"
 
 # --- Test 1: safe-add → exit 0 (NoBreak) ---
-SAFE_ADD_OUT="$("$BABOON_BIN" --model-dir "$BASE_MODEL_DIR/safe-add" :bincompat --domain evo.classify.safe_add --from 1.0.0 --to 2.0.0 2>&1)"
-SAFE_ADD_RC=$?
+# NOTE: :bincompat exits NONZERO (1/2) on its success path (the verdict is the
+# machine signal), so the exit code MUST be captured in a way that does not trip
+# `set -e` — a plain `VAR="$(cmd)"` assignment aborts the whole script under `set -e`
+# when cmd exits nonzero, BEFORE `$?` can be read. The `if VAR=$(...); then ... else RC=$?`
+# form is exempt from `set -e` for the tested command and captures the real exit code.
+if SAFE_ADD_OUT="$("$BABOON_BIN" --model-dir "$BASE_MODEL_DIR/safe-add" :bincompat --domain evo.classify.safe_add --from 1.0.0 --to 2.0.0 2>&1)"; then SAFE_ADD_RC=0; else SAFE_ADD_RC=$?; fi
 if [ "$SAFE_ADD_RC" -ne 0 ]; then
   echo "FAIL: :bincompat safe-add exited with $SAFE_ADD_RC, expected 0 (NoBreak)" >&2
   echo "$SAFE_ADD_OUT" >&2
@@ -3465,8 +3477,7 @@ if [ "$SAFE_ADD_RC" -ne 0 ]; then
 fi
 
 # --- Test 2: derivable-change → exit 1 (Derivable) ---
-DERIVABLE_OUT="$("$BABOON_BIN" --model-dir "$BASE_MODEL_DIR/derivable-change" :bincompat --domain evo.classify.derivable_change --from 1.0.0 --to 2.0.0 2>&1)"
-DERIVABLE_RC=$?
+if DERIVABLE_OUT="$("$BABOON_BIN" --model-dir "$BASE_MODEL_DIR/derivable-change" :bincompat --domain evo.classify.derivable_change --from 1.0.0 --to 2.0.0 2>&1)"; then DERIVABLE_RC=0; else DERIVABLE_RC=$?; fi
 if [ "$DERIVABLE_RC" -ne 1 ]; then
   echo "FAIL: :bincompat derivable-change exited with $DERIVABLE_RC, expected 1 (Derivable)" >&2
   echo "$DERIVABLE_OUT" >&2
@@ -3474,8 +3485,7 @@ if [ "$DERIVABLE_RC" -ne 1 ]; then
 fi
 
 # --- Test 3: non-derivable-change → exit 2 (NonDerivable) ---
-NON_DERIVABLE_OUT="$("$BABOON_BIN" --model-dir "$BASE_MODEL_DIR/non-derivable-change" :bincompat --domain evo.classify.non_derivable_change --from 1.0.0 --to 2.0.0 2>&1)"
-NON_DERIVABLE_RC=$?
+if NON_DERIVABLE_OUT="$("$BABOON_BIN" --model-dir "$BASE_MODEL_DIR/non-derivable-change" :bincompat --domain evo.classify.non_derivable_change --from 1.0.0 --to 2.0.0 2>&1)"; then NON_DERIVABLE_RC=0; else NON_DERIVABLE_RC=$?; fi
 if [ "$NON_DERIVABLE_RC" -ne 2 ]; then
   echo "FAIL: :bincompat non-derivable-change exited with $NON_DERIVABLE_RC, expected 2 (NonDerivable)" >&2
   echo "$NON_DERIVABLE_OUT" >&2
