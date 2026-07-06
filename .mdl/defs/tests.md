@@ -3309,6 +3309,104 @@ echo "test-diff: :diff text + json both surface S1, I1, T7_D1"
 ret success:bool=true
 ```
 
+# action: test-diff-ref
+
+End-to-end smoke test for the `:diff --from <v>@<ref>` code path (T198, goal G33).
+Creates a self-contained throwaway git repo in a temp dir, commits version 1.0.0 of
+a small baboon fixture, then commits version 2.0.0 (a derivable change that adds
+`AddedRecord`). Runs the built native binary against the temp repo with
+`--from 1.0.0@HEAD~1 --to 2.0.0`, which pins the from-side at the prior commit via
+the T192 `GitModelMaterializer` and loads the to-side from the working tree. Asserts
+that `AddedRecord` (added in v2) appears in the diff output. Also asserts that no
+leftover detached git worktrees remain after the run (leak check: the bracket in
+`GitModelMaterializer` must remove the worktree even on success). Guards on git
+availability: if git is not on the PATH the lane skips rather than hard-failing.
+Checks are UNCONDITIONAL `if … exit 1` guards (not shell asserts, which are vacuous).
+
+```bash
+dep action.build
+
+# Guard: skip if git is not available.
+if ! command -v git &>/dev/null; then
+  echo "test-diff-ref: git not found on PATH, skipping"
+  ret success:bool=true
+  exit 0
+fi
+
+BABOON_BIN="${action.build.binary}"
+
+# --- Create a self-contained throwaway git repo in a temp dir ----------------
+DIFF_REPO="$(mktemp -d)"
+trap 'rm -rf "$DIFF_REPO"' EXIT
+
+git -C "$DIFF_REPO" init -q
+git -C "$DIFF_REPO" config user.email "test@baboon-ci"
+git -C "$DIFF_REPO" config user.name  "Baboon CI"
+
+# Commit 1 (HEAD~1): v1.0.0 model only — BaseRecord.
+# Only v1.baboon exists; baboon loads it and finds version 1.0.0.
+cat > "$DIFF_REPO/v1.baboon" << 'BABOON_V1'
+model diff.ref.fixture
+
+version "1.0.0"
+
+root data BaseRecord {
+  name: str
+  value: i32
+}
+BABOON_V1
+
+git -C "$DIFF_REPO" add v1.baboon
+git -C "$DIFF_REPO" commit -q -m "v1: BaseRecord"
+
+# Commit 2 (HEAD): v1.baboon unchanged; v2.baboon added (AddedRecord — derivable change).
+# Both files are present so baboon finds version 1.0.0 (for the import) and 2.0.0.
+cat > "$DIFF_REPO/v2.baboon" << 'BABOON_V2'
+model diff.ref.fixture
+
+version "2.0.0"
+
+import "1.0.0" { * }
+
+root data AddedRecord {
+  tag: str
+  count: i32
+}
+BABOON_V2
+
+git -C "$DIFF_REPO" add v2.baboon
+git -C "$DIFF_REPO" commit -q -m "v2: AddedRecord"
+
+# --- Run :diff with @ref pinning the from-side at HEAD~1 ---------------------
+DIFF_OUT="$("$BABOON_BIN" --model-dir "$DIFF_REPO" :diff --domain diff.ref.fixture --from 1.0.0@HEAD~1 --to 2.0.0 2>&1)"
+DIFF_RC=$?
+if [ "$DIFF_RC" -ne 0 ]; then
+  echo "FAIL: :diff --from 1.0.0@HEAD~1 exited with $DIFF_RC" >&2
+  echo "$DIFF_OUT" >&2
+  exit 1
+fi
+
+# Assert the added type surfaces in the output.
+if ! printf '%s' "$DIFF_OUT" | grep -qF "AddedRecord"; then
+  echo "FAIL: :diff --from 1.0.0@HEAD~1 output missing added type 'AddedRecord'" >&2
+  echo "$DIFF_OUT" >&2
+  exit 1
+fi
+
+# --- Worktree leak check: no leftover detached worktrees ---------------------
+# git worktree list prints one line per worktree; the main checkout is always
+# present. Any extra line means a worktree was not cleaned up.
+WT_COUNT="$(git -C "$DIFF_REPO" worktree list --porcelain | grep -c '^worktree ')"
+if [ "$WT_COUNT" -ne 1 ]; then
+  echo "FAIL: expected 1 worktree entry after diff, got $WT_COUNT (worktree leak)" >&2
+  git -C "$DIFF_REPO" worktree list >&2
+  exit 1
+fi
+
+echo "test-diff-ref: :diff --from 1.0.0@HEAD~1 surfaces AddedRecord; no worktree leak"
+ret success:bool=true
+```
+
 # action: test-no-args-help
 
 Smoke test for D42 Part A: `baboon` with no arguments must print help text and
@@ -3438,6 +3536,7 @@ dep action.test-cs-wiring-errors-async
 dep action.test-rs-wiring-async
 dep action.test-rs-wiring-async-errors
 dep action.test-diff
+dep action.test-diff-ref
 dep action.test-no-args-help
 
 # D40/T182: zero-service MCP lanes — permanent regression guard that the MCP

@@ -1,0 +1,10 @@
+model diff.ref.fixture
+
+version "1.0.0"
+
+// Minimal v1 model used by the test-diff-ref lane.
+// A single DTO that exists in v1 and is preserved in v2.
+root data BaseRecord {
+  name: str
+  value: i32
+}
