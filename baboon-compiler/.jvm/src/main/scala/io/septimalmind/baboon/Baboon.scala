@@ -7,6 +7,7 @@ import io.septimalmind.baboon.lsp._
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.BaboonModeAxis
+import io.septimalmind.baboon.bincompat.{BincompatClassifier, BincompatRenderer, BincompatResolver}
 import io.septimalmind.baboon.diff.{BaboonDiffRenderer, VersionRef}
 import io.septimalmind.baboon.git.{GitInvokerImpl, GitModelMaterializer, GitModelMaterializerErrors, TempWorktreeFactory}
 import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
@@ -1653,12 +1654,146 @@ object Baboon {
     }
   }
 
+  /** `:bincompat` seam (T191/G34). Mirrors [[diffEntrypointToStdout]]'s CLEAN-STDOUT contract
+    * (G32): the injector runs under the Explorer axis with a Noop [[BLogger]], so stdout carries
+    * ONLY the rendered verdict (via `Console.println`); ALL diagnostics go to `System.err`. The
+    * process exit code is the authoritative machine signal.
+    *
+    * Wiring: parse `--from`/`--to` (raw strings, `version` or `version@ref`) via
+    * [[io.septimalmind.baboon.diff.VersionRef.parse]] → [[BincompatResolver.resolvePair]] (T190,
+    * two INDEPENDENT [[Domain]] values so equal version ids on the two sides never collide) →
+    * [[BincompatClassifier.classify]] (T185, pure) → [[BincompatRenderer]] (T186) render text or
+    * JSON per `--format` → `Console.println` → `sys.exit(verdict.code)`.
+    *
+    * Exit-code bands (Q66), kept DISJOINT:
+    *   - VERDICT band: 0 NoBreak, 1 BreakingDerivable, 2 NonDerivable.
+    *   - USAGE: 3 — invalid `--from`/`--to` parse, or identical from==to (including ref).
+    *   - OPERATIONAL band (shared with `:diff`): 4 loader-failed, 5 domain/version-not-found,
+    *     6 comparison-failed; and the materializer's own git codes 7..12 mapped through
+    *     [[GitModelMaterializerErrors]] as-is.
+    */
   private def bincompatEntrypoint(
     directoryInputs: Set[FSPath],
     individualInputs: Set[FSPath],
     bincompatOptions: BincompatCLIOptions,
+  )(implicit
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
   ): Unit = {
-    sys.error("bincompatEntrypoint not yet implemented (T191)")
+    import PathTools.*
+
+    val pkg      = Pkg(NEList.unsafeFrom(bincompatOptions.domain.split("\\.").toList))
+    val emitJson = bincompatOptions.format.contains("json")
+
+    // Parse from/to via T189 VersionRef.parse; a `version@ref` pins that side at a git ref. A parse
+    // error is a USAGE error (exit 3), before any load.
+    val fromRef = VersionRef.parse(bincompatOptions.from) match {
+      case Right(vr) => vr
+      case Left(err) =>
+        System.err.println(s"Invalid --from '${bincompatOptions.from}': ${err.message}")
+        sys.exit(3)
+    }
+    val toRef = VersionRef.parse(bincompatOptions.to) match {
+      case Right(vr) => vr
+      case Left(err) =>
+        System.err.println(s"Invalid --to '${bincompatOptions.to}': ${err.message}")
+        sys.exit(3)
+    }
+
+    // Identical from==to (version AND ref) is a no-op comparison; treat as a USAGE error (exit 3)
+    // per the recommended reading, with an actionable stderr message.
+    if (fromRef.version == toRef.version && fromRef.ref == toRef.ref) {
+      System.err.println(s"--from and --to are identical ('${bincompatOptions.from}'); nothing to compare.")
+      sys.exit(3)
+    }
+
+    val workingModelDirs = directoryInputs.map(_.toPath).toList
+    val workingModels    = individualInputs.map(_.toPath).toList
+    val cwd              = Paths.get("").toAbsolutePath
+
+    val materializer = new GitModelMaterializer[EitherF](
+      new GitInvokerImpl[EitherF],
+      new TempWorktreeFactory.SystemTempWorktreeFactory[EitherF],
+    )
+    val resolver = new BincompatResolver[EitherF](materializer)
+
+    val options = CompilerOptions(
+      debug                    = false,
+      individualInputs         = individualInputs,
+      directoryInputs          = directoryInputs,
+      targets                  = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockfile                 = None,
+      emitOnly                 = None,
+    )
+    val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
+
+    // Map a resolver ResolveFailure to its reserved exit code, printing an actionable stderr
+    // message. Distinct from the 0/1/2 verdict band.
+    def reportResolveFailureAndExit(failure: BincompatResolver.ResolveFailure): Nothing = failure match {
+      case BincompatResolver.ResolveFailure.Materialize(f) =>
+        // Reuse the materializer's own git taxonomy (codes 7..12).
+        GitModelMaterializerErrors.reportAndExit(f)
+      case BincompatResolver.ResolveFailure.Loader(issues) =>
+        System.err.println("Loader failed")
+        System.err.println(issues.toList.stringifyIssues)
+        sys.exit(4)
+      case BincompatResolver.ResolveFailure.DomainNotFound(_, available) =>
+        System.err.println(s"Domain not found: ${bincompatOptions.domain}")
+        System.err.println(s"Available domains: ${available.niceList()}")
+        sys.exit(5)
+      case BincompatResolver.ResolveFailure.VersionNotFound(_, version, available) =>
+        System.err.println(s"Version not found in domain ${bincompatOptions.domain}: $version")
+        System.err.println(s"Available versions: ${available.niceList()}")
+        sys.exit(5)
+    }
+
+    // Explorer axis + Noop BLogger => stdout carries ONLY the verdict (G32). The resolver git
+    // pre-flight (for any @ref side) runs inside its own bracket via resolvePair.
+    runner.run {
+      Injector
+        .NoCycles[EitherF[Throwable, _]]()
+        .produceRun(m, Activation(BaboonModeAxis.Explorer)) {
+          (loader: BaboonLoader[EitherF]) =>
+            resolver
+              .resolvePair(
+                loader,
+                pkg,
+                BincompatResolver.VersionRefLike(fromRef.version, fromRef.ref),
+                BincompatResolver.VersionRefLike(toRef.version, toRef.ref),
+                workingModelDirs,
+                workingModels,
+                cwd,
+              )
+              .catchAll(failure => F.maybeSuspend(reportResolveFailureAndExit(failure)))
+              .flatMap {
+                case (fromDomain, toDomain) =>
+                  F.maybeSuspend {
+                    // classify may throw BincompatClassifierException on an unexpected comparison
+                    // failure; map it to the shared 'comparison-failed' code (6), NOT the verdict band.
+                    val result =
+                      try {
+                        BincompatClassifier.classify(fromDomain, toDomain)
+                      } catch {
+                        case e: BincompatClassifier.BincompatClassifierException =>
+                          System.err.println("Comparison failed")
+                          System.err.println(e.issues.toList.stringifyIssues)
+                          sys.exit(6)
+                      }
+                    val rendered =
+                      if (emitJson) BincompatRenderer.renderJson(result)
+                      else BincompatRenderer.renderText(result)
+                    Console.println(rendered)
+                    sys.exit(result.verdict.code)
+                  }
+              }
+        }
+    }
   }
 
 }
