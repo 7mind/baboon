@@ -3434,6 +3434,57 @@ fi
 echo "test-no-args-help: baboon with no args prints help and exits 0"
 ret success:bool=true
 ```
+# action: test-bincompat
+
+End-to-end smoke test for the `:bincompat` modality (T196, goal G34). Validates exit
+codes against the three T193 fixture pairs in `evo-classify-ok/{safe-add,derivable-change,
+non-derivable-change}`. Each pair holds two versions (v1.baboon and v2.baboon) of one
+domain, with expected verdicts:
+- `safe-add`: no existing type is altered — **exit 0** (NoBreak).
+- `derivable-change`: adds opt field + new ADT branch — **exit 1** (Derivable).
+- `non-derivable-change`: removes enum branch — **exit 2** (NonDerivable / CustomConversionRequired).
+
+Runs the built native binary with `--model-dir` (GLOBAL arg, BEFORE `:bincompat`),
+`:bincompat --domain <name> --from 1.0.0 --to 2.0.0` (LOCAL args), and unconditionally
+asserts exit codes via `if [ "$RC" -ne <expected> ]; then exit 1; fi` guards (not vacuous
+shell asserts, so a regression fails the lane).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+BASE_MODEL_DIR="./baboon-compiler/src/test/resources/evo-classify-ok"
+
+# --- Test 1: safe-add → exit 0 (NoBreak) ---
+SAFE_ADD_OUT="$("$BABOON_BIN" --model-dir "$BASE_MODEL_DIR/safe-add" :bincompat --domain evo.classify.safe_add --from 1.0.0 --to 2.0.0 2>&1)"
+SAFE_ADD_RC=$?
+if [ "$SAFE_ADD_RC" -ne 0 ]; then
+  echo "FAIL: :bincompat safe-add exited with $SAFE_ADD_RC, expected 0 (NoBreak)" >&2
+  echo "$SAFE_ADD_OUT" >&2
+  exit 1
+fi
+
+# --- Test 2: derivable-change → exit 1 (Derivable) ---
+DERIVABLE_OUT="$("$BABOON_BIN" --model-dir "$BASE_MODEL_DIR/derivable-change" :bincompat --domain evo.classify.derivable_change --from 1.0.0 --to 2.0.0 2>&1)"
+DERIVABLE_RC=$?
+if [ "$DERIVABLE_RC" -ne 1 ]; then
+  echo "FAIL: :bincompat derivable-change exited with $DERIVABLE_RC, expected 1 (Derivable)" >&2
+  echo "$DERIVABLE_OUT" >&2
+  exit 1
+fi
+
+# --- Test 3: non-derivable-change → exit 2 (NonDerivable) ---
+NON_DERIVABLE_OUT="$("$BABOON_BIN" --model-dir "$BASE_MODEL_DIR/non-derivable-change" :bincompat --domain evo.classify.non_derivable_change --from 1.0.0 --to 2.0.0 2>&1)"
+NON_DERIVABLE_RC=$?
+if [ "$NON_DERIVABLE_RC" -ne 2 ]; then
+  echo "FAIL: :bincompat non-derivable-change exited with $NON_DERIVABLE_RC, expected 2 (NonDerivable)" >&2
+  echo "$NON_DERIVABLE_OUT" >&2
+  exit 1
+fi
+
+echo "test-bincompat: safe-add→0, derivable-change→1, non-derivable-change→2 [OK]"
+ret success:bool=true
+```
 
 # action: test
 
@@ -3538,6 +3589,7 @@ dep action.test-rs-wiring-async-errors
 dep action.test-diff
 dep action.test-diff-ref
 dep action.test-no-args-help
+dep action.test-bincompat
 
 # D40/T182: zero-service MCP lanes — permanent regression guard that the MCP
 # runtime is emitted (and the overlay compiles) even for a model with @root
