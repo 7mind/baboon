@@ -10,11 +10,7 @@ import izumi.functional.bio.Error2
 import izumi.functional.bio.ParallelErrorAccumulatingOps2
 import izumi.functional.bio.impl.BioEither
 import izumi.functional.bio.unsafe.MaybeSuspend2
-import izumi.fundamentals.collections.nonempty.{NEList, NEMap, NEString}
-import izumi.fundamentals.graphs.DG
-import izumi.fundamentals.graphs.struct.AdjacencyPredList
-import izumi.fundamentals.graphs.GraphMeta
-import izumi.fundamentals.graphs.tools.cycles.LoopDetector
+import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
@@ -68,34 +64,37 @@ class EmptyParsedCrashTest extends AnyWordSpec with Matchers {
 
       val errors = result.swap.toOption.get
       errors.toList should have length 1
-      errors.head shouldBe a[TyperIssue.EmptyFamily]
+      // BaboonIssue.of wraps TyperIssue into BaboonIssue.Typer
+      errors.head shouldBe a[BaboonIssue.Typer]
 
-      val emptyFamily = errors.head.asInstanceOf[TyperIssue.EmptyFamily]
+      val emptyFamily = errors.head.asInstanceOf[BaboonIssue.Typer].issue.asInstanceOf[TyperIssue.EmptyFamily]
       emptyFamily.input shouldBe Nil
     }
   }
 
   // Minimal stubs — identical in structure to BaboonFamilyManagerIncrementalTest.
+  // The stubs for parser/typer/comparator are never invoked when load(Nil) is called
+  // because the guard in buildFamily short-circuits before any parsing or typing.
 
   private object NopFileContentProvider extends FileContentProvider {
     override def read(path: FSPath): Option[String] = None
   }
 
-  private final class NopParser[F[+_, +_]: Error2] extends BaboonParser[F] {
+  private final class NopParser[F[+_, +_]] extends BaboonParser[F] {
     override def parse(input: BaboonParser.Input): F[NEList[BaboonIssue], RawDomain] =
-      implicitly[Error2[F]].terminate(new RuntimeException("NopParser.parse should not be called"))
+      sys.error("NopParser.parse should not be called")
   }
 
-  private final class NopTyper[F[+_, +_]: Error2] extends BaboonTyper[F] {
+  private final class NopTyper[F[+_, +_]] extends BaboonTyper[F] {
     override def process(rawDomain: RawDomain): F[NEList[BaboonIssue], Domain] =
-      implicitly[Error2[F]].terminate(new RuntimeException("NopTyper.process should not be called"))
+      sys.error("NopTyper.process should not be called")
   }
 
-  private final class NopComparator[F[+_, +_]: Error2] extends BaboonComparator[F] {
+  private final class NopComparator[F[+_, +_]] extends BaboonComparator[F] {
     override def evolve(pkg: Pkg, versions: NEMap[Version, Domain]): F[NEList[BaboonIssue], BaboonEvolution] =
-      implicitly[Error2[F]].terminate(new RuntimeException("NopComparator.evolve should not be called"))
+      sys.error("NopComparator.evolve should not be called")
     override def compare(last: Domain, prev: Domain): F[NEList[BaboonIssue], BaboonDiff] =
-      implicitly[Error2[F]].terminate(new RuntimeException("NopComparator.compare should not be called"))
+      sys.error("NopComparator.compare should not be called")
   }
 
   private final class NopValidator[F[+_, +_]: Error2] extends BaboonValidator[F] {
