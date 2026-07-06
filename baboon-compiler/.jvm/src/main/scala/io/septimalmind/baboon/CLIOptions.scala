@@ -469,6 +469,17 @@ case class DiffCLIOptions(
   format: Option[String],
 )
 
+case class BincompatCLIOptions(
+  @HelpMessage("Domain name (e.g., 'my.domain.name')")
+  domain: String,
+  @HelpMessage("From version (e.g., '1.0.0' or '1.0.0@ref')")
+  from: String,
+  @HelpMessage("To version (e.g., '2.0.0' or '2.0.0@ref')")
+  to: String,
+  @HelpMessage("Output format: text|json (default: text)")
+  format: Option[String],
+)
+
 case class SwCLIOptions(
   @Recurse
   generic: GenericTranspilerCLIOptions,

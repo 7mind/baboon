@@ -139,6 +139,7 @@ object Baboon {
        |  :explore                 Start interactive explorer
        |  :scheme                  Emit a cleaned-up single .baboon file for a domain version
        |  :diff                    Report the schema diff between two versions of a domain
+       |  :bincompat               Check binary compatibility between two versions of a domain
        |
        |Common transpiler options (apply to all language modalities):
        |  --output <dir>           Output directory for generated code (required)
@@ -181,6 +182,12 @@ object Baboon {
        |  --from <version>         Older version (e.g., '1.0.0')
        |  --to <version>           Newer version (e.g., '2.0.0')
        |  --target <file>          Target output file path (when absent, the diff is printed to stdout)
+       |  --format {text|json}     Output format (default: text)
+       |
+       |Bincompat options (:bincompat):
+       |  --domain <name>          Domain name (e.g., 'my.domain.name')
+       |  --from <version>         From version (e.g., '1.0.0' or '1.0.0@ref')
+       |  --to <version>           To version (e.g., '2.0.0' or '2.0.0@ref')
        |  --format {text|json}     Output format (default: text)
        |
        |LSP options (:lsp):
@@ -260,10 +267,11 @@ object Baboon {
 
     new MultiModalArgsParserImpl().parse(args).merge match {
       case MultiModalArgs(generalArgs, modalities) =>
-        val isExploreMode = modalities.exists { case ModalityArgs(id, _) => id == "explore" }
-        val isSchemeMode  = modalities.exists { case ModalityArgs(id, _) => id == "scheme" }
-        val isDiffMode    = modalities.exists { case ModalityArgs(id, _) => id == "diff" }
-        val _             = isLspMode || modalities.exists { case ModalityArgs(id, _) => id == "lsp" }
+        val isExploreMode  = modalities.exists { case ModalityArgs(id, _) => id == "explore" }
+        val isSchemeMode   = modalities.exists { case ModalityArgs(id, _) => id == "scheme" }
+        val isDiffMode     = modalities.exists { case ModalityArgs(id, _) => id == "diff" }
+        val isBincompatMode = modalities.exists { case ModalityArgs(id, _) => id == "bincompat" }
+        val _              = isLspMode || modalities.exists { case ModalityArgs(id, _) => id == "lsp" }
 
         if (isLspMode) {
           val lspModality = modalities.find(_.id == "lsp")
@@ -353,6 +361,29 @@ object Baboon {
             import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
 
             diffEntrypoint(directoryInputs, individualInputs, diffOptions._1)
+          }
+          out match {
+            case Left(value) =>
+              System.err.println(value.toList.niceList())
+              System.exit(1)
+              ()
+            case Right(_) =>
+              System.exit(0)
+              ()
+          }
+        } else if (isBincompatMode) {
+          val bincompatModality = modalities.find(_.id == "bincompat").get
+          val out = for {
+            generalOptions    <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
+            bincompatOptions  <- CaseApp.parse[BincompatCLIOptions](bincompatModality.args).leftMap(e => NEList(s"Can't parse bincompat CLI: $e"))
+          } yield {
+            val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+
+            import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
+            import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+            bincompatEntrypoint(directoryInputs, individualInputs, bincompatOptions._1)
           }
           out match {
             case Left(value) =>
@@ -1420,6 +1451,14 @@ object Baboon {
             }
         }
     }
+  }
+
+  private def bincompatEntrypoint(
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    bincompatOptions: BincompatCLIOptions,
+  ): Unit = {
+    sys.error("bincompatEntrypoint not yet implemented (T191)")
   }
 
 }
