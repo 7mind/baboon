@@ -1,0 +1,30 @@
+// D44 regression fixture — C# ADT-branch capture-collision (repro-first, T199).
+//
+// Purpose: reproduce defect D44. The C# JSON/UEBA encoder for an ADT lowers the
+// enclosing branch value to a local named `value` and then emits a pattern-match
+// capture per branch using the *branch type name lowercased* as the capture
+// identifier. A branch literally named `Value` lowercases to `value`, colliding
+// with the enclosing encoder local -> CS0136 (a local named `value` is already
+// defined in this scope) + CS0841 (use before declaration).
+//
+// This fixture is ISOLATED (own model-dir, NOT the shared
+// baboon-compiler/src/test/resources/baboon/ dir) because D44 is a C#-ONLY
+// collision: Kotlin's encoder uses param `instance` with per-arm block scopes
+// and Dart uses a fixed `branchVal` capture — neither collides. Forcing this
+// pathological ADT onto the other 8 backends' regular/wrapped lanes would add
+// risk with zero benefit (the D3/D5/D7/D11 failure mode from reserved-words-ok).
+// Mirrors the D9 `mcp-stub-ok` isolation precedent.
+//
+// EXPECTED STATE AT T199: generated C# for branch `Value` FAILS to compile with
+// CS0136/CS0841. That failing state is the deliverable; the generator fix is
+// T200. See REPRO.md in this directory for the exact captured failure.
+
+model csharp.adtcapture
+
+version "1.0.0"
+
+// Primary repro: branch `Value` lowercases to the encoder local `value`.
+root adt A {
+  data Value  { str: str }
+  data Custom { int: i32 }
+}

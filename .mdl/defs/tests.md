@@ -6278,3 +6278,75 @@ popd
 
 ret success:bool=true
 ```
+
+# action: test-gen-cs-adt-capture
+
+Generate C# for the D44 ADT-branch capture-collision repro (T199).
+
+ISOLATED model-dir `baboon-compiler/src/test/resources/csharp-adt-capture-ok/`
+(the D9 `mcp-stub-ok` precedent — NOT the shared `baboon/` model-dir, which is
+scanned by all 9 backends' regular/wrapped lanes). This is a C#-ONLY lane
+because D44 is a C#-only collision (Kotlin's encoder param is `instance` with
+per-arm block scopes; Dart uses a fixed `branchVal` capture — neither collides).
+
+REPRO-FIRST: the emitted C# is EXPECTED to fail `dotnet build` with CS0136/CS0841
+on the branch-`Value` capture until the generator fix (T200). See
+`baboon-compiler/src/test/resources/csharp-adt-capture-ok/REPRO.md`. This lane
+and its `test-cs-adt-capture` sibling are intentionally NOT wired into the
+`test`/`ci` aggregate while red; T200 flips the build green and adds the dep.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-adt-capture"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/csharp-adt-capture-ok/ \
+  --lockfile=./target/baboon-cs-adt-capture.lock \
+  :cs \
+  --output "$TEST_DIR/cs" \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true
+
+# Minimal self-contained csproj over the (self-contained) generated output.
+# net9.0 provides System.Runtime.CompilerServices.IsExternalInit natively, so
+# no polyfill is needed; CS0136/CS0841 are scoping errors independent of the
+# target framework / LangVersion.
+cat > "$TEST_DIR/cs/CaptureRepro.csproj" <<'CSPROJ'
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <RootNamespace>Definitions</RootNamespace>
+        <NoWarn>CS1591;CS1573</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+        <PackageReference Include="System.Collections.Immutable" Version="9.0.0" />
+    </ItemGroup>
+</Project>
+CSPROJ
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-adt-capture
+
+Build the generated C# from the D44 ADT-branch capture-collision repro (T199).
+
+REPRO-FIRST: this build is EXPECTED to FAIL with CS0136/CS0841 on the
+branch-`Value` capture (`A.cs`, JSON codec + UEBA codec) until the T200
+generator fix lands. It documents the pre-fix failing state. NOT wired into the
+`test`/`ci` aggregate while red; T200 flips it green and adds the dep.
+
+```bash
+TEST_DIR="${action.test-gen-cs-adt-capture.test_dir}"
+dotnet build -c Release "$TEST_DIR/cs/CaptureRepro.csproj"
+
+ret success:bool=true
+```
