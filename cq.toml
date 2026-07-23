@@ -1,2 +1,100 @@
+# cq.toml — cq review orchestrator config.
+# Full schema and the flat backward-compatible layout: see cq.toml.example.
+
+# alias -> "<harness>:<model>" token. Definitions only — an alias does nothing
+# until a panel (reviewers/planners) or a [harness.<h>.tiers] entry references it.
+# Optional trailing reasoning-effort suffix ":<effort>" (higher = more thinking):
+#   pi     — off | none | minimal | low | medium | high | xhigh | max  (used at dispatch)
+#   claude — low | medium | high | xhigh | max                         (parsed; not yet used)
+# GPT-5.6 accepts none | low | medium | high | xhigh | max.
+# The openai-codex provider serves the GPT-5.6 family, a capability tier ladder:
+# sol (flagship, most capable) > terra (balanced everyday) > luna (fast, cheap).
+[aliases]
+  opus      = "claude:opus"                           # bare alias — the ONLY form the Agent
+  sonnet    = "claude:sonnet"                          # tool's per-dispatch model override enum
+  haiku     = "claude:haiku"                           # accepts (Q252/T509). opus/sonnet/fable
+  opus-max  = "claude:opus:max"                        # resolve to current-family native 1M
+  fable     = "claude:fable"                           # context (no [1m] needed); haiku is the 200K fast tier
+  grok      = "pi:grok-build/grok-build:high"         # pi: <provider>/<model>
+  codex     = "pi:openai-codex/gpt-5.6-sol:xhigh"     # frontier — GPT-5.6 sol (flagship)
+  terra     = "pi:openai-codex/gpt-5.6-terra:high"    # standard — balanced everyday
+  luna      = "pi:openai-codex/gpt-5.6-luna:low"      # fast — high-volume lightweight
+  codex-max = "pi:openai-codex/gpt-5.6-sol:max"       # sol at max thinking
+
+# Per-agent tier. An agent not listed here defaults to "standard".
+[agent_tiers]
+  investigate-explorer        = "frontier"
+  investigate-prober          = "standard"
+  research-explorer           = "frontier"
+  research-experimenter       = "frontier"
+  plan-advance                = "frontier"
+  plan-reviewer               = "frontier"
+  implement-worker            = "standard"
+  implement-reviewer          = "frontier"
+  implement-conflict-resolver = "standard"
+
+# Optional per-agent reasoning-effort override (Q254), ORTHOGONAL to
+# [agent_tiers]: the tier picks the MODEL; this overrides the resolved token's
+# EFFORT (":<effort>" suffix). Override wins; an unlisted agent keeps the tier
+# token's effort. Values must be legal for the agent's RESOLVED harness:
+#   pi     — off | none | minimal | low | medium | high | xhigh | max
+#   claude — low | medium | high | xhigh | max
+# [agent_efforts]
+#   plan-reviewer = "max"
+
+# Panels + tier->model map for the default (claude) harness. Tiers are
+# harness-specific — there is no shared [tiers]. This map is what makes a model
+# dispatchable; an alias named by no tier here is inert.
+[harness.claude]
+  reviewers = ["opus"]
+  planners  = ["opus"]
+[harness.claude.tiers]           # tier -> one model (a model may serve several tiers)
+  frontier = "opus"              # swap to "fable" or "opus-max" to change frontier
+  standard = "sonnet"
+  fast     = "haiku"
+
+# The pi harness: its own panels + tier->model map. Ignored under claude; active
+# when CQ_HARNESS=pi. [harness.pi.tiers] wholly replaces the shared [tiers].
+[harness.pi]
+  reviewers = ["grok", "codex"]
+  planners  = ["codex"]
+[harness.pi.tiers]                 # GPT-5.6 family mapped by capability
+  frontier = "codex"               # sol (flagship) at xhigh
+  standard = "terra"               # balanced everyday
+  fast     = "luna"                # fast, high-volume
+
+# Ledger storage backend — "xdg" is the DEFAULT (K117; also what a fresh
+# `cq init` writes, T501): the out-of-tree bun:sqlite primary (K102), keyed
+# off this repo's git identity (or [ledger].projectId below). "fs" (in-tree
+# .cq/) and "git-object" are LEGACY, deprecated — selecting one explicitly
+# still works but warns and points at `cq migrate`.
+# "postgres" is an opt-in, multi-tenant external backend (G81; full store
+# parity — init/reset/erase/backup/restore/migrate all wired, T577-T584).
+# backup (default: "none") is OFF by default (Q244); projectId is an
+# optional committed project-identity key (Q246), needed only for a repo
+# with no stable git root commit (e.g. a shallow clone).
 [ledger]
-  backend = "git-object"
+  backend   = "xdg"
+# backup    = "none"
+# projectId = "my-project"
+
+# To opt into the postgres backend instead, uncomment the block below (and
+# comment out/remove the active [ledger] table above — cq.toml has exactly
+# one active [ledger] table). `url` here is a COMMITTED, credential-less
+# default (Q278) — e.g. "postgres://host:5432/dbname" with no user/password.
+# SECRET HYGIENE: a real connection string (with credentials) belongs in the
+# CQ_LEDGER_PG_URL or DATABASE_URL environment variable — highest precedence,
+# resolved at runtime — NEVER in this committed file. `cq migrate --to
+# postgres` (from an existing backend = "xdg" repo) is the one-shot importer.
+# [ledger]
+#   backend = "postgres"
+#   url     = "postgres://host:5432/dbname"   # credential-less; see CQ_LEDGER_PG_URL above
+# backup    = "none"
+# projectId = "my-project"
+
+# [project] (T570) — optional project-level metadata; `name` is a cosmetic
+# display-name override (Q270's reconciled chain: [project].name >
+# [ledger].projectId > repo root basename > the resolved projectKey itself).
+# No credentials belong here either.
+# [project]
+#   name = "my-project"
