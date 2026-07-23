@@ -3624,6 +3624,15 @@ dep action.test-python-mcp-zero
 dep action.test-dart-mcp-zero
 dep action.test-swift-mcp-zero
 
+# D44/T200: C#-only ADT-branch capture-collision regression guard. The isolated
+# `csharp-adt-capture-ok` fixture (T199) exercises a branch literally named
+# `Value` (lowercases to the encoder local `value`); the gen lane emits C# and
+# the build lane `dotnet build`s it. These were held OUT of the aggregate while
+# red (repro-first, T199); T200 fixed both C# codec generators so the build is
+# now green, so the lanes are wired in as a permanent regression guard.
+dep action.test-gen-cs-adt-capture
+dep action.test-cs-adt-capture
+
 ret success:bool=true
 ```
 

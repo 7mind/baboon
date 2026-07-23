@@ -150,12 +150,16 @@ class CSJsonCodecGenerator(
 
   private def genAdtBodies(name: CSValue.CSType, a: Typedef.Adt): (TextTree[CSValue], TextTree[Nothing]) = {
 
-    val branches = a.dataMembers(domain).map {
-      m =>
-        val branchNs      = q"${escapeCsKeyword(csTypeInfo.adtNsName(a.id))}"
-        val branchName    = m.name.name
-        val fqBranch      = q"$branchNs.${escapeCsKeyword(branchName)}"
-        val branchNameRef = q"${escapeCsKeyword(branchName.toLowerCase)}"
+    val branches = a.dataMembers(domain).zipWithIndex.map {
+      case (m, idx) =>
+        val branchNs   = q"${escapeCsKeyword(csTypeInfo.adtNsName(a.id))}"
+        val branchName = m.name.name
+        val fqBranch   = q"$branchNs.${escapeCsKeyword(branchName)}"
+        // Suffix with the branch index so the pattern-capture local can never equal the
+        // enclosing `value` encoder parameter (D44) nor collide with a case-only-differing
+        // sibling. escapeCsKeyword is retained (D1 reserved-word fix); the capture is internal
+        // only (never on the wire), so the rename is wire-safe.
+        val branchNameRef = s"${escapeCsKeyword(branchName.toLowerCase)}_$idx"
 
         val branchTpe           = trans.asCsType(m, domain, evo)
         val branchCodec         = codecName(branchTpe, CSTypeOrigin(m, domain))

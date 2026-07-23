@@ -193,7 +193,11 @@ class CSUEBACodecGenerator(
 
         val cName = codecName(m)
 
-        val castedName = escapeCsKeyword(branchName.toLowerCase)
+        // Suffix with the branch index so the pattern-capture local can never equal the
+        // enclosing `value` encoder parameter (D44) nor collide with a case-only-differing
+        // sibling. escapeCsKeyword is retained (D1 reserved-word fix); the capture is internal
+        // only (never on the wire), so the rename is wire-safe.
+        val castedName = s"${escapeCsKeyword(branchName.toLowerCase)}_$idx"
 
         val encBody = if (target.language.wrappedAdtBranchCodecs) {
           q"""$cName.Instance.Encode(ctx, writer, $castedName);"""
