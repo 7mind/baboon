@@ -757,6 +757,14 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         // empty .ts) must be skipped from the barrel — `export * from './X'` against an empty
         // file produces TS2306 "File ... is not a module" on strict tsc/deno.
         val fileExports = sortedFiles.map(f => (f, exportedNames(f))).filter(_._2.nonEmpty)
+        // D45: a file whose only export is verbatim/string-form (the domain facade is emitted as
+        // TextTree.verbatim with a plain-text `export class ...Facade extends BaboonCodecsFacade`)
+        // contributes no TsValue.TsType nodes, so exportedNames is empty and it is dropped from
+        // fileExports above. Detect such files via the textual hasExports fallback (the same
+        // predicate generateServiceBarrels uses) and re-export each with a plain `export *`. They
+        // carry no AST names, so they cannot collide with named exports and need no collision
+        // handling — the same treatment collision-free named files already receive.
+        val verbatimExportFiles = sortedFiles.filter(f => exportedNames(f).isEmpty && hasExports(f))
         val nameCount   = fileExports.flatMap(_._2.keys).groupBy(identity).view.mapValues(_.size).toMap
         val colliding   = nameCount.filter(_._2 > 1).keySet
 
@@ -789,9 +797,15 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
           }
         }
 
+        val verbatimReexports = verbatimExportFiles.map {
+          f =>
+            val fname = f.path.drop(dir.length + 1).stripSuffix(".ts")
+            TextTree.text[TsValue](s"export * from './$fname$sfx';")
+        }
+
         // A models-level dir that contains services also re-exports each
         // service as a namespace (`export * as PetStore from './pet-store'`).
-        val allReexports = reexports ++ modelsExtras.getOrElse(dir, Nil)
+        val allReexports = reexports ++ verbatimReexports ++ modelsExtras.getOrElse(dir, Nil)
 
         if (allReexports.nonEmpty) {
           Some(barrelOutput(s"$dir/index.ts", allReexports.reduce((a, b) => q"$a\n$b")))
