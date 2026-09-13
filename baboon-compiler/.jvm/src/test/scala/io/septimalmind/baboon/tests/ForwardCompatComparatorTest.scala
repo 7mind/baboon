@@ -88,6 +88,43 @@ abstract class ForwardCompatComparatorTestBase[F[+_, +_]: Error2: TagKK: BaboonT
         }
     }
 
+    "classify byte-affecting dependency changes as modified (sameIn must not overclaim byte-identity)" in {
+      (loader: BaboonLoader[F]) =>
+        for {
+          family <- loadFwd(loader)
+        } yield {
+          val evo = evolutionOf(family)
+          val v1  = Version.parse("1.0.0")
+          val v2  = Version.parse("1.1.0")
+
+          def twins(typeName: String): List[Version] = {
+            val ids = evo.typesUnchangedSince(v1).keys.collect {
+              case id: TypeId.User if id.name.name == typeName => id: TypeId
+            }.toList
+            assert(ids.size == 1, s"expected exactly one type named $typeName, got $ids")
+            evo.typesUnchangedSince(v1)(ids.head).higherTwins(v1)
+          }
+
+          // dep enum members reordered: UEBA discriminants are positional, host bytes change
+          assert(!twins("EnumReorderHost").contains(v2), "EnumReorderHost must not be byte-identical across a dep-enum reorder")
+          // ADT branch list reordered: branch-index bytes shift for the ADT and its host
+          assert(!twins("SumReorder").contains(v2), "SumReorder must not be byte-identical across a branch reorder")
+          assert(!twins("SumReorderHost").contains(v2), "SumReorderHost must not be byte-identical across a dep-ADT branch reorder")
+          // dep's map type arguments swapped: key/value wire order flips inside the host's bytes
+          assert(!twins("MapSwapHost").contains(v2), "MapSwapHost must not be byte-identical across a dep map-argument swap")
+
+          // control: genuinely unchanged closures keep their twins
+          assert(twins("HostOfUnchanged").contains(v2))
+          assert(twins("Stable").contains(v2))
+
+          // forward tiers for the new fixtures (order-sensitive computation, unaffected by hashing)
+          assert(runOf(evo, "1.0.0", "SumReorder") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive), ("1.2.0", JsonAdditive)))
+          assert(runOf(evo, "1.0.0", "SumReorderHost") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive), ("1.2.0", JsonAdditive)))
+          assert(runOf(evo, "1.0.0", "MapCarrier") == List(("1.0.0", Identical)))
+          assert(runOf(evo, "1.0.0", "MapSwapHost") == List(("1.0.0", Identical)))
+        }
+    }
+
     "maintain structural invariants and consistency with sameIn ranges" in {
       (loader: BaboonLoader[F]) =>
         for {
@@ -132,14 +169,6 @@ abstract class ForwardCompatComparatorTestBase[F[+_, +_]: Error2: TagKK: BaboonT
               }
           }
 
-          // Regression documentation of the known sameIn overclaim: the host of a
-          // reordered enum stays `unmodified` (order-erased deepId) although its
-          // UEBA bytes change; the forward metadata correctly demotes it to JSON.
-          val reorderHostId = evo.typesForwardReadable(Version.parse("1.0.0")).keys.collectFirst {
-            case id: TypeId.User if id.name.name == "EnumReorderHost" => id: TypeId
-          }.get
-          val reorderHostTwins = evo.typesUnchangedSince(Version.parse("1.0.0"))(reorderHostId).higherTwins(Version.parse("1.0.0"))
-          assert(reorderHostTwins.contains(Version.parse("1.1.0")), "precondition: sameIn still overclaims for EnumReorderHost")
           assert(runOf(evo, "1.0.0", "EnumReorderHost").tail.forall(_._2 == JsonAdditive))
         }
     }

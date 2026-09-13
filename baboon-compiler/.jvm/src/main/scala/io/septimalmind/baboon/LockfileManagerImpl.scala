@@ -16,14 +16,17 @@ class LockfileManagerImpl[F[+_, +_]: Error2: MaybeSuspend2](
   enq: BaboonEnquiries,
 ) extends LockfileManager[F] {
   def validateLock(model: BaboonFamily): F[NEList[BaboonIssue], Unit] = {
-    val currentSigs = Locks(model.domains.map {
-      case (pkg, lineage) =>
-        val versions = lineage.versions.toSeq.map {
-          case (ver, dom) =>
-            VersionLock(ver, sigOf(dom))
-        }.toList
-        (pkg, versions)
-    }.toMap)
+    val currentSigs = Locks(
+      model.domains.map {
+        case (pkg, lineage) =>
+          val versions = lineage.versions.toSeq.map {
+            case (ver, dom) =>
+              VersionLock(ver, sigOf(dom))
+          }.toList
+          (pkg, versions)
+      }.toMap,
+      Locks.CurrentScheme,
+    )
 
     // `evolution.latest` is the only model-derived input the enforcement matrix needs,
     // so we project it out and drive the matrix over the projection. This keeps the
@@ -65,11 +68,18 @@ class LockfileManagerImpl[F[+_, +_]: Error2: MaybeSuspend2](
           } yield {
             out
           }).catchAll(e => F.fail(BaboonIssue.of(IOIssue.CantReadInput(lockfilePath.toString, e))))
-          _ <- compareSigs(latestOf, currentSigs, existingSigs, options.lockfileEnforcement)
-          // Reached only when enforcement passed (or was None): force rewrites, create-only leaves untouched.
+          // Signatures from a different hashing scheme are incomparable: a scheme
+          // mismatch is a compiler upgrade, not model drift. Skip enforcement for
+          // that (one) run and rewrite the lockfile with current-scheme signatures
+          // even under CreateOnly, so the lock resumes protecting from the next run.
+          schemeMatches = existingSigs.scheme == currentSigs.scheme
+          _            <- F.when(schemeMatches)(compareSigs(latestOf, currentSigs, existingSigs, options.lockfileEnforcement))
+          // Reached only when enforcement passed (or was None/skipped): force rewrites,
+          // create-only leaves untouched unless a scheme migration is required.
           _ <- options.lockfileUpdate match {
-            case LockfileUpdate.Force      => writeCurrent(lockfilePath)
-            case LockfileUpdate.CreateOnly => F.unit
+            case LockfileUpdate.Force                       => writeCurrent(lockfilePath)
+            case LockfileUpdate.CreateOnly if !schemeMatches => writeCurrent(lockfilePath)
+            case LockfileUpdate.CreateOnly                  => F.unit
           }
         } yield {}
     }

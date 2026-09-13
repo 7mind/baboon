@@ -7,9 +7,10 @@ writer version); metagen key `forwardReadable` emits user types only; tier vocab
 `identical` / `prefix-any-mode` / `prefix-compact` / `json-additive`. PREFIX_ANY_MODE
 has comparator-level coverage only (fixed-length appends are never auto-derivable, so
 no stub-matrix e2e without manual conversions). Discovered en route: `sameIn`
-overclaims byte-identity when a dependency is merely reordered (deepSchemaRepr sorts
-flattened dep reprs) — documented in ForwardCompatComparatorTest and
-docs/forward-compat.md; the enum wire is a positional u8 (ueba-format.md corrected).
+overclaimed byte-identity when a dependency was merely reordered (deepSchemaRepr sorted
+flattened dep reprs) — FIXED 2026-09-13 with order-/structure-sensitive deep hashing
+(lockfile signature scheme 2 with in-place migration); see docs/forward-compat.md.
+The enum wire is a positional u8 (ueba-format.md corrected).
 
 ## 1. Problem
 

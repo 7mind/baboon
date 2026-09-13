@@ -88,3 +88,28 @@ root adt Sum {
     rv: str
   }
 }
+
+// v2 reorders the ADT branch list: positional UEBA discriminants shift, so
+// neither the ADT nor its host may be classified byte-identical
+root adt SumReorder {
+  data SL {
+    slv: i32
+  }
+  data SR {
+    srv: str
+  }
+}
+
+root data SumReorderHost {
+  s: SumReorder
+}
+
+// v2 swaps the map's type arguments INSIDE the dep; the host's own shape is
+// unchanged but its bytes are not
+data MapCarrier {
+  mc: map[i32, str]
+}
+
+root data MapSwapHost {
+  c: MapCarrier
+}

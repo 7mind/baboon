@@ -80,14 +80,30 @@ These are usage-site properties the compiler cannot check. `identical` and
 
 ## Relationship to sameIn
 
-`identical` forward tiers imply membership in the `sameIn` run — but not the
-converse: `sameIn` classification hashes dependency structure with per-field
-sorting (`deepSchemaRepr`), which erases member/field *order* inside
-dependencies. A type whose dependency enum was merely reordered stays
-`unmodified` even though its UEBA discriminants shift. The forward metadata is
-computed order-sensitively and demotes such a type to `json-additive`; when the
-two disagree, trust the forward metadata. (Tracked as a known `sameIn`
-overclaim; see `ForwardCompatComparatorTest`.)
+`identical` forward tiers imply membership in the `sameIn` run. Historically
+the converse could fail: `deepSchemaRepr` sorted the flattened dependency repr
+lines per field (and sorted ADT branch reprs), erasing member/field/branch
+*order* inside dependencies and type-constructor argument order — so a type
+whose dependency enum was merely reordered (or whose dep ADT's branches were
+reordered, or whose dep's `map[K,V]` arguments were swapped) stayed
+`unmodified` even though its UEBA bytes changed. This was fixed by making deep
+hashing order- and structure-sensitive (signature scheme 2): dependency reprs
+stay contiguous and internally ordered (determinism comes from sorting the
+dependency *ids*), each field line carries its full type-ref rendering, and ADT
+branch order — the UEBA discriminant order — is preserved. Regression coverage:
+`ForwardCompatComparatorTest` ("sameIn must not overclaim byte-identity").
+
+Two consequences of scheme 2:
+
+- **Lockfiles** persist deepId-derived signatures. The lockfile format carries a
+  `scheme` marker; a lockfile written by an older compiler (scheme 1, or no
+  marker) is treated as incomparable — drift enforcement is skipped for that one
+  run and the file is re-signed in place, even under `create-only`.
+- **The M20 manual→sugared ADT rewrite is honestly classified**: the sugared
+  expansion reorders branches (local members first), which shifts positional
+  UEBA discriminants, so such a step is `deepModified` (forward tier
+  `json-additive`), with a fully derivable `CopyAdtBranchByName` conversion —
+  not byte-identical, as the branch-sorted hash used to claim.
 
 ## End-to-end coverage
 
