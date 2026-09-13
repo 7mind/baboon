@@ -269,14 +269,32 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
           q""""${tid.toString}": [${version.sameIn.map(_.v.toString).map(s => q""""$s"""").toList.join(", ")}],"""
       }
 
+    val forwardEntries = lineage.evolution
+      .typesForwardReadable(domain.version)
+      .toList
+      .sortBy(_._1.toString)
+      .map {
+        case (tid, fr) =>
+          val pairs = fr.readable.toList.map { case (v, tier) => s""""${v.v.toString}": "${tier.wireName}"""" }.mkString(", ")
+          q""""${tid.toString}": [$pairs],"""
+      }
+
     val metaTree =
       q"""public class $metadataClassName {
          |    public static let unmodified: [String: [String]] = [
          |        ${entries.joinN().shift(8).trim}
          |    ]
          |
+         |    public static let forwardReadable: [String: [String: String]] = [
+         |        ${forwardEntries.joinN().shift(8).trim}
+         |    ]
+         |
          |    public func sameInVersions(_ typeId: String) -> [String] {
          |        return $metadataClassName.unmodified[typeId] ?? []
+         |    }
+         |
+         |    public func forwardReadableVersions(_ typeId: String) -> [String: String] {
+         |        return $metadataClassName.forwardReadable[typeId] ?? [:]
          |    }
          |}""".stripMargin
 

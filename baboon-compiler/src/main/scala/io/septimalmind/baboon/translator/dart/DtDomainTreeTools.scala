@@ -101,7 +101,19 @@ object DtDomainTreeTools {
         q"List<String>",
         isCodecData = false,
       )
-      List(sameInVersion)
+      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forwardEntries = forward.readable.toList.map {
+        case (v, tier) => s"'${v.v.toString}': '${tier.wireName}'"
+      }
+      val forwardReadable = MetaField(
+        q"static const Map<String, String> baboonForwardReadableConst",
+        q"{${forwardEntries.mkString(", ")}}",
+        q"$ref.baboonForwardReadableConst",
+        "baboonForwardReadable",
+        q"Map<String, String>",
+        isCodecData = false,
+      )
+      List(sameInVersion, forwardReadable)
     }
   }
 }

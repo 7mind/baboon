@@ -6,6 +6,15 @@ interface BaboonGenerated {
     val baboonDomainVersion: String
     val baboonDomainIdentifier: String
     val baboonSameInVersions: List<String>
+
+    /**
+     * Forward-readability: newer domain versions whose encoded data THIS version's codec can
+     * decode, mapped to the guarantee tier
+     * ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+     * The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
+     * the cursor after decoding.
+     */
+    val baboonForwardReadable: Map<String, String>
     val baboonTypeIdentifier: String
 
     fun domainVersion(): BaboonDomainVersion = BaboonDomainVersion(baboonDomainIdentifier, baboonDomainVersion)
@@ -24,6 +33,9 @@ interface BaboonAdtMemberMeta {
 
 interface BaboonMeta {
     fun sameInVersions(typeId: String): List<String>
+
+    /** Forward-readability per type: newer version -> guarantee tier (see BaboonGenerated.baboonForwardReadable). */
+    fun forwardReadableVersions(typeId: String): Map<String, String>
 }
 
 interface BaboonEnum<T> {

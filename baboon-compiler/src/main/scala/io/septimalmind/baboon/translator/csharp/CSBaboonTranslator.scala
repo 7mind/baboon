@@ -322,12 +322,23 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           q"""_unmodified.Add("${tid.toString}", new $csList<$csString> { ${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")} });"""
       }
 
+    val forwardEntries = lineage.evolution
+      .typesForwardReadable(domain.version)
+      .toList
+      .sortBy(_._1.toString)
+      .map {
+        case (tid, fr) =>
+          val pairs = fr.readable.toList.map { case (v, tier) => s"""{ "${v.v.toString}", "${tier.wireName}" }""" }.mkString(", ")
+          q"""_forwardReadable.Add("${tid.toString}", new $csDictionary<$csString, $csString> { $pairs });"""
+      }
+
     val metaTree =
       q"""public sealed class BaboonMeta : $iBaboonMeta
          |{
          |    private BaboonMeta()
          |    {
          |        ${entries.join("\n").shift(8).trim}
+         |        ${forwardEntries.join("\n").shift(8).trim}
          |    }
          |
          |    public $csIReadOnlyList<$csString> SameInVersions($csString typeIdString)
@@ -335,7 +346,14 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
          |        return _unmodified[typeIdString];
          |    }
          |
+         |    public $csIReadOnlyDictionary<$csString, $csString> ForwardReadableVersions($csString typeIdString)
+         |    {
+         |        return _forwardReadable[typeIdString];
+         |    }
+         |
          |    private readonly $csIDictionary<$csString, $csList<$csString>> _unmodified = new $csDictionary<$csString, $csList<$csString>>();
+         |
+         |    private readonly $csIDictionary<$csString, $csDictionary<$csString, $csString>> _forwardReadable = new $csDictionary<$csString, $csDictionary<$csString, $csString>>();
          |
          |    private static readonly $csLazy<BaboonMeta> LazyInstance = new $csLazy<BaboonMeta>(() => new BaboonMeta());
          |

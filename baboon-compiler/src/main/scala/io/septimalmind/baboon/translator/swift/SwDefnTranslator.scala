@@ -462,6 +462,7 @@ object SwDefnTranslator {
         "baboonDomainIdentifier",
         "baboonTypeIdentifier",
         "baboonSameInVersions",
+        "baboonForwardReadable",
         "baboonAdtTypeIdentifier",
       )
       val instanceForwarders = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.instanceForwarder)
@@ -843,6 +844,7 @@ object SwDefnTranslator {
         "baboonDomainIdentifier",
         "baboonTypeIdentifier",
         "baboonSameInVersions",
+        "baboonForwardReadable",
       )
       val instanceForwarders = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.instanceForwarder)
 
@@ -910,6 +912,7 @@ object SwDefnTranslator {
         "baboonDomainIdentifier",
         "baboonTypeIdentifier",
         "baboonSameInVersions",
+        "baboonForwardReadable",
       )
       val instanceForwarders = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.instanceForwarder)
 

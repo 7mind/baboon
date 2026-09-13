@@ -1194,6 +1194,11 @@ class BaboonConversionNotFound extends BaboonCodecException {
 /// implementation provides this.
 abstract class BaboonMeta {
   List<String> sameInVersions(String typeId);
+
+  /// Forward-readability per type: newer version -> guarantee tier (see
+  /// [BaboonMetaProvider.baboonForwardReadable]). Concrete default keeps subclassing
+  /// stubs working; generated metadata overrides it.
+  Map<String, String> forwardReadableVersions(String typeId) => {};
 }
 
 /// Semver-shaped 3-tuple for `getCodec`'s version-window math. PR-19-D01 lesson: regex literals
@@ -1429,6 +1434,13 @@ abstract class BaboonMetaProvider {
   String get baboonDomainIdentifier;
   String get baboonTypeIdentifier;
   List<String> get baboonSameInVersions;
+
+  /// Forward-readability: newer domain versions whose encoded data THIS version's codec can
+  /// decode, mapped to the guarantee tier
+  /// ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+  /// The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
+  /// the cursor after decoding.
+  Map<String, String> get baboonForwardReadable;
 }
 
 /// Implemented by generated ADT branches. Mirrors Kotlin's `BaboonAdtMemberMeta` for the

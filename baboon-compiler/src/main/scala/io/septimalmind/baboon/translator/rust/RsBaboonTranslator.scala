@@ -219,6 +219,12 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       val versionStr = domain.version.v.toString
       val verSuffix  = versionStr.replace('.', '_')
       val types      = collectTypes(domain)
+      val fwdByTypeId = lineage.evolution.typesForwardReadable(domain.version).map { case (tid, fr) => (tid.toString, fr) }
+      def fwdPairs(typeId: String): String = {
+        fwdByTypeId.get(typeId).toList.flatMap(_.readable.toList).map {
+          case (v, tier) => s"""("${v.v.toString}".to_string(), "${tier.wireName}".to_string())"""
+        }.mkString(", ")
+      }
 
       for ((fullPath, dynBase, typeId, _) <- types) {
         val binCodec  = s"${dynBase}V${verSuffix}BinCodec"
@@ -229,6 +235,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         sb.append(s"""    fn baboon_domain_identifier_dyn(&self) -> &str { "$domainIdStr" }\n""")
         sb.append(s"""    fn baboon_type_identifier_dyn(&self) -> &str { "$typeId" }\n""")
         sb.append(s"""    fn baboon_same_in_versions_dyn(&self) -> Vec<String> { vec!["$versionStr".to_string()] }\n""")
+        sb.append(s"""    fn baboon_forward_readable_dyn(&self) -> Vec<(String, String)> { vec![${fwdPairs(typeId)}] }\n""")
         sb.append( "    fn as_any(&self) -> &dyn std::any::Any { self }\n")
         sb.append( "    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }\n")
         sb.append( "}\n")
@@ -264,6 +271,14 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       sb.append(s"impl BaboonAnyMeta for $metaName {\n")
       sb.append( "    fn same_in_versions(&self, _type_id: &str) -> Vec<String> {\n")
       sb.append(s"""        vec!["$versionStr".to_string()]\n""")
+      sb.append( "    }\n")
+      sb.append( "    fn forward_readable_versions(&self, type_id: &str) -> Vec<(String, String)> {\n")
+      sb.append( "        match type_id {\n")
+      for ((_, _, typeId, _) <- types) {
+        sb.append(s"""            "$typeId" => vec![${fwdPairs(typeId)}],\n""")
+      }
+      sb.append( "            _ => Vec::new(),\n")
+      sb.append( "        }\n")
       sb.append( "    }\n")
       sb.append( "}\n")
 

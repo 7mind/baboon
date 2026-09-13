@@ -25,6 +25,14 @@ pub trait BaboonGeneratedDyn: std::any::Any + Send + Sync {
     /// Codegen invariant: the slice is never empty (`first()` is called for `domainVersionMinCompat`
     /// in `BaboonTypeMeta::from`); a violation panics with a fail-fast message.
     fn baboon_same_in_versions_dyn(&self) -> Vec<String>;
+    /// Forward-readability: newer domain versions whose encoded data THIS version's codec can
+    /// decode, as `(version, tier)` pairs with tier one of
+    /// "identical" | "prefix-any-mode" | "prefix-compact" | "json-additive".
+    /// The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
+    /// the cursor after decoding. Default is empty; generated impls override with the real table.
+    fn baboon_forward_readable_dyn(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
     fn as_any(&self) -> &dyn std::any::Any;
     /// Consume the box and recover an `Any` for downcasting via `Box::downcast`. Mirrors
     /// the C# `if (current is TTo result)` pattern used in `Convert<TFrom, TTo>`.
@@ -130,6 +138,12 @@ pub trait BaboonAnyMeta: Send + Sync {
     /// Returns versions in which `type_id` is structurally identical (mirrors Scala's
     /// `BaboonMeta.sameInVersions`). Used for the `getCodecMaxCompat` resolution path.
     fn same_in_versions(&self, type_id: &str) -> Vec<String>;
+    /// Forward-readability per type: `(newer version, guarantee tier)` pairs (see
+    /// `BaboonGeneratedDyn::baboon_forward_readable_dyn`). Default is empty; generated
+    /// metas override with the real table.
+    fn forward_readable_versions(&self, _type_id: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
 }
 
 // --- Domain version key ---

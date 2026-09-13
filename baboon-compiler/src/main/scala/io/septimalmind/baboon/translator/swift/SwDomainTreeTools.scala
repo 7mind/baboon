@@ -93,7 +93,18 @@ object SwDomainTreeTools {
         "baboonSameInVersions",
         "[String]",
       )
-      List(sameInVersion)
+      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forwardEntries = forward.readable.toList.map {
+        case (v, tier) => s""""${v.v.toString}": "${tier.wireName}""""
+      }
+      val forwardReadable = MetaField(
+        q"public static let baboonForwardReadable: [String: String]",
+        q"[${forwardEntries.mkString(", ")}]",
+        q"$ref.baboonForwardReadable",
+        "baboonForwardReadable",
+        "[String: String]",
+      )
+      List(sameInVersion, forwardReadable)
     }
   }
 }

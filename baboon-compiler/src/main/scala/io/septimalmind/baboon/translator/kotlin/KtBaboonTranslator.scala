@@ -197,16 +197,32 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
           q"""unmodified["${tid.toString}"] = listOf(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")})"""
       }
 
+    val forwardEntries = lineage.evolution
+      .typesForwardReadable(domain.version)
+      .toList
+      .sortBy(_._1.toString)
+      .map {
+        case (tid, fr) =>
+          val pairs = fr.readable.toList.map { case (v, tier) => s""""${v.v.toString}" to "${tier.wireName}"""" }.mkString(", ")
+          q"""forwardReadable["${tid.toString}"] = mapOf($pairs)"""
+      }
+
     val metaTree =
       q"""object BaboonMetadata : $baboonMeta {
          |  private val unmodified = mutableMapOf<String, List<String>>()
+         |  private val forwardReadable = mutableMapOf<String, Map<String, String>>()
          |
          |  init {
          |    ${entries.joinN().shift(4).trim}
+         |    ${forwardEntries.joinN().shift(4).trim}
          |  }
          |
          |  override fun sameInVersions(typeId: String): List<String> {
          |    return unmodified[typeId] ?: emptyList()
+         |  }
+         |
+         |  override fun forwardReadableVersions(typeId: String): Map<String, String> {
+         |    return forwardReadable[typeId] ?: emptyMap()
          |  }
          |}""".stripMargin
 
