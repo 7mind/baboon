@@ -79,6 +79,16 @@ public protocol BaboonMeta {
     // Until then, the facade only consumes this method via the Lazy-stored value, so missing
     // conformance only manifests when codecs from older versions are looked up.
     func sameInVersions(_ typeId: String) -> [String]
+
+    /// Forward-readability per type: newer version -> guarantee tier (see
+    /// `BaboonMetaProvider.baboonForwardReadable`).
+    func forwardReadableVersions(_ typeId: String) -> [String: String]
+}
+
+// Default keeps hand-written conforming stubs source-compatible; generated metadata
+// registries override it with the real table.
+public extension BaboonMeta {
+    func forwardReadableVersions(_ typeId: String) -> [String: String] { [:] }
 }
 
 // --- Codec Context ---
@@ -1256,6 +1266,19 @@ public protocol BaboonMetaProvider {
     var baboonDomainIdentifier: String { get }
     var baboonTypeIdentifier: String { get }
     var baboonSameInVersions: [String] { get }
+
+    /// Forward-readability: newer domain versions whose encoded data THIS version's codec can
+    /// decode, mapped to the guarantee tier
+    /// ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+    /// The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
+    /// the cursor after decoding.
+    var baboonForwardReadable: [String: String] { get }
+}
+
+// Default keeps hand-written conforming stubs source-compatible; generated types
+// override it with the real per-type table.
+public extension BaboonMetaProvider {
+    var baboonForwardReadable: [String: String] { [:] }
 }
 
 // Implemented by generated ADT branches. Mirrors Kotlin/Dart `BaboonAdtMember` for the

@@ -42,6 +42,16 @@ class BaboonGenerated(ABC):
     def baboon_same_in_versions(self) -> list[str]:
         raise NotImplementedError
 
+    # Forward-readability: newer domain versions whose encoded data THIS version's
+    # codec can decode, mapped to the guarantee tier
+    # ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+    # The prefix-* tiers hold only for top-level framed UEBA reads where the caller
+    # discards the cursor after decoding. Non-abstract default keeps hand-written
+    # stubs working; generated classes override it with a ClassVar.
+    @property
+    def baboon_forward_readable(self) -> dict[str, str]:
+        return {}
+
 class BaboonAdtMemberMeta(ABC):
     @property
     @abstractmethod
@@ -59,6 +69,12 @@ class BaboonMeta(ABC):
     @abstractmethod
     def same_in_versions(self) -> list[str]:
         raise NotImplementedError
+
+    # Forward-readability per type: newer version -> guarantee tier (see
+    # BaboonGenerated.baboon_forward_readable). Non-abstract default keeps
+    # hand-written stubs working; generated BaboonMetadata overrides it.
+    def forward_readable_versions(self, type_id_string: str) -> dict[str, str]:
+        return {}
 
 
 class BaboonGeneratedLatest(BaboonGenerated):

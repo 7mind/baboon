@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.translator.csharp.CSTypes.{csIReadOnlyList, csList, csString, csTpe}
+import io.septimalmind.baboon.translator.csharp.CSTypes.{csDictionary, csIReadOnlyDictionary, csIReadOnlyList, csList, csString, csTpe}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -64,11 +64,18 @@ object CSDomainTreeTools {
 
       val unmodifiedMethods = if (!isCodec) {
         val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
+        val forward         = evo.typesForwardReadable(version)(defn.id)
+        val forwardEntries = forward.readable.toList
+          .map { case (v, tier) => s"""{ "${v.v.toString}", "${tier.wireName}" }""" }
+          .mkString(", ")
         List(
           q"""public${propFix}static readonly $csIReadOnlyList<$csString> BaboonSameInVersionsValue = new $csList<$csString> { ${unmodifiedSince.sameIn
               .map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")} };
              |public$methodFix$csIReadOnlyList<$csString> BaboonSameInVersions() => BaboonSameInVersionsValue;
-             |""".stripMargin
+             |""".stripMargin,
+          q"""public${propFix}static readonly $csIReadOnlyDictionary<$csString, $csString> BaboonForwardReadableValue = new $csDictionary<$csString, $csString> { $forwardEntries };
+             |public$methodFix$csIReadOnlyDictionary<$csString, $csString> BaboonForwardReadable() => BaboonForwardReadableValue;
+             |""".stripMargin,
         )
       } else {
         List.empty

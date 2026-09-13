@@ -656,6 +656,7 @@ namespace ConversionsTest
         private sealed class StubMeta : IBaboonMeta
         {
             public IReadOnlyList<string> SameInVersions(string typeIdString) => Array.Empty<string>();
+            public IReadOnlyDictionary<string, string> ForwardReadableVersions(string typeIdString) => new Dictionary<string, string>();
         }
 
         private sealed class StubJsonCodecs : AbstractBaboonJsonCodecs

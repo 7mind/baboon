@@ -179,17 +179,34 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
           q"""unmodified.put("${tid.toString}", $jvList.of(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}));"""
       }
 
+    val forwardEntries = lineage.evolution
+      .typesForwardReadable(domain.version)
+      .toList
+      .sortBy(_._1.toString)
+      .map {
+        case (tid, fr) =>
+          val pairs = fr.readable.toList.map { case (v, tier) => s"""java.util.Map.entry("${v.v.toString}", "${tier.wireName}")""" }.mkString(", ")
+          q"""forwardReadable.put("${tid.toString}", $jvMap.ofEntries($pairs));"""
+      }
+
     val metaTree =
       q"""public final class BaboonMetadata implements $baboonMeta {
          |  private static final $jvMap<String, $jvList<String>> unmodified = new java.util.HashMap<>();
+         |  private static final $jvMap<String, $jvMap<String, String>> forwardReadable = new java.util.HashMap<>();
          |
          |  static {
          |    ${entries.joinN().shift(4).trim}
+         |    ${forwardEntries.joinN().shift(4).trim}
          |  }
          |
          |  @Override
          |  public $jvList<String> sameInVersions(String typeId) {
          |    return unmodified.getOrDefault(typeId, $jvList.of());
+         |  }
+         |
+         |  @Override
+         |  public $jvMap<String, String> forwardReadableVersions(String typeId) {
+         |    return forwardReadable.getOrDefault(typeId, $jvMap.of());
          |  }
          |}""".stripMargin
 

@@ -213,14 +213,32 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
           q"""'${tid.toString}': [${version.sameIn.map(_.v.toString).map(s => q"'$s'").toList.join(", ")}],"""
       }
 
+    val forwardEntries = lineage.evolution
+      .typesForwardReadable(domain.version)
+      .toList
+      .sortBy(_._1.toString)
+      .map {
+        case (tid, fr) =>
+          val pairs = fr.readable.toList.map { case (v, tier) => s"'${v.v.toString}': '${tier.wireName}'" }.mkString(", ")
+          q"""'${tid.toString}': {$pairs},"""
+      }
+
     val metaTree =
       q"""class BaboonMetadata {
          |  static const Map<String, List<String>> _unmodified = {
          |    ${entries.joinN().shift(4).trim}
          |  };
          |
+         |  static const Map<String, Map<String, String>> _forwardReadable = {
+         |    ${forwardEntries.joinN().shift(4).trim}
+         |  };
+         |
          |  List<String> sameInVersions(String typeId) {
          |    return _unmodified[typeId] ?? [];
+         |  }
+         |
+         |  Map<String, String> forwardReadableVersions(String typeId) {
+         |    return _forwardReadable[typeId] ?? {};
          |  }
          |}""".stripMargin
 

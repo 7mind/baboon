@@ -426,15 +426,31 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           q""""${tid.toString}": [${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}]"""
       }
 
+    val forwardEntries = lineage.evolution
+      .typesForwardReadable(domain.version)
+      .toList
+      .sortBy(_._1.toString)
+      .map {
+        case (tid, fr) =>
+          val pairs = fr.readable.toList.map { case (v, tier) => s""""${v.v.toString}": "${tier.wireName}"""" }.mkString(", ")
+          q""""${tid.toString}": {$pairs}"""
+      }
+
     val metaTree =
       q"""class BaboonMetadata($baboonMeta):
          |    def __init__(self) -> None:
          |        self.unmodified: dict[str, list[str]] = {
          |            ${entries.join(",\n").shift(12).trim}
          |        }
+         |        self.forward_readable: dict[str, dict[str, str]] = {
+         |            ${forwardEntries.join(",\n").shift(12).trim}
+         |        }
          |
          |    def unmodified_since(self, type_id_string: $pyStr) -> $pyList[$pyStr]:
          |        return self.unmodified.get(type_id_string, [])
+         |
+         |    def forward_readable_versions(self, type_id_string: $pyStr) -> $pyDict[$pyStr, $pyStr]:
+         |        return self.forward_readable.get(type_id_string, {})
          |
          |""".stripMargin
 

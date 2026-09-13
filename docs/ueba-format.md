@@ -30,7 +30,7 @@ UEBA has a sister format, [SICK](https://github.com/7mind/sick), which is an ind
 
 ## User types
 
-- Enums: encoded as `i32` of the discriminant.
+- Enums: encoded as a single `u8` — the zero-based POSITIONAL index of the member in declaration order (explicit `const` member values do not appear on the wire). Verified against the C#, Scala, TypeScript and Rust generators; consequently member reordering or mid-list insertion changes existing discriminants.
 - DTO/ADT/contract branches: fields encoded in declaration order.
 - ADT branches: written as the branch payload followed by branch metadata when wrapped codecs are enabled; by default branches are emitted without an envelope (caller knows the concrete branch).
 
