@@ -3,6 +3,8 @@ model fwdcompat.model
 version "1.1.0"
 
 import "1.0.0" { * } without {
+  SumReorder
+  MapCarrier
   AppendFixed
   AppendVar
   MidInsert
@@ -64,4 +66,17 @@ root adt Sum {
   data R {
     rv: str
   }
+}
+
+root adt SumReorder {
+  data SR {
+    srv: str
+  }
+  data SL {
+    slv: i32
+  }
+}
+
+data MapCarrier {
+  mc: map[str, i32]
 }

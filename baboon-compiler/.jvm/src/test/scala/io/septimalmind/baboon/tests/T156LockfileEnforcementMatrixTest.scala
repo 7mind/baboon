@@ -49,15 +49,15 @@ class T156LockfileEnforcementMatrixTest extends AnyWordSpec with Matchers {
 
   // The model's current signatures.
   private def currentSigs: Locks =
-    Locks(Map(pkg -> List(VersionLock(vLow, SigId("cur-low")), VersionLock(vHigh, SigId("cur-high")))))
+    Locks(Map(pkg -> List(VersionLock(vLow, SigId("cur-low")), VersionLock(vHigh, SigId("cur-high")))), Locks.CurrentScheme)
 
   // An on-disk lock with the SAME low sig but a DIFFERENT high sig => only the LATEST version drifted.
   private def existingLatestDrift: Locks =
-    Locks(Map(pkg -> List(VersionLock(vLow, SigId("cur-low")), VersionLock(vHigh, SigId("old-high")))))
+    Locks(Map(pkg -> List(VersionLock(vLow, SigId("cur-low")), VersionLock(vHigh, SigId("old-high")))), Locks.CurrentScheme)
 
   // An on-disk lock with a DIFFERENT low sig but the SAME high sig => only a NON-LATEST version drifted.
   private def existingNonLatestDrift: Locks =
-    Locks(Map(pkg -> List(VersionLock(vLow, SigId("old-low")), VersionLock(vHigh, SigId("cur-high")))))
+    Locks(Map(pkg -> List(VersionLock(vLow, SigId("old-low")), VersionLock(vHigh, SigId("cur-high")))), Locks.CurrentScheme)
 
   // An on-disk lock identical to currentSigs => no drift.
   private def existingNoDrift: Locks = currentSigs
@@ -212,6 +212,26 @@ class T156LockfileEnforcementMatrixTest extends AnyWordSpec with Matchers {
       val p = tmpLockPath()
       writeLock(p, existingLatestDrift)
       run(manager(p, LockfileUpdate.Force, LockfileEnforcement.LegacyVersions)) shouldBe Right(())
+      new String(readBytes(p), StandardCharsets.UTF_8) shouldBe currentSigs.asJson.spaces2
+    }
+
+    // Scheme migration: signatures from another hashing scheme are incomparable, so a
+    // would-be "drift" must NOT be flagged, and the file is re-signed even under
+    // create-only so enforcement resumes from the next run.
+    "present + stale scheme + would-be non-latest drift + all-versions + create-only => no failure, file migrated" in {
+      val p = tmpLockPath()
+      writeLock(p, existingNonLatestDrift.copy(scheme = 1))
+      run(manager(p, LockfileUpdate.CreateOnly, LockfileEnforcement.AllVersions)) shouldBe Right(())
+      new String(readBytes(p), StandardCharsets.UTF_8) shouldBe currentSigs.asJson.spaces2
+    }
+
+    // Legacy files carry no "scheme" key at all: decoded as scheme 1, same migration path.
+    "present + pre-scheme lockfile (no scheme key) => decoded as scheme 1 and migrated" in {
+      val p = tmpLockPath()
+      import io.circe.syntax.*
+      val legacyJson = existingNonLatestDrift.asJson.mapObject(_.remove("scheme")).spaces2
+      Files.write(p, legacyJson.getBytes(StandardCharsets.UTF_8))
+      run(manager(p, LockfileUpdate.CreateOnly, LockfileEnforcement.AllVersions)) shouldBe Right(())
       new String(readBytes(p), StandardCharsets.UTF_8) shouldBe currentSigs.asJson.spaces2
     }
   }

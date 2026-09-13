@@ -68,21 +68,24 @@ abstract class M20AdtEvolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
 
   "M20 ADT inheritance evolution (PR-64)" should {
 
-    // Plan §5: the manual->sugared rewrite must produce no breaking change.
+    // Plan §5: the manual->sugared rewrite must produce no CONVERSION break.
     //
     // Branches in v1 and v2 share `TypeId` (same `Pkg`, same `Owner.Adt(SomeError)`, same
     // `TypeName`) per the re-emit semantics — so `BaboonComparator.diffAdts` puts every
     // branch in `keptMembers` (no `AddBranch`, no `RemoveBranch`), and `BaboonRules` emits
     // a derivable `CopyAdtBranchByName` (NOT `CustomConversionRequired`).
     //
-    // Note on `SomeError`'s classification: post-expansion `SomeError` lands in
-    // `unmodified` because PR-D sorted ADT branches in `BaboonTyper.deepSchemaRepr`
-    // before hashing. v1 sources `Forbidden, Bar` literally; v2's sugared expansion
-    // via `AdtInheritanceExpander` produces `Bar, Forbidden` (localMembers first then
-    // includeBranches). After sorting each branch repr by `mkString`, both orderings
-    // produce the identical deep-schema string, so deep IDs match and `SomeError`
-    // classifies as `unmodified`.
-    "manual->sugared rewrite produces no breaking change in BaboonRules / BaboonComparator" in {
+    // Note on `SomeError`'s classification: v1 sources `Forbidden, Bar` literally; v2's
+    // sugared expansion via `AdtInheritanceExpander` produces `Bar, Forbidden`
+    // (localMembers first then includeBranches). UEBA branch discriminants are
+    // POSITIONAL over `dataMembers`, so this reorder changes the wire bytes: v1 encodes
+    // Forbidden as 0, v2 as 1. `SomeError` therefore classifies as `deepModified` —
+    // NOT `unmodified` — and cross-version blobs go through the (derivable) conversion.
+    // PR-D originally sorted ADT branch reprs in `BaboonTyper.deepSchemaRepr` so this
+    // rewrite hashed as `unmodified`; that masked the wire break in the sameIn ranges
+    // (byte-identity metadata) and was reverted with the order-sensitive deep hashing
+    // (see docs/forward-compat.md, "Relationship to sameIn").
+    "manual->sugared rewrite stays conversion-derivable; the branch reorder is honestly byte-modified" in {
       (manager: BaboonFamilyManager[F]) =>
         for {
           family <- manager.load(
@@ -101,16 +104,16 @@ abstract class M20AdtEvolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
           val evo                    = lineage.evolution
           val diff                   = evo.diffs(step)
 
-          // SomeError must be classified as `unmodified`: after PR-D the branch sort in
-          // `BaboonTyper.deepSchemaRepr` makes the manual->sugared rewrite produce identical
-          // deep schema IDs regardless of declaration order.
-          val unmodifiedIds: Set[TypeId.User] =
-            diff.changes.unmodified.collect { case u: TypeId.User => u }
+          // SomeError must be classified as `deepModified`: same branch set (same shallowId,
+          // which sorts members) but a different branch ORDER, i.e. different UEBA
+          // discriminants — the deep schema id is order-sensitive and must differ.
+          val deepModifiedIds: Set[TypeId.User] =
+            diff.changes.deepModified.collect { case u: TypeId.User => u }
 
-          val someErrorNonBreaking = unmodifiedIds.filter(_.name.name == "SomeError")
+          val someErrorReordered = deepModifiedIds.filter(_.name.name == "SomeError")
           assert(
-            someErrorNonBreaking.size == 1,
-            s"Expected SomeError in unmodified (identical deep schema IDs after branch sort); " +
+            someErrorReordered.size == 1,
+            s"Expected SomeError in deepModified (branch reorder changes positional UEBA discriminants); " +
             s"got unmodified=${diff.changes.unmodified}, shallowModified=${diff.changes.shallowModified}, " +
             s"deepModified=${diff.changes.deepModified}, fullyModified=${diff.changes.fullyModified}, " +
             s"removed=${diff.changes.removed}, renamed=${diff.changes.renamed}",
@@ -124,13 +127,12 @@ abstract class M20AdtEvolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
             s"Expected re-emitted Forbidden and local Bar in unmodified; got: $unmodifiedNames",
           )
 
-          // Unmodified types are absent from `diff.diffs`. If SomeError appears (it
-          // should not after the branch-sort fix), every op must still be KeepBranch.
-          val someErrorId = someErrorNonBreaking.head
+          // deepModified types carry a diff whose ops must all be KeepBranch (same
+          // branch set kept under the same TypeIds; nothing added or removed).
+          val someErrorId = someErrorReordered.head
           diff.diffs.get(someErrorId) match {
             case None =>
-              // Unmodified types are absent from `diff.diffs`. Strongest possible signal.
-              ()
+              fail("Expected an AdtDiff for the deepModified SomeError")
             case Some(TypedefDiff.AdtDiff(ops)) =>
               val nonKeep = ops.filterNot(_.isInstanceOf[AdtOp.KeepBranch])
               assert(
