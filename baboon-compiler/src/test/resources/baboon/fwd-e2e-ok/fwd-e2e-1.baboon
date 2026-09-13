@@ -1,0 +1,44 @@
+// Forward-compatibility end-to-end fixtures (docs/drafts/20260911-0937-forward-compat-metadata.md).
+//
+// Lives INSIDE the shared model-dir so every language stub generates codecs for
+// both versions; the hand-written ForwardCompat runtime specs (sc-stub, ts-stub)
+// decode NEW-version blobs with OLD-version codecs and assert the guarantees the
+// emitted forward metadata promises.
+//
+// Every evolution step here MUST stay auto-derivable (appended/inserted fields
+// are `opt[...]`): stub projects carry no manual conversion implementations.
+
+model fwde2e.fwd
+
+version "1.0.0"
+
+// v2 appends a variable-length opt field -> PREFIX_COMPACT:
+// the 1.0.0 codec prefix-reads a COMPACT 2.0.0 UEBA blob at top level,
+// and reads 2.0.0 JSON at any position.
+root data FwdAppendVar {
+  a: i32
+  b: str
+}
+
+// v2 inserts an opt field mid-position -> JSON_ADDITIVE:
+// JSON reads fine, UEBA positional layout breaks.
+root data FwdMidInsert {
+  a: i32
+  z: str
+}
+
+// never changes -> IDENTICAL throughout.
+root data FwdStable {
+  s: str
+}
+
+enum FwdEnumGrows {
+  A
+  B
+}
+
+// v2 adds an enum member -> NOT forward-readable (negative control:
+// decoding a 2.0.0 value carrying the new member with the 1.0.0 codec throws).
+root data FwdEnumHost {
+  e: FwdEnumGrows
+}

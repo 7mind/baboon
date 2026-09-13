@@ -1,0 +1,19 @@
+model fwdcompat.model
+
+version "1.2.0"
+
+import "1.1.0" { * } without {
+  AppendVar
+  MidInsert
+}
+
+root data AppendVar {
+  a: i32
+  s: str
+  t: opt[i32]
+}
+
+root data MidInsert {
+  a: i32
+  m: i32
+}

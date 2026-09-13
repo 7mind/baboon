@@ -171,7 +171,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
     ): F[NEList[BaboonIssue], BaboonEvolution] = {
       val F      = implicitly[Error2[F]]
       val latest = versions.keySet.toList.sorted(Version.ordering).last
-      F.pure(BaboonEvolution(pkg, latest, Map.empty, Map.empty, Map.empty))
+      F.pure(BaboonEvolution(pkg, latest, Map.empty, Map.empty, Map.empty, Map.empty))
     }
 
     override def compare(

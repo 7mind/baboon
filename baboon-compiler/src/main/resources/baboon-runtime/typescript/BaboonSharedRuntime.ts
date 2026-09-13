@@ -638,6 +638,14 @@ export interface BaboonGenerated {
     baboonDomainVersion(): string
     baboonDomainIdentifier(): string
     baboonSameInVersions(): string[]
+    /**
+     * Forward-readability: newer domain versions whose encoded data THIS version's codec can
+     * decode, mapped to the guarantee tier
+     * ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+     * The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
+     * the cursor after decoding.
+     */
+    baboonForwardReadable(): { readonly [version: string]: string }
     baboonTypeIdentifier(): string
 }
 
@@ -1240,6 +1248,8 @@ export interface BaboonJsonCodec<T> extends BaboonCodecData {
 
 export interface BaboonMeta {
     sameInVersions(typeId: string): string[];
+    /** Forward-readability per type: newer version -> guarantee tier (see BaboonGenerated.baboonForwardReadable). */
+    forwardReadableVersions(typeId: string): { readonly [version: string]: string };
 }
 
 // --- AbstractBaboonCodecs registry base ---

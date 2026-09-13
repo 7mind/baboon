@@ -1,0 +1,67 @@
+model fwdcompat.model
+
+version "1.1.0"
+
+import "1.0.0" { * } without {
+  AppendFixed
+  AppendVar
+  MidInsert
+  Removed
+  Changed
+  EnumGrows
+  EnumReorder
+  Recur
+  Sum
+}
+
+root data AppendFixed {
+  a: i32
+  b: str
+  c: i64
+}
+
+root data AppendVar {
+  a: i32
+  s: str
+}
+
+root data MidInsert {
+  a: i32
+  m: i32
+  z: str
+}
+
+root data Removed {
+  a: i32
+}
+
+root data Changed {
+  a: i64
+}
+
+enum EnumGrows {
+  A
+  B
+  C
+}
+
+enum EnumReorder {
+  B
+  A
+}
+
+root data Recur {
+  v: i32
+  next: opt[Recur]
+  w: opt[str]
+}
+
+root adt Sum {
+  data L {
+    lv: i32
+    l2: str
+  }
+  data R {
+    rv: str
+  }
+}

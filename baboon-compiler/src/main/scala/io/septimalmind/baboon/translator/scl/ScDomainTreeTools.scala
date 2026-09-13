@@ -81,7 +81,16 @@ object ScDomainTreeTools {
         q"$scList(${unmodifiedSince.mkString(", ")})",
         q"$ref.baboonSameInVersions",
       )
-      List(sameInVersion)
+      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forwardEntries = forward.readable.toList.map {
+        case (v, tier) => s""""${v.v.toString}" -> "${tier.wireName}""""
+      }
+      val forwardReadable = MetaField(
+        q"def baboonForwardReadable: ${ScTypes.scMap}[$scString, $scString]",
+        q"${ScTypes.scMap}(${forwardEntries.mkString(", ")})",
+        q"$ref.baboonForwardReadable",
+      )
+      List(sameInVersion, forwardReadable)
     }
   }
 }

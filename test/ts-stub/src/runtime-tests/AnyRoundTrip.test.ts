@@ -119,6 +119,7 @@ class MyOkConversions implements AbstractBaboonConversions {
 
 class MyOkMeta implements BaboonMeta {
     public sameInVersions(_typeId: string): string[] { return [VERSION_STR]; }
+    public forwardReadableVersions(_typeId: string): { readonly [version: string]: string } { return { [VERSION_STR]: "identical" }; }
 }
 
 // Fresh per-test facade: registers Holder/Inner codecs from the my.ok domain so the
