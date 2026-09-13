@@ -11,6 +11,14 @@ package baboon.runtime.shared {
     def baboonDomainVersion: String
     def baboonDomainIdentifier: String
     def baboonSameInVersions: List[String]
+
+    /** Forward-readability: newer domain versions whose encoded data THIS
+      * version's codec can decode, mapped to the guarantee tier
+      * ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+      * The prefix-* tiers hold only for top-level framed UEBA reads where the
+      * caller discards the cursor after decoding.
+      */
+    def baboonForwardReadable: Map[String, String]
     def baboonTypeIdentifier: String
 
     final def domainVersion: BaboonDomainVersion = BaboonDomainVersion(baboonDomainIdentifier, baboonDomainVersion)
@@ -25,6 +33,11 @@ package baboon.runtime.shared {
 
   trait BaboonMeta {
     def sameInVersions(typeId: String): List[String]
+
+    /** Forward-readability per type: newer version -> guarantee tier
+      * (see [[BaboonGenerated.baboonForwardReadable]]).
+      */
+    def forwardReadableVersions(typeId: String): Map[String, String]
   }
 
   trait BaboonEnum[T] {

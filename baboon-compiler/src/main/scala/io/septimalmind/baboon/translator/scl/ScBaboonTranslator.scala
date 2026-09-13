@@ -179,14 +179,32 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           q"""unmodified.put("${tid.toString}", $scList(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}))"""
       }
 
+    val forwardEntries = lineage.evolution
+      .typesForwardReadable(domain.version)
+      .toList
+      .sortBy(_._1.toString)
+      .map {
+        case (tid, fr) =>
+          val pairs = fr.readable.toList.map { case (v, tier) => s""""${v.v.toString}" -> "${tier.wireName}"""" }.mkString(", ")
+          q"""forwardReadable.put("${tid.toString}", ${ScTypes.scMap.fullyQualified}($pairs))"""
+      }
+
     val metaTree =
       q"""object BaboonMetadata extends $baboonMeta {
          |  private val unmodified = ${scMutMap.fullyQualified}.empty[$scString, $scList[$scString]]
-         |  
+         |
          |  ${entries.joinN().shift(2).trim}
+         |
+         |  private val forwardReadable = ${scMutMap.fullyQualified}.empty[$scString, ${ScTypes.scMap.fullyQualified}[$scString, $scString]]
+         |
+         |  ${forwardEntries.joinN().shift(2).trim}
          |
          |  def sameInVersions(typeId: String): List[String] = {
          |      unmodified(typeId)
+         |  }
+         |
+         |  def forwardReadableVersions(typeId: String): ${ScTypes.scMap.fullyQualified}[$scString, $scString] = {
+         |      forwardReadable(typeId)
          |  }
          |}""".stripMargin
 

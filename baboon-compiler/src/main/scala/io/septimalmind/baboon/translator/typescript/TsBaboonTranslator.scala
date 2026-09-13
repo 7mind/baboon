@@ -297,6 +297,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       // Meta class
       sb.append(s"class ${verClassName}Meta implements BaboonMeta {\n")
       sb.append(s"""    public sameInVersions(_typeId: string): string[] { return ['$versionStr']; }\n""")
+      sb.append(s"""    public forwardReadableVersions(_typeId: string): { readonly [version: string]: string } { return { '$versionStr': 'identical' }; }\n""")
       sb.append( "}\n\n")
     }
 

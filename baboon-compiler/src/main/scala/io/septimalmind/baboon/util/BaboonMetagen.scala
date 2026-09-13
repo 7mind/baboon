@@ -27,6 +27,18 @@ object BaboonMetagen {
           case (pkg, line) =>
             (pkg.toString, line.evolution.typesUnchangedSince.flatMap(_._2.values).asJson)
         }*),
+        "forwardReadable" -> Json.obj(family.domains.toSeq.map {
+          case (pkg, line) =>
+            (
+              pkg.toString,
+              Json.obj(line.evolution.typesForwardReadable.toSeq.map {
+                case (version, types) =>
+                  version.v.toString -> Json.obj(types.toSeq.collect {
+                    case (id: TypeId.User, fr) => ((id: TypeId).toString, fr.asJson)
+                  }*)
+              }*),
+            )
+        }*),
         "underivable" -> Json.obj(family.domains.toSeq.map {
           case (pkg, line) =>
             (

@@ -24,6 +24,7 @@ class FakeInner implements BaboonGenerated {
     baboonDomainVersion(): string { return "1.0.0"; }
     baboonDomainIdentifier(): string { return "my.ok"; }
     baboonSameInVersions(): string[] { return ["1.0.0"]; }
+    baboonForwardReadable(): { readonly [version: string]: string } { return { "1.0.0": "identical" }; }
     baboonTypeIdentifier(): string { return "my.ok/:#Inner"; }
 }
 
@@ -32,6 +33,7 @@ class FakeEvolved implements BaboonGenerated {
     baboonDomainIdentifier(): string { return "my.ok"; }
     // Stable since 1.0.0 despite domain now being at 3.0.0.
     baboonSameInVersions(): string[] { return ["1.0.0", "2.0.0", "3.0.0"]; }
+    baboonForwardReadable(): { readonly [version: string]: string } { return { "3.0.0": "identical" }; }
     baboonTypeIdentifier(): string { return "my.ok/:#Evolved"; }
 }
 
@@ -39,6 +41,7 @@ class FakeEmptySameIn implements BaboonGenerated {
     baboonDomainVersion(): string { return "1.0.0"; }
     baboonDomainIdentifier(): string { return "my.ok"; }
     baboonSameInVersions(): string[] { return []; }
+    baboonForwardReadable(): { readonly [version: string]: string } { return {}; }
     baboonTypeIdentifier(): string { return "my.ok/:#Empty"; }
 }
 
@@ -53,6 +56,13 @@ class FakeMeta implements BaboonMeta {
             "my.ok/:#Evolved": ["1.0.0", "2.0.0", "3.0.0"],
         };
         return table[typeId] ?? [];
+    }
+    forwardReadableVersions(typeId: string): { readonly [version: string]: string } {
+        const table: Record<string, { readonly [version: string]: string }> = {
+            "my.ok/:#Inner": { "1.0.0": "identical" },
+            "my.ok/:#Evolved": { "3.0.0": "identical" },
+        };
+        return table[typeId] ?? {};
     }
 }
 

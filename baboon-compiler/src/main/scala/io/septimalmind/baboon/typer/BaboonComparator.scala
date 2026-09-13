@@ -90,8 +90,9 @@ object BaboonComparator {
           previousVersions,
           sortedVersions.reverse,
         )
+        forwardReadable = computeForwardReadable(versions, sortedVersions.reverse)
       } yield {
-        BaboonEvolution(pkg, pinnacleVersion, diffMap, rulesetMap, minVersions)
+        BaboonEvolution(pkg, pinnacleVersion, diffMap, rulesetMap, minVersions, forwardReadable)
       }
     }
 
@@ -159,6 +160,192 @@ object BaboonComparator {
               (id, UnmodifiedSinceMut(id, currVersion, mutable.ArrayBuffer(currVersion)))
           }))
 
+      }
+    }
+
+    /** Forward-readability ranges (see docs/drafts/20260911-0937-forward-compat-metadata.md).
+      *
+      * For each version V and each type present in V, computes the ascending
+      * contiguous run of versions W >= V whose encoded data the V-version codec
+      * can decode, with the strongest guarantee tier per W. The chain tier is
+      * the minimum of the per-step tiers (composition argument in the doc).
+      */
+    private def computeForwardReadable(
+      domainVersions: NEMap[Version, Domain],
+      ascendingVersions: List[Version],
+    ): Map[Version, Map[TypeId, ForwardReadable]] = {
+      val steps: Map[Version, Map[TypeId, ForwardCompatTier]] =
+        ascendingVersions
+          .sliding(2)
+          .collect {
+            case from :: to :: Nil =>
+              (from, stepForwardTiers(domainVersions(from), domainVersions(to)))
+          }
+          .toMap
+
+      ascendingVersions.reverse
+        .foldLeft(Map.empty[Version, Map[TypeId, ForwardReadable]]) {
+          case (acc, version) =>
+            val successor = steps.get(version).flatMap {
+              stepTiers =>
+                // the version right above `version`, already computed (newest-first fold)
+                ascendingVersions.dropWhile(_ != version).drop(1).headOption.map(next => (stepTiers, acc(next)))
+            }
+
+            val entries = domainVersions(version).defs.meta.nodes.map {
+              case (id, _) =>
+                val tail = successor match {
+                  case Some((stepTiers, nextRuns)) =>
+                    (stepTiers.get(id), nextRuns.get(id)) match {
+                      case (Some(stepTier), Some(nextRun)) =>
+                        nextRun.readable.toList.map { case (v, t) => (v, ForwardCompatTier.min(t, stepTier)) }
+                      case _ =>
+                        List.empty
+                    }
+                  case None =>
+                    List.empty
+                }
+                (id, ForwardReadable(id, version, NEList.unsafeFrom((version, ForwardCompatTier.Identical: ForwardCompatTier) :: tail)))
+            }
+
+            acc.updated(version, entries)
+        }
+    }
+
+    /** Per-step (prev -> last) forward-readability tier for every type kept under
+      * the same TypeId in both versions. Absent key = not forward-readable.
+      * Combines the type's own structural tier with a fixpoint over its
+      * codec-relevant dependencies in the OLD version (the types the old decoder
+      * actually touches): PREFIX_* requires all dependencies byte-identical;
+      * JSON_ADDITIVE requires all dependencies at least JSON-readable.
+      */
+    private def stepForwardTiers(prev: Domain, last: Domain): Map[TypeId, ForwardCompatTier] = {
+      import ForwardCompatTier.*
+
+      val kept = prev.defs.meta.nodes.keySet.intersect(last.defs.meta.nodes.keySet)
+
+      val own: Map[TypeId, Option[ForwardCompatTier]] = kept.map {
+        id =>
+          val tier = (prev.defs.meta.nodes(id), last.defs.meta.nodes(id)) match {
+            case (_: DomainMember.Builtin, _: DomainMember.Builtin) =>
+              Some(Identical)
+            case (o: DomainMember.User, n: DomainMember.User) =>
+              ownForwardTier(o.defn, n.defn, prev, last)
+            case _ =>
+              None
+          }
+          (id, tier)
+      }.toMap
+
+      // codec-relevant direct dependencies in the OLD version: what the old decoder touches
+      val deps: Map[TypeId, Set[TypeId]] = kept.map {
+        id =>
+          val d = prev.defs.meta.nodes(id) match {
+            case _: DomainMember.Builtin => Set.empty[TypeId]
+            case u: DomainMember.User =>
+              u.defn match {
+                case d: Typedef.Dto      => d.fields.flatMap(f => enquiries.explode(f.tpe)).toSet
+                case a: Typedef.Adt      => a.dataMembers(prev).toSet[TypeId]
+                case _: Typedef.Enum     => Set.empty[TypeId]
+                case _: Typedef.Foreign  => Set.empty[TypeId]
+                case _: Typedef.Contract => Set.empty[TypeId]
+                case _: Typedef.Service  => Set.empty[TypeId]
+              }
+          }
+          (id, d)
+      }.toMap
+
+      // monotone-descending fixpoint on a finite lattice: terminates
+      var current = own
+      var changed = true
+      while (changed) {
+        changed = false
+        current = current.map {
+          case (id, tier) =>
+            val next = tier.flatMap {
+              ownTier =>
+                val depTiers = deps(id).toList.map(dep => current.getOrElse(dep, None))
+                if (depTiers.exists(_.isEmpty)) {
+                  None
+                } else if (depTiers.forall(_.contains(Identical))) {
+                  Some(ownTier)
+                } else {
+                  // some dependency is readable but not byte-identical: JSON-only
+                  Some(ForwardCompatTier.min(ownTier, JsonAdditive))
+                }
+            }
+            if (next != tier) changed = true
+            (id, next)
+        }
+      }
+
+      current.collect { case (id, Some(tier)) => (id, tier) }
+    }
+
+    /** The type's OWN structural forward tier for one step, ignoring dependencies.
+      * Order-sensitive where the UEBA wire is (field order, enum/ADT member order).
+      */
+    private def ownForwardTier(o: Typedef.User, n: Typedef.User, prev: Domain, last: Domain): Option[ForwardCompatTier] = {
+      import ForwardCompatTier.*
+      (o, n) match {
+        case (d1: Typedef.Dto, d2: Typedef.Dto) =>
+          val f1 = d1.fields.map(f => (f.name, f.tpe))
+          val f2 = d2.fields.map(f => (f.name, f.tpe))
+          if (f1 == f2) {
+            Some(Identical)
+          } else if (f2.startsWith(f1)) {
+            val appended = d2.fields.drop(f1.size)
+            val allFixed = appended.forall {
+              f =>
+                last.refMeta(f.tpe).len match {
+                  case _: BinReprLen.Fixed => true
+                  case _                   => false
+                }
+            }
+            Some(if (allFixed) PrefixAnyMode else PrefixCompact)
+          } else if (f1.toSet.subsetOf(f2.toSet)) {
+            // additions at arbitrary positions and/or reordering: JSON readers
+            // look fields up by key; UEBA is positional and breaks
+            Some(JsonAdditive)
+          } else {
+            None
+          }
+
+        case (e1: Typedef.Enum, e2: Typedef.Enum) =>
+          val m1 = e1.members.toList.map(m => (m.name, m.const))
+          val m2 = e2.members.toList.map(m => (m.name, m.const))
+          if (m1 == m2) {
+            Some(Identical)
+          } else if (e1.members.toList.map(_.name).toSet == e2.members.toList.map(_.name).toSet) {
+            // same member set, different order or consts: JSON encodes names;
+            // UEBA discriminants are positional and break
+            Some(JsonAdditive)
+          } else {
+            // added members are unreadable by the old decoder when actually sent;
+            // removed/renamed members shift UEBA discriminants
+            None
+          }
+
+        case (a1: Typedef.Adt, a2: Typedef.Adt) =>
+          val b1 = a1.dataMembers(prev)
+          val b2 = a2.dataMembers(last)
+          if (b1 == b2) {
+            Some(Identical)
+          } else if (b2.toSet.subsetOf(b1.toSet)) {
+            // branches only removed: the new writer emits only branches the old
+            // reader knows by name (JSON); UEBA branch indices are positional and shift
+            Some(JsonAdditive)
+          } else {
+            None
+          }
+
+        case (f1: Typedef.Foreign, f2: Typedef.Foreign) =>
+          // hand-written codecs: only byte-level sameness is derivable
+          if (f1 == f2) Some(Identical) else None
+
+        case _ =>
+          // Contract/Service carry no codecs; kind changes are unreadable
+          None
       }
     }
 
