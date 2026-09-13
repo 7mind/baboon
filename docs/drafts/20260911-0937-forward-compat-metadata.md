@@ -1,6 +1,15 @@
 # Forward-compatibility metadata: design & implementation plan
 
-Status: DRAFT (design agreed in discussion 2026-09-10/11, not yet implemented)
+Status: IMPLEMENTED (2026-09-13) — see docs/forward-compat.md for the user-facing
+reference. Resolved during implementation: metadata name is `baboonForwardReadable`,
+shape is a version->tier map (order is a compiler-side invariant, clients look up by
+writer version); metagen key `forwardReadable` emits user types only; tier vocabulary
+`identical` / `prefix-any-mode` / `prefix-compact` / `json-additive`. PREFIX_ANY_MODE
+has comparator-level coverage only (fixed-length appends are never auto-derivable, so
+no stub-matrix e2e without manual conversions). Discovered en route: `sameIn`
+overclaims byte-identity when a dependency is merely reordered (deepSchemaRepr sorts
+flattened dep reprs) — documented in ForwardCompatComparatorTest and
+docs/forward-compat.md; the enum wire is a positional u8 (ueba-format.md corrected).
 
 ## 1. Problem
 
