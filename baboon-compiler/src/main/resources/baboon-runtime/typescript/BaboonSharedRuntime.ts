@@ -646,6 +646,12 @@ export interface BaboonGenerated {
      * the cursor after decoding.
      */
     baboonForwardReadable(): { readonly [version: string]: string }
+    /**
+     * Writer-side inverse of `baboonForwardReadable`: guarantee tier -> oldest domain version
+     * whose codec can decode THIS version's encoding of this type. The "identical" bound
+     * equals `baboonSameInVersions()[0]`; the "json-additive" bound is published as `$rv`.
+     */
+    baboonMinReaderVersions(): { readonly [tier: string]: string }
     baboonTypeIdentifier(): string
 }
 
@@ -1027,6 +1033,13 @@ export class BaboonTypeMeta {
     public readonly domainVersion: string;
     public readonly domainVersionMinCompat: string;
     public readonly typeIdentifier: string;
+    /**
+     * Oldest domain version whose JSON codec can decode the payload under the json-additive
+     * contract (tolerant key lookup; fields unknown to that version are dropped). Always
+     * <= domainVersionMinCompat. Published as `$rv` when it differs from the effective
+     * minCompat; the binary v1 envelope does not carry it. Defaults to minCompat.
+     */
+    public readonly domainVersionReadableMin: string;
 
     constructor(
         metaVersion: number,
@@ -1034,13 +1047,17 @@ export class BaboonTypeMeta {
         domainVersion: string,
         domainVersionMinCompat: string,
         typeIdentifier: string,
+        domainVersionReadableMin: string = domainVersionMinCompat,
     ) {
         this.metaVersion = metaVersion;
         this.domainIdentifier = domainIdentifier;
         this.domainVersion = domainVersion;
         this.domainVersionMinCompat = domainVersionMinCompat;
         this.typeIdentifier = typeIdentifier;
+        this.domainVersionReadableMin = domainVersionReadableMin;
     }
+
+    public static readonly JSON_READABLE_TIER = "json-additive";
 
     public versionRef(): BaboonDomainVersion {
         return new BaboonDomainVersion(this.domainIdentifier, this.domainVersion);
@@ -1057,6 +1074,16 @@ export class BaboonTypeMeta {
             return undefined;
         }
         return new BaboonDomainVersion(this.domainIdentifier, this.domainVersionMinCompat);
+    }
+
+    public versionReadableMin(): BaboonDomainVersion | undefined {
+        if (!this.domainVersionReadableMin) {
+            return this.versionMinCompat();
+        }
+        if (this.domainVersionReadableMin === this.domainVersion) {
+            return undefined;
+        }
+        return new BaboonDomainVersion(this.domainIdentifier, this.domainVersionReadableMin);
     }
 
     public writeBin(writer: BaboonBinWriter): void {
@@ -1091,12 +1118,19 @@ export class BaboonTypeMeta {
                 `baboonSameInVersions() is empty for type ${value.baboonTypeIdentifier()}`,
             );
         }
+        const readableMin = value.baboonMinReaderVersions()[BaboonTypeMeta.JSON_READABLE_TIER];
+        if (readableMin === undefined) {
+            throw new BaboonException(
+                `baboonMinReaderVersions() lacks '${BaboonTypeMeta.JSON_READABLE_TIER}' for type ${value.baboonTypeIdentifier()}`,
+            );
+        }
         return new BaboonTypeMeta(
             BaboonTypeMetaCodec.META_VERSION,
             value.baboonDomainIdentifier(),
             value.baboonDomainVersion(),
             sameIn[0]!,
             typeIdentifier,
+            readableMin,
         );
     }
 
@@ -1121,6 +1155,7 @@ export class BaboonTypeMeta {
             && this.domainIdentifier === other.domainIdentifier
             && this.domainVersion === other.domainVersion
             && this.domainVersionMinCompat === other.domainVersionMinCompat
+            && this.domainVersionReadableMin === other.domainVersionReadableMin
             && this.typeIdentifier === other.typeIdentifier;
     }
 }
@@ -1133,6 +1168,7 @@ export class BaboonTypeMetaCodec {
     public static readonly DOMAIN_IDENTIFIER_KEY = "$d";
     public static readonly DOMAIN_VERSION_KEY = "$v";
     public static readonly DOMAIN_VERSION_MIN_COMPAT_KEY = "$uv";
+    public static readonly DOMAIN_VERSION_READABLE_KEY = "$rv";
     public static readonly TYPE_IDENTIFIER_KEY = "$t";
 
     public static writeBin(meta: BaboonTypeMeta, writer: BaboonBinWriter): void {
@@ -1178,6 +1214,10 @@ export class BaboonTypeMetaCodec {
         if (meta.domainVersion !== meta.domainVersionMinCompat) {
             obj[BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY] = meta.domainVersionMinCompat;
         }
+        // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+        if (meta.domainVersionReadableMin && meta.domainVersionReadableMin !== meta.domainVersionMinCompat) {
+            obj[BaboonTypeMetaCodec.DOMAIN_VERSION_READABLE_KEY] = meta.domainVersionReadableMin;
+        }
         return obj;
     }
 
@@ -1214,8 +1254,10 @@ export class BaboonTypeMetaCodec {
 
         const uvNode = obj[BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY];
         const uv = typeof uvNode === "string" ? uvNode : v;
+        const rvNode = obj[BaboonTypeMetaCodec.DOMAIN_VERSION_READABLE_KEY];
+        const rv = typeof rvNode === "string" ? rvNode : uv;
 
-        return new BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t);
+        return new BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t, rv);
     }
 }
 

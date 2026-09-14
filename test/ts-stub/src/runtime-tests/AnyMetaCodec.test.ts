@@ -387,6 +387,7 @@ class StubGenerated implements BaboonGenerated {
     public baboonDomainIdentifier(): string { return "dom"; }
     public baboonSameInVersions(): string[] { return ["1.0.0"]; }
     public baboonForwardReadable(): { readonly [version: string]: string } { return { "1.0.0": "identical" }; }
+    public baboonMinReaderVersions(): { readonly [tier: string]: string } { return { "identical": "1.0.0", "prefix-any-mode": "1.0.0", "prefix-compact": "1.0.0", "json-additive": "1.0.0" }; }
     public baboonTypeIdentifier(): string { return "T"; }
 }
 
@@ -451,6 +452,7 @@ class StubAdtBranchGenerated implements BaboonGenerated {
     public baboonDomainIdentifier(): string { return "dom"; }
     public baboonSameInVersions(): string[] { return ["1.0.0"]; }
     public baboonForwardReadable(): { readonly [version: string]: string } { return { "1.0.0": "identical" }; }
+    public baboonMinReaderVersions(): { readonly [tier: string]: string } { return { "identical": "1.0.0", "prefix-any-mode": "1.0.0", "prefix-compact": "1.0.0", "json-additive": "1.0.0" }; }
     public baboonTypeIdentifier(): string { return "BranchT"; }
 }
 

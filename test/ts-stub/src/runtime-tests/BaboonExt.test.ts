@@ -25,6 +25,7 @@ class FakeInner implements BaboonGenerated {
     baboonDomainIdentifier(): string { return "my.ok"; }
     baboonSameInVersions(): string[] { return ["1.0.0"]; }
     baboonForwardReadable(): { readonly [version: string]: string } { return { "1.0.0": "identical" }; }
+    baboonMinReaderVersions(): { readonly [tier: string]: string } { return { "identical": "1.0.0", "prefix-any-mode": "1.0.0", "prefix-compact": "1.0.0", "json-additive": "1.0.0" }; }
     baboonTypeIdentifier(): string { return "my.ok/:#Inner"; }
 }
 
@@ -34,6 +35,7 @@ class FakeEvolved implements BaboonGenerated {
     // Stable since 1.0.0 despite domain now being at 3.0.0.
     baboonSameInVersions(): string[] { return ["1.0.0", "2.0.0", "3.0.0"]; }
     baboonForwardReadable(): { readonly [version: string]: string } { return { "3.0.0": "identical" }; }
+    baboonMinReaderVersions(): { readonly [tier: string]: string } { return { "identical": "1.0.0", "prefix-any-mode": "1.0.0", "prefix-compact": "1.0.0", "json-additive": "1.0.0" }; }
     baboonTypeIdentifier(): string { return "my.ok/:#Evolved"; }
 }
 
@@ -42,6 +44,7 @@ class FakeEmptySameIn implements BaboonGenerated {
     baboonDomainIdentifier(): string { return "my.ok"; }
     baboonSameInVersions(): string[] { return []; }
     baboonForwardReadable(): { readonly [version: string]: string } { return {}; }
+    baboonMinReaderVersions(): { readonly [tier: string]: string } { return {}; }
     baboonTypeIdentifier(): string { return "my.ok/:#Empty"; }
 }
 

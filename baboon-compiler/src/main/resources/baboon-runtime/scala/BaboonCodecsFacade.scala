@@ -9,10 +9,26 @@ package baboon.runtime.shared {
   import scala.reflect.ClassTag
   import scala.util.Try
 
+  /** How a reader treats JSON payloads written by a NEWER domain version than it registers.
+    *   - Lossless: decode only when the envelope's `$uv` (byte-identical bound) reaches a
+    *     registered version — today's behavior.
+    *   - Tolerant: additionally honor `$rv` (json-additive bound): decode with that version's
+    *     codec, silently dropping fields this reader does not know. Re-encoding intermediaries
+    *     must use Lossless or they truncate data for downstream consumers.
+    */
+  sealed trait ForwardReadPolicy
+  object ForwardReadPolicy {
+    case object Lossless extends ForwardReadPolicy
+    case object Tolerant extends ForwardReadPolicy
+  }
+
   trait BaboonCodecsFacade {
     type BaboonValue[T] = Either[BaboonCodecException, T]
 
     private val CONTENT_JSON_KEY = "$c"
+
+    /** JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly. */
+    var forwardReadPolicy: ForwardReadPolicy = ForwardReadPolicy.Tolerant
 
     private val versionsCodecsJson: TrieMap[BaboonDomainVersion, Lazy[AbstractBaboonJsonCodecs]]   = TrieMap.empty
     private val versionsCodecsBin: TrieMap[BaboonDomainVersion, Lazy[AbstractBaboonUebaCodecs]]    = TrieMap.empty
@@ -492,17 +508,19 @@ package baboon.runtime.shared {
     }
 
     private def getBinCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonValue[BaboonBinCodec[BaboonGenerated]] = {
-      getCodec(versionsCodecsBin, typeMeta, exact).map(_.asInstanceOf[BaboonBinCodec[BaboonGenerated]])
+      getCodec(versionsCodecsBin, typeMeta, exact, tolerant = false).map(_.asInstanceOf[BaboonBinCodec[BaboonGenerated]])
     }
 
     private def getJsonCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonValue[BaboonJsonCodec[BaboonGenerated]] = {
-      getCodec(versionsCodecsJson, typeMeta, exact).map(_.asInstanceOf[BaboonJsonCodec[BaboonGenerated]])
+      getCodec(versionsCodecsJson, typeMeta, exact, tolerant = forwardReadPolicy == ForwardReadPolicy.Tolerant)
+        .map(_.asInstanceOf[BaboonJsonCodec[BaboonGenerated]])
     }
 
     private def getCodec[TCodecs <: AbstractBaboonCodecs](
       versionsCodecs: TrieMap[BaboonDomainVersion, Lazy[TCodecs]],
       typeMeta: BaboonTypeMeta,
       exact: Boolean,
+      tolerant: Boolean,
     ): BaboonValue[BaboonCodecData] = {
       for {
         versions <- domainVersions
@@ -512,8 +530,11 @@ package baboon.runtime.shared {
 
         minVersion = versions.head
         maxVersion = versions.last
+        // the oldest version whose codec may decode this payload: byte-identical bound, or
+        // (tolerant JSON reads) the json-additive bound when the writer published one
+        lowerBound = if (tolerant) typeMeta.versionReadableMin else typeMeta.versionMinCompat
         // extract domain model version and latest version
-        modelVersion = typeMeta.versionMinCompat match {
+        modelVersion = lowerBound match {
           // it's a model of newer version than we have, we should find min compat version
           case Some(v) if typeMeta.version.version > maxVersion.version => v
           case _                                                        => typeMeta.version

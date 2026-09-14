@@ -125,6 +125,48 @@ abstract class ForwardCompatComparatorTestBase[F[+_, +_]: Error2: TagKK: BaboonT
         }
     }
 
+    "invert forward ranges into per-writer minimum reader versions" in {
+      (loader: BaboonLoader[F]) =>
+        for {
+          family <- loadFwd(loader)
+        } yield {
+          val evo = evolutionOf(family)
+          val v1  = Version.parse("1.0.0")
+          val v2  = Version.parse("1.1.0")
+          val v3  = Version.parse("1.2.0")
+
+          def idOf(typeName: String): TypeId = {
+            evo.typesForwardReadable(v1).keys.collectFirst { case id: TypeId.User if id.name.name == typeName => id: TypeId }.get
+          }
+
+          // Every tier is always present: the writer's own version reads itself identically,
+          // and identity satisfies every weaker tier.
+          //
+          // written by 1.2.0: AppendVar is prefix-readable (compact) back to 1.0.0, hence JSON-readable too;
+          // the appended fields are variable-length, so indexed blobs are readable only by 1.2.0 itself
+          assert(evo.minReaders(v3, idOf("AppendVar")) == Map(Identical -> v3, PrefixAnyMode -> v3, PrefixCompact -> v1, JsonAdditive -> v1))
+          // fixed-length append keeps indexed blobs readable: every tier reaches 1.0.0 except identity (unchanged only since 1.1.0)
+          assert(evo.minReaders(v3, idOf("AppendFixed")) == Map(Identical -> v2, PrefixAnyMode -> v1, PrefixCompact -> v1, JsonAdditive -> v1))
+          // mid-insert written by 1.1.0: JSON back to 1.0.0, nothing else; written by 1.2.0 (field removed): nobody older
+          assert(evo.minReaders(v2, idOf("MidInsert")) == Map(Identical -> v2, PrefixAnyMode -> v2, PrefixCompact -> v2, JsonAdditive -> v1))
+          assert(evo.minReaders(v3, idOf("MidInsert")) == Map(Identical -> v3, PrefixAnyMode -> v3, PrefixCompact -> v3, JsonAdditive -> v3))
+          // unchanged type: every bound is the oldest version
+          assert(evo.minReaders(v3, idOf("Stable")).values.toSet == Set(v1))
+
+          // the Identical bound is exactly the sameIn head, for every type and version
+          evo.typesUnchangedSince.foreach {
+            case (version, types) =>
+              types.foreach {
+                case (id, unmodified) =>
+                  assert(
+                    evo.minReaders(version, id).get(Identical).contains(unmodified.sameIn.head),
+                    s"$id@$version: minReaders(Identical)=${evo.minReaders(version, id).get(Identical)} vs sameIn.head=${unmodified.sameIn.head}",
+                  )
+              }
+          }
+        }
+    }
+
     "maintain structural invariants and consistency with sameIn ranges" in {
       (loader: BaboonLoader[F]) =>
         for {

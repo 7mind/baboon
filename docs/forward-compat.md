@@ -78,6 +78,29 @@ These are usage-site properties the compiler cannot check. `identical` and
 - Generated domain metadata registry: `forwardReadableVersions(typeId)` next to
   `sameInVersions(typeId)`.
 
+## Envelope integration (JSON)
+
+The facade envelope publishes the JSON bound as `$rv` (`domainVersionReadableMin`):
+the oldest domain version whose JSON codec can decode the payload under the
+`json-additive` contract. It is the writer-side inverse of the forward
+ranges — generated types carry `baboonMinReaderVersions` (tier → oldest reader
+version; the `identical` bound equals `baboonSameInVersions.head`, the
+`json-additive` bound feeds `$rv`). `$rv` is elided when equal to the effective
+`$uv`, so envelopes of unchanged types are byte-identical to before; invariant
+`$rv <= $uv <= $v`. Old readers ignore the key.
+
+Readers choose via `ForwardReadPolicy`:
+
+- `Tolerant` (default): when `$v` is newer than every registered version,
+  resolve the codec from `$rv` (falling back to `$uv`) — the payload is decoded
+  with that version's codec and fields unknown to it are dropped.
+- `Lossless`: ignore `$rv`; resolve from `$uv` only (pre-`$rv` behaviour).
+  **Re-encoding intermediaries must use this**, otherwise they truncate data
+  for downstream consumers that do understand the newer version.
+
+The binary v1 envelope carries no readable-min bound; UEBA resolution is always
+lossless. Spec: `docs/spec/codec-envelope.md`.
+
 ## Relationship to sameIn
 
 `identical` forward tiers imply membership in the `sameIn` run. Historically

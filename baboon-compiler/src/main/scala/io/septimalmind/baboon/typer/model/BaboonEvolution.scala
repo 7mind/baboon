@@ -10,6 +10,26 @@ case class BaboonEvolution(
   typesUnchangedSince: Map[Version, Map[TypeId, UnmodifiedSince]],
   typesForwardReadable: Map[Version, Map[TypeId, ForwardReadable]],
 ) {
+  /** Inverse of [[typesForwardReadable]], from the WRITER's point of view: for a type
+    * as encoded by `version`, the oldest reader version that can decode it at each
+    * tier or better. Readers form a contiguous range per tier (a shorter chain is a
+    * sub-chain), so one lower bound per tier is exact. The `Identical` bound equals
+    * the type's `sameIn` head.
+    */
+  def minReaders(version: Version, id: TypeId): Map[ForwardCompatTier, Version] = {
+    val readers = typesForwardReadable.toList.collect {
+      case (readerVersion, types) if readerVersion <= version =>
+        types.get(id).flatMap(_.tierFor(version)).map(tier => (readerVersion, tier))
+    }.flatten
+
+    ForwardCompatTier.all.flatMap {
+      tier =>
+        readers
+          .collect { case (readerVersion, readerTier) if readerTier.weight >= tier.weight => readerVersion }
+          .minOption(Version.ordering)
+          .map(v => (tier, v))
+    }.toMap
+  }
   override def toString: String = {
     diffs.map {
       case (v, diff) =>

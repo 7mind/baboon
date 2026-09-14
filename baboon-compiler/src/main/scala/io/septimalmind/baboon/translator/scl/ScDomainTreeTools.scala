@@ -90,7 +90,15 @@ object ScDomainTreeTools {
         q"${ScTypes.scMap}(${forwardEntries.mkString(", ")})",
         q"$ref.baboonForwardReadable",
       )
-      List(sameInVersion, forwardReadable)
+      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+        case (tier, v) => s""""${tier.wireName}" -> "${v.v.toString}""""
+      }
+      val minReaders = MetaField(
+        q"def baboonMinReaderVersions: ${ScTypes.scMap}[$scString, $scString]",
+        q"${ScTypes.scMap}(${minReaderEntries.mkString(", ")})",
+        q"$ref.baboonMinReaderVersions",
+      )
+      List(sameInVersion, forwardReadable, minReaders)
     }
   }
 }
