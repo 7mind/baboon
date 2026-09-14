@@ -137,6 +137,11 @@ Two consequences of scheme 2:
   `test/ts-stub/.../ForwardCompat.test.ts` — real cross-version decodes over
   the shared `fwd-e2e-ok` model: old codec reads new compact-UEBA prefix and
   new JSON; desync and grown-enum negative controls.
+- `test/sc-stub/.../ForwardCompatEnvelopeSpec.scala` and
+  `test/ts-stub/.../ForwardCompatEnvelope.test.ts` — envelope-level proof of
+  `$rv`: a facade registering only 1.0.0 decodes 2.0.0 envelopes under
+  `Tolerant` exactly where `$rv` allows, refuses under `Lossless`, and refuses
+  when no bound was published; `$rv` elision and `readMeta` round-trip.
 
 ## Out of scope (recorded)
 
