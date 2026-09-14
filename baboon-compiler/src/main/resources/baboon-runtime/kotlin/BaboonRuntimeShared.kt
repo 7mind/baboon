@@ -15,6 +15,13 @@ interface BaboonGenerated {
      * the cursor after decoding.
      */
     val baboonForwardReadable: Map<String, String>
+
+    /**
+     * Writer-side inverse of [baboonForwardReadable]: guarantee tier -> oldest domain version whose
+     * codec can decode THIS version's encoding of this type. The "identical" bound equals
+     * `baboonSameInVersions[0]`; the "json-additive" bound is published as `$rv`.
+     */
+    val baboonMinReaderVersions: Map<String, String>
     val baboonTypeIdentifier: String
 
     fun domainVersion(): BaboonDomainVersion = BaboonDomainVersion(baboonDomainIdentifier, baboonDomainVersion)
@@ -97,6 +104,13 @@ data class BaboonTypeMeta(
     val domainVersion: String,
     val domainVersionMinCompat: String,
     val typeIdentifier: String,
+    /**
+     * Oldest domain version whose JSON codec can decode the payload under the json-additive
+     * contract (tolerant key lookup; fields unknown to that version are dropped). Always
+     * <= domainVersionMinCompat. Published as `$rv` when it differs from the (effective)
+     * minCompat; the binary v1 envelope does not carry it. Defaults to minCompat.
+     */
+    val domainVersionReadableMin: String = domainVersionMinCompat,
 ) {
     fun version(): BaboonDomainVersion = BaboonDomainVersion(domainIdentifier, domainVersion)
     fun versionMinCompat(): BaboonDomainVersion? {
@@ -104,6 +118,13 @@ data class BaboonTypeMeta(
             domainVersionMinCompat.isEmpty() -> null
             domainVersionMinCompat == domainVersion -> null
             else -> BaboonDomainVersion(domainIdentifier, domainVersionMinCompat)
+        }
+    }
+    fun versionReadableMin(): BaboonDomainVersion? {
+        return when {
+            domainVersionReadableMin.isEmpty() -> versionMinCompat()
+            domainVersionReadableMin == domainVersion -> null
+            else -> BaboonDomainVersion(domainIdentifier, domainVersionReadableMin)
         }
     }
 
@@ -118,14 +139,20 @@ data class BaboonTypeMeta(
                     (value as BaboonAdtMemberMeta).baboonAdtTypeIdentifier
                 else -> value.baboonTypeIdentifier
             }
+            val readableMin = value.baboonMinReaderVersions[JSON_READABLE_TIER]
+                ?: error("baboonMinReaderVersions lacks '$JSON_READABLE_TIER' for type ${value.baboonTypeIdentifier}")
             return BaboonTypeMeta(
                 BaboonTypeMetaCodec.META_VERSION,
                 value.baboonDomainIdentifier,
                 value.baboonDomainVersion,
                 value.baboonSameInVersions.first(),
                 typeIdentifier,
+                readableMin,
             )
         }
+
+        /** Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`. */
+        const val JSON_READABLE_TIER: String = "json-additive"
 
         fun readMeta(reader: LEDataInputStream): BaboonTypeMeta? {
             return BaboonTypeMetaCodec.readMeta(reader)

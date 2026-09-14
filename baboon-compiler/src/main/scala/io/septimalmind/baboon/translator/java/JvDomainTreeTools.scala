@@ -90,7 +90,15 @@ object JvDomainTreeTools {
         q"$jvMap.ofEntries(${forwardEntries.mkString(", ")})",
         q"$ref.baboonForwardReadable",
       )
-      List(sameInVersion, forwardReadable)
+      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+        case (tier, v) => s"""java.util.Map.entry("${tier.wireName}", "${v.v.toString}")"""
+      }
+      val minReaders = MetaField(
+        q"public static final $jvMap<$jvString, $jvString> baboonMinReaderVersions",
+        q"$jvMap.ofEntries(${minReaderEntries.mkString(", ")})",
+        q"$ref.baboonMinReaderVersions",
+      )
+      List(sameInVersion, forwardReadable, minReaders)
     }
   }
 }

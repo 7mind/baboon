@@ -1273,12 +1273,18 @@ public protocol BaboonMetaProvider {
     /// The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
     /// the cursor after decoding.
     var baboonForwardReadable: [String: String] { get }
+
+    /// Writer-side inverse of `baboonForwardReadable`: guarantee tier -> oldest domain version
+    /// whose codec can decode THIS version's encoding of this type. The "identical" bound equals
+    /// `baboonSameInVersions[0]`; the "json-additive" bound is published as `$rv`.
+    var baboonMinReaderVersions: [String: String] { get }
 }
 
 // Default keeps hand-written conforming stubs source-compatible; generated types
 // override it with the real per-type table.
 public extension BaboonMetaProvider {
     var baboonForwardReadable: [String: String] { [:] }
+    var baboonMinReaderVersions: [String: String] { [:] }
 }
 
 // Implemented by generated ADT branches. Mirrors Kotlin/Dart `BaboonAdtMember` for the
@@ -1363,23 +1369,39 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
     public let domainVersion: String
     public let domainVersionMinCompat: String
     public let typeIdentifier: String
+    /// Oldest domain version whose JSON codec can decode the payload under the json-additive
+    /// contract (tolerant key lookup; fields unknown to that version are dropped). Always
+    /// <= domainVersionMinCompat. Published as `$rv` when it differs from the (effective)
+    /// minCompat; the binary v1 envelope does not carry it. Defaults to minCompat.
+    public let domainVersionReadableMin: String
+
+    /// Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`.
+    public static let jsonReadableTier = "json-additive"
 
     public init(
         _ metaVersion: Int,
         _ domainIdentifier: String,
         _ domainVersion: String,
         _ domainVersionMinCompat: String,
-        _ typeIdentifier: String
+        _ typeIdentifier: String,
+        _ domainVersionReadableMin: String? = nil
     ) {
         self.metaVersion = metaVersion
         self.domainIdentifier = domainIdentifier
         self.domainVersion = domainVersion
         self.domainVersionMinCompat = domainVersionMinCompat
         self.typeIdentifier = typeIdentifier
+        self.domainVersionReadableMin = domainVersionReadableMin ?? domainVersionMinCompat
     }
 
     public func versionRef() -> BaboonDomainVersion {
         return BaboonDomainVersion(domainIdentifier, domainVersion)
+    }
+
+    public func versionReadableMin() -> BaboonDomainVersion? {
+        if domainVersionReadableMin.isEmpty { return versionMinCompat() }
+        if domainVersionReadableMin == domainVersion { return nil }
+        return BaboonDomainVersion(domainIdentifier, domainVersionReadableMin)
     }
 
     public func versionMinCompat() -> BaboonDomainVersion? {
@@ -1426,7 +1448,8 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
         guard let v = obj["$v"] as? String else { return nil }
         guard let t = obj["$t"] as? String else { return nil }
         let minCompat = (obj["$uv"] as? String) ?? v
-        return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t)
+        let readableMin = (obj["$rv"] as? String) ?? minCompat
+        return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t, readableMin)
     }
 
     public static func readMetaBin(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
@@ -1456,12 +1479,16 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
                 "BaboonTypeMeta.from: empty baboonSameInVersions for type [\(meta.baboonDomainIdentifier).\(typeId)]"
             )
         }
+        // baboonMinReaderVersions has a protocol-extension default (see BaboonMetaProvider); a
+        // missing json-additive bound means "no forward-read beyond byte-identity", i.e. = minCompat
+        let readableMin = meta.baboonMinReaderVersions[BaboonTypeMeta.jsonReadableTier] ?? sameIn[0]
         return BaboonTypeMeta(
             BaboonTypeMetaCodec.metaVersion,
             meta.baboonDomainIdentifier,
             meta.baboonDomainVersion,
             sameIn[0],
-            typeId
+            typeId,
+            readableMin
         )
     }
 
@@ -1512,6 +1539,10 @@ public enum BaboonTypeMetaCodec {
         ]
         if meta.domainVersion != meta.domainVersionMinCompat {
             obj["$uv"] = meta.domainVersionMinCompat
+        }
+        // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+        if !meta.domainVersionReadableMin.isEmpty && meta.domainVersionReadableMin != meta.domainVersionMinCompat {
+            obj["$rv"] = meta.domainVersionReadableMin
         }
         return obj
     }

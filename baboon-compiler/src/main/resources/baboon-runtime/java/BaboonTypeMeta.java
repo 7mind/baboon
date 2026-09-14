@@ -5,16 +5,38 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.List;
+import java.util.Map;
 
 public record BaboonTypeMeta(
     byte metaVersion,
     String domainIdentifier,
     String domainVersion,
     String domainVersionMinCompat,
-    String typeIdentifier
+    String typeIdentifier,
+    /**
+     * Oldest domain version whose JSON codec can decode the payload under the json-additive
+     * contract (tolerant key lookup; fields unknown to that version are dropped). Always
+     * <= domainVersionMinCompat. Published as `$rv` when it differs from the (effective)
+     * minCompat; the binary v1 envelope does not carry it.
+     */
+    String domainVersionReadableMin
 ) {
+    /** Five-field form: readable-min defaults to minCompat (no forward-read beyond byte-identity). */
+    public BaboonTypeMeta(byte metaVersion, String domainIdentifier, String domainVersion, String domainVersionMinCompat, String typeIdentifier) {
+        this(metaVersion, domainIdentifier, domainVersion, domainVersionMinCompat, typeIdentifier, domainVersionMinCompat);
+    }
+
+    /** Tier key of the JSON envelope's readable-min bound in the generated `baboonMinReaderVersions`. */
+    public static final String JSON_READABLE_TIER = "json-additive";
+
     public BaboonDomainVersion versionRef() {
         return new BaboonDomainVersion(domainIdentifier, domainVersion);
+    }
+
+    public BaboonDomainVersion versionReadableMin() {
+        if (domainVersionReadableMin == null || domainVersionReadableMin.isEmpty()) return versionMinCompat();
+        if (domainVersionReadableMin.equals(domainVersion)) return null;
+        return new BaboonDomainVersion(domainIdentifier, domainVersionReadableMin);
     }
 
     public BaboonDomainVersion versionMinCompat() {
@@ -64,12 +86,24 @@ public record BaboonTypeMeta(
         }
         String minCompat = sameIn.get(0);
 
+        Map<String, String> minReaders;
+        try {
+            minReaders = (Map<String, String>) actual.getField("baboonMinReaderVersions").get(null);
+        } catch (ReflectiveOperationException e) {
+            throw new BaboonException("Type " + actual.getName() + " is missing static field 'baboonMinReaderVersions'", e);
+        }
+        String readableMin = minReaders.get(JSON_READABLE_TIER);
+        if (readableMin == null) {
+            throw new BaboonException("Type " + actual.getName() + ": baboonMinReaderVersions lacks '" + JSON_READABLE_TIER + "'");
+        }
+
         return new BaboonTypeMeta(
             BaboonTypeMetaCodec.META_VERSION,
             domainIdentifier,
             domainVersion,
             minCompat,
-            typeIdentifier
+            typeIdentifier,
+            readableMin
         );
     }
 
@@ -103,6 +137,7 @@ public record BaboonTypeMeta(
         public static final String DOMAIN_IDENTIFIER_KEY = "$d";
         public static final String DOMAIN_VERSION_KEY = "$v";
         public static final String DOMAIN_VERSION_MIN_COMPAT_KEY = "$uv";
+        public static final String DOMAIN_VERSION_READABLE_KEY = "$rv";
         public static final String TYPE_IDENTIFIER_KEY = "$t";
 
         public static void writeBin(BaboonTypeMeta meta, LEDataOutputStream writer) throws Exception {
@@ -128,6 +163,11 @@ public record BaboonTypeMeta(
             obj.put(TYPE_IDENTIFIER_KEY, meta.typeIdentifier);
             if (!meta.domainVersion.equals(meta.domainVersionMinCompat)) {
                 obj.put(DOMAIN_VERSION_MIN_COMPAT_KEY, meta.domainVersionMinCompat);
+            }
+            // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+            if (meta.domainVersionReadableMin != null && !meta.domainVersionReadableMin.isEmpty()
+                && !meta.domainVersionReadableMin.equals(meta.domainVersionMinCompat)) {
+                obj.put(DOMAIN_VERSION_READABLE_KEY, meta.domainVersionReadableMin);
             }
             return obj;
         }
@@ -185,8 +225,10 @@ public record BaboonTypeMeta(
 
             JsonNode uvNode = obj.get(DOMAIN_VERSION_MIN_COMPAT_KEY);
             String uv = uvNode != null && uvNode.isTextual() ? uvNode.asText() : v.asText();
+            JsonNode rvNode = obj.get(DOMAIN_VERSION_READABLE_KEY);
+            String rv = rvNode != null && rvNode.isTextual() ? rvNode.asText() : uv;
 
-            return new BaboonTypeMeta(META_VERSION, d.asText(), v.asText(), uv, t.asText());
+            return new BaboonTypeMeta(META_VERSION, d.asText(), v.asText(), uv, t.asText(), rv);
         }
     }
 }

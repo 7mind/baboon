@@ -23,9 +23,25 @@ using Newtonsoft.Json.Linq;
 
 namespace Baboon.Runtime.Shared
 {
+    /// <summary>
+    /// How a reader treats JSON payloads written by a NEWER domain version than it registers.
+    /// Lossless: decode only when the envelope's <c>$uv</c> (byte-identical bound) reaches a registered
+    /// version — the pre-<c>$rv</c> behavior. Tolerant: additionally honor <c>$rv</c> (json-additive
+    /// bound): decode with that version's codec, silently dropping fields this reader does not know.
+    /// Re-encoding intermediaries must use Lossless or they truncate data for downstream consumers.
+    /// </summary>
+    public enum ForwardReadPolicy
+    {
+        Lossless,
+        Tolerant,
+    }
+
     public class BaboonCodecsFacade
     {
         private const string CONTENT_JSON_KEY = "$c";
+
+        /// <summary>JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly.</summary>
+        public ForwardReadPolicy ForwardReadPolicy { get; set; } = ForwardReadPolicy.Tolerant;
 
         private readonly ConcurrentDictionary<BaboonDomainVersion, Lazy<AbstractBaboonJsonCodecs>> _versionsCodecsJson = new();
         private readonly ConcurrentDictionary<BaboonDomainVersion, Lazy<AbstractBaboonUebaCodecs>> _versionsCodecsBin = new();
@@ -966,7 +982,7 @@ namespace Baboon.Runtime.Shared
 
         private Either<BaboonCodecException, IBaboonStreamCodec<IBaboonGenerated, BinaryWriter, BinaryReader>> GetBinCodec(BaboonTypeMeta typeMeta, bool exact)
         {
-            var codec = GetCodec(_versionsCodecsBin, typeMeta, exact);
+            var codec = GetCodec(_versionsCodecsBin, typeMeta, exact, tolerant: false);
             if (codec.IsLeft)
             {
                 return Either.Left<BaboonCodecException, IBaboonStreamCodec<IBaboonGenerated, BinaryWriter, BinaryReader>>(
@@ -986,7 +1002,7 @@ namespace Baboon.Runtime.Shared
 
         private Either<BaboonCodecException, IBaboonValueCodec<IBaboonGenerated, JToken>> GetJsonCodec(BaboonTypeMeta typeMeta, bool exact)
         {
-            var codec = GetCodec(_versionsCodecsJson, typeMeta, exact);
+            var codec = GetCodec(_versionsCodecsJson, typeMeta, exact, tolerant: ForwardReadPolicy == ForwardReadPolicy.Tolerant);
             if (codec.IsLeft)
             {
                 return Either.Left<BaboonCodecException, IBaboonValueCodec<IBaboonGenerated, JToken>>(
@@ -1007,7 +1023,8 @@ namespace Baboon.Runtime.Shared
         private Either<BaboonCodecException, IBaboonCodecData> GetCodec<TCodecs>(
             ConcurrentDictionary<BaboonDomainVersion, Lazy<TCodecs>> versionsCodecs,
             BaboonTypeMeta typeMeta,
-            bool exact
+            bool exact,
+            bool tolerant
         )
             where TCodecs : AbstractBaboonCodecs
         {
@@ -1021,10 +1038,12 @@ namespace Baboon.Runtime.Shared
 
             BaboonDomainVersion modelVersion;
             var lookupVersion = typeMeta.VersionRef;
-            var minCompat = typeMeta.VersionMinCompat;
-            if (minCompat is not null && lookupVersion.Version > maxVersion.Version)
+            // the oldest version whose codec may decode this payload: byte-identical bound, or
+            // (tolerant JSON reads) the json-additive bound when the writer published one
+            var lowerBound = tolerant ? typeMeta.VersionReadableMin : typeMeta.VersionMinCompat;
+            if (lowerBound is not null && lookupVersion.Version > maxVersion.Version)
             {
-                modelVersion = minCompat;
+                modelVersion = lowerBound;
             }
             else
             {

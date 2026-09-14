@@ -69,10 +69,34 @@ namespace Baboon.Runtime.Shared
         string DomainIdentifier,
         string DomainVersion,
         string DomainVersionMinCompat,
-        string TypeIdentifier
+        string TypeIdentifier,
+        // Oldest domain version whose JSON codec can decode the payload under the json-additive
+        // contract (tolerant key lookup; fields unknown to that version are dropped). Never newer
+        // than DomainVersionMinCompat. Published as `$rv` when it differs from the (effective)
+        // minCompat; the binary v1 envelope does not carry it.
+        string DomainVersionReadableMin
     )
     {
+        /// <summary>Five-field form: readable-min defaults to minCompat (no forward-read beyond byte-identity).</summary>
+        public BaboonTypeMeta(byte MetaVersion, string DomainIdentifier, string DomainVersion, string DomainVersionMinCompat, string TypeIdentifier)
+            : this(MetaVersion, DomainIdentifier, DomainVersion, DomainVersionMinCompat, TypeIdentifier, DomainVersionMinCompat)
+        {
+        }
+
+        /// <summary>Tier key of the JSON envelope's readable-min bound in <c>BaboonMinReaderVersions()</c>.</summary>
+        public const string JSON_READABLE_TIER = "json-additive";
+
         public BaboonDomainVersion VersionRef => new BaboonDomainVersion(DomainIdentifier, DomainVersion);
+
+        public BaboonDomainVersion? VersionReadableMin
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(DomainVersionReadableMin)) return VersionMinCompat;
+                if (DomainVersionReadableMin == DomainVersion) return null;
+                return new BaboonDomainVersion(DomainIdentifier, DomainVersionReadableMin);
+            }
+        }
 
         public BaboonDomainVersion? VersionMinCompat
         {
@@ -115,13 +139,18 @@ namespace Baboon.Runtime.Shared
             // is always non-empty. Index directly so a violation throws IndexOutOfRangeException
             // rather than silently masquerading as a same-version meta.
             var minCompat = value.BaboonSameInVersions()[0];
+            if (!value.BaboonMinReaderVersions().TryGetValue(JSON_READABLE_TIER, out var readableMin))
+            {
+                throw new InvalidOperationException($"BaboonMinReaderVersions() lacks '{JSON_READABLE_TIER}' for type {value.BaboonTypeIdentifier()}");
+            }
 
             return new BaboonTypeMeta(
                 BaboonTypeMetaCodec.META_VERSION,
                 value.BaboonDomainIdentifier(),
                 value.BaboonDomainVersion(),
                 minCompat,
-                typeIdentifier
+                typeIdentifier,
+                readableMin
             );
         }
 
@@ -139,6 +168,7 @@ namespace Baboon.Runtime.Shared
         public const string DOMAIN_IDENTIFIER_KEY = "$d";
         public const string DOMAIN_VERSION_KEY = "$v";
         public const string DOMAIN_VERSION_MIN_COMPAT_KEY = "$uv";
+        public const string DOMAIN_VERSION_READABLE_KEY = "$rv";
         public const string TYPE_IDENTIFIER_KEY = "$t";
 
         public static void WriteBin(BaboonTypeMeta meta, BinaryWriter writer)
@@ -172,6 +202,11 @@ namespace Baboon.Runtime.Shared
             if (meta.DomainVersion != meta.DomainVersionMinCompat)
             {
                 obj[DOMAIN_VERSION_MIN_COMPAT_KEY] = meta.DomainVersionMinCompat;
+            }
+            // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+            if (!string.IsNullOrEmpty(meta.DomainVersionReadableMin) && meta.DomainVersionReadableMin != meta.DomainVersionMinCompat)
+            {
+                obj[DOMAIN_VERSION_READABLE_KEY] = meta.DomainVersionReadableMin;
             }
             return obj;
         }
@@ -232,8 +267,9 @@ namespace Baboon.Runtime.Shared
             if (d is null || v is null || t is null) return null;
 
             var uv = obj[DOMAIN_VERSION_MIN_COMPAT_KEY]?.Value<string>() ?? v;
+            var rv = obj[DOMAIN_VERSION_READABLE_KEY]?.Value<string>() ?? uv;
 
-            return new BaboonTypeMeta(META_VERSION, d, v, uv, t);
+            return new BaboonTypeMeta(META_VERSION, d, v, uv, t, rv);
         }
     }
 }

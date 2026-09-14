@@ -365,6 +365,7 @@ object DtDefnTranslator {
         "baboonTypeIdentifier",
         "baboonSameInVersions",
         "baboonForwardReadable",
+        "baboonMinReaderVersions",
         "baboonAdtTypeIdentifier",
       )
       val instanceGetters = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.valueGetter)
@@ -478,6 +479,7 @@ object DtDefnTranslator {
         "baboonTypeIdentifier",
         "baboonSameInVersions",
         "baboonForwardReadable",
+        "baboonMinReaderVersions",
       )
       val instanceGetters = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.valueGetter)
 

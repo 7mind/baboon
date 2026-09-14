@@ -1,3 +1,4 @@
+from enum import Enum
 import json
 from typing import Dict, List, Type, Tuple
 
@@ -19,10 +20,24 @@ TI = TypeVar("TI", bound=BaboonGenerated)
 TO = TypeVar("TO", bound=BaboonGeneratedLatest)
 
 
+class ForwardReadPolicy(Enum):
+    """How a reader treats JSON payloads written by a NEWER domain version than it registers.
+
+    LOSSLESS: decode only when the envelope's `$uv` (byte-identical bound) reaches a registered
+    version — the pre-`$rv` behavior. TOLERANT: additionally honor `$rv` (json-additive bound):
+    decode with that version's codec, silently dropping fields this reader does not know.
+    Re-encoding intermediaries must use LOSSLESS or they truncate data for downstream consumers.
+    """
+    LOSSLESS = "lossless"
+    TOLERANT = "tolerant"
+
+
 class BaboonCodecsFacade:
     CONTENT_JSON_KEY = "$c"
 
     def __init__(self):
+        # JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly.
+        self.forward_read_policy: ForwardReadPolicy = ForwardReadPolicy.TOLERANT
         self.versions_codecs_json: Dict[BaboonDomainVersion, Lazy[AbstractBaboonJsonCodecs]] = {}
         self.versions_codecs_bin: Dict[BaboonDomainVersion, Lazy[AbstractBaboonUebaCodecs]] = {}
         self.versions_conversions: Dict[BaboonDomainVersion, Lazy[AbstractBaboonConversions]] = {}
@@ -254,15 +269,17 @@ class BaboonCodecsFacade:
         return from_model
 
     def _get_bin_codec(self, type_meta: BaboonTypeMeta, exact: bool) -> BaboonBinCodec:
-        return self._get_codec(self.versions_codecs_bin, type_meta, exact)
+        return self._get_codec(self.versions_codecs_bin, type_meta, exact, tolerant=False)
 
     def _get_json_codec(self, type_meta: BaboonTypeMeta, exact: bool) -> BaboonJsonCodec:
-        return self._get_codec(self.versions_codecs_json, type_meta, exact)
+        return self._get_codec(self.versions_codecs_json, type_meta, exact,
+                               tolerant=self.forward_read_policy == ForwardReadPolicy.TOLERANT)
 
     def _get_codec(self,
                    versions_codecs: Dict[BaboonDomainVersion, Lazy],
                    type_meta: BaboonTypeMeta,
-                   exact: bool) -> BaboonCodecData:
+                   exact: bool,
+                   tolerant: bool) -> BaboonCodecData:
         versions = self.domain_versions.get(type_meta.domain_identifier, [])
         if not versions:
             raise BaboonCodecException.CodecNotFound(
@@ -274,9 +291,12 @@ class BaboonCodecsFacade:
         min_version = versions[0]
         max_version = versions[-1]
 
+        # the oldest version whose codec may decode this payload: byte-identical bound, or
+        # (tolerant JSON reads) the json-additive bound when the writer published one
+        lower_bound = type_meta.version_readable_min if tolerant else type_meta.version_min_compat
         # it's a model of newer version than we have, we should find min compat version
-        if type_meta.version_min_compat and model_version.version > max_version.version:
-            model_version = type_meta.version_min_compat
+        if lower_bound and model_version.version > max_version.version:
+            model_version = lower_bound
 
         # it's a model of latest version, get last version codec
         if exact and model_version.version == max_version.version:

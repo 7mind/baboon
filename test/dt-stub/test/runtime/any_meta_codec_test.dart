@@ -38,6 +38,8 @@ class _StubGenerated implements BaboonGenerated, BaboonMetaProvider {
   List<String> get baboonSameInVersions => ['1.0.0'];
   @override
   Map<String, String> get baboonForwardReadable => const {'1.0.0': 'identical'};
+  @override
+  Map<String, String> get baboonMinReaderVersions => const {'identical': '1.0.0', 'json-additive': '1.0.0'};
 }
 
 class _StubAdtBranchGenerated implements BaboonGenerated, BaboonMetaProvider, BaboonAdtMember {
@@ -53,6 +55,8 @@ class _StubAdtBranchGenerated implements BaboonGenerated, BaboonMetaProvider, Ba
   List<String> get baboonSameInVersions => ['1.0.0'];
   @override
   Map<String, String> get baboonForwardReadable => const {'1.0.0': 'identical'};
+  @override
+  Map<String, String> get baboonMinReaderVersions => const {'identical': '1.0.0', 'json-additive': '1.0.0'};
 }
 
 class _StubBinCodec extends BaboonBinCodecBase<BaboonGenerated> implements BaboonCodecData {
@@ -791,6 +795,8 @@ class _StubGeneratedLatest implements BaboonGeneratedLatest, BaboonMetaProvider 
   List<String> get baboonSameInVersions => ['1.0.0'];
   @override
   Map<String, String> get baboonForwardReadable => const {'1.0.0': 'identical'};
+  @override
+  Map<String, String> get baboonMinReaderVersions => const {'identical': '1.0.0', 'json-additive': '1.0.0'};
 }
 
 class _StubLatestBinCodec extends BaboonBinCodecBase<BaboonGenerated> implements BaboonCodecData {
