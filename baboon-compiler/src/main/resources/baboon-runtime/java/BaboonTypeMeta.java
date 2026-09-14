@@ -179,6 +179,8 @@ public record BaboonTypeMeta(
             String domainIdentifier = BaboonBinTools.readString(reader);
             String domainVersion = BaboonBinTools.readString(reader);
             byte hasMinCompat = reader.readByte();
+            // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+            if (hasMinCompat != 0 && hasMinCompat != 1) return null;
             String domainVersionMinCompat = hasMinCompat == 1 ? BaboonBinTools.readString(reader) : domainVersion;
             String typeIdentifier = BaboonBinTools.readString(reader);
 

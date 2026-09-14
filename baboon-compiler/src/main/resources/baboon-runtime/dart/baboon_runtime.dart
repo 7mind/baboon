@@ -1427,10 +1427,12 @@ class BaboonTypeMetaCodec {
     return null;
   }
 
-  static BaboonTypeMeta _readMetaV1(BaboonBinReader reader) {
+  static BaboonTypeMeta? _readMetaV1(BaboonBinReader reader) {
     final d = reader.readString();
     final dv = reader.readString();
     final hasMinCompat = reader.readU8();
+    // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+    if (hasMinCompat != 0 && hasMinCompat != 1) return null;
     final mc = hasMinCompat == 1 ? reader.readString() : dv;
     final t = reader.readString();
     return BaboonTypeMeta(metaVersion, d, dv, mc, t);

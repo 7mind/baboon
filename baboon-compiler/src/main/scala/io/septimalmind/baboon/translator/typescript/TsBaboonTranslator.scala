@@ -294,10 +294,27 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       sb.append(s"""    public versionTo(): string { return '$versionStr'; }\n""")
       sb.append( "}\n\n")
 
-      // Meta class
+      // Meta class: the real per-type sameIn / forward-readable tables for this version
+      // (user types only; unknown type ids resolve to empty, never to fabricated own-version data).
+      val sameInEntries = lineage.evolution.typesUnchangedSince(domain.version).toList.collect {
+        case (tid: TypeId.User, u) => (tid.toString, u.sameIn.toList.map(_.v.toString))
+      }.sortBy(_._1)
+      val forwardEntries = lineage.evolution.typesForwardReadable(domain.version).toList.collect {
+        case (tid: TypeId.User, fr) => (tid.toString, fr.readable.toList.map { case (v, tier) => (v.v.toString, tier.wireName) })
+      }.sortBy(_._1)
       sb.append(s"class ${verClassName}Meta implements BaboonMeta {\n")
-      sb.append(s"""    public sameInVersions(_typeId: string): string[] { return ['$versionStr']; }\n""")
-      sb.append(s"""    public forwardReadableVersions(_typeId: string): { readonly [version: string]: string } { return { '$versionStr': 'identical' }; }\n""")
+      sb.append( "    private static readonly SAME_IN: { readonly [typeId: string]: readonly string[] } = {\n")
+      for ((tid, vs) <- sameInEntries) {
+        sb.append(s"""        "$tid": [${vs.map(v => s"'$v'").mkString(", ")}],\n""")
+      }
+      sb.append( "    };\n")
+      sb.append( "    private static readonly FORWARD: { readonly [typeId: string]: { readonly [version: string]: string } } = {\n")
+      for ((tid, pairs) <- forwardEntries) {
+        sb.append(s"""        "$tid": { ${pairs.map { case (v, t) => s"'$v': '$t'" }.mkString(", ")} },\n""")
+      }
+      sb.append( "    };\n")
+      sb.append(s"""    public sameInVersions(typeId: string): string[] { return [...(${verClassName}Meta.SAME_IN[typeId] ?? [])]; }\n""")
+      sb.append(s"""    public forwardReadableVersions(typeId: string): { readonly [version: string]: string } { return ${verClassName}Meta.FORWARD[typeId] ?? {}; }\n""")
       sb.append( "}\n\n")
     }
 

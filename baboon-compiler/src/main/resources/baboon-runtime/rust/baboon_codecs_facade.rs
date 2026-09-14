@@ -352,6 +352,10 @@ pub mod baboon_type_meta_codec {
                 e,
             )
         })?;
+        // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+        if has_min_compat != 0 && has_min_compat != 1 {
+            return Ok(None);
+        }
         let domain_version_min_compat = if has_min_compat == 1 {
             bin_tools::read_string(reader).map_err(|e| {
                 BaboonCodecError::decoder_failure_from_box(

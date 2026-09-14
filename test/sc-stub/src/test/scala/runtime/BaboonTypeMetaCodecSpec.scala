@@ -9,7 +9,38 @@ import baboon.runtime.shared._
 import io.circe.Json
 import org.scalatest.funsuite.AnyFunSuite
 
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
+
 class BaboonTypeMetaCodecSpec extends AnyFunSuite {
+
+  // Hand-assembled v1 binary envelope head with an arbitrary hasMinCompat flag byte.
+  private def binEnvelope(flag: Int, minCompat: Option[String]): Array[Byte] = {
+    val baos = new ByteArrayOutputStream()
+    val dos  = new LEDataOutputStream(baos)
+    dos.write(BaboonTypeMetaCodec.META_VERSION.toInt)
+    BaboonBinTools.writeString(dos, "com.example.dom")
+    BaboonBinTools.writeString(dos, "2.0.0")
+    dos.write(flag)
+    minCompat.foreach(v => BaboonBinTools.writeString(dos, v))
+    BaboonBinTools.writeString(dos, "MyType")
+    baos.toByteArray
+  }
+
+  private def readBin(bytes: Array[Byte]): Option[BaboonTypeMeta] =
+    BaboonTypeMeta.readMeta(new LEDataInputStream(new ByteArrayInputStream(bytes)))
+
+  // codec-envelope.md §2.1: flag 0x00 = minCompat elided, 0x01 = minCompat follows,
+  // "other flag values are illegal; readers reject them".
+  test("binary readMeta honours flag 0 (elided) and 1 (present)") {
+    assert(readBin(binEnvelope(0, None)).map(_.domainVersionMinCompat).contains("2.0.0"))
+    assert(readBin(binEnvelope(1, Some("1.0.0"))).map(_.domainVersionMinCompat).contains("1.0.0"))
+  }
+
+  test("binary readMeta rejects an unknown hasMinCompat flag byte instead of misparsing it as elided") {
+    // a lenient reader would treat 0x02 as "absent" and then read the min-compat string as the type id
+    assert(readBin(binEnvelope(2, Some("1.0.0"))).isEmpty, "flag 0x02 must be rejected (None)")
+    assert(readBin(binEnvelope(0xFF, None)).isEmpty, "flag 0xFF must be rejected (None)")
+  }
 
   private def buildMeta(): BaboonTypeMeta =
     BaboonTypeMeta(
