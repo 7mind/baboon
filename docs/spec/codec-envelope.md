@@ -27,12 +27,22 @@ Field summary:
 | `metaVersion`            | u8      | Format version of the envelope itself. See § 3.      |
 | `domainIdentifier`       | string  | Dotted namespace of the domain, e.g. `"my.ok"`.       |
 | `domainVersion`          | string  | Semver of the encoded value's domain, e.g. `"1.0.0"`.|
-| `domainVersionMinCompat` | string  | Oldest domain version that decodes the same payload structurally. Equals `domainVersion` when the type is fresh in this version. |
+| `domainVersionMinCompat` | string  | Oldest domain version that decodes the same payload structurally (byte-identical bound). Equals `domainVersion` when the type is fresh in this version. |
+| `domainVersionReadableMin` | string | **JSON only.** Oldest domain version whose JSON codec can decode the payload under the `json-additive` contract (tolerant key lookup; fields unknown to that version are dropped). Always `<= domainVersionMinCompat`. See `docs/forward-compat.md`. |
 | `typeIdentifier`         | string  | Type id within the domain, e.g. `"my.ok/:#Holder"`.  |
 
 `domainVersionMinCompat` may be elided in either encoding when it equals
 `domainVersion` (the common case for newly-introduced types). Readers must
 default a missing `domainVersionMinCompat` to `domainVersion`.
+
+`domainVersionReadableMin` is carried by the JSON envelope only (`$rv`) and is
+elided when it equals the effective `domainVersionMinCompat`; readers default
+it to `domainVersionMinCompat`. Invariant: `$rv <= $uv <= $v`. The binary v1
+envelope has no slot for it; readers of binary envelopes resolve losslessly
+via `domainVersionMinCompat` alone. Whether a JSON reader honours `$rv` is a
+reader-side policy (`ForwardReadPolicy`: `Tolerant`, the default, decodes
+newer payloads with the `$rv` version's codec and drops unknown fields;
+`Lossless` ignores `$rv`). Re-encoding intermediaries must use `Lossless`.
 
 ## 2. Wire formats
 
@@ -88,12 +98,13 @@ key order. The encoder emits them in declaration order for determinism:
   "$v":  "1.0.0",            // domainVersion
   "$t":  "my.ok/:#Holder",   // typeIdentifier
   "$uv": "1.0.0",            // domainVersionMinCompat — OMITTED when equal to $v
+  "$rv": "1.0.0",            // domainVersionReadableMin — OMITTED when equal to the effective $uv
   "$c":  { ... }             // content (the encoded value's JSON form)
 }
 ```
 
-The `$c` key carries the actual encoded payload. The other five keys are the
-envelope. Implementations distinguish envelope keys (`$d`/`$v`/`$t`/`$uv`/
+The `$c` key carries the actual encoded payload. The other six keys are the
+envelope. Implementations distinguish envelope keys (`$d`/`$v`/`$t`/`$uv`/`$rv`/
 `$mv`) from payload by name; the dollar-prefix is reserved for the envelope
 and the field-level `AnyMeta` (`$ak`/`$ad`/`$av`/`$at`/`$av`-content), and
 must not be used by user-defined field names.
