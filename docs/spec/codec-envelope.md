@@ -27,7 +27,7 @@ Field summary:
 | `metaVersion`            | u8      | Format version of the envelope itself. See § 3.      |
 | `domainIdentifier`       | string  | Dotted namespace of the domain, e.g. `"my.ok"`.       |
 | `domainVersion`          | string  | Semver of the encoded value's domain, e.g. `"1.0.0"`.|
-| `domainVersionMinCompat` | string  | Oldest domain version that decodes the same payload structurally (byte-identical bound). Equals `domainVersion` when the type is fresh in this version. |
+| `domainVersionMinCompat` | string  | Oldest domain version whose codec decodes this payload. Under the writer's default `ForwardWritePolicy.Strict` this is the byte-identical bound (equals `domainVersion` when the type's layout is fresh in this version). Under `Tolerant` — binary only — it is the prefix-read bound for the payload's index mode; see § 2.1.2. |
 | `domainVersionReadableMin` | string | **JSON only.** Oldest domain version whose JSON codec can decode the payload under the `json-additive` contract (tolerant key lookup; fields unknown to that version are dropped). Always `<= domainVersionMinCompat`. See `docs/forward-compat.md`. |
 | `typeIdentifier`         | string  | Type id within the domain, e.g. `"my.ok/:#Holder"`.  |
 
@@ -38,8 +38,9 @@ default a missing `domainVersionMinCompat` to `domainVersion`.
 `domainVersionReadableMin` is carried by the JSON envelope only (`$rv`) and is
 elided when it equals the effective `domainVersionMinCompat`; readers default
 it to `domainVersionMinCompat`. Invariant: `$rv <= $uv <= $v`. The binary v1
-envelope has no slot for it; readers of binary envelopes resolve losslessly
-via `domainVersionMinCompat` alone. Whether a JSON reader honours `$rv` is a
+envelope has no slot for it: the only bound a binary reader sees is
+`domainVersionMinCompat`, whose meaning is chosen by the WRITER
+(`ForwardWritePolicy`, § 2.1.2). Whether a JSON reader honours `$rv` is a
 reader-side policy (`ForwardReadPolicy`: `Tolerant`, the default, decodes
 newer payloads with the `$rv` version's codec and drops unknown fields;
 `Lossless` ignores `$rv`). Re-encoding intermediaries must use `Lossless`.
@@ -85,6 +86,40 @@ fail the harness against the unmodified C# (and other) peers.
 ```
 
 Total: 33 bytes.
+
+#### 2.1.2 What `domainVersionMinCompat` promises — the writer's `ForwardWritePolicy`
+
+The layout above is fixed; only the *value* written into the bound slot is
+policy-dependent. The policy lives on `BaboonCodecContext` (next to the index
+mode, because the bound depends on it):
+
+- `Strict` (default): the byte-identical bound, `baboonSameInVersions.head`.
+  Every codec at or above it produces and consumes exactly these bytes.
+  Identical to all envelopes written before the policy existed.
+- `Tolerant`: the prefix-read bound from `baboonMinReaderVersions` for the
+  payload's index mode — `prefix-compact` for compact contexts,
+  `prefix-any-mode` for indexed ones (`docs/forward-compat.md`, "Tiers").
+  Codecs at or above it read the payload as a prefix: the fields appended by
+  later versions are left unread. Equal to the Strict bound whenever no
+  prefix relationship exists, so such envelopes are byte-identical to Strict
+  ones.
+
+Readers cannot tell which policy produced an envelope. They trust the bound:
+when `domainVersion` is newer than every registered version and the bound is
+at or below the newest registered version, they decode with that newest
+codec (forward-readability is monotone along the version chain, so this is
+the highest-fidelity correct choice); otherwise the payload is unreadable.
+Consequences the deploying organisation owns:
+
+- The prefix contract (`docs/forward-compat.md`, "The prefix-* client
+  contract") is satisfied structurally by the byte-array decode entry points,
+  because the payload is the last element of the envelope and readers do not
+  assert full consumption. Callers of the stream-based entry points must not
+  continue reading the stream after a forward decode.
+- A `Tolerant` envelope decoded by an older reader is silently truncated to
+  the reader's field set. `ForwardReadPolicy.Lossless` cannot detect this for
+  binary; re-encoding intermediaries must run at the writer's version or
+  newer.
 
 ### 2.2 JSON
 
@@ -211,7 +246,8 @@ The encoder always writes the four required fields (`metaVersion`,
 `domainIdentifier`, `domainVersion`, `typeIdentifier`); it elides
 `domainVersionMinCompat` only when it equals `domainVersion` (the
 elision is byte-canonical, not stylistic — readers MUST handle both
-forms).
+forms). The value it writes there is selected by the context's
+`ForwardWritePolicy` (§ 2.1.2); the elision rule applies after selection.
 
 ## 7. Implementation pointers
 
@@ -219,7 +255,7 @@ Per-backend runtime sources (where the envelope codec lives):
 
 - C#: `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTypeMeta.cs`
 - Scala: `baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonRuntimeShared.scala`
-- Rust: `baboon-compiler/src/main/resources/baboon-runtime/rust/baboon_codecs_facade.rs` (`mod baboon_type_meta_codec`)
+- Rust: `baboon-compiler/src/main/resources/baboon-runtime/rust/baboon_type_meta.rs` (`mod baboon_type_meta_codec`; re-exported from `baboon_codecs_facade.rs`)
 - Java: `baboon-compiler/src/main/resources/baboon-runtime/java/BaboonTypeMeta.java`
 - Kotlin: `baboon-compiler/src/main/resources/baboon-runtime/kotlin/BaboonRuntimeShared.kt`
 - Kotlin-KMP: `baboon-compiler/src/main/resources/baboon-runtime/kotlin-kmp/BaboonRuntimeShared.kt`

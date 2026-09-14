@@ -504,6 +504,13 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
             doNotModify = true,
           ),
           RsDefnTranslator.Output(
+            "baboon_type_meta.rs",
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/rust/baboon_type_meta.rs")),
+            RsValue.RsCrateId(NEList("crate")),
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
+          RsDefnTranslator.Output(
             "baboon_codecs_facade.rs",
             TextTree.text(BaboonRuntimeResources.read("baboon-runtime/rust/baboon_codecs_facade.rs")),
             RsValue.RsCrateId(NEList("crate")),

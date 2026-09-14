@@ -109,10 +109,24 @@ open class BaboonCodecsFacadeBase {
 // PR 9.1: promoted from Swift enum to class so subclassing can carry an optional facade
 // reference. Existing static accessors (`.defaultCtx`, `.compact`, `.indexed`, `.default`)
 // preserved; `useIndices` preserved as a property; new `facade` getter defaults to `nil`.
+// Which lower bound the WRITER publishes as the UEBA envelope's `domainVersionMinCompat` (the v1
+// binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration
+// (UEBA)"). `.strict`: the byte-identical bound (`baboonSameInVersions[0]`) — the default.
+// `.tolerant`: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+// payloads, `prefix-any-mode` for indexed ones); readers older than the writer then decode the
+// payload with their newest codec, dropping the appended fields they do not know. A reader cannot
+// distinguish such an envelope from a byte-identical one, so re-encoding intermediaries must run
+// at the writer's version or newer.
+public enum ForwardWritePolicy {
+    case strict
+    case tolerant
+}
+
 open class BaboonCodecContext {
     public init() {}
 
     open var useIndices: Bool { return false }
+    open var forwardWritePolicy: ForwardWritePolicy { return .strict }
     open var facade: BaboonCodecsFacadeBase? { return nil }
 
     public static let defaultCtx: BaboonCodecContext = BaboonCodecContextCompact()
@@ -123,6 +137,26 @@ open class BaboonCodecContext {
     public static func withFacade(_ useIndices: Bool, _ facade: BaboonCodecsFacadeBase) -> BaboonCodecContext {
         return BaboonCodecContextWithFacade(useIndices: useIndices, facade: facade)
     }
+
+    // Fully specified context: index mode, writer-side forward policy and optional facade.
+    public static func custom(_ useIndices: Bool, _ forwardWritePolicy: ForwardWritePolicy, _ facade: BaboonCodecsFacadeBase?) -> BaboonCodecContext {
+        return BaboonCodecContextCustom(useIndices: useIndices, forwardWritePolicy: forwardWritePolicy, facade: facade)
+    }
+}
+
+public final class BaboonCodecContextCustom: BaboonCodecContext {
+    private let _useIndices: Bool
+    private let _forwardWritePolicy: ForwardWritePolicy
+    private let _facade: BaboonCodecsFacadeBase?
+    public init(useIndices: Bool, forwardWritePolicy: ForwardWritePolicy, facade: BaboonCodecsFacadeBase?) {
+        self._useIndices = useIndices
+        self._forwardWritePolicy = forwardWritePolicy
+        self._facade = facade
+        super.init()
+    }
+    public override var useIndices: Bool { return _useIndices }
+    public override var forwardWritePolicy: ForwardWritePolicy { return _forwardWritePolicy }
+    public override var facade: BaboonCodecsFacadeBase? { return _facade }
 }
 
 public final class BaboonCodecContextCompact: BaboonCodecContext {
@@ -1377,6 +1411,9 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
 
     /// Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`.
     public static let jsonReadableTier = "json-additive"
+    /// Tier keys of the UEBA prefix bounds in `baboonMinReaderVersions`, per index mode.
+    public static let uebaPrefixCompactTier = "prefix-compact"
+    public static let uebaPrefixAnyModeTier = "prefix-any-mode"
 
     public init(
         _ metaVersion: Int,
@@ -1490,6 +1527,20 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
             typeId,
             readableMin
         )
+    }
+
+    // Envelope for a UEBA payload written under `ctx`: `from` with `domainVersionMinCompat` lowered
+    // to the prefix bound of the context's index mode when the writer policy is `.tolerant`. A
+    // missing prefix bound (protocol-extension default) means "no forward-read beyond
+    // byte-identity", i.e. minCompat is kept.
+    public static func forBin(_ value: Any, _ ctx: BaboonCodecContext, useAdtIdentifier: Bool = false) throws -> BaboonTypeMeta {
+        let meta = try from(value, useAdtIdentifier: useAdtIdentifier)
+        guard ctx.forwardWritePolicy == .tolerant, let provider = value as? BaboonMetaProvider else {
+            return meta
+        }
+        let tier = ctx.useIndices ? BaboonTypeMeta.uebaPrefixAnyModeTier : BaboonTypeMeta.uebaPrefixCompactTier
+        let bound = provider.baboonMinReaderVersions[tier] ?? meta.domainVersionMinCompat
+        return BaboonTypeMeta(meta.metaVersion, meta.domainIdentifier, meta.domainVersion, bound, meta.typeIdentifier, meta.domainVersionReadableMin)
     }
 
     public var description: String {

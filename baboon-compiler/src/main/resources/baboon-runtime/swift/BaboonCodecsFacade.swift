@@ -43,7 +43,8 @@ public enum ForwardReadPolicy {
 }
 
 open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
-    /// JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly.
+    /// JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domainVersionMinCompat`,
+    /// whose meaning is fixed by the WRITER's `ForwardWritePolicy`; binary reads always trust it.
     public var forwardReadPolicy: ForwardReadPolicy = .tolerant
 
     private var versionsCodecsJson: [BaboonDomainVersion: BaboonLazy<AbstractBaboonJsonCodecs>] = [:]
@@ -261,7 +262,7 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
     ) -> Result<Data, BaboonCodecException> {
         let typeMeta: BaboonTypeMeta
         do {
-            typeMeta = try BaboonTypeMeta.from(value, useAdtIdentifier: useAdtIdentifier)
+            typeMeta = try BaboonTypeMeta.forBin(value, ctx, useAdtIdentifier: useAdtIdentifier)
         } catch {
             return .failure(.encoderFailure("Cannot derive type meta from value: \(error)", error))
         }
@@ -642,9 +643,6 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
         let maxVersion = versions.last!
 
         let lookupVersion = typeMeta.versionRef()
-        // the oldest version whose codec may decode this payload: byte-identical bound, or
-        // (tolerant JSON reads) the json-additive bound when the writer published one
-        let minCompat = tolerant ? typeMeta.versionReadableMin() : typeMeta.versionMinCompat()
 
         let lookupV: BaboonVersion
         let maxV: BaboonVersion
@@ -659,15 +657,27 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
             return .failure(.codecNotFound("Invalid version: \(error)"))
         }
 
-        let modelVersion: BaboonDomainVersion
-        if let mc = minCompat, lookupV > maxV {
-            modelVersion = mc
-        } else {
-            modelVersion = lookupVersion
-        }
-        let modelV: BaboonVersion
-        do { modelV = try modelVersion.version() } catch {
-            return .failure(.codecNotFound("Invalid version: \(error)"))
+        let modelVersion = lookupVersion
+        let modelV = lookupV
+
+        if !exact && modelV > maxV {
+            // a payload from a NEWER version than we register. The oldest version whose codec may
+            // decode it is the bound the writer published (byte-identical or, under its Tolerant
+            // policy, prefix-readable), or — for tolerant JSON reads — the json-additive bound.
+            // Forward-readability is monotone along the version chain, so once the bound reaches a
+            // registered version our newest codec reads the payload (losing at most the fields
+            // appended after our version).
+            let lowerBound = tolerant ? typeMeta.versionReadableMin() : typeMeta.versionMinCompat()
+            if let bound = lowerBound {
+                let boundV: BaboonVersion
+                do { boundV = try bound.version() } catch {
+                    return .failure(.codecNotFound("Invalid version: \(error)"))
+                }
+                if boundV <= maxV {
+                    return getCodecExact(maxVersion, typeMeta.typeIdentifier, codecsLookup)
+                }
+            }
+            return .failure(.codecNotFound("Unsupported domain version '\(modelVersion)'."))
         }
 
         if exact && modelV == maxV {

@@ -40,7 +40,10 @@ namespace Baboon.Runtime.Shared
     {
         private const string CONTENT_JSON_KEY = "$c";
 
-        /// <summary>JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly.</summary>
+        /// <summary>
+        /// JSON forward-read policy. UEBA envelopes (v1) carry a single bound, <c>DomainVersionMinCompat</c>,
+        /// whose meaning is fixed by the WRITER's <see cref="ForwardWritePolicy"/>; binary reads always trust it.
+        /// </summary>
         public ForwardReadPolicy ForwardReadPolicy { get; set; } = ForwardReadPolicy.Tolerant;
 
         private readonly ConcurrentDictionary<BaboonDomainVersion, Lazy<AbstractBaboonJsonCodecs>> _versionsCodecsJson = new();
@@ -308,7 +311,7 @@ namespace Baboon.Runtime.Shared
         public Either<BaboonCodecException, Unit> EncodeToBin<T>(BaboonCodecContext ctx, BinaryWriter writer, T value, BaboonTypeMeta? typeMetaOverride)
             where T : IBaboonGenerated
         {
-            var typeMeta = BaboonTypeMeta.From(value, typeof(T));
+            var typeMeta = BaboonTypeMeta.ForBin(value, typeof(T), ctx);
             var codecResult = GetBinCodec(typeMeta, exact: true);
             if (codecResult.IsLeft)
             {
@@ -1036,23 +1039,28 @@ namespace Baboon.Runtime.Shared
             var minVersion = versions[0];
             var maxVersion = versions[^1];
 
-            BaboonDomainVersion modelVersion;
-            var lookupVersion = typeMeta.VersionRef;
-            // the oldest version whose codec may decode this payload: byte-identical bound, or
-            // (tolerant JSON reads) the json-additive bound when the writer published one
-            var lowerBound = tolerant ? typeMeta.VersionReadableMin : typeMeta.VersionMinCompat;
-            if (lowerBound is not null && lookupVersion.Version > maxVersion.Version)
-            {
-                modelVersion = lowerBound;
-            }
-            else
-            {
-                modelVersion = lookupVersion;
-            }
-
+            var modelVersion = typeMeta.VersionRef;
             var modelV = modelVersion.Version;
             var maxV = maxVersion.Version;
             var minV = minVersion.Version;
+
+            if (!exact && modelV > maxV)
+            {
+                // a payload from a NEWER version than we register. The oldest version whose codec may
+                // decode it is the bound the writer published (byte-identical or, under its Tolerant
+                // policy, prefix-readable), or — for tolerant JSON reads — the json-additive bound.
+                // Forward-readability is monotone along the version chain, so once the bound reaches a
+                // registered version our newest codec reads the payload (losing at most the fields
+                // appended after our version).
+                var lowerBound = tolerant ? typeMeta.VersionReadableMin : typeMeta.VersionMinCompat;
+                if (lowerBound is not null && lowerBound.Version <= maxV)
+                {
+                    return GetCodecExact(versionsCodecs, maxVersion, typeMeta.TypeIdentifier);
+                }
+                return Either.Left<BaboonCodecException, IBaboonCodecData>(new BaboonCodecException.CodecNotFound(
+                    $"Unsupported domain version '{modelVersion}'."
+                ));
+            }
 
             // exact=true: caller knows the model version and wants its codec — never substitute.
             // exact=false at the latest registered version (PR-07-D02): single-version-domain case;

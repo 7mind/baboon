@@ -13,8 +13,21 @@ interface BaboonCodecData {
     val baboonTypeIdentifier: String
 }
 
+/**
+ * Which lower bound the WRITER publishes as the UEBA envelope's `domainVersionMinCompat` (the v1
+ * binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration (UEBA)").
+ *   - Strict: the byte-identical bound (`baboonSameInVersions.first()`) — the default.
+ *   - Tolerant: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+ *     payloads, `prefix-any-mode` for indexed ones). Readers older than the writer then decode the
+ *     payload with their newest codec, dropping the appended fields they do not know. A reader
+ *     cannot distinguish such an envelope from a byte-identical one, so re-encoding intermediaries
+ *     must run at the writer's version or newer.
+ */
+enum class ForwardWritePolicy { Strict, Tolerant }
+
 interface BaboonCodecContext {
     val useIndices: Boolean
+    val forwardWritePolicy: ForwardWritePolicy get() = ForwardWritePolicy.Strict
 
     /**
      * Optional facade reference, threaded through generated codec calls so the `any`-feature
@@ -32,6 +45,14 @@ interface BaboonCodecContext {
             object : BaboonCodecContext {
                 override val useIndices: Boolean = useIndices
                 override val facade: BaboonCodecsFacade = baboonFacade
+            }
+
+        /** Fully specified context: index mode, writer-side forward policy and optional facade. */
+        fun custom(indices: Boolean, policy: ForwardWritePolicy, baboonFacade: BaboonCodecsFacade?): BaboonCodecContext =
+            object : BaboonCodecContext {
+                override val useIndices: Boolean = indices
+                override val forwardWritePolicy: ForwardWritePolicy = policy
+                override val facade: BaboonCodecsFacade? = baboonFacade
             }
     }
 

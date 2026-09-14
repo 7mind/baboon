@@ -536,6 +536,9 @@ class BaboonTypeMeta(BaseModel):
     domain_version_readable_min: str = ""
 
     JSON_READABLE_TIER: ClassVar[str] = "json-additive"
+    # Tier keys of the UEBA prefix bounds in `baboon_min_reader_versions`, per index mode.
+    UEBA_PREFIX_COMPACT_TIER: ClassVar[str] = "prefix-compact"
+    UEBA_PREFIX_ANY_MODE_TIER: ClassVar[str] = "prefix-any-mode"
 
     model_config = ConfigDict(
         frozen=True,

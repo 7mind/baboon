@@ -10,6 +10,20 @@ use std::sync::Arc;
 // derived for this variant — the facade has no value-equality semantics; instead the rest of
 // the code matches exhaustively.
 
+/// Which lower bound the WRITER publishes as the UEBA envelope's `domain_version_min_compat` (the
+/// v1 binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration
+/// (UEBA)"). `Strict`: the byte-identical bound (`baboon_same_in_versions_dyn()[0]`) — the
+/// default. `Tolerant`: the prefix-read bound for the chosen index mode (`prefix-compact` for
+/// compact payloads, `prefix-any-mode` for indexed ones); readers older than the writer then decode
+/// the payload with their newest codec, dropping the appended fields they do not know. A reader
+/// cannot distinguish such an envelope from a byte-identical one, so re-encoding intermediaries
+/// must run at the writer's version or newer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForwardWritePolicy {
+    Strict,
+    Tolerant,
+}
+
 #[derive(Clone, Debug)]
 pub enum BaboonCodecContext {
     Default,
@@ -18,6 +32,12 @@ pub enum BaboonCodecContext {
     WithFacade {
         use_indices: bool,
         facade: Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>,
+    },
+    /// Fully specified context: index mode, writer-side forward policy and optional facade.
+    Custom {
+        use_indices: bool,
+        forward_write_policy: ForwardWritePolicy,
+        facade: Option<Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>>,
     },
 }
 
@@ -31,6 +51,18 @@ impl PartialEq for BaboonCodecContext {
                 BaboonCodecContext::WithFacade { use_indices: a, facade: fa },
                 BaboonCodecContext::WithFacade { use_indices: b, facade: fb },
             ) => a == b && Arc::ptr_eq(fa, fb),
+            (
+                BaboonCodecContext::Custom { use_indices: a, forward_write_policy: pa, facade: fa },
+                BaboonCodecContext::Custom { use_indices: b, forward_write_policy: pb, facade: fb },
+            ) => {
+                a == b
+                    && pa == pb
+                    && match (fa, fb) {
+                        (None, None) => true,
+                        (Some(x), Some(y)) => Arc::ptr_eq(x, y),
+                        _ => false,
+                    }
+            }
             _ => false,
         }
     }
@@ -47,7 +79,16 @@ impl BaboonCodecContext {
         match self {
             BaboonCodecContext::Indexed => true,
             BaboonCodecContext::WithFacade { use_indices, .. } => *use_indices,
+            BaboonCodecContext::Custom { use_indices, .. } => *use_indices,
             _ => false,
+        }
+    }
+
+    /// Writer-side UEBA envelope bound policy; `Strict` for every context but `Custom`.
+    pub fn forward_write_policy(&self) -> ForwardWritePolicy {
+        match self {
+            BaboonCodecContext::Custom { forward_write_policy, .. } => *forward_write_policy,
+            _ => ForwardWritePolicy::Strict,
         }
     }
 
@@ -57,6 +98,7 @@ impl BaboonCodecContext {
     pub fn facade(&self) -> Option<&Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>> {
         match self {
             BaboonCodecContext::WithFacade { facade, .. } => Some(facade),
+            BaboonCodecContext::Custom { facade, .. } => facade.as_ref(),
             _ => None,
         }
     }
@@ -66,6 +108,14 @@ impl BaboonCodecContext {
         facade: Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>,
     ) -> Self {
         BaboonCodecContext::WithFacade { use_indices, facade }
+    }
+
+    pub fn custom(
+        use_indices: bool,
+        forward_write_policy: ForwardWritePolicy,
+        facade: Option<Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>>,
+    ) -> Self {
+        BaboonCodecContext::Custom { use_indices, forward_write_policy, facade }
     }
 }
 

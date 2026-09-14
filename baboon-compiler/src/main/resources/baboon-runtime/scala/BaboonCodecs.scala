@@ -16,8 +16,25 @@ package baboon.runtime.shared {
     def baboonTypeIdentifier: String
   }
 
+  /** Which lower bound the WRITER publishes as the UEBA envelope's `domainVersionMinCompat`
+    * (the v1 binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope
+    * integration (UEBA)").
+    *   - Strict: the byte-identical bound (`baboonSameInVersions.head`) — the default.
+    *   - Tolerant: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+    *     payloads, `prefix-any-mode` for indexed ones). Readers older than the writer then decode
+    *     the payload with their newest codec, dropping the appended fields they do not know.
+    *     A reader cannot distinguish such an envelope from a byte-identical one, so re-encoding
+    *     intermediaries must run at the writer's version or newer.
+    */
+  sealed trait ForwardWritePolicy
+  object ForwardWritePolicy {
+    case object Strict extends ForwardWritePolicy
+    case object Tolerant extends ForwardWritePolicy
+  }
+
   trait BaboonCodecContext {
     def useIndices: Boolean
+    def forwardWritePolicy: ForwardWritePolicy = ForwardWritePolicy.Strict
     // Optional facade reference, supplied only when an `any`-bearing codec needs to cross-convert
     // between UEBA and JSON branches (`AnyOpaqueJson` → UEBA, `AnyOpaqueUeba` → JSON). Defaults to
     // `None` so existing call sites stay compatible; users who need cross-convert pass
@@ -38,6 +55,13 @@ package baboon.runtime.shared {
     final case class WithFacade(useIndices: Boolean, baboonFacade: BaboonCodecsFacade) extends BaboonCodecContext {
       override def facade: Option[BaboonCodecsFacade] = Some(baboonFacade)
     }
+
+    /** Fully specified context: index mode, writer-side forward policy and optional facade. */
+    final case class Custom(
+      useIndices: Boolean,
+      override val forwardWritePolicy: ForwardWritePolicy,
+      override val facade: Option[BaboonCodecsFacade],
+    ) extends BaboonCodecContext
   }
 
   trait BaboonCodec[T] extends BaboonCodecData

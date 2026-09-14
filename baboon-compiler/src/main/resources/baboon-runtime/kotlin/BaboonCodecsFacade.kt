@@ -22,7 +22,10 @@ import java.util.concurrent.ConcurrentHashMap
 enum class ForwardReadPolicy { Lossless, Tolerant }
 
 open class BaboonCodecsFacade {
-    /** JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly. */
+    /**
+     * JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domainVersionMinCompat`,
+     * whose meaning is fixed by the WRITER's `ForwardWritePolicy`; binary reads always trust it.
+     */
     var forwardReadPolicy: ForwardReadPolicy = ForwardReadPolicy.Tolerant
     private val CONTENT_JSON_KEY = "${'$'}c"
 
@@ -151,7 +154,7 @@ open class BaboonCodecsFacade {
     ): ByteArray {
         val byteStream = ByteArrayOutputStream()
         val ledStream = LEDataOutputStream(byteStream)
-        val typeMeta = BaboonTypeMeta.from(value)
+        val typeMeta = BaboonTypeMeta.forBin(value, ctx)
         val codec = getBinCodec(typeMeta, exact = true) as BaboonBinCodec<T>
         typeMeta.writeBin(ledStream)
         codec.encode(ctx, ledStream, value)
@@ -245,12 +248,19 @@ open class BaboonCodecsFacade {
         val minVersion = versions.first()
         val maxVersion = versions.last()
 
-        // the oldest version whose codec may decode this payload: byte-identical bound, or
-        // (tolerant JSON reads) the json-additive bound when the writer published one
-        val lowerBound = if (tolerant) typeMeta.versionReadableMin() else typeMeta.versionMinCompat()
-        val modelVersion = when {
-            lowerBound != null && typeMeta.version().version > maxVersion.version -> lowerBound
-            else -> typeMeta.version()
+        val modelVersion = typeMeta.version()
+        if (!exact && modelVersion.version > maxVersion.version) {
+            // a payload from a NEWER version than we register. The oldest version whose codec may
+            // decode it is the bound the writer published (byte-identical or, under its Tolerant
+            // policy, prefix-readable), or — for tolerant JSON reads — the json-additive bound.
+            // Forward-readability is monotone along the version chain, so once the bound reaches a
+            // registered version our newest codec reads the payload (losing at most the fields
+            // appended after our version).
+            val lowerBound = if (tolerant) typeMeta.versionReadableMin() else typeMeta.versionMinCompat()
+            if (lowerBound != null && lowerBound.version <= maxVersion.version) {
+                return getCodecExact(versionsCodecs, maxVersion, typeMeta.typeIdentifier)
+            }
+            throw BaboonCodecException.CodecNotFound("Unsupported domain version '$modelVersion'.")
         }
 
         return when {

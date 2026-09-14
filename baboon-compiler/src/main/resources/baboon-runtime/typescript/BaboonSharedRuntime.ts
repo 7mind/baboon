@@ -17,12 +17,30 @@ import type { BaboonCodecsFacade } from "./BaboonCodecsFacade";
  *
  * Mirrors PR 6.1 (Java) plumbing — Q6 option (a) in the design plan.
  */
+/**
+ * Which lower bound the WRITER publishes as the UEBA envelope's `domainVersionMinCompat` (the v1
+ * binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration
+ * (UEBA)").
+ *   - Strict: the byte-identical bound (`baboonSameInVersions()[0]`) — the default.
+ *   - Tolerant: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+ *     payloads, `prefix-any-mode` for indexed ones). Readers older than the writer then decode the
+ *     payload with their newest codec, dropping the appended fields they do not know. A reader
+ *     cannot distinguish such an envelope from a byte-identical one, so re-encoding intermediaries
+ *     must run at the writer's version or newer.
+ */
+export enum ForwardWritePolicy {
+    Strict = "strict",
+    Tolerant = "tolerant",
+}
+
 export class BaboonCodecContext {
     private readonly _useIndices: boolean;
+    private readonly _forwardWritePolicy: ForwardWritePolicy;
     private readonly _facade: BaboonCodecsFacade | undefined;
 
-    private constructor(useIndices: boolean, facade: BaboonCodecsFacade | undefined) {
+    private constructor(useIndices: boolean, forwardWritePolicy: ForwardWritePolicy, facade: BaboonCodecsFacade | undefined) {
         this._useIndices = useIndices;
+        this._forwardWritePolicy = forwardWritePolicy;
         this._facade = facade;
     }
 
@@ -30,16 +48,25 @@ export class BaboonCodecContext {
         return this._useIndices;
     }
 
+    public get forwardWritePolicy(): ForwardWritePolicy {
+        return this._forwardWritePolicy;
+    }
+
     public get facade(): BaboonCodecsFacade | undefined {
         return this._facade;
     }
 
-    public static readonly Indexed: BaboonCodecContext = new BaboonCodecContext(true, undefined);
-    public static readonly Compact: BaboonCodecContext = new BaboonCodecContext(false, undefined);
+    public static readonly Indexed: BaboonCodecContext = new BaboonCodecContext(true, ForwardWritePolicy.Strict, undefined);
+    public static readonly Compact: BaboonCodecContext = new BaboonCodecContext(false, ForwardWritePolicy.Strict, undefined);
     public static readonly Default: BaboonCodecContext = BaboonCodecContext.Compact;
 
     public static withFacade(useIndices: boolean, facade: BaboonCodecsFacade): BaboonCodecContext {
-        return new BaboonCodecContext(useIndices, facade);
+        return new BaboonCodecContext(useIndices, ForwardWritePolicy.Strict, facade);
+    }
+
+    /** Fully specified context: index mode, writer-side forward policy and optional facade. */
+    public static custom(useIndices: boolean, forwardWritePolicy: ForwardWritePolicy, facade: BaboonCodecsFacade | undefined): BaboonCodecContext {
+        return new BaboonCodecContext(useIndices, forwardWritePolicy, facade);
     }
 }
 
@@ -1058,6 +1085,9 @@ export class BaboonTypeMeta {
     }
 
     public static readonly JSON_READABLE_TIER = "json-additive";
+    /** Tier keys of the UEBA prefix bounds in `baboonMinReaderVersions()`, per index mode. */
+    public static readonly UEBA_PREFIX_COMPACT_TIER = "prefix-compact";
+    public static readonly UEBA_PREFIX_ANY_MODE_TIER = "prefix-any-mode";
 
     public versionRef(): BaboonDomainVersion {
         return new BaboonDomainVersion(this.domainIdentifier, this.domainVersion);
@@ -1131,6 +1161,32 @@ export class BaboonTypeMeta {
             sameIn[0]!,
             typeIdentifier,
             readableMin,
+        );
+    }
+
+    /**
+     * Envelope for a UEBA payload written under `ctx`: `from(value)` with `domainVersionMinCompat`
+     * lowered to the prefix bound of the context's index mode when the writer policy is Tolerant.
+     */
+    public static forBin(value: BaboonGenerated, ctx: BaboonCodecContext, useAdtIdentifier: boolean = false): BaboonTypeMeta {
+        const meta = BaboonTypeMeta.from(value, useAdtIdentifier);
+        if (ctx.forwardWritePolicy === ForwardWritePolicy.Strict) {
+            return meta;
+        }
+        const tier = ctx.useIndices ? BaboonTypeMeta.UEBA_PREFIX_ANY_MODE_TIER : BaboonTypeMeta.UEBA_PREFIX_COMPACT_TIER;
+        const bound = value.baboonMinReaderVersions()[tier];
+        if (bound === undefined) {
+            throw new BaboonException(
+                `baboonMinReaderVersions() lacks '${tier}' for type ${value.baboonTypeIdentifier()}`,
+            );
+        }
+        return new BaboonTypeMeta(
+            meta.metaVersion,
+            meta.domainIdentifier,
+            meta.domainVersion,
+            bound,
+            meta.typeIdentifier,
+            meta.domainVersionReadableMin,
         );
     }
 

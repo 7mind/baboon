@@ -27,7 +27,9 @@ package baboon.runtime.shared {
 
     private val CONTENT_JSON_KEY = "$c"
 
-    /** JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly. */
+    /** JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domainVersionMinCompat`,
+      * whose meaning is fixed by the WRITER's `ForwardWritePolicy`; binary reads always trust it.
+      */
     var forwardReadPolicy: ForwardReadPolicy = ForwardReadPolicy.Tolerant
 
     private val versionsCodecsJson: TrieMap[BaboonDomainVersion, Lazy[AbstractBaboonJsonCodecs]]   = TrieMap.empty
@@ -168,7 +170,7 @@ package baboon.runtime.shared {
       value: T,
       typeMetaOverride: Option[BaboonTypeMeta],
     ): BaboonValue[Unit] = {
-      val typeMeta = BaboonTypeMeta.from(value)
+      val typeMeta = BaboonTypeMeta.forBin(value, ctx)
       (for {
         codec <- getBinCodec(typeMeta, exact = true).toTry
         _     <- Try(typeMetaOverride.getOrElse(typeMeta).writeBin(writer))
@@ -530,17 +532,23 @@ package baboon.runtime.shared {
 
         minVersion = versions.head
         maxVersion = versions.last
-        // the oldest version whose codec may decode this payload: byte-identical bound, or
-        // (tolerant JSON reads) the json-additive bound when the writer published one
-        lowerBound = if (tolerant) typeMeta.versionReadableMin else typeMeta.versionMinCompat
-        // extract domain model version and latest version
-        modelVersion = lowerBound match {
-          // it's a model of newer version than we have, we should find min compat version
-          case Some(v) if typeMeta.version.version > maxVersion.version => v
-          case _                                                        => typeMeta.version
-        }
+        // the oldest version whose codec may decode this payload: the bound the writer published
+        // (byte-identical or, under its Tolerant policy, prefix-readable), or — for tolerant JSON
+        // reads — the json-additive bound
+        lowerBound   = if (tolerant) typeMeta.versionReadableMin else typeMeta.versionMinCompat
+        modelVersion = typeMeta.version
 
         codec <- modelVersion match {
+          // a payload from a NEWER version than we register: forward-readability is monotone along
+          // the version chain, so once the bound reaches a registered version our newest codec reads
+          // it (losing at most the fields appended after our version)
+          case v if !exact && v.version > maxVersion.version =>
+            lowerBound match {
+              case Some(bound) if bound.version <= maxVersion.version =>
+                getCodecExact(versionsCodecs, maxVersion, typeMeta.typeIdentifier)
+              case _ =>
+                Left(BaboonCodecException.CodecNotFound(s"Unsupported domain version '$modelVersion'."))
+            }
           // it's a model of latest version, get last version codec
           case v if exact && v.version == maxVersion.version =>
             getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier)

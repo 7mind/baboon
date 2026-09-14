@@ -98,8 +98,38 @@ Readers choose via `ForwardReadPolicy`:
   **Re-encoding intermediaries must use this**, otherwise they truncate data
   for downstream consumers that do understand the newer version.
 
-The binary v1 envelope carries no readable-min bound; UEBA resolution is always
-lossless. Spec: `docs/spec/codec-envelope.md`.
+Spec: `docs/spec/codec-envelope.md`.
+
+## Envelope integration (UEBA)
+
+The binary v1 envelope has a single bound slot, `domainVersionMinCompat`, and
+its layout cannot grow without a `metaVersion` bump. Forward reads therefore
+ride on the *value* of that slot, chosen by the WRITER through
+`ForwardWritePolicy` on `BaboonCodecContext` (alongside the index mode, which
+the bound depends on):
+
+- `Strict` (default): the byte-identical bound — exactly what was written
+  before the policy existed.
+- `Tolerant`: the prefix-read bound from `baboonMinReaderVersions` for the
+  payload's index mode: `prefix-compact` for compact payloads, `prefix-any-mode`
+  for indexed ones. When no prefix relationship exists the bound equals the
+  Strict one, so the envelope is byte-identical.
+
+Readers (all nine runtimes) trust the bound: a payload from a version newer
+than every registered one is decoded with the reader's **newest** codec as soon
+as the bound is at or below it — not with the bound version's codec.
+Readability is monotone along the chain (a suffix of a prefix chain is a prefix
+chain), so the newest codec is always correct and loses the fewest fields. This
+rule is the same for JSON `$uv`/`$rv` resolution.
+
+What the policy costs, and why it is opt-in on the writer: a binary reader
+cannot distinguish a Tolerant envelope from a byte-identical one.
+`ForwardReadPolicy.Lossless` has no effect on binary reads, and a re-encoding
+intermediary older than the writer silently truncates the value. The prefix
+client contract is satisfied structurally by the byte-array decode entry points
+(the payload is the last element of the envelope; nothing asserts full
+consumption); stream-based callers must discard the stream after a forward
+decode.
 
 ## Relationship to sameIn
 
@@ -142,6 +172,16 @@ Two consequences of scheme 2:
   `$rv`: a facade registering only 1.0.0 decodes 2.0.0 envelopes under
   `Tolerant` exactly where `$rv` allows, refuses under `Lossless`, and refuses
   when no bound was published; `$rv` elision and `readMeta` round-trip.
+- `test/sc-stub/.../ForwardCompatBinEnvelopeSpec.scala` and
+  `test/ts-stub/.../ForwardCompatBinEnvelope.test.ts` — the UEBA writer policy:
+  Strict envelopes are unchanged and refused by an old reader; Tolerant compact
+  envelopes carry the `prefix-compact` bound and are decoded by the old reader
+  with its own codec; json-additive-only, byte-identical and grown-enum types
+  yield envelopes identical to Strict; an indexed context does not lower the
+  bound for a variable-length appended field; and over the three-version
+  `fwd-e2e-chain-ok` model a reader registering 1.0.0 and 2.0.0 decodes a 3.0.0
+  envelope bound at 1.0.0 with its 2.0.0 codec (fail-first: the previous
+  reader picked the bound version's codec and dropped the 2.0.0 field).
 
 ## Out of scope (recorded)
 

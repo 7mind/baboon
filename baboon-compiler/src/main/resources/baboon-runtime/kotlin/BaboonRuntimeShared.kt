@@ -153,6 +153,26 @@ data class BaboonTypeMeta(
 
         /** Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`. */
         const val JSON_READABLE_TIER: String = "json-additive"
+        /** Tier keys of the UEBA prefix bounds in `baboonMinReaderVersions`, per index mode. */
+        const val UEBA_PREFIX_COMPACT_TIER: String = "prefix-compact"
+        const val UEBA_PREFIX_ANY_MODE_TIER: String = "prefix-any-mode"
+
+        /**
+         * Envelope for a UEBA payload written under `ctx`: `from(value)` with `domainVersionMinCompat`
+         * lowered to the prefix bound of the context's index mode when the writer policy is Tolerant.
+         */
+        fun forBin(value: BaboonGenerated, ctx: BaboonCodecContext): BaboonTypeMeta {
+            val meta = from(value)
+            return when (ctx.forwardWritePolicy) {
+                ForwardWritePolicy.Strict -> meta
+                ForwardWritePolicy.Tolerant -> {
+                    val tier = if (ctx.useIndices) UEBA_PREFIX_ANY_MODE_TIER else UEBA_PREFIX_COMPACT_TIER
+                    val bound = value.baboonMinReaderVersions[tier]
+                        ?: error("baboonMinReaderVersions lacks '$tier' for type ${value.baboonTypeIdentifier}")
+                    meta.copy(domainVersionMinCompat = bound)
+                }
+            }
+        }
 
         fun readMeta(reader: LEDataInputStream): BaboonTypeMeta? {
             return BaboonTypeMetaCodec.readMeta(reader)
