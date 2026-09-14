@@ -93,7 +93,15 @@ object KtDomainTreeTools {
         q"mapOf(${forwardEntries.mkString(", ")})",
         q"$ref.baboonForwardReadable",
       )
-      List(sameInVersion, forwardReadable)
+      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+        case (tier, v) => s""""${tier.wireName}" to "${v.v.toString}""""
+      }
+      val minReaders = MetaField(
+        q"val baboonMinReaderVersions: $ktMap<$ktString, $ktString>",
+        q"mapOf(${minReaderEntries.mkString(", ")})",
+        q"$ref.baboonMinReaderVersions",
+      )
+      List(sameInVersion, forwardReadable, minReaders)
     }
   }
 }

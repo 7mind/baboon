@@ -225,6 +225,14 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
           case (v, tier) => s"""("${v.v.toString}".to_string(), "${tier.wireName}".to_string())"""
         }.mkString(", ")
       }
+      val minReadersByTypeId = lineage.evolution.typesForwardReadable(domain.version).keys.map {
+        tid => (tid.toString, lineage.evolution.minReaders(domain.version, tid))
+      }.toMap
+      def minReaderPairs(typeId: String): String = {
+        minReadersByTypeId.get(typeId).toList.flatMap(_.toList.sortBy(_._1.weight)).map {
+          case (tier, v) => s"""("${tier.wireName}".to_string(), "${v.v.toString}".to_string())"""
+        }.mkString(", ")
+      }
 
       for ((fullPath, dynBase, typeId, _) <- types) {
         val binCodec  = s"${dynBase}V${verSuffix}BinCodec"
@@ -236,6 +244,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         sb.append(s"""    fn baboon_type_identifier_dyn(&self) -> &str { "$typeId" }\n""")
         sb.append(s"""    fn baboon_same_in_versions_dyn(&self) -> Vec<String> { vec!["$versionStr".to_string()] }\n""")
         sb.append(s"""    fn baboon_forward_readable_dyn(&self) -> Vec<(String, String)> { vec![${fwdPairs(typeId)}] }\n""")
+        sb.append(s"""    fn baboon_min_reader_versions_dyn(&self) -> Vec<(String, String)> { vec![${minReaderPairs(typeId)}] }\n""")
         sb.append( "    fn as_any(&self) -> &dyn std::any::Any { self }\n")
         sb.append( "    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }\n")
         sb.append( "}\n")

@@ -12,7 +12,18 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * How a reader treats JSON payloads written by a NEWER domain version than it registers.
+ * Lossless: decode only when the envelope's `$uv` (byte-identical bound) reaches a registered
+ * version — the pre-`$rv` behavior. Tolerant: additionally honor `$rv` (json-additive bound):
+ * decode with that version's codec, silently dropping fields this reader does not know.
+ * Re-encoding intermediaries must use Lossless or they truncate data for downstream consumers.
+ */
+enum class ForwardReadPolicy { Lossless, Tolerant }
+
 open class BaboonCodecsFacade {
+    /** JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly. */
+    var forwardReadPolicy: ForwardReadPolicy = ForwardReadPolicy.Tolerant
     private val CONTENT_JSON_KEY = "${'$'}c"
 
     // @baboon:json-start
@@ -180,6 +191,10 @@ open class BaboonCodecsFacade {
             if (typeMeta.domainVersion != typeMeta.domainVersionMinCompat) {
                 put("${'$'}uv", JsonPrimitive(typeMeta.domainVersionMinCompat))
             }
+            // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+            if (typeMeta.domainVersionReadableMin.isNotEmpty() && typeMeta.domainVersionReadableMin != typeMeta.domainVersionMinCompat) {
+                put("${'$'}rv", JsonPrimitive(typeMeta.domainVersionReadableMin))
+            }
             put(CONTENT_JSON_KEY, content)
         }
     }
@@ -204,22 +219,24 @@ open class BaboonCodecsFacade {
         val v = json["${'$'}v"]?.toString()?.trim('"') ?: return null
         val t = json["${'$'}t"]?.toString()?.trim('"') ?: return null
         val uv = json["${'$'}uv"]?.toString()?.trim('"') ?: v
-        return BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t)
+        val rv = json["${'$'}rv"]?.toString()?.trim('"') ?: uv
+        return BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t, rv)
     }
 
     private fun getJsonCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
-        return getCodec(versionsCodecsJson, typeMeta, exact)
+        return getCodec(versionsCodecsJson, typeMeta, exact, tolerant = forwardReadPolicy == ForwardReadPolicy.Tolerant)
     }
     // @baboon:json-end
 
     private fun getBinCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
-        return getCodec(versionsCodecsBin, typeMeta, exact)
+        return getCodec(versionsCodecsBin, typeMeta, exact, tolerant = false)
     }
 
     private fun <TCodecs : AbstractBaboonCodecs> getCodec(
         versionsCodecs: ConcurrentHashMap<BaboonDomainVersion, Lazy<TCodecs>>,
         typeMeta: BaboonTypeMeta,
         exact: Boolean,
+        tolerant: Boolean,
     ): BaboonCodecData {
         val versions = domainVersions[typeMeta.domainIdentifier]
             ?.takeIf { it.isNotEmpty() }
@@ -228,9 +245,11 @@ open class BaboonCodecsFacade {
         val minVersion = versions.first()
         val maxVersion = versions.last()
 
+        // the oldest version whose codec may decode this payload: byte-identical bound, or
+        // (tolerant JSON reads) the json-additive bound when the writer published one
+        val lowerBound = if (tolerant) typeMeta.versionReadableMin() else typeMeta.versionMinCompat()
         val modelVersion = when {
-            typeMeta.versionMinCompat() != null && typeMeta.version().version > maxVersion.version ->
-                typeMeta.versionMinCompat()!!
+            lowerBound != null && typeMeta.version().version > maxVersion.version -> lowerBound
             else -> typeMeta.version()
         }
 

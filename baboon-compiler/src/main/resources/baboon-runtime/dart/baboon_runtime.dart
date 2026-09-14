@@ -1282,16 +1282,33 @@ class BaboonTypeMeta {
   final String domainVersion;
   final String domainVersionMinCompat;
   final String typeIdentifier;
+  /// Oldest domain version whose JSON codec can decode the payload under the json-additive
+  /// contract (tolerant key lookup; fields unknown to that version are dropped). Always
+  /// <= domainVersionMinCompat. Published as `$rv` when it differs from the (effective)
+  /// minCompat; the binary v1 envelope does not carry it. Empty means "= minCompat".
+  final String domainVersionReadableMin;
+
+  /// Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`.
+  static const String jsonReadableTier = 'json-additive';
 
   const BaboonTypeMeta(
     this.metaVersion,
     this.domainIdentifier,
     this.domainVersion,
     this.domainVersionMinCompat,
-    this.typeIdentifier,
-  );
+    this.typeIdentifier, [
+    this.domainVersionReadableMin = '',
+  ]);
 
   BaboonDomainVersion versionRef() => BaboonDomainVersion(domainIdentifier, domainVersion);
+
+  String get effectiveReadableMin => domainVersionReadableMin.isEmpty ? domainVersionMinCompat : domainVersionReadableMin;
+
+  BaboonDomainVersion? versionReadableMin() {
+    if (domainVersionReadableMin.isEmpty) return versionMinCompat();
+    if (domainVersionReadableMin == domainVersion) return null;
+    return BaboonDomainVersion(domainIdentifier, domainVersionReadableMin);
+  }
 
   BaboonDomainVersion? versionMinCompat() {
     if (domainVersionMinCompat.isEmpty) return null;
@@ -1330,7 +1347,9 @@ class BaboonTypeMeta {
     if (d is! String || v is! String || t is! String) return null;
     final uv = json[r'$uv'];
     final minCompat = (uv is String) ? uv : v;
-    return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t);
+    final rv = json[r'$rv'];
+    final readableMin = (rv is String) ? rv : minCompat;
+    return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t, readableMin);
   }
 
   static BaboonTypeMeta? readMetaBin(BaboonBinReader reader) =>
@@ -1352,12 +1371,19 @@ class BaboonTypeMeta {
         'BaboonTypeMeta.from: empty baboonSameInVersions for type [${meta.baboonDomainIdentifier}.$typeId]',
       );
     }
+    final readableMin = meta.baboonMinReaderVersions[jsonReadableTier];
+    if (readableMin == null) {
+      throw BaboonException(
+        'BaboonTypeMeta.from: baboonMinReaderVersions lacks "$jsonReadableTier" for type [${meta.baboonDomainIdentifier}.$typeId]',
+      );
+    }
     return BaboonTypeMeta(
       BaboonTypeMetaCodec.metaVersion,
       meta.baboonDomainIdentifier,
       meta.baboonDomainVersion,
       sameIn.first,
       typeId,
+      readableMin,
     );
   }
 
@@ -1369,10 +1395,11 @@ class BaboonTypeMeta {
           domainIdentifier == other.domainIdentifier &&
           domainVersion == other.domainVersion &&
           domainVersionMinCompat == other.domainVersionMinCompat &&
+          effectiveReadableMin == other.effectiveReadableMin &&
           typeIdentifier == other.typeIdentifier;
 
   @override
-  int get hashCode => Object.hash(metaVersion, domainIdentifier, domainVersion, domainVersionMinCompat, typeIdentifier);
+  int get hashCode => Object.hash(metaVersion, domainIdentifier, domainVersion, domainVersionMinCompat, effectiveReadableMin, typeIdentifier);
 
   @override
   String toString() => 'BaboonTypeMeta($domainIdentifier.$typeIdentifier@$domainVersion)';
@@ -1421,6 +1448,10 @@ class BaboonTypeMetaCodec {
     if (meta.domainVersion != meta.domainVersionMinCompat) {
       obj[r'$uv'] = meta.domainVersionMinCompat;
     }
+    // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+    if (meta.domainVersionReadableMin.isNotEmpty && meta.domainVersionReadableMin != meta.domainVersionMinCompat) {
+      obj[r'$rv'] = meta.domainVersionReadableMin;
+    }
     return obj;
   }
 }
@@ -1441,6 +1472,11 @@ abstract class BaboonMetaProvider {
   /// The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
   /// the cursor after decoding.
   Map<String, String> get baboonForwardReadable;
+
+  /// Writer-side inverse of [baboonForwardReadable]: guarantee tier -> oldest domain version
+  /// whose codec can decode THIS version's encoding of this type. The "identical" bound equals
+  /// `baboonSameInVersions[0]`; the "json-additive" bound is published as `$rv`.
+  Map<String, String> get baboonMinReaderVersions;
 }
 
 /// Implemented by generated ADT branches. Mirrors Kotlin's `BaboonAdtMemberMeta` for the

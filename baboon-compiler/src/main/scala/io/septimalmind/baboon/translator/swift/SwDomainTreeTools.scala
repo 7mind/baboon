@@ -104,7 +104,17 @@ object SwDomainTreeTools {
         "baboonForwardReadable",
         "[String: String]",
       )
-      List(sameInVersion, forwardReadable)
+      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+        case (tier, v) => s""""${tier.wireName}": "${v.v.toString}""""
+      }
+      val minReaders = MetaField(
+        q"public static let baboonMinReaderVersions: [String: String]",
+        q"[${minReaderEntries.mkString(", ")}]",
+        q"$ref.baboonMinReaderVersions",
+        "baboonMinReaderVersions",
+        "[String: String]",
+      )
+      List(sameInVersion, forwardReadable, minReaders)
     }
   }
 }

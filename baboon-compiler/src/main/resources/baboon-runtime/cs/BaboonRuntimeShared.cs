@@ -60,6 +60,13 @@ namespace Baboon.Runtime.Shared
         /// the cursor after decoding.
         /// </summary>
         public IReadOnlyDictionary<string, string> BaboonForwardReadable();
+
+        /// <summary>
+        /// Writer-side inverse of <see cref="BaboonForwardReadable"/>: guarantee tier -> oldest domain
+        /// version whose codec can decode THIS version's encoding of this type. The "identical" bound
+        /// equals <c>BaboonSameInVersions()[0]</c>; the "json-additive" bound is published as <c>$rv</c>.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> BaboonMinReaderVersions();
         public string BaboonTypeIdentifier();
     }
 

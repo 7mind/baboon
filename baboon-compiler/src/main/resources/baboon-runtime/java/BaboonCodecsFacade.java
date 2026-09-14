@@ -29,6 +29,22 @@ import java.util.function.Supplier;
  * static fallbacks per PR-06-D01.
  */
 public class BaboonCodecsFacade {
+    /**
+     * How a reader treats JSON payloads written by a NEWER domain version than it registers.
+     * LOSSLESS: decode only when the envelope's `$uv` (byte-identical bound) reaches a registered
+     * version — the pre-`$rv` behavior. TOLERANT: additionally honor `$rv` (json-additive bound):
+     * decode with that version's codec, silently dropping fields this reader does not know.
+     * Re-encoding intermediaries must use LOSSLESS or they truncate data for downstream consumers.
+     */
+    public enum ForwardReadPolicy { LOSSLESS, TOLERANT }
+
+    /** JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly. */
+    private volatile ForwardReadPolicy forwardReadPolicy = ForwardReadPolicy.TOLERANT;
+
+    public ForwardReadPolicy getForwardReadPolicy() { return forwardReadPolicy; }
+
+    public void setForwardReadPolicy(ForwardReadPolicy policy) { this.forwardReadPolicy = policy; }
+
     private static final String CONTENT_JSON_KEY = "$c";
     private static final ObjectMapper JSON_PARSER = new ObjectMapper();
 
@@ -559,17 +575,18 @@ public class BaboonCodecsFacade {
     // ----- private dispatch ---------------------------------------------------------------------
 
     private BaboonEither<BaboonCodecException, BaboonCodecData> getBinCodec(BaboonTypeMeta typeMeta, boolean exact) {
-        return getCodec(versionsCodecsBin, typeMeta, exact);
+        return getCodec(versionsCodecsBin, typeMeta, exact, false);
     }
 
     private BaboonEither<BaboonCodecException, BaboonCodecData> getJsonCodec(BaboonTypeMeta typeMeta, boolean exact) {
-        return getCodec(versionsCodecsJson, typeMeta, exact);
+        return getCodec(versionsCodecsJson, typeMeta, exact, forwardReadPolicy == ForwardReadPolicy.TOLERANT);
     }
 
     private <TCodecs extends AbstractBaboonCodecs> BaboonEither<BaboonCodecException, BaboonCodecData> getCodec(
         Map<BaboonDomainVersion, Lazy<? extends TCodecs>> versionsCodecs,
         BaboonTypeMeta typeMeta,
-        boolean exact
+        boolean exact,
+        boolean tolerant
     ) {
         List<BaboonDomainVersion> versions = domainVersions.get(typeMeta.domainIdentifier());
         if (versions == null || versions.isEmpty()) {
@@ -581,9 +598,11 @@ public class BaboonCodecsFacade {
         BaboonDomainVersion maxVersion = versions.get(versions.size() - 1);
 
         BaboonDomainVersion lookupVersion = typeMeta.versionRef();
-        BaboonDomainVersion minCompat = typeMeta.versionMinCompat();
-        BaboonDomainVersion modelVersion = (minCompat != null && lookupVersion.version().compareTo(maxVersion.version()) > 0)
-            ? minCompat
+        // the oldest version whose codec may decode this payload: byte-identical bound, or
+        // (tolerant JSON reads) the json-additive bound when the writer published one
+        BaboonDomainVersion lowerBound = tolerant ? typeMeta.versionReadableMin() : typeMeta.versionMinCompat();
+        BaboonDomainVersion modelVersion = (lowerBound != null && lookupVersion.version().compareTo(maxVersion.version()) > 0)
+            ? lowerBound
             : lookupVersion;
 
         BaboonVersion modelV = modelVersion.version();

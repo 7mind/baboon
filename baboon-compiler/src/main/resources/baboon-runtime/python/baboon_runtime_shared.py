@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
-from typing import TypeVar, Generic, Callable, Optional, Any
+from typing import TypeVar, Generic, Callable, Optional, Any, ClassVar
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
@@ -50,6 +50,15 @@ class BaboonGenerated(ABC):
     # stubs working; generated classes override it with a ClassVar.
     @property
     def baboon_forward_readable(self) -> dict[str, str]:
+        return {}
+
+    # Writer-side inverse of baboon_forward_readable: guarantee tier -> oldest domain
+    # version whose codec can decode THIS version's encoding of this type. The
+    # "identical" bound equals baboon_same_in_versions[0]; the "json-additive" bound is
+    # published as `$rv`. Non-abstract default (= "no bound beyond byte-identity") keeps
+    # hand-written stubs working; generated classes override it with a ClassVar.
+    @property
+    def baboon_min_reader_versions(self) -> dict[str, str]:
         return {}
 
 class BaboonAdtMemberMeta(ABC):
@@ -520,6 +529,13 @@ class BaboonTypeMeta(BaseModel):
     domain_version: str
     domain_version_min_compat: str
     type_identifier: str
+    # Oldest domain version whose JSON codec can decode the payload under the json-additive
+    # contract (tolerant key lookup; fields unknown to that version are dropped). Always
+    # <= domain_version_min_compat. Published as `$rv` when it differs from the (effective)
+    # minCompat; the binary v1 envelope does not carry it. Empty means "= min_compat".
+    domain_version_readable_min: str = ""
+
+    JSON_READABLE_TIER: ClassVar[str] = "json-additive"
 
     model_config = ConfigDict(
         frozen=True,
@@ -537,6 +553,18 @@ class BaboonTypeMeta(BaseModel):
             return None
         return BaboonDomainVersion(self.domain_identifier, self.domain_version_min_compat)
 
+    @property
+    def effective_readable_min(self) -> str:
+        return self.domain_version_readable_min or self.domain_version_min_compat
+
+    @property
+    def version_readable_min(self) -> Optional[BaboonDomainVersion]:
+        if not self.domain_version_readable_min:
+            return self.version_min_compat
+        if self.domain_version_readable_min == self.domain_version:
+            return None
+        return BaboonDomainVersion(self.domain_identifier, self.domain_version_readable_min)
+
     @staticmethod
     def from_instance(value: BaboonGenerated) -> 'BaboonTypeMeta':
         """Codecs discovery with ADTs check to ensure that ADTs is encoded with a codec type desired by the user.
@@ -551,12 +579,17 @@ class BaboonTypeMeta(BaseModel):
         else:
             type_identifier = value.baboon_type_identifier
 
+        min_compat = value.baboon_same_in_versions[0]
+        # baboon_min_reader_versions has a non-abstract default (see BaboonGenerated); a missing
+        # json-additive bound means "no forward-read beyond byte-identity", i.e. = min_compat
+        readable_min = value.baboon_min_reader_versions.get(BaboonTypeMeta.JSON_READABLE_TIER, min_compat)
         return BaboonTypeMeta(
             meta_version=BaboonTypeMetaCodec.META_VERSION,
             domain_identifier=value.baboon_domain_identifier,
             domain_version=value.baboon_domain_version,
-            domain_version_min_compat=value.baboon_same_in_versions[0],
+            domain_version_min_compat=min_compat,
             type_identifier=type_identifier,
+            domain_version_readable_min=readable_min,
         )
 
     def write_bin(self, writer: LEDataOutputStream) -> None:
@@ -582,6 +615,7 @@ class BaboonTypeMetaCodec:
     DOMAIN_IDENTIFIER_KEY = "$d"
     DOMAIN_VERSION_KEY = "$v"
     DOMAIN_VERSION_MIN_COMPAT_KEY = "$uv"
+    DOMAIN_VERSION_READABLE_KEY = "$rv"
     TYPE_IDENTIFIER_KEY = "$t"
 
     @staticmethod
@@ -618,6 +652,9 @@ class BaboonTypeMetaCodec:
 
         if meta.domain_version != meta.domain_version_min_compat:
             json_obj[BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY] = meta.domain_version_min_compat
+        # `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+        if meta.domain_version_readable_min and meta.domain_version_readable_min != meta.domain_version_min_compat:
+            json_obj[BaboonTypeMetaCodec.DOMAIN_VERSION_READABLE_KEY] = meta.domain_version_readable_min
 
         return json_obj
 
@@ -697,6 +734,10 @@ class BaboonTypeMetaCodec:
                 BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY,
                 domain_version
             )
+            domain_version_readable_min = json_obj.get(
+                BaboonTypeMetaCodec.DOMAIN_VERSION_READABLE_KEY,
+                domain_version_min_compat
+            )
 
             return BaboonTypeMeta(
                 meta_version=BaboonTypeMetaCodec.META_VERSION_1,
@@ -704,6 +745,7 @@ class BaboonTypeMetaCodec:
                 domain_version=domain_version,
                 domain_version_min_compat=domain_version_min_compat,
                 type_identifier=type_identifier,
+                domain_version_readable_min=domain_version_readable_min,
             )
         except Exception:
             return None

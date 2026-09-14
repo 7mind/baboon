@@ -22,6 +22,8 @@ class _StubMetaProvider implements BaboonMetaProvider {
   final List<String> baboonSameInVersions;
   @override
   Map<String, String> get baboonForwardReadable => const {};
+  @override
+  Map<String, String> get baboonMinReaderVersions => const {};
 
   const _StubMetaProvider({
     required this.baboonDomainVersion,
