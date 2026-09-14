@@ -1,0 +1,16 @@
+// Forward-compatibility end-to-end fixture: a THREE-version prefix chain
+// (docs/forward-compat.md, "Envelope integration (UEBA)").
+//
+// Every step appends a variable-length `opt` field, so each step is
+// PREFIX_COMPACT and auto-derivable (stub projects carry no manual
+// conversions). A reader that registers 1.0.0 and 2.0.0 must decode a
+// 3.0.0 envelope published with the 1.0.0 prefix bound using its NEWEST
+// (2.0.0) codec — not the bound version's.
+
+model fwde2e.chain
+
+version "1.0.0"
+
+root data ChainAppend {
+  a: i32
+}

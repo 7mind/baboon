@@ -36,7 +36,8 @@ class BaboonCodecsFacade:
     CONTENT_JSON_KEY = "$c"
 
     def __init__(self):
-        # JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly.
+        # JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domain_version_min_compat`,
+        # whose meaning is fixed by the WRITER's `ForwardWritePolicy`; binary reads always trust it.
         self.forward_read_policy: ForwardReadPolicy = ForwardReadPolicy.TOLERANT
         self.versions_codecs_json: Dict[BaboonDomainVersion, Lazy[AbstractBaboonJsonCodecs]] = {}
         self.versions_codecs_bin: Dict[BaboonDomainVersion, Lazy[AbstractBaboonUebaCodecs]] = {}
@@ -118,7 +119,7 @@ class BaboonCodecsFacade:
                               writer: LEDataOutputStream,
                               value: TI,
                               type_meta_override: Optional[BaboonTypeMeta] = None):
-        type_meta = BaboonTypeMeta.from_instance(value)
+        type_meta = self._bin_type_meta(value, ctx)
         try:
             codec = self._get_bin_codec(type_meta, exact=True)
             meta = type_meta_override or type_meta
@@ -131,6 +132,20 @@ class BaboonCodecsFacade:
                 f"of version '{type_meta.domain_version}'.",
                 err
             )
+
+    @staticmethod
+    def _bin_type_meta(value: BaboonGenerated, ctx: BaboonCodecContext) -> BaboonTypeMeta:
+        """Envelope for a UEBA payload written under `ctx`: `from_instance(value)` with
+        `domain_version_min_compat` lowered to the prefix bound of the context's index mode when
+        the writer policy is TOLERANT."""
+        meta = BaboonTypeMeta.from_instance(value)
+        if ctx.forward_write_policy == ForwardWritePolicy.STRICT:
+            return meta
+        tier = BaboonTypeMeta.UEBA_PREFIX_ANY_MODE_TIER if ctx.use_indices else BaboonTypeMeta.UEBA_PREFIX_COMPACT_TIER
+        # baboon_min_reader_versions has a non-abstract default (see BaboonGenerated); a missing
+        # prefix bound means "no forward-read beyond byte-identity", i.e. keep min_compat
+        bound = value.baboon_min_reader_versions.get(tier, meta.domain_version_min_compat)
+        return meta.model_copy(update={"domain_version_min_compat": bound})
 
     def decode_from_bin(self, reader: LEDataInputStream) -> BaboonGenerated:
         type_meta = BaboonTypeMeta.read_meta(reader)
@@ -291,12 +306,19 @@ class BaboonCodecsFacade:
         min_version = versions[0]
         max_version = versions[-1]
 
-        # the oldest version whose codec may decode this payload: byte-identical bound, or
-        # (tolerant JSON reads) the json-additive bound when the writer published one
-        lower_bound = type_meta.version_readable_min if tolerant else type_meta.version_min_compat
-        # it's a model of newer version than we have, we should find min compat version
-        if lower_bound and model_version.version > max_version.version:
-            model_version = lower_bound
+        if (not exact) and model_version.version > max_version.version:
+            # a payload from a NEWER version than we register. The oldest version whose codec may
+            # decode it is the bound the writer published (byte-identical or, under its Tolerant
+            # policy, prefix-readable), or -- for tolerant JSON reads -- the json-additive bound.
+            # Forward-readability is monotone along the version chain, so once the bound reaches a
+            # registered version our newest codec reads the payload (losing at most the fields
+            # appended after our version).
+            lower_bound = type_meta.version_readable_min if tolerant else type_meta.version_min_compat
+            if lower_bound and lower_bound.version <= max_version.version:
+                return self._get_codec_exact(versions_codecs, max_version, type_meta.type_identifier)
+            raise BaboonCodecException.CodecNotFound(
+                f"Unsupported domain version '{model_version}'."
+            )
 
         # it's a model of latest version, get last version codec
         if exact and model_version.version == max_version.version:

@@ -37,7 +37,8 @@ const String _CONTENT_JSON_KEY = r'$c';
 enum ForwardReadPolicy { lossless, tolerant }
 
 class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
-  /// JSON forward-read policy; UEBA envelopes (v1) carry no readable-min bound and always resolve losslessly.
+  /// JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domainVersionMinCompat`,
+  /// whose meaning is fixed by the WRITER's [ForwardWritePolicy]; binary reads always trust it.
   ForwardReadPolicy forwardReadPolicy = ForwardReadPolicy.tolerant;
 
   final Map<BaboonDomainVersion, Lazy<AbstractBaboonJsonCodecs>> _versionsCodecsJson = {};
@@ -236,7 +237,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
   }) {
     final BaboonTypeMeta typeMeta;
     try {
-      typeMeta = BaboonTypeMeta.from(value, useAdtIdentifier: useAdtIdentifier);
+      typeMeta = BaboonTypeMeta.forBin(value, ctx, useAdtIdentifier: useAdtIdentifier);
     } catch (e) {
       return BaboonLeft(BaboonEncoderFailure('Cannot derive type meta from value: $e', e));
     }
@@ -594,17 +595,24 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
     final minVersion = versions.first;
     final maxVersion = versions.last;
 
-    final lookupVersion = typeMeta.versionRef();
-    // the oldest version whose codec may decode this payload: byte-identical bound, or
-    // (tolerant JSON reads) the json-additive bound when the writer published one
-    final lowerBound = tolerant ? typeMeta.versionReadableMin() : typeMeta.versionMinCompat();
-    final modelVersion = (lowerBound != null && lookupVersion.version.compareTo(maxVersion.version) > 0)
-        ? lowerBound
-        : lookupVersion;
-
+    final modelVersion = typeMeta.versionRef();
     final modelV = modelVersion.version;
     final maxV = maxVersion.version;
     final minV = minVersion.version;
+
+    if (!exact && modelV.compareTo(maxV) > 0) {
+      // a payload from a NEWER version than we register. The oldest version whose codec may
+      // decode it is the bound the writer published (byte-identical or, under its Tolerant
+      // policy, prefix-readable), or — for tolerant JSON reads — the json-additive bound.
+      // Forward-readability is monotone along the version chain, so once the bound reaches a
+      // registered version our newest codec reads the payload (losing at most the fields
+      // appended after our version).
+      final lowerBound = tolerant ? typeMeta.versionReadableMin() : typeMeta.versionMinCompat();
+      if (lowerBound != null && lowerBound.version.compareTo(maxV) <= 0) {
+        return _getCodecExact(versionsCodecs, maxVersion, typeMeta.typeIdentifier);
+      }
+      return BaboonLeft(BaboonCodecNotFound("Unsupported domain version '$modelVersion'."));
+    }
 
     if (exact && modelV.compareTo(maxV) == 0) {
       return _getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier);

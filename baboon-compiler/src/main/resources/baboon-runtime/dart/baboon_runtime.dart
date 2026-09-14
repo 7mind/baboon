@@ -33,10 +33,21 @@ abstract class BaboonCodecsFacadeBase {
 /// (UEBA <-> JSON) can resolve codecs by `(domain, version, typeid)` from an `AnyMeta` envelope.
 /// `null` for the bare [defaultCtx]/[indexed]/[compact] singletons; [withFacade] is the single
 /// intended construction path for ctxes that thread a facade. Mirrors Scala/C#/Java/Kotlin/TS.
+/// Which lower bound the WRITER publishes as the UEBA envelope's `domainVersionMinCompat` (the v1
+/// binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration
+/// (UEBA)"). [strict]: the byte-identical bound (`baboonSameInVersions.first`) — the default.
+/// [tolerant]: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+/// payloads, `prefix-any-mode` for indexed ones); readers older than the writer then decode the
+/// payload with their newest codec, dropping the appended fields they do not know. A reader cannot
+/// distinguish such an envelope from a byte-identical one, so re-encoding intermediaries must run
+/// at the writer's version or newer.
+enum ForwardWritePolicy { strict, tolerant }
+
 abstract class BaboonCodecContext {
   const BaboonCodecContext();
 
   bool get useIndices;
+  ForwardWritePolicy get forwardWritePolicy => ForwardWritePolicy.strict;
   BaboonCodecsFacadeBase? get facade => null;
 
   static const BaboonCodecContext defaultCtx = _BaboonCodecContextCompact();
@@ -45,6 +56,23 @@ abstract class BaboonCodecContext {
 
   static BaboonCodecContext withFacade(bool useIndices, BaboonCodecsFacadeBase facade) =>
       _BaboonCodecContextWithFacade(useIndices, facade);
+
+  /// Fully specified context: index mode, writer-side forward policy and optional facade.
+  static BaboonCodecContext custom(bool useIndices, ForwardWritePolicy forwardWritePolicy, BaboonCodecsFacadeBase? facade) =>
+      _BaboonCodecContextCustom(useIndices, forwardWritePolicy, facade);
+}
+
+class _BaboonCodecContextCustom extends BaboonCodecContext {
+  final bool _useIndices;
+  final ForwardWritePolicy _forwardWritePolicy;
+  final BaboonCodecsFacadeBase? _facade;
+  const _BaboonCodecContextCustom(this._useIndices, this._forwardWritePolicy, this._facade);
+  @override
+  bool get useIndices => _useIndices;
+  @override
+  ForwardWritePolicy get forwardWritePolicy => _forwardWritePolicy;
+  @override
+  BaboonCodecsFacadeBase? get facade => _facade;
 }
 
 class _BaboonCodecContextCompact extends BaboonCodecContext {
@@ -1290,6 +1318,9 @@ class BaboonTypeMeta {
 
   /// Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`.
   static const String jsonReadableTier = 'json-additive';
+  /// Tier keys of the UEBA prefix bounds in `baboonMinReaderVersions`, per index mode.
+  static const String uebaPrefixCompactTier = 'prefix-compact';
+  static const String uebaPrefixAnyModeTier = 'prefix-any-mode';
 
   const BaboonTypeMeta(
     this.metaVersion,
@@ -1385,6 +1416,22 @@ class BaboonTypeMeta {
       typeId,
       readableMin,
     );
+  }
+
+  /// Envelope for a UEBA payload written under [ctx]: [from] with `domainVersionMinCompat` lowered
+  /// to the prefix bound of the context's index mode when the writer policy is
+  /// [ForwardWritePolicy.tolerant].
+  static BaboonTypeMeta forBin(BaboonGenerated value, BaboonCodecContext ctx, {bool useAdtIdentifier = false}) {
+    final meta = from(value, useAdtIdentifier: useAdtIdentifier);
+    if (ctx.forwardWritePolicy == ForwardWritePolicy.strict) return meta;
+    final tier = ctx.useIndices ? uebaPrefixAnyModeTier : uebaPrefixCompactTier;
+    final bound = (value as BaboonMetaProvider).baboonMinReaderVersions[tier];
+    if (bound == null) {
+      throw BaboonException(
+        'BaboonTypeMeta.forBin: baboonMinReaderVersions lacks "$tier" for type [${meta.domainIdentifier}.${meta.typeIdentifier}]',
+      );
+    }
+    return BaboonTypeMeta(meta.metaVersion, meta.domainIdentifier, meta.domainVersion, bound, meta.typeIdentifier, meta.domainVersionReadableMin);
   }
 
   @override

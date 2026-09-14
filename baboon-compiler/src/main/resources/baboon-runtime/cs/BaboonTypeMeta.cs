@@ -85,6 +85,9 @@ namespace Baboon.Runtime.Shared
 
         /// <summary>Tier key of the JSON envelope's readable-min bound in <c>BaboonMinReaderVersions()</c>.</summary>
         public const string JSON_READABLE_TIER = "json-additive";
+        /// <summary>Tier keys of the UEBA prefix bounds in <c>BaboonMinReaderVersions()</c>, per index mode.</summary>
+        public const string UEBA_PREFIX_COMPACT_TIER = "prefix-compact";
+        public const string UEBA_PREFIX_ANY_MODE_TIER = "prefix-any-mode";
 
         public BaboonDomainVersion VersionRef => new BaboonDomainVersion(DomainIdentifier, DomainVersion);
 
@@ -152,6 +155,26 @@ namespace Baboon.Runtime.Shared
                 typeIdentifier,
                 readableMin
             );
+        }
+
+        /// <summary>
+        /// Envelope for a UEBA payload written under <paramref name="ctx"/>: <see cref="From(IBaboonGenerated, Type?)"/>
+        /// with <c>DomainVersionMinCompat</c> lowered to the prefix bound of the context's index mode when the
+        /// writer policy is <see cref="ForwardWritePolicy.Tolerant"/>.
+        /// </summary>
+        public static BaboonTypeMeta ForBin(IBaboonGenerated value, Type? declaredType, BaboonCodecContext ctx)
+        {
+            var meta = From(value, declaredType);
+            if (ctx.ForwardWritePolicy == ForwardWritePolicy.Strict)
+            {
+                return meta;
+            }
+            var tier = ctx.UseIndices ? UEBA_PREFIX_ANY_MODE_TIER : UEBA_PREFIX_COMPACT_TIER;
+            if (!value.BaboonMinReaderVersions().TryGetValue(tier, out var bound))
+            {
+                throw new InvalidOperationException($"BaboonMinReaderVersions() lacks '{tier}' for type {value.BaboonTypeIdentifier()}");
+            }
+            return meta with { DomainVersionMinCompat = bound };
         }
 
         public static BaboonTypeMeta? ReadMeta(BinaryReader reader) => BaboonTypeMetaCodec.ReadMeta(reader);

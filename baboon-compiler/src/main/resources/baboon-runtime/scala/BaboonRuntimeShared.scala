@@ -390,6 +390,9 @@ package baboon.runtime.shared {
   object BaboonTypeMeta {
     /** Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`. */
     final val JSON_READABLE_TIER: String = "json-additive"
+    /** Tier keys of the UEBA prefix bounds in `baboonMinReaderVersions`, per index mode. */
+    final val UEBA_PREFIX_COMPACT_TIER: String  = "prefix-compact"
+    final val UEBA_PREFIX_ANY_MODE_TIER: String = "prefix-any-mode"
 
     /** Five-field form: readable-min defaults to minCompat (no forward-read beyond byte-identity). */
     def apply(
@@ -427,6 +430,23 @@ package baboon.runtime.shared {
         typeIdentifier,
         readableMin,
       )
+    }
+
+    /** Envelope for a UEBA payload written under `ctx`: `from(value)` with `domainVersionMinCompat`
+      * lowered to the prefix bound of the context's index mode when the writer policy is Tolerant.
+      */
+    def forBin[T <: BaboonGenerated: ClassTag](value: T, ctx: BaboonCodecContext): BaboonTypeMeta = {
+      val meta = from(value)
+      ctx.forwardWritePolicy match {
+        case ForwardWritePolicy.Strict => meta
+        case ForwardWritePolicy.Tolerant =>
+          val tier = if (ctx.useIndices) UEBA_PREFIX_ANY_MODE_TIER else UEBA_PREFIX_COMPACT_TIER
+          val bound = value.baboonMinReaderVersions.getOrElse(
+            tier,
+            throw BaboonCodecException.EncoderFailure(s"baboonMinReaderVersions lacks '$tier' for type ${value.baboonTypeIdentifier}"),
+          )
+          meta.copy(domainVersionMinCompat = bound)
+      }
     }
 
     private def typeIsTrait[T](implicit ct: ClassTag[T]): Boolean = {

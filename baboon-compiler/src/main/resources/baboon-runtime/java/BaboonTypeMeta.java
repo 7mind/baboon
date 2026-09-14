@@ -28,6 +28,9 @@ public record BaboonTypeMeta(
 
     /** Tier key of the JSON envelope's readable-min bound in the generated `baboonMinReaderVersions`. */
     public static final String JSON_READABLE_TIER = "json-additive";
+    /** Tier keys of the UEBA prefix bounds in the generated `baboonMinReaderVersions`, per index mode. */
+    public static final String UEBA_PREFIX_COMPACT_TIER = "prefix-compact";
+    public static final String UEBA_PREFIX_ANY_MODE_TIER = "prefix-any-mode";
 
     public BaboonDomainVersion versionRef() {
         return new BaboonDomainVersion(domainIdentifier, domainVersion);
@@ -86,12 +89,7 @@ public record BaboonTypeMeta(
         }
         String minCompat = sameIn.get(0);
 
-        Map<String, String> minReaders;
-        try {
-            minReaders = (Map<String, String>) actual.getField("baboonMinReaderVersions").get(null);
-        } catch (ReflectiveOperationException e) {
-            throw new BaboonException("Type " + actual.getName() + " is missing static field 'baboonMinReaderVersions'", e);
-        }
+        Map<String, String> minReaders = readMinReaderVersions(actual);
         String readableMin = minReaders.get(JSON_READABLE_TIER);
         if (readableMin == null) {
             throw new BaboonException("Type " + actual.getName() + ": baboonMinReaderVersions lacks '" + JSON_READABLE_TIER + "'");
@@ -105,6 +103,32 @@ public record BaboonTypeMeta(
             typeIdentifier,
             readableMin
         );
+    }
+
+    /**
+     * Envelope for a UEBA payload written under `ctx`: {@link #from} with `domainVersionMinCompat`
+     * lowered to the prefix bound of the context's index mode when the writer policy is TOLERANT.
+     */
+    public static BaboonTypeMeta forBin(BaboonGenerated value, Class<?> declaredType, BaboonCodecContext ctx) {
+        BaboonTypeMeta meta = from(value, declaredType);
+        if (ctx.forwardWritePolicy() == BaboonCodecContext.ForwardWritePolicy.STRICT) {
+            return meta;
+        }
+        String tier = ctx.useIndices() ? UEBA_PREFIX_ANY_MODE_TIER : UEBA_PREFIX_COMPACT_TIER;
+        String bound = readMinReaderVersions(value.getClass()).get(tier);
+        if (bound == null) {
+            throw new BaboonException("Type " + value.getClass().getName() + ": baboonMinReaderVersions lacks '" + tier + "'");
+        }
+        return new BaboonTypeMeta(meta.metaVersion(), meta.domainIdentifier(), meta.domainVersion(), bound, meta.typeIdentifier(), meta.domainVersionReadableMin());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> readMinReaderVersions(Class<?> actual) {
+        try {
+            return (Map<String, String>) actual.getField("baboonMinReaderVersions").get(null);
+        } catch (ReflectiveOperationException e) {
+            throw new BaboonException("Type " + actual.getName() + " is missing static field 'baboonMinReaderVersions'", e);
+        }
     }
 
     private static String readStaticString(Class<?> klass, String name) {

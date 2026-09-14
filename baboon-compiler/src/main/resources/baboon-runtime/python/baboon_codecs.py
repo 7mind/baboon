@@ -3,6 +3,7 @@
 
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any, Optional, TypeVar, Generic
 
 from pydantic import BaseModel
@@ -137,6 +138,22 @@ class NoBinEncoderGeneratedAdt(BaboonBinCodecGeneratedAdt[T, TCodec]):
             f"is deprecated, encoder was not generated"
         )
 
+class ForwardWritePolicy(Enum):
+    """Which lower bound the WRITER publishes as the UEBA envelope's `domain_version_min_compat`
+    (the v1 binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope
+    integration (UEBA)").
+
+    - STRICT: the byte-identical bound (`baboon_same_in_versions[0]`) -- the default.
+    - TOLERANT: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+      payloads, `prefix-any-mode` for indexed ones). Readers older than the writer then decode the
+      payload with their newest codec, dropping the appended fields they do not know. A reader
+      cannot distinguish such an envelope from a byte-identical one, so re-encoding intermediaries
+      must run at the writer's version or newer.
+    """
+    STRICT = "strict"
+    TOLERANT = "tolerant"
+
+
 class BaboonCodecContext:
     # `Indexed`/`Compact`/`Default` are stable class-attribute singletons assigned after the
     # class body. Generator-emitted code may use `ctx is BaboonCodecContext.Indexed`-style
@@ -147,8 +164,10 @@ class BaboonCodecContext:
     Compact: 'BaboonCodecContext'
     Default: 'BaboonCodecContext'
 
-    def __init__(self, use_indices: bool, facade: Optional[Any] = None):
+    def __init__(self, use_indices: bool, facade: Optional[Any] = None,
+                 forward_write_policy: ForwardWritePolicy = ForwardWritePolicy.STRICT):
         self.use_indices = use_indices
+        self.forward_write_policy = forward_write_policy
         # `facade` is threaded through generated codec calls so the `any`-feature cross-format
         # conversion (UEBA <-> JSON) can resolve codecs by `(domain, version, typeid)` from an
         # `AnyMeta` envelope. `None` for the bare `Compact`/`Indexed` singletons; `with_facade`
@@ -171,6 +190,11 @@ class BaboonCodecContext:
     @classmethod
     def with_facade(cls, use_indices: bool, facade) -> 'BaboonCodecContext':
         return cls(use_indices, facade)
+
+    @classmethod
+    def custom(cls, use_indices: bool, forward_write_policy: ForwardWritePolicy, facade) -> 'BaboonCodecContext':
+        """Fully specified context: index mode, writer-side forward policy and optional facade."""
+        return cls(use_indices, facade, forward_write_policy)
 
 
 # Stable singletons — `is`-equality preserved across all uses (PR 10.1).
