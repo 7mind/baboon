@@ -160,9 +160,9 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     // where neither codec is active (foreign-bound types) are dropped — they
     // emit no codec class so there is nothing for the facade to register.
     def collectTypes(domain: Domain): List[(String, String, String, String, Boolean, Boolean)] = {
-      val versionStr    = domain.version.v.toString
-      val isLatest      = domain.version == evo.latest
-      val verSuffix     = versionStr.replace('.', '_')
+      val versionStr = domain.version.v.toString
+      val isLatest   = domain.version == evo.latest
+      val verSuffix  = versionStr.replace('.', '_')
       // Relative path prefix from facade file's dir (= latestBasename) to type's dir
       val relPrefix = if (isLatest) "." else s"./v$verSuffix"
       val collected = domain.defs.meta.nodes.toList.flatMap {
@@ -222,130 +222,138 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     val orderedVersions = lineage.versions.toSeq.sortBy(_._1).map { case (_, domain) => domain }
 
     val sfx = target.language.importSuffix
-    val sb  = new StringBuilder
 
     // Relative path back to the generated/ root (where BaboonSharedRuntime lives). The facade
     // file lives at `<latestBasename>/<className>.ts`, so depth = segments in `latestBasename`.
     val rootRel = "../" * latestBasename.split('/').length
-    // Imports
-    sb.append(s"import { AbstractBaboonJsonCodecs, AbstractBaboonUebaCodecs, BaboonBinCodec, BaboonJsonCodec, BaboonDomainVersion, BaboonMeta, Lazy } from '${rootRel}BaboonSharedRuntime$sfx';\n")
-    sb.append(s"import type { AbstractBaboonConversions } from '${rootRel}BaboonSharedRuntime$sfx';\n")
-    sb.append(s"import { BaboonCodecsFacade } from '${rootRel}BaboonCodecsFacade$sfx';\n")
+    val runtimeImports: TextTree[TsValue] =
+      q"""import { AbstractBaboonJsonCodecs, AbstractBaboonUebaCodecs, BaboonBinCodec, BaboonJsonCodec, BaboonDomainVersion, BaboonMeta, Lazy } from '${rootRel}BaboonSharedRuntime$sfx';
+         |import type { AbstractBaboonConversions } from '${rootRel}BaboonSharedRuntime$sfx';
+         |import { BaboonCodecsFacade } from '${rootRel}BaboonCodecsFacade$sfx';""".stripMargin
 
     // Imports: emit a single line per type with only the codec flavours
     // actually generated for that type. A type may have only JSON, only
     // UEBA, or both; the type itself (class/enum/adt) is always imported
     // since identity registration goes through the codec class.
-    for (domain <- orderedVersions) {
-      val types = collectTypes(domain)
-
-      for ((importPath, typeAlias, typeName, _, hasJson, hasUeba) <- types) {
-        val pieces = List(
-          Some((typeName, typeAlias)),
-          if (hasJson) Some((s"${typeName}_JsonCodec", s"${typeAlias}_JsonCodec")) else None,
-          if (hasUeba) Some((s"${typeName}_UEBACodec", s"${typeAlias}_UEBACodec")) else None,
-        ).flatten
-        val rendered = pieces.map {
-          case (src, alias) => if (src == alias) src else s"$src as $alias"
-        }.mkString(", ")
-        sb.append(s"import { $rendered } from '$importPath$sfx';\n")
-      }
+    val typeImports: List[TextTree[TsValue]] = orderedVersions.toList.flatMap {
+      domain =>
+        collectTypes(domain).map {
+          case (importPath, typeAlias, typeName, _, hasJson, hasUeba) =>
+            val pieces = List(
+              Some((typeName, typeAlias)),
+              if (hasJson) Some((s"${typeName}_JsonCodec", s"${typeAlias}_JsonCodec")) else None,
+              if (hasUeba) Some((s"${typeName}_UEBACodec", s"${typeAlias}_UEBACodec")) else None,
+            ).flatten
+            val rendered = pieces.map {
+              case (src, alias) => if (src == alias) src else s"$src as $alias"
+            }.mkString(", ")
+            q"import { $rendered } from '$importPath$sfx';"
+        }
     }
 
-    sb.append("\n")
+    def versionClassName(domain: Domain): String = s"Domain${pascalDomainId}V${domain.version.v.toString.replace('.', '_')}"
 
     // Per-version codec/meta/conversions classes. The JSON and UEBA codec
     // classes each iterate the type list filtered by their respective
     // activation flag, so a domain that emits only UEBA codecs produces an
     // empty (but well-formed) JSON codec class — keeps the facade contract
     // uniform without referencing non-existent symbols.
-    for (domain <- orderedVersions) {
-      val versionStr   = domain.version.v.toString
-      val verSuffix    = versionStr.replace('.', '_')
-      val types        = collectTypes(domain)
-      val verClassName = s"Domain${pascalDomainId}V${verSuffix}"
+    //
+    // We reference `${typeAlias}_JsonCodec.BaboonTypeIdentifier` (rather than
+    // `${typeAlias}.BaboonTypeIdentifier`) because TypeScript `enum`s cannot carry
+    // static properties — only the generated codec classes do. The codec class
+    // carries the same identifier string for every type kind.
+    val perVersion: List[TextTree[TsValue]] = orderedVersions.toList.map {
+      domain =>
+        val versionStr   = domain.version.v.toString
+        val types        = collectTypes(domain)
+        val verClassName = versionClassName(domain)
 
-      // JSON codecs class. We reference `${typeAlias}_JsonCodec.BaboonTypeIdentifier`
-      // (rather than `${typeAlias}.BaboonTypeIdentifier`) because TypeScript `enum`s
-      // cannot carry static properties — only the generated codec classes do.
-      // The codec class carries the same identifier string for every type kind.
-      sb.append(s"class ${verClassName}JsonCodecs extends AbstractBaboonJsonCodecs {\n")
-      sb.append( "    constructor() {\n")
-      sb.append( "        super();\n")
-      for ((_, typeAlias, _, _, hasJson, _) <- types if hasJson) {
-        sb.append(s"        this.register(${typeAlias}_JsonCodec.BaboonTypeIdentifier, new Lazy<BaboonJsonCodec<unknown>>(() => ${typeAlias}_JsonCodec.instance as unknown as BaboonJsonCodec<unknown>));\n")
-      }
-      sb.append( "    }\n")
-      sb.append( "}\n\n")
+        val jsonRegistrations = types.collect {
+          case (_, typeAlias, _, _, true, _) =>
+            q"this.register(${typeAlias}_JsonCodec.BaboonTypeIdentifier, new Lazy<BaboonJsonCodec<unknown>>(() => ${typeAlias}_JsonCodec.instance as unknown as BaboonJsonCodec<unknown>));"
+        }
+        val uebaRegistrations = types.collect {
+          case (_, typeAlias, _, _, _, true) =>
+            q"this.register(${typeAlias}_UEBACodec.BaboonTypeIdentifier, new Lazy<BaboonBinCodec<unknown>>(() => ${typeAlias}_UEBACodec.instance as unknown as BaboonBinCodec<unknown>));"
+        }
 
-      // UEBA codecs class — same reasoning as above.
-      sb.append(s"class ${verClassName}UebaCodecs extends AbstractBaboonUebaCodecs {\n")
-      sb.append( "    constructor() {\n")
-      sb.append( "        super();\n")
-      for ((_, typeAlias, _, _, _, hasUeba) <- types if hasUeba) {
-        sb.append(s"        this.register(${typeAlias}_UEBACodec.BaboonTypeIdentifier, new Lazy<BaboonBinCodec<unknown>>(() => ${typeAlias}_UEBACodec.instance as unknown as BaboonBinCodec<unknown>));\n")
-      }
-      sb.append( "    }\n")
-      sb.append( "}\n\n")
+        // Meta class: the real per-type sameIn / forward-readable tables for this version
+        // (user types only; unknown type ids resolve to empty, never to fabricated own-version data).
+        val sameInEntries = lineage.evolution
+          .typesUnchangedSince(domain.version).toList.collect {
+            case (tid: TypeId.User, u) => (tid.toString, u.sameIn.toList.map(_.v.toString))
+          }.sortBy(_._1).map {
+            case (tid, vs) => q""""$tid": [${vs.map(v => s"'$v'").mkString(", ")}],"""
+          }
+        val forwardEntries = lineage.evolution
+          .typesForwardReadable(domain.version).toList.collect {
+            case (tid: TypeId.User, fr) => (tid.toString, fr.readable.toList.map { case (v, tier) => (v.v.toString, tier.wireName) })
+          }.sortBy(_._1).map {
+            case (tid, pairs) => q""""$tid": { ${pairs.map { case (v, t) => s"'$v': '$t'" }.mkString(", ")} },"""
+          }
 
-      // Conversions class
-      sb.append(s"class ${verClassName}Conversions implements AbstractBaboonConversions {\n")
-      sb.append(s"    public versionsFrom(): string[] { return []; }\n")
-      sb.append(s"""    public versionTo(): string { return '$versionStr'; }\n""")
-      sb.append( "}\n\n")
-
-      // Meta class: the real per-type sameIn / forward-readable tables for this version
-      // (user types only; unknown type ids resolve to empty, never to fabricated own-version data).
-      val sameInEntries = lineage.evolution.typesUnchangedSince(domain.version).toList.collect {
-        case (tid: TypeId.User, u) => (tid.toString, u.sameIn.toList.map(_.v.toString))
-      }.sortBy(_._1)
-      val forwardEntries = lineage.evolution.typesForwardReadable(domain.version).toList.collect {
-        case (tid: TypeId.User, fr) => (tid.toString, fr.readable.toList.map { case (v, tier) => (v.v.toString, tier.wireName) })
-      }.sortBy(_._1)
-      sb.append(s"class ${verClassName}Meta implements BaboonMeta {\n")
-      sb.append( "    private static readonly SAME_IN: { readonly [typeId: string]: readonly string[] } = {\n")
-      for ((tid, vs) <- sameInEntries) {
-        sb.append(s"""        "$tid": [${vs.map(v => s"'$v'").mkString(", ")}],\n""")
-      }
-      sb.append( "    };\n")
-      sb.append( "    private static readonly FORWARD: { readonly [typeId: string]: { readonly [version: string]: string } } = {\n")
-      for ((tid, pairs) <- forwardEntries) {
-        sb.append(s"""        "$tid": { ${pairs.map { case (v, t) => s"'$v': '$t'" }.mkString(", ")} },\n""")
-      }
-      sb.append( "    };\n")
-      sb.append(s"""    public sameInVersions(typeId: string): string[] { return [...(${verClassName}Meta.SAME_IN[typeId] ?? [])]; }\n""")
-      sb.append(s"""    public forwardReadableVersions(typeId: string): { readonly [version: string]: string } { return ${verClassName}Meta.FORWARD[typeId] ?? {}; }\n""")
-      sb.append( "}\n\n")
+        q"""class ${verClassName}JsonCodecs extends AbstractBaboonJsonCodecs {
+           |    constructor() {
+           |        super();
+           |        ${jsonRegistrations.joinN().shift(8).trim}
+           |    }
+           |}
+           |
+           |class ${verClassName}UebaCodecs extends AbstractBaboonUebaCodecs {
+           |    constructor() {
+           |        super();
+           |        ${uebaRegistrations.joinN().shift(8).trim}
+           |    }
+           |}
+           |
+           |class ${verClassName}Conversions implements AbstractBaboonConversions {
+           |    public versionsFrom(): string[] { return []; }
+           |    public versionTo(): string { return '$versionStr'; }
+           |}
+           |
+           |class ${verClassName}Meta implements BaboonMeta {
+           |    private static readonly SAME_IN: { readonly [typeId: string]: readonly string[] } = {
+           |        ${sameInEntries.joinN().shift(8).trim}
+           |    };
+           |    private static readonly FORWARD: { readonly [typeId: string]: { readonly [version: string]: string } } = {
+           |        ${forwardEntries.joinN().shift(8).trim}
+           |    };
+           |    public sameInVersions(typeId: string): string[] { return [...(${verClassName}Meta.SAME_IN[typeId] ?? [])]; }
+           |    public forwardReadableVersions(typeId: string): { readonly [version: string]: string } { return ${verClassName}Meta.FORWARD[typeId] ?? {}; }
+           |}""".stripMargin
     }
 
     // Facade class
-    sb.append(s"export class $className extends BaboonCodecsFacade {\n")
-    sb.append( "    constructor() {\n")
-    sb.append( "        super();\n")
-    for (domain <- orderedVersions) {
-      val versionStr   = domain.version.v.toString
-      val verSuffix    = versionStr.replace('.', '_')
-      val verClassName = s"Domain${pascalDomainId}V${verSuffix}"
-      sb.append( "        this.register(\n")
-      sb.append(s"""            new BaboonDomainVersion('$domainIdStr', '$versionStr'),\n""")
-      sb.append(s"            () => new ${verClassName}JsonCodecs(),\n")
-      sb.append(s"            () => new ${verClassName}UebaCodecs(),\n")
-      sb.append(s"            () => new ${verClassName}Conversions(),\n")
-      sb.append(s"            () => new ${verClassName}Meta(),\n")
-      sb.append( "        );\n")
+    val registrations: List[TextTree[TsValue]] = orderedVersions.toList.map {
+      domain =>
+        val verClassName = versionClassName(domain)
+        q"""this.register(
+           |    new BaboonDomainVersion('$domainIdStr', '${domain.version.v.toString}'),
+           |    () => new ${verClassName}JsonCodecs(),
+           |    () => new ${verClassName}UebaCodecs(),
+           |    () => new ${verClassName}Conversions(),
+           |    () => new ${verClassName}Meta(),
+           |);""".stripMargin
     }
-    sb.append( "    }\n")
-    sb.append( "}\n")
+    val facadeClass: TextTree[TsValue] =
+      q"""export class $className extends BaboonCodecsFacade {
+         |    constructor() {
+         |        super();
+         |        ${registrations.joinN().shift(8).trim}
+         |    }
+         |}""".stripMargin
 
-    val content    = sb.toString()
-    val outputPath = s"$latestBasename/$className.ts"
-    val moduleParts = tsFileTools.definitionsBasePkg ++ outputPath.stripSuffix(".ts").split('/').toList
-    val moduleId   = TsValue.TsModuleId(moduleParts)
+    val imports: TextTree[TsValue] = (runtimeImports :: typeImports).joinN()
+    val tree: TextTree[TsValue]    = List(imports, perVersion.joinNN(), facadeClass).joinNN()
+    val outputPath                 = s"$latestBasename/$className.ts"
+    val moduleParts                = tsFileTools.definitionsBasePkg ++ outputPath.stripSuffix(".ts").split('/').toList
+    val moduleId                   = TsValue.TsModuleId(moduleParts)
 
     List(
       TsDefnTranslator.Output(
         outputPath,
-        TextTree.verbatim(content),
+        tree,
         moduleId,
         CompilerProduct.Runtime,
         doNotModify = true,
@@ -602,7 +610,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     * interpolated as a plain string (service interfaces, client/wiring classes
     * and functions) are invisible to it. A textual scan catches those so a
     * non-empty wiring/client/service file is barrel-able while a genuinely empty
-    * one (e.g. wiring suppressed by flags) is not (avoids TS2306). */
+    * one (e.g. wiring suppressed by flags) is not (avoids TS2306).
+    */
   private def hasExports(output: TsDefnTranslator.Output): Boolean = {
     if (exportedNames(output).nonEmpty) true
     else {
@@ -694,10 +703,11 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         val prefix = s"${info.serviceDirPath}/"
         val methodDirs = pathsWithExports
           .filter(_.startsWith(prefix))
-          .flatMap { p =>
-            val rest = p.drop(prefix.length)
-            val slash = rest.indexOf('/')
-            if (slash >= 0) Some(rest.substring(0, slash)) else None
+          .flatMap {
+            p =>
+              val rest  = p.drop(prefix.length)
+              val slash = rest.indexOf('/')
+              if (slash >= 0) Some(rest.substring(0, slash)) else None
           }
           .toList
           .distinct
@@ -718,9 +728,9 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
         val indexLines: List[TextTree[TsValue]] =
           (if (methodDirs.nonEmpty) List(TextTree.text[TsValue](s"export * as methods from './methods$sfx';")) else Nil) ++
-            (if (hasService) List(TextTree.text[TsValue](s"export * from './service$sfx';")) else Nil) ++
-            (if (hasClient) List(TextTree.text[TsValue](s"export * from './client$sfx';")) else Nil) ++
-            (if (hasWiring) List(TextTree.text[TsValue](s"export * from './wiring$sfx';")) else Nil)
+          (if (hasService) List(TextTree.text[TsValue](s"export * from './service$sfx';")) else Nil) ++
+          (if (hasClient) List(TextTree.text[TsValue](s"export * from './client$sfx';")) else Nil) ++
+          (if (hasWiring) List(TextTree.text[TsValue](s"export * from './wiring$sfx';")) else Nil)
 
         val indexBarrel: Option[TsDefnTranslator.Output] =
           if (indexLines.isEmpty) None
@@ -775,16 +785,16 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         // empty .ts) must be skipped from the barrel — `export * from './X'` against an empty
         // file produces TS2306 "File ... is not a module" on strict tsc/deno.
         val fileExports = sortedFiles.map(f => (f, exportedNames(f))).filter(_._2.nonEmpty)
-        // D45: a file whose only export is verbatim/string-form (the domain facade is emitted as
-        // TextTree.verbatim with a plain-text `export class ...Facade extends BaboonCodecsFacade`)
+        // D45: a file whose only export is string-form (the domain facade is a string-only TextTree
+        // carrying a plain-text `export class ...Facade extends BaboonCodecsFacade`)
         // contributes no TsValue.TsType nodes, so exportedNames is empty and it is dropped from
         // fileExports above. Detect such files via the textual hasExports fallback (the same
         // predicate generateServiceBarrels uses) and re-export each with a plain `export *`. They
         // carry no AST names, so they cannot collide with named exports and need no collision
         // handling — the same treatment collision-free named files already receive.
         val verbatimExportFiles = sortedFiles.filter(f => exportedNames(f).isEmpty && hasExports(f))
-        val nameCount   = fileExports.flatMap(_._2.keys).groupBy(identity).view.mapValues(_.size).toMap
-        val colliding   = nameCount.filter(_._2 > 1).keySet
+        val nameCount           = fileExports.flatMap(_._2.keys).groupBy(identity).view.mapValues(_.size).toMap
+        val colliding           = nameCount.filter(_._2 > 1).keySet
 
         val reexports = if (colliding.isEmpty) {
           // No collisions — simple export * for all files with exports
