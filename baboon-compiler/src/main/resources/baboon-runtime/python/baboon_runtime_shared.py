@@ -703,6 +703,9 @@ class BaboonTypeMetaCodec:
             domain_version = reader.read_string()
 
             has_min_compat = reader.read_byte()
+            # codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+            if has_min_compat not in (0, 1):
+                return None
             if has_min_compat == 1:
                 domain_version_min_compat = reader.read_string()
             else:

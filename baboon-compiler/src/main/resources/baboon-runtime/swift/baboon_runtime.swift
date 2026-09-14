@@ -1519,10 +1519,12 @@ public enum BaboonTypeMetaCodec {
         return nil
     }
 
-    private static func readMetaV1(_ reader: BaboonBinReader) throws -> BaboonTypeMeta {
+    private static func readMetaV1(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
         let d = try reader.readString()
         let dv = try reader.readString()
         let hasMinCompat = reader.readU8()
+        // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+        if hasMinCompat != 0 && hasMinCompat != 1 { return nil }
         let mc = hasMinCompat == 1 ? try reader.readString() : dv
         let t = try reader.readString()
         return BaboonTypeMeta(metaVersion, d, dv, mc, t)

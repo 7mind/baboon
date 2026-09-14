@@ -511,7 +511,10 @@ package baboon.runtime.shared {
     private def readMetaV1(reader: LEDataInputStream): Option[BaboonTypeMeta] = {
       val domainIdentifier       = BaboonBinTools.readString(reader)
       val domainVersion          = BaboonBinTools.readString(reader)
-      val domainVersionMinCompat = if (reader.readByte() == 1) BaboonBinTools.readString(reader) else domainVersion
+      val hasMinCompat = reader.readByte()
+      // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+      if (hasMinCompat != 0 && hasMinCompat != 1) return None
+      val domainVersionMinCompat = if (hasMinCompat == 1) BaboonBinTools.readString(reader) else domainVersion
       val typeIdentifier         = BaboonBinTools.readString(reader)
 
       Some(

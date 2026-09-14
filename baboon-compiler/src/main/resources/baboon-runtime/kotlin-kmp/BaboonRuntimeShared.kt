@@ -176,10 +176,13 @@ object BaboonTypeMetaCodec {
         return null
     }
 
-    private fun readMetaV1(reader: BaboonBinaryReader): BaboonTypeMeta {
+    private fun readMetaV1(reader: BaboonBinaryReader): BaboonTypeMeta? {
         val domainIdentifier = BaboonBinTools.readString(reader)
         val domainVersion = BaboonBinTools.readString(reader)
-        val domainVersionMinCompat = if (reader.readByte().toInt() == 1) BaboonBinTools.readString(reader) else domainVersion
+        val hasMinCompat = reader.readByte().toInt()
+        // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+        if (hasMinCompat != 0 && hasMinCompat != 1) return null
+        val domainVersionMinCompat = if (hasMinCompat == 1) BaboonBinTools.readString(reader) else domainVersion
         val typeIdentifier = BaboonBinTools.readString(reader)
 
         return BaboonTypeMeta(

@@ -276,10 +276,17 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
 
       // Meta struct
       val metaName = s"Domain${pascalDomainId}V${verSuffix}Meta"
+      val sameInByTypeId = lineage.evolution.typesUnchangedSince(domain.version).map { case (tid, u) => (tid.toString, u.sameIn.toList.map(_.v.toString)) }
       sb.append(s"struct $metaName;\n")
       sb.append(s"impl BaboonAnyMeta for $metaName {\n")
-      sb.append( "    fn same_in_versions(&self, _type_id: &str) -> Vec<String> {\n")
-      sb.append(s"""        vec!["$versionStr".to_string()]\n""")
+      sb.append( "    fn same_in_versions(&self, type_id: &str) -> Vec<String> {\n")
+      sb.append( "        match type_id {\n")
+      for ((_, _, typeId, _) <- types) {
+        val vs = sameInByTypeId.getOrElse(typeId, List(versionStr)).map(v => s""""$v".to_string()""").mkString(", ")
+        sb.append(s"""            "$typeId" => vec![$vs],\n""")
+      }
+      sb.append( "            _ => Vec::new(),\n")
+      sb.append( "        }\n")
       sb.append( "    }\n")
       sb.append( "    fn forward_readable_versions(&self, type_id: &str) -> Vec<(String, String)> {\n")
       sb.append( "        match type_id {\n")

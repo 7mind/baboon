@@ -1191,6 +1191,8 @@ export class BaboonTypeMetaCodec {
         const domainIdentifier = BinTools.readString(reader);
         const domainVersion = BinTools.readString(reader);
         const hasMinCompat = BinTools.readByte(reader);
+        // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+        if (hasMinCompat !== 0 && hasMinCompat !== 1) return undefined;
         const domainVersionMinCompat = hasMinCompat === 1 ? BinTools.readString(reader) : domainVersion;
         const typeIdentifier = BinTools.readString(reader);
 
