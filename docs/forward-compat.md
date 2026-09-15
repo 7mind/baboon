@@ -472,6 +472,19 @@ Two consequences of scheme 2:
   index mode; round trips through the writer and old readers; the
   three-version chain with `Lossless` now enforceable; unknown flag bits and
   unknown metaVersions rejected.
+- Golden envelope bytes in every other backend — `BinEnvelopeGoldenTests.cs`,
+  `BinEnvelopeGoldenTest.kt` (JVM and KMP stubs), `BinEnvelopeGoldenTest.java`,
+  `test_bin_envelope_golden.py`, `bin_envelope_golden_test.dart`,
+  `BinEnvelopeGoldenTests.swift`, `bin_envelope_golden_tests.rs` — assert the
+  exact byte sequences shown in the worked examples (v1 Strict, v1 Tolerant, v2
+  compact and indexed, for `FwdAppendVar`, `FwdStable`, `FwdEnumHost` and the
+  chain), the v1 default of the built-in contexts, and a v2 round trip through
+  the writer's own facade. They exist because the first cross-language check
+  found two asymmetries the per-language suites had not: the Rust per-type
+  `baboon_same_in_versions_dyn` returned `[own version]` (so Rust-written
+  envelopes of unchanged types elided the byte-identical bound that every other
+  backend publishes), and the Python facade could not register a second domain
+  version at all (`_register_version` sorted by a non-existent attribute).
 - `test/sc-stub/.../ForwardCompatBinEnvelopeSpec.scala` and
   `test/ts-stub/.../ForwardCompatBinEnvelope.test.ts` — the UEBA writer policy:
   Strict envelopes are unchanged and refused by an old reader; Tolerant compact

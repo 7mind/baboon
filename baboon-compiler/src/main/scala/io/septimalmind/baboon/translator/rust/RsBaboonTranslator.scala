@@ -255,11 +255,15 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
           case (fullPath, dynBase, typeId, _) =>
             val binCodec  = s"${dynBase}V${verSuffix}BinCodec"
             val jsonCodec = s"${dynBase}V${verSuffix}JsonCodec"
+            // the real sameIn run: the envelope's byte-identical bound is its head, so a degenerate
+            // `[own version]` here would make Rust-written envelopes of unchanged types unreadable by
+            // older readers in every language
+            val sameInVec = sameInByTypeId.getOrElse(typeId, List(versionStr)).map(v => s""""$v".to_string()""").mkString(", ")
             q"""impl BaboonGeneratedDyn for $fullPath {
                |    fn baboon_domain_version_dyn(&self) -> &str { "$versionStr" }
                |    fn baboon_domain_identifier_dyn(&self) -> &str { "$domainIdStr" }
                |    fn baboon_type_identifier_dyn(&self) -> &str { "$typeId" }
-               |    fn baboon_same_in_versions_dyn(&self) -> Vec<String> { vec!["$versionStr".to_string()] }
+               |    fn baboon_same_in_versions_dyn(&self) -> Vec<String> { vec![$sameInVec] }
                |    fn baboon_forward_readable_dyn(&self) -> Vec<(String, String)> { vec![${fwdPairs(typeId)}] }
                |    fn baboon_min_reader_versions_dyn(&self) -> Vec<(String, String)> { vec![${minReaderPairs(typeId)}] }
                |    fn as_any(&self) -> &dyn std::any::Any { self }
