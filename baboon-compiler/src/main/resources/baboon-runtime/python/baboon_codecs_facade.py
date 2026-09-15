@@ -406,7 +406,8 @@ class BaboonCodecsFacade:
             versions = self.domain_versions[domain_id]
             if domain_version not in versions:
                 versions.append(domain_version)
-                versions.sort(key=lambda v: v.version.version)
+                # `BaboonDomainVersion.version` already is the comparable `Version`
+                versions.sort(key=lambda v: v.version)
 
     # ----- `any`-feature cross-format helpers (PR 10.1) -----------------------------------
 
