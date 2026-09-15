@@ -160,6 +160,48 @@ carry `flags` bit 1 clear and are the v1 envelope with `02` in front and the
 Readers accept v1 and v2 (§ 5); a v1-only reader rejects v2 as an unknown
 `metaVersion`, so v2 is for deployments whose readers are known to be current.
 
+#### 2.1.4 Conformance reference — canonical v2 bytes
+
+Pinned in every backend by the golden-bytes suites (`BinEnvelopeGoldenTests.cs`,
+`BinEnvelopeGoldenTest.kt` in the Kotlin and KMP stubs, `BinEnvelopeGoldenTest.java`,
+`test_bin_envelope_golden.py`, `bin_envelope_golden_test.dart`,
+`BinEnvelopeGoldenTests.swift`, `bin_envelope_golden_tests.rs`) and structurally by
+`BinEnvelopeV2Spec.scala` / `BinEnvelopeV2.test.ts`. Model: `fwde2e.fwd` 2.0.0
+(`baboon-compiler/src/test/resources/baboon/fwd-e2e-ok/`).
+
+`FwdAppendVar(a=42, b="hi", t=Some("t"))`, compact context — 1.0.0 `{a, b}`,
+2.0.0 appended `t: opt[str]`, so the byte-identical bound is 2.0.0 (elided) and
+the `prefix-compact` bound is 1.0.0:
+
+```
+02                                              META_VERSION_2
+0A 66 77 64 65 32 65 2E 66 77 64                len(10) + "fwde2e.fwd"
+05 32 2E 30 2E 30                               len(5)  + "2.0.0"
+02                                              flags: bit 1 (readableMin follows)
+05 31 2E 30 2E 30                               len(5)  + "1.0.0"           readableMin
+19 66 77 64 65 32 65 2E 66 77 64 2F 3A 23 46 77 64 41 70 70 65 6E 64 56 61 72
+                                                len(25) + "fwde2e.fwd/:#FwdAppendVar"
+00                                              payload: mode byte (compact)
+2A 00 00 00                                     a = 42 (i32 LE)
+02 68 69                                        b = "hi"
+01 01 74                                        t = Some("t")
+```
+
+Total: 62 bytes. The same value in the default v1 context is the 56-byte
+sequence `01 | … | 00 | typeId | payload` (bound elided).
+
+`FwdStable(s="s")`, compact — unchanged since 1.0.0, so the byte-identical
+bound is present and `readableMin` (equal to it) is elided:
+
+```
+02  0A "fwde2e.fwd"  05 "2.0.0"  01  05 "1.0.0"  16 "fwde2e.fwd/:#FwdStable"  00 01 73
+                                 ^^ flags: bit 0 (minCompat follows)
+```
+
+A backend that drifts from these sequences fails its golden suite; the
+cross-language acceptance harness (`mdl :test-acceptance`) additionally
+cross-reads envelopes between all backends.
+
 ### 2.2 JSON
 
 The envelope is a JSON object with the keys below. A reader does not assume
