@@ -43,11 +43,19 @@ abstract class BaboonCodecsFacadeBase {
 /// at the writer's version or newer.
 enum ForwardWritePolicy { strict, tolerant }
 
+/// Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+/// [v1] (default): single bound slot (`domainVersionMinCompat`), value chosen by [ForwardWritePolicy].
+/// [v2]: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for
+/// the payload's index mode; the reader's [ForwardReadPolicy] then applies to binary exactly as it does
+/// to JSON. Only readers that know v2 can decode it.
+enum BaboonEnvelopeVersion { v1, v2 }
+
 abstract class BaboonCodecContext {
   const BaboonCodecContext();
 
   bool get useIndices;
   ForwardWritePolicy get forwardWritePolicy => ForwardWritePolicy.strict;
+  BaboonEnvelopeVersion get envelopeVersion => BaboonEnvelopeVersion.v1;
   BaboonCodecsFacadeBase? get facade => null;
 
   static const BaboonCodecContext defaultCtx = _BaboonCodecContextCompact();
@@ -57,20 +65,23 @@ abstract class BaboonCodecContext {
   static BaboonCodecContext withFacade(bool useIndices, BaboonCodecsFacadeBase facade) =>
       _BaboonCodecContextWithFacade(useIndices, facade);
 
-  /// Fully specified context: index mode, writer-side forward policy and optional facade.
-  static BaboonCodecContext custom(bool useIndices, ForwardWritePolicy forwardWritePolicy, BaboonCodecsFacadeBase? facade) =>
-      _BaboonCodecContextCustom(useIndices, forwardWritePolicy, facade);
+  /// Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade.
+  static BaboonCodecContext custom(bool useIndices, ForwardWritePolicy forwardWritePolicy, BaboonEnvelopeVersion envelopeVersion, BaboonCodecsFacadeBase? facade) =>
+      _BaboonCodecContextCustom(useIndices, forwardWritePolicy, envelopeVersion, facade);
 }
 
 class _BaboonCodecContextCustom extends BaboonCodecContext {
   final bool _useIndices;
   final ForwardWritePolicy _forwardWritePolicy;
+  final BaboonEnvelopeVersion _envelopeVersion;
   final BaboonCodecsFacadeBase? _facade;
-  const _BaboonCodecContextCustom(this._useIndices, this._forwardWritePolicy, this._facade);
+  const _BaboonCodecContextCustom(this._useIndices, this._forwardWritePolicy, this._envelopeVersion, this._facade);
   @override
   bool get useIndices => _useIndices;
   @override
   ForwardWritePolicy get forwardWritePolicy => _forwardWritePolicy;
+  @override
+  BaboonEnvelopeVersion get envelopeVersion => _envelopeVersion;
   @override
   BaboonCodecsFacadeBase? get facade => _facade;
 }
@@ -1423,7 +1434,8 @@ class BaboonTypeMeta {
   /// [ForwardWritePolicy.tolerant].
   static BaboonTypeMeta forBin(BaboonGenerated value, BaboonCodecContext ctx, {bool useAdtIdentifier = false}) {
     final meta = from(value, useAdtIdentifier: useAdtIdentifier);
-    if (ctx.forwardWritePolicy == ForwardWritePolicy.strict) return meta;
+    final v2 = ctx.envelopeVersion == BaboonEnvelopeVersion.v2;
+    if (!v2 && ctx.forwardWritePolicy == ForwardWritePolicy.strict) return meta;
     final tier = ctx.useIndices ? uebaPrefixAnyModeTier : uebaPrefixCompactTier;
     final bound = (value as BaboonMetaProvider).baboonMinReaderVersions[tier];
     if (bound == null) {
@@ -1431,7 +1443,10 @@ class BaboonTypeMeta {
         'BaboonTypeMeta.forBin: baboonMinReaderVersions lacks "$tier" for type [${meta.domainIdentifier}.${meta.typeIdentifier}]',
       );
     }
-    return BaboonTypeMeta(meta.metaVersion, meta.domainIdentifier, meta.domainVersion, bound, meta.typeIdentifier, meta.domainVersionReadableMin);
+    // v2 carries both bounds (the writer policy is irrelevant); v1 tolerant puts the prefix bound in its single slot
+    return v2
+        ? BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion2, meta.domainIdentifier, meta.domainVersion, meta.domainVersionMinCompat, meta.typeIdentifier, bound)
+        : BaboonTypeMeta(meta.metaVersion, meta.domainIdentifier, meta.domainVersion, bound, meta.typeIdentifier, meta.domainVersionReadableMin);
   }
 
   @override
@@ -1453,9 +1468,45 @@ class BaboonTypeMeta {
 }
 
 class BaboonTypeMetaCodec {
+  /// Layout written by default (binary) and always (JSON `$mv`).
   static const int metaVersion = 1;
+  static const int metaVersion2 = 2;
+
+  // v2 flags byte (codec-envelope.md §2.1.3): bit 0 — minCompat follows; bit 1 — readableMin follows.
+  static const int _v2FlagMinCompat = 0x01;
+  static const int _v2FlagReadableMin = 0x02;
+  static const int _v2FlagsMask = _v2FlagMinCompat | _v2FlagReadableMin;
 
   static void writeBin(BaboonTypeMeta meta, BaboonBinWriter writer) {
+    switch (meta.metaVersion) {
+      case metaVersion:
+        _writeBinV1(meta, writer);
+        return;
+      case metaVersion2:
+        _writeBinV2(meta, writer);
+        return;
+      default:
+        throw BaboonException('Unsupported binary envelope metaVersion ${meta.metaVersion}');
+    }
+  }
+
+  // v2: `02 | domainId | domainVersion | flags | [minCompat] | [readableMin] | typeId`; each bound is
+  // elided exactly as in JSON (minCompat when == domainVersion, readableMin when == effective minCompat)
+  static void _writeBinV2(BaboonTypeMeta meta, BaboonBinWriter writer) {
+    final minCompat = meta.domainVersionMinCompat.isEmpty ? meta.domainVersion : meta.domainVersionMinCompat;
+    final readableMin = meta.domainVersionReadableMin.isEmpty ? minCompat : meta.domainVersionReadableMin;
+    final hasMinCompat = minCompat != meta.domainVersion;
+    final hasReadableMin = readableMin != minCompat;
+    writer.writeU8(metaVersion2);
+    writer.writeString(meta.domainIdentifier);
+    writer.writeString(meta.domainVersion);
+    writer.writeU8((hasMinCompat ? _v2FlagMinCompat : 0) | (hasReadableMin ? _v2FlagReadableMin : 0));
+    if (hasMinCompat) writer.writeString(minCompat);
+    if (hasReadableMin) writer.writeString(readableMin);
+    writer.writeString(meta.typeIdentifier);
+  }
+
+  static void _writeBinV1(BaboonTypeMeta meta, BaboonBinWriter writer) {
     writer.writeU8(metaVersion);
     writer.writeString(meta.domainIdentifier);
     writer.writeString(meta.domainVersion);
@@ -1471,7 +1522,20 @@ class BaboonTypeMetaCodec {
   static BaboonTypeMeta? readMeta(BaboonBinReader reader) {
     final v = reader.readU8();
     if (v == metaVersion) return _readMetaV1(reader);
+    if (v == metaVersion2) return _readMetaV2(reader);
     return null;
+  }
+
+  static BaboonTypeMeta? _readMetaV2(BaboonBinReader reader) {
+    final d = reader.readString();
+    final dv = reader.readString();
+    final flags = reader.readU8();
+    // unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+    if ((flags & ~_v2FlagsMask) != 0) return null;
+    final mc = (flags & _v2FlagMinCompat) != 0 ? reader.readString() : dv;
+    final rm = (flags & _v2FlagReadableMin) != 0 ? reader.readString() : mc;
+    final t = reader.readString();
+    return BaboonTypeMeta(metaVersion2, d, dv, mc, t, rm);
   }
 
   static BaboonTypeMeta? _readMetaV1(BaboonBinReader reader) {

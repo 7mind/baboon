@@ -122,14 +122,35 @@ Readability is monotone along the chain (a suffix of a prefix chain is a prefix
 chain), so the newest codec is always correct and loses the fewest fields. This
 rule is the same for JSON `$uv`/`$rv` resolution.
 
-What the policy costs, and why it is opt-in on the writer: a binary reader
+What the v1 policy costs, and why it is opt-in on the writer: a v1 reader
 cannot distinguish a Tolerant envelope from a byte-identical one.
-`ForwardReadPolicy.Lossless` has no effect on binary reads, and a re-encoding
+`ForwardReadPolicy.Lossless` has no effect on v1 reads, and a re-encoding
 intermediary older than the writer silently truncates the value. The prefix
 client contract is satisfied structurally by the byte-array decode entry points
 (the payload is the last element of the envelope; nothing asserts full
 consumption); stream-based callers must discard the stream after a forward
 decode.
+
+### Envelope v2 — the JSON-equivalent binary layout
+
+`BaboonCodecContext.envelopeVersion = V2` (default `V1`) switches the writer to
+the `metaVersion = 2` layout (`docs/spec/codec-envelope.md` §2.1.3):
+`02 | domainId | domainVersion | flags | [minCompat] | [readableMin] | typeId |
+payload`. It carries both bounds with fixed meaning — `minCompat` is the
+byte-identical bound, `readableMin` the prefix bound for the payload's index
+mode — behind a flags byte (bit 0: minCompat present, bit 1: readableMin
+present; elision rules as in JSON). Consequences:
+
+- `ForwardWritePolicy` is irrelevant under v2; both bounds always travel.
+- The reader's `ForwardReadPolicy` applies to binary exactly as to JSON:
+  `Tolerant` decodes with the newest codec once `readableMin` reaches a
+  registered version, `Lossless` requires `minCompat` to — so a re-encoding
+  intermediary can protect itself, which v1 never allowed.
+- Every reader in the nine runtimes accepts v1 and v2. A reader built before
+  v2 existed rejects a v2 envelope as an unknown `metaVersion`, which is why the
+  default stays v1: switch the writer only once the readers are current.
+- Types with no prefix relationship produce a v2 envelope that is the v1
+  envelope with `02` in front; the flag byte values coincide bit-for-bit.
 
 ## Worked examples: what changed on the wire
 
@@ -141,9 +162,10 @@ same bytes and keys.
 
 | knob | where | values | affects |
 |---|---|---|---|
-| `ForwardWritePolicy` | writer's `BaboonCodecContext` (next to the index mode) | `Strict` (default), `Tolerant` | the value written into the UEBA `domainVersionMinCompat` slot. No effect on JSON. |
-| index mode | writer's `BaboonCodecContext` | compact, indexed | which prefix tier a `Tolerant` writer consults: `prefix-compact` or `prefix-any-mode` |
-| `ForwardReadPolicy` | reader's facade | `Tolerant` (default), `Lossless` | whether a JSON reader honours `$rv`. No effect on UEBA — the binary envelope carries one bound and the reader cannot tell how it was chosen. |
+| `envelopeVersion` | writer's `BaboonCodecContext` | `V1` (default), `V2` | which binary layout is written: v1 (one bound slot) or v2 (both bounds, JSON-equivalent). No effect on JSON. |
+| `ForwardWritePolicy` | writer's `BaboonCodecContext` (next to the index mode) | `Strict` (default), `Tolerant` | the value written into the v1 `domainVersionMinCompat` slot. No effect on JSON or on v2. |
+| index mode | writer's `BaboonCodecContext` | compact, indexed | which prefix tier the writer consults for the prefix bound: `prefix-compact` or `prefix-any-mode` |
+| `ForwardReadPolicy` | reader's facade | `Tolerant` (default), `Lossless` | whether a reader honours `readableMin` (JSON `$rv`, binary v2). No effect on binary v1 — that envelope carries one bound and the reader cannot tell how it was chosen. |
 
 One reader rule changed for both formats: when the envelope's `$v` /
 `domainVersion` is newer than every registered version and the applicable
@@ -214,6 +236,16 @@ HDR | 00 | 19 "fwde2e.fwd/:#FwdAppendVar"
 
 Tolerant, indexed                                        1.0.0 reader → refused
 (byte-identical to Strict, indexed: the prefix-any-mode bound is 2.0.0, so hasMinCompat stays 0)
+
+envelope v2, compact                                     1.0.0 reader, Tolerant → FwdAppendVar(42, "hi")
+02 | 0A "fwde2e.fwd" | 05 "2.0.0"                        1.0.0 reader, Lossless → refused
+   | 02                                                  flags: minCompat elided (= 2.0.0), readableMin present
+   | 05 "1.0.0"                                          readableMin = prefix-compact bound
+   | 19 "fwde2e.fwd/:#FwdAppendVar"
+   | 00  2A 00 00 00  02 "hi"  01 01 "t"
+
+envelope v2, indexed                                     1.0.0 reader → refused (either policy)
+02 | 0A "fwde2e.fwd" | 05 "2.0.0" | 00 | 19 "fwde2e.fwd/:#FwdAppendVar" | 01 | …index…  flags 0: prefix-any-mode bound is 2.0.0
 ```
 
 The indexed layout is why the tier stops at `prefix-compact`: the index has no
@@ -282,6 +314,10 @@ HDR | 01 05 "1.0.0" | 16 "fwde2e.fwd/:#FwdStable"
 Strict, indexed  =  Tolerant, indexed                    1.0.0 reader → FwdStable("s")
 HDR | 01 05 "1.0.0" | 16 "fwde2e.fwd/:#FwdStable"
     | 01 | 00 00 00 00 02 00 00 00 | 01 "s"
+
+envelope v2, compact                                     1.0.0 reader → FwdStable("s") under either policy
+02 | 0A "fwde2e.fwd" | 05 "2.0.0" | 01 05 "1.0.0" | 16 "fwde2e.fwd/:#FwdStable" | 00 01 "s"
+                                                         flags 0b01: minCompat 1.0.0; readableMin equal, elided
 ```
 
 The bound is already 1.0.0 under `Strict`; `Tolerant` has nothing to lower.
@@ -351,6 +387,12 @@ Tolerant, compact                                        1.0.0+2.0.0 reader → 
 01 | 0C "fwde2e.chain" | 05 "3.0.0" | 01 05 "1.0.0" | 1A "fwde2e.chain/:#ChainAppend"
    | 00  01 00 00 00  01 01 "b"  01 01 "c"               1.0.0 reader → ChainAppend(1)
                                                          before this change, 1.0.0+2.0.0 reader → ChainAppend(1)
+
+envelope v2, compact                                     1.0.0+2.0.0 reader, Tolerant → ChainAppend(1, Some("b"))
+02 | 0C "fwde2e.chain" | 05 "3.0.0"                      1.0.0+2.0.0 reader, Lossless → refused (minCompat 3.0.0)
+   | 02 | 05 "1.0.0"                                     flags 0b10: minCompat elided (= 3.0.0), readableMin 1.0.0
+   | 1A "fwde2e.chain/:#ChainAppend"
+   | 00  01 00 00 00  01 01 "b"  01 01 "c"
 ```
 
 ### Summary
@@ -363,8 +405,10 @@ combination byte-for-byte as `Strict` writes it.
 |---|---|---|---|---|
 | JSON | n/a | `Tolerant` (default) | `$rv`, falling back to `$uv` | decodes whenever the type is json-additive-readable; unknown keys dropped |
 | JSON | n/a | `Lossless` | `$uv` only | decodes only byte-identical payloads |
-| UEBA | `Strict` (default) | either | `minCompat` = identical bound | decodes only byte-identical payloads — unchanged behaviour |
-| UEBA | `Tolerant` | either | `minCompat` = prefix bound for the payload's mode | decodes prefix-readable payloads with its newest codec; trailing appended fields unread; indistinguishable from a byte-identical read |
+| UEBA v1 (default) | `Strict` (default) | either | `minCompat` = identical bound | decodes only byte-identical payloads — unchanged behaviour |
+| UEBA v1 (default) | `Tolerant` | either | `minCompat` = prefix bound for the payload's mode | decodes prefix-readable payloads with its newest codec; trailing appended fields unread; indistinguishable from a byte-identical read |
+| UEBA v2 | irrelevant | `Tolerant` (default) | `readableMin` (prefix bound), falling back to `minCompat` | decodes prefix-readable payloads with its newest codec; trailing appended fields unread |
+| UEBA v2 | irrelevant | `Lossless` | `minCompat` only | decodes only byte-identical payloads |
 
 ## Relationship to sameIn
 
@@ -407,6 +451,14 @@ Two consequences of scheme 2:
   `$rv`: a facade registering only 1.0.0 decodes 2.0.0 envelopes under
   `Tolerant` exactly where `$rv` allows, refuses under `Lossless`, and refuses
   when no bound was published; `$rv` elision and `readMeta` round-trip.
+- `test/sc-stub/.../BinEnvelopeV2Spec.scala` and
+  `test/ts-stub/.../BinEnvelopeV2.test.ts` — envelope v2: a hand-assembled v2
+  envelope decodes under `Tolerant` and is refused under `Lossless` (fail-first:
+  the previous reader rejected metaVersion 2 outright); the default context
+  still writes byte-identical v1; the v2 writer's flags/bounds per type and
+  index mode; round trips through the writer and old readers; the
+  three-version chain with `Lossless` now enforceable; unknown flag bits and
+  unknown metaVersions rejected.
 - `test/sc-stub/.../ForwardCompatBinEnvelopeSpec.scala` and
   `test/ts-stub/.../ForwardCompatBinEnvelope.test.ts` — the UEBA writer policy:
   Strict envelopes are unchanged and refused by an old reader; Tolerant compact

@@ -24,6 +24,17 @@ pub enum ForwardWritePolicy {
     Tolerant,
 }
 
+/// Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+/// `V1` (default): single bound slot (`domain_version_min_compat`), value chosen by
+/// `ForwardWritePolicy`. `V2`: JSON-equivalent layout carrying both the byte-identical bound and the
+/// prefix-read bound for the payload's index mode; the reader's `ForwardReadPolicy` then applies to
+/// binary exactly as it does to JSON. Only readers that know v2 can decode it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BaboonEnvelopeVersion {
+    V1,
+    V2,
+}
+
 #[derive(Clone, Debug)]
 pub enum BaboonCodecContext {
     Default,
@@ -33,10 +44,11 @@ pub enum BaboonCodecContext {
         use_indices: bool,
         facade: Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>,
     },
-    /// Fully specified context: index mode, writer-side forward policy and optional facade.
+    /// Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade.
     Custom {
         use_indices: bool,
         forward_write_policy: ForwardWritePolicy,
+        envelope_version: BaboonEnvelopeVersion,
         facade: Option<Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>>,
     },
 }
@@ -52,11 +64,12 @@ impl PartialEq for BaboonCodecContext {
                 BaboonCodecContext::WithFacade { use_indices: b, facade: fb },
             ) => a == b && Arc::ptr_eq(fa, fb),
             (
-                BaboonCodecContext::Custom { use_indices: a, forward_write_policy: pa, facade: fa },
-                BaboonCodecContext::Custom { use_indices: b, forward_write_policy: pb, facade: fb },
+                BaboonCodecContext::Custom { use_indices: a, forward_write_policy: pa, envelope_version: ea, facade: fa },
+                BaboonCodecContext::Custom { use_indices: b, forward_write_policy: pb, envelope_version: eb, facade: fb },
             ) => {
                 a == b
                     && pa == pb
+                    && ea == eb
                     && match (fa, fb) {
                         (None, None) => true,
                         (Some(x), Some(y)) => Arc::ptr_eq(x, y),
@@ -92,6 +105,14 @@ impl BaboonCodecContext {
         }
     }
 
+    /// Writer-side binary envelope layout; `V1` for every context but `Custom`.
+    pub fn envelope_version(&self) -> BaboonEnvelopeVersion {
+        match self {
+            BaboonCodecContext::Custom { envelope_version, .. } => *envelope_version,
+            _ => BaboonEnvelopeVersion::V1,
+        }
+    }
+
     /// Returns the embedded `BaboonCodecsFacade` reference for `WithFacade`-constructed contexts;
     /// `None` for the bare `Default`/`Indexed`/`Compact` singletons. Codec-generator-emitted code
     /// (PR 4.2+) uses this when an `any` field requires cross-format conversion.
@@ -113,9 +134,10 @@ impl BaboonCodecContext {
     pub fn custom(
         use_indices: bool,
         forward_write_policy: ForwardWritePolicy,
+        envelope_version: BaboonEnvelopeVersion,
         facade: Option<Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>>,
     ) -> Self {
-        BaboonCodecContext::Custom { use_indices, forward_write_policy, facade }
+        BaboonCodecContext::Custom { use_indices, forward_write_policy, envelope_version, facade }
     }
 }
 

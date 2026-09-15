@@ -154,6 +154,18 @@ class ForwardWritePolicy(Enum):
     TOLERANT = "tolerant"
 
 
+class BaboonEnvelopeVersion(Enum):
+    """Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+
+    - V1 (default): single bound slot (`domain_version_min_compat`), value chosen by `ForwardWritePolicy`.
+    - V2: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for
+      the payload's index mode; the reader's `ForwardReadPolicy` then applies to binary exactly as it
+      does to JSON. Only readers that know v2 can decode it.
+    """
+    V1 = "v1"
+    V2 = "v2"
+
+
 class BaboonCodecContext:
     # `Indexed`/`Compact`/`Default` are stable class-attribute singletons assigned after the
     # class body. Generator-emitted code may use `ctx is BaboonCodecContext.Indexed`-style
@@ -165,9 +177,11 @@ class BaboonCodecContext:
     Default: 'BaboonCodecContext'
 
     def __init__(self, use_indices: bool, facade: Optional[Any] = None,
-                 forward_write_policy: ForwardWritePolicy = ForwardWritePolicy.STRICT):
+                 forward_write_policy: ForwardWritePolicy = ForwardWritePolicy.STRICT,
+                 envelope_version: BaboonEnvelopeVersion = BaboonEnvelopeVersion.V1):
         self.use_indices = use_indices
         self.forward_write_policy = forward_write_policy
+        self.envelope_version = envelope_version
         # `facade` is threaded through generated codec calls so the `any`-feature cross-format
         # conversion (UEBA <-> JSON) can resolve codecs by `(domain, version, typeid)` from an
         # `AnyMeta` envelope. `None` for the bare `Compact`/`Indexed` singletons; `with_facade`
@@ -192,9 +206,10 @@ class BaboonCodecContext:
         return cls(use_indices, facade)
 
     @classmethod
-    def custom(cls, use_indices: bool, forward_write_policy: ForwardWritePolicy, facade) -> 'BaboonCodecContext':
-        """Fully specified context: index mode, writer-side forward policy and optional facade."""
-        return cls(use_indices, facade, forward_write_policy)
+    def custom(cls, use_indices: bool, forward_write_policy: ForwardWritePolicy,
+               envelope_version: BaboonEnvelopeVersion, facade) -> 'BaboonCodecContext':
+        """Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade."""
+        return cls(use_indices, facade, forward_write_policy, envelope_version)
 
 
 # Stable singletons — `is`-equality preserved across all uses (PR 10.1).

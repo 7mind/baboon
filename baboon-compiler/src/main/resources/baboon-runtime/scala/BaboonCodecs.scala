@@ -32,9 +32,22 @@ package baboon.runtime.shared {
     case object Tolerant extends ForwardWritePolicy
   }
 
+  /** Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+    *   - V1 (default): single bound slot (`domainVersionMinCompat`), value chosen by [[ForwardWritePolicy]].
+    *   - V2: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read
+    *     bound for the payload's index mode; the reader's `ForwardReadPolicy` then applies to
+    *     binary exactly as it does to JSON. Only readers that know v2 can decode it.
+    */
+  sealed trait BaboonEnvelopeVersion
+  object BaboonEnvelopeVersion {
+    case object V1 extends BaboonEnvelopeVersion
+    case object V2 extends BaboonEnvelopeVersion
+  }
+
   trait BaboonCodecContext {
     def useIndices: Boolean
     def forwardWritePolicy: ForwardWritePolicy = ForwardWritePolicy.Strict
+    def envelopeVersion: BaboonEnvelopeVersion   = BaboonEnvelopeVersion.V1
     // Optional facade reference, supplied only when an `any`-bearing codec needs to cross-convert
     // between UEBA and JSON branches (`AnyOpaqueJson` → UEBA, `AnyOpaqueUeba` → JSON). Defaults to
     // `None` so existing call sites stay compatible; users who need cross-convert pass
@@ -56,10 +69,11 @@ package baboon.runtime.shared {
       override def facade: Option[BaboonCodecsFacade] = Some(baboonFacade)
     }
 
-    /** Fully specified context: index mode, writer-side forward policy and optional facade. */
+    /** Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade. */
     final case class Custom(
       useIndices: Boolean,
       override val forwardWritePolicy: ForwardWritePolicy,
+      override val envelopeVersion: BaboonEnvelopeVersion,
       override val facade: Option[BaboonCodecsFacade],
     ) extends BaboonCodecContext
   }

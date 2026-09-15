@@ -27,8 +27,8 @@ package baboon.runtime.shared {
 
     private val CONTENT_JSON_KEY = "$c"
 
-    /** JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domainVersionMinCompat`,
-      * whose meaning is fixed by the WRITER's `ForwardWritePolicy`; binary reads always trust it.
+    /** Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+      * bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
       */
     var forwardReadPolicy: ForwardReadPolicy = ForwardReadPolicy.Tolerant
 
@@ -510,7 +510,9 @@ package baboon.runtime.shared {
     }
 
     private def getBinCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonValue[BaboonBinCodec[BaboonGenerated]] = {
-      getCodec(versionsCodecsBin, typeMeta, exact, tolerant = false).map(_.asInstanceOf[BaboonBinCodec[BaboonGenerated]])
+      // v1 envelopes carry readableMin == minCompat, so the policy only bites on v2 envelopes (and JSON)
+      getCodec(versionsCodecsBin, typeMeta, exact, tolerant = forwardReadPolicy == ForwardReadPolicy.Tolerant)
+        .map(_.asInstanceOf[BaboonBinCodec[BaboonGenerated]])
     }
 
     private def getJsonCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonValue[BaboonJsonCodec[BaboonGenerated]] = {

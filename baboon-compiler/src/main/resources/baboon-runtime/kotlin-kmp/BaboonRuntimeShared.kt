@@ -154,13 +154,15 @@ data class BaboonTypeMeta(
          */
         fun forBin(value: BaboonGenerated, ctx: BaboonCodecContext): BaboonTypeMeta {
             val meta = from(value)
-            return when (ctx.forwardWritePolicy) {
-                ForwardWritePolicy.Strict -> meta
-                ForwardWritePolicy.Tolerant -> {
-                    val tier = if (ctx.useIndices) UEBA_PREFIX_ANY_MODE_TIER else UEBA_PREFIX_COMPACT_TIER
-                    val bound = value.baboonMinReaderVersions[tier]
-                        ?: error("baboonMinReaderVersions lacks '$tier' for type ${value.baboonTypeIdentifier}")
-                    meta.copy(domainVersionMinCompat = bound)
+            val tier = if (ctx.useIndices) UEBA_PREFIX_ANY_MODE_TIER else UEBA_PREFIX_COMPACT_TIER
+            fun prefixBound(): String = value.baboonMinReaderVersions[tier]
+                ?: error("baboonMinReaderVersions lacks '$tier' for type ${value.baboonTypeIdentifier}")
+            return when (ctx.envelopeVersion) {
+                // V2 carries both bounds; the writer policy is irrelevant
+                BaboonEnvelopeVersion.V2 -> meta.copy(metaVersion = BaboonTypeMetaCodec.META_VERSION_2, domainVersionReadableMin = prefixBound())
+                BaboonEnvelopeVersion.V1 -> when (ctx.forwardWritePolicy) {
+                    ForwardWritePolicy.Strict -> meta
+                    ForwardWritePolicy.Tolerant -> meta.copy(domainVersionMinCompat = prefixBound())
                 }
             }
         }
@@ -172,10 +174,41 @@ data class BaboonTypeMeta(
 }
 
 object BaboonTypeMetaCodec {
-    private const val META_VERSION_1: Byte = 1
+    const val META_VERSION_1: Byte = 1
+    const val META_VERSION_2: Byte = 2
+    /** Layout written by default (binary) and always (JSON `$mv`). */
     const val META_VERSION: Byte = META_VERSION_1
 
+    // v2 flags byte (codec-envelope.md §2.1.3): bit 0 — minCompat follows; bit 1 — readableMin follows.
+    private const val V2_FLAG_MIN_COMPAT: Int = 0x01
+    private const val V2_FLAG_READABLE_MIN: Int = 0x02
+    private const val V2_FLAGS_MASK: Int = V2_FLAG_MIN_COMPAT or V2_FLAG_READABLE_MIN
+
     fun writeBin(meta: BaboonTypeMeta, writer: BaboonBinaryWriter) {
+        when (meta.metaVersion) {
+            META_VERSION_1 -> writeBinV1(meta, writer)
+            META_VERSION_2 -> writeBinV2(meta, writer)
+            else -> throw BaboonCodecException.EncoderFailure("Unsupported binary envelope metaVersion ${meta.metaVersion}")
+        }
+    }
+
+    // v2: `02 | domainId | domainVersion | flags | [minCompat] | [readableMin] | typeId`; each bound is
+    // elided exactly as in JSON (minCompat when == domainVersion, readableMin when == effective minCompat)
+    private fun writeBinV2(meta: BaboonTypeMeta, writer: BaboonBinaryWriter) {
+        val minCompat = meta.domainVersionMinCompat.ifEmpty { meta.domainVersion }
+        val readableMin = meta.domainVersionReadableMin.ifEmpty { minCompat }
+        val hasMinCompat = minCompat != meta.domainVersion
+        val hasReadableMin = readableMin != minCompat
+        writer.writeByte(META_VERSION_2.toInt())
+        BaboonBinTools.writeString(writer, meta.domainIdentifier)
+        BaboonBinTools.writeString(writer, meta.domainVersion)
+        writer.writeByte((if (hasMinCompat) V2_FLAG_MIN_COMPAT else 0) or (if (hasReadableMin) V2_FLAG_READABLE_MIN else 0))
+        if (hasMinCompat) BaboonBinTools.writeString(writer, minCompat)
+        if (hasReadableMin) BaboonBinTools.writeString(writer, readableMin)
+        BaboonBinTools.writeString(writer, meta.typeIdentifier)
+    }
+
+    private fun writeBinV1(meta: BaboonTypeMeta, writer: BaboonBinaryWriter) {
         writer.writeByte(META_VERSION_1.toInt())
         BaboonBinTools.writeString(writer, meta.domainIdentifier)
         BaboonBinTools.writeString(writer, meta.domainVersion)
@@ -189,11 +222,23 @@ object BaboonTypeMetaCodec {
     }
 
     fun readMeta(reader: BaboonBinaryReader): BaboonTypeMeta? {
-        val metaVersion = reader.readByte()
-        if (metaVersion == META_VERSION_1) {
-            return readMetaV1(reader)
+        return when (reader.readByte()) {
+            META_VERSION_1 -> readMetaV1(reader)
+            META_VERSION_2 -> readMetaV2(reader)
+            else -> null
         }
-        return null
+    }
+
+    private fun readMetaV2(reader: BaboonBinaryReader): BaboonTypeMeta? {
+        val domainIdentifier = BaboonBinTools.readString(reader)
+        val domainVersion = BaboonBinTools.readString(reader)
+        val flags = reader.readByte().toInt()
+        // unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+        if ((flags and V2_FLAGS_MASK.inv()) != 0) return null
+        val minCompat = if ((flags and V2_FLAG_MIN_COMPAT) != 0) BaboonBinTools.readString(reader) else domainVersion
+        val readableMin = if ((flags and V2_FLAG_READABLE_MIN) != 0) BaboonBinTools.readString(reader) else minCompat
+        val typeIdentifier = BaboonBinTools.readString(reader)
+        return BaboonTypeMeta(META_VERSION_2, domainIdentifier, domainVersion, minCompat, typeIdentifier, readableMin)
     }
 
     private fun readMetaV1(reader: BaboonBinaryReader): BaboonTypeMeta? {

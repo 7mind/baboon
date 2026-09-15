@@ -165,7 +165,7 @@ namespace Baboon.Runtime.Shared
         public static BaboonTypeMeta ForBin(IBaboonGenerated value, Type? declaredType, BaboonCodecContext ctx)
         {
             var meta = From(value, declaredType);
-            if (ctx.ForwardWritePolicy == ForwardWritePolicy.Strict)
+            if (ctx.EnvelopeVersion == BaboonEnvelopeVersion.V1 && ctx.ForwardWritePolicy == ForwardWritePolicy.Strict)
             {
                 return meta;
             }
@@ -174,7 +174,10 @@ namespace Baboon.Runtime.Shared
             {
                 throw new InvalidOperationException($"BaboonMinReaderVersions() lacks '{tier}' for type {value.BaboonTypeIdentifier()}");
             }
-            return meta with { DomainVersionMinCompat = bound };
+            // V2 carries both bounds (the writer policy is irrelevant); V1 Tolerant puts the prefix bound in its single slot
+            return ctx.EnvelopeVersion == BaboonEnvelopeVersion.V2
+                ? meta with { MetaVersion = BaboonTypeMetaCodec.META_VERSION_2, DomainVersionReadableMin = bound }
+                : meta with { DomainVersionMinCompat = bound };
         }
 
         public static BaboonTypeMeta? ReadMeta(BinaryReader reader) => BaboonTypeMetaCodec.ReadMeta(reader);
@@ -185,7 +188,14 @@ namespace Baboon.Runtime.Shared
     public static class BaboonTypeMetaCodec
     {
         public const byte META_VERSION_1 = 1;
+        public const byte META_VERSION_2 = 2;
+        /// <summary>Layout written by default (binary) and always (JSON <c>$mv</c>).</summary>
         public const byte META_VERSION = META_VERSION_1;
+
+        // v2 flags byte (codec-envelope.md §2.1.3): bit 0 — minCompat follows; bit 1 — readableMin follows.
+        private const byte V2_FLAG_MIN_COMPAT = 0x01;
+        private const byte V2_FLAG_READABLE_MIN = 0x02;
+        private const byte V2_FLAGS_MASK = V2_FLAG_MIN_COMPAT | V2_FLAG_READABLE_MIN;
 
         public const string META_VERSION_KEY = "$mv";
         public const string DOMAIN_IDENTIFIER_KEY = "$d";
@@ -196,7 +206,34 @@ namespace Baboon.Runtime.Shared
 
         public static void WriteBin(BaboonTypeMeta meta, BinaryWriter writer)
         {
-            writer.Write(META_VERSION);
+            switch (meta.MetaVersion)
+            {
+                case META_VERSION_1: WriteBinV1(meta, writer); return;
+                case META_VERSION_2: WriteBinV2(meta, writer); return;
+                default: throw new InvalidOperationException($"Unsupported binary envelope metaVersion {meta.MetaVersion}");
+            }
+        }
+
+        // v2: `02 | domainId | domainVersion | flags | [minCompat] | [readableMin] | typeId`; each bound is
+        // elided exactly as in JSON (minCompat when == domainVersion, readableMin when == effective minCompat)
+        private static void WriteBinV2(BaboonTypeMeta meta, BinaryWriter writer)
+        {
+            var minCompat = string.IsNullOrEmpty(meta.DomainVersionMinCompat) ? meta.DomainVersion : meta.DomainVersionMinCompat;
+            var readableMin = string.IsNullOrEmpty(meta.DomainVersionReadableMin) ? minCompat : meta.DomainVersionReadableMin;
+            var hasMinCompat = minCompat != meta.DomainVersion;
+            var hasReadableMin = readableMin != minCompat;
+            writer.Write(META_VERSION_2);
+            writer.Write(meta.DomainIdentifier);
+            writer.Write(meta.DomainVersion);
+            writer.Write((byte)((hasMinCompat ? V2_FLAG_MIN_COMPAT : 0) | (hasReadableMin ? V2_FLAG_READABLE_MIN : 0)));
+            if (hasMinCompat) writer.Write(minCompat);
+            if (hasReadableMin) writer.Write(readableMin);
+            writer.Write(meta.TypeIdentifier);
+        }
+
+        private static void WriteBinV1(BaboonTypeMeta meta, BinaryWriter writer)
+        {
+            writer.Write(META_VERSION_1);
             writer.Write(meta.DomainIdentifier);
             writer.Write(meta.DomainVersion);
             if (meta.DomainVersion == meta.DomainVersionMinCompat)
@@ -237,8 +274,29 @@ namespace Baboon.Runtime.Shared
         public static BaboonTypeMeta? ReadMeta(BinaryReader reader)
         {
             var metaVersion = reader.ReadByte();
-            if (metaVersion != META_VERSION_1) return null;
+            switch (metaVersion)
+            {
+                case META_VERSION_1: return ReadMetaV1(reader);
+                case META_VERSION_2: return ReadMetaV2(reader);
+                default: return null;
+            }
+        }
 
+        private static BaboonTypeMeta? ReadMetaV2(BinaryReader reader)
+        {
+            var domainIdentifier = reader.ReadString();
+            var domainVersion = reader.ReadString();
+            var flags = reader.ReadByte();
+            // unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+            if ((flags & ~V2_FLAGS_MASK) != 0) return null;
+            var minCompat = (flags & V2_FLAG_MIN_COMPAT) != 0 ? reader.ReadString() : domainVersion;
+            var readableMin = (flags & V2_FLAG_READABLE_MIN) != 0 ? reader.ReadString() : minCompat;
+            var typeIdentifier = reader.ReadString();
+            return new BaboonTypeMeta(META_VERSION_2, domainIdentifier, domainVersion, minCompat, typeIdentifier, readableMin);
+        }
+
+        private static BaboonTypeMeta? ReadMetaV1(BinaryReader reader)
+        {
             var domainIdentifier = reader.ReadString();
             var domainVersion = reader.ReadString();
             var hasMinCompat = reader.ReadByte();

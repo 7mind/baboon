@@ -122,11 +122,22 @@ public enum ForwardWritePolicy {
     case tolerant
 }
 
+// Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+// `.v1` (default): single bound slot (`domainVersionMinCompat`), value chosen by `ForwardWritePolicy`.
+// `.v2`: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for
+// the payload's index mode; the reader's `ForwardReadPolicy` then applies to binary exactly as it does
+// to JSON. Only readers that know v2 can decode it.
+public enum BaboonEnvelopeVersion {
+    case v1
+    case v2
+}
+
 open class BaboonCodecContext {
     public init() {}
 
     open var useIndices: Bool { return false }
     open var forwardWritePolicy: ForwardWritePolicy { return .strict }
+    open var envelopeVersion: BaboonEnvelopeVersion { return .v1 }
     open var facade: BaboonCodecsFacadeBase? { return nil }
 
     public static let defaultCtx: BaboonCodecContext = BaboonCodecContextCompact()
@@ -138,24 +149,27 @@ open class BaboonCodecContext {
         return BaboonCodecContextWithFacade(useIndices: useIndices, facade: facade)
     }
 
-    // Fully specified context: index mode, writer-side forward policy and optional facade.
-    public static func custom(_ useIndices: Bool, _ forwardWritePolicy: ForwardWritePolicy, _ facade: BaboonCodecsFacadeBase?) -> BaboonCodecContext {
-        return BaboonCodecContextCustom(useIndices: useIndices, forwardWritePolicy: forwardWritePolicy, facade: facade)
+    // Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade.
+    public static func custom(_ useIndices: Bool, _ forwardWritePolicy: ForwardWritePolicy, _ envelopeVersion: BaboonEnvelopeVersion, _ facade: BaboonCodecsFacadeBase?) -> BaboonCodecContext {
+        return BaboonCodecContextCustom(useIndices: useIndices, forwardWritePolicy: forwardWritePolicy, envelopeVersion: envelopeVersion, facade: facade)
     }
 }
 
 public final class BaboonCodecContextCustom: BaboonCodecContext {
     private let _useIndices: Bool
     private let _forwardWritePolicy: ForwardWritePolicy
+    private let _envelopeVersion: BaboonEnvelopeVersion
     private let _facade: BaboonCodecsFacadeBase?
-    public init(useIndices: Bool, forwardWritePolicy: ForwardWritePolicy, facade: BaboonCodecsFacadeBase?) {
+    public init(useIndices: Bool, forwardWritePolicy: ForwardWritePolicy, envelopeVersion: BaboonEnvelopeVersion, facade: BaboonCodecsFacadeBase?) {
         self._useIndices = useIndices
         self._forwardWritePolicy = forwardWritePolicy
+        self._envelopeVersion = envelopeVersion
         self._facade = facade
         super.init()
     }
     public override var useIndices: Bool { return _useIndices }
     public override var forwardWritePolicy: ForwardWritePolicy { return _forwardWritePolicy }
+    public override var envelopeVersion: BaboonEnvelopeVersion { return _envelopeVersion }
     public override var facade: BaboonCodecsFacadeBase? { return _facade }
 }
 
@@ -1329,277 +1343,9 @@ public protocol BaboonAdtMember {
 
 // --- Version / DomainVersion / TypeMeta ---
 //
-// PR-19-D01 lesson: regex literals in template files are read verbatim — but Swift runtime files
-// in this project go through `processEscapes` (see PR-20-D01 sister-bug). We use only manual
-// numeric parsing, no regex; safe regardless.
-
-public struct BaboonVersion: Comparable, Hashable, CustomStringConvertible {
-    public let major: Int
-    public let minor: Int
-    public let patch: Int
-
-    public init(major: Int, minor: Int, patch: Int) {
-        self.major = major
-        self.minor = minor
-        self.patch = patch
-    }
-
-    public static func from(_ version: String) throws -> BaboonVersion {
-        let chunks = version.split(separator: ".", omittingEmptySubsequences: false)
-        if chunks.count != 3 {
-            throw BaboonException("Expected to have version in format x.y.z, got \(version)")
-        }
-        guard let major = Int(chunks[0].trimmingCharacters(in: .whitespaces)) else {
-            throw BaboonException("Expected to have version in format x.y.z, got \(version). Invalid major value.")
-        }
-        guard let minor = Int(chunks[1].trimmingCharacters(in: .whitespaces)) else {
-            throw BaboonException("Expected to have version in format x.y.z, got \(version). Invalid minor value.")
-        }
-        guard let patch = Int(chunks[2].trimmingCharacters(in: .whitespaces)) else {
-            throw BaboonException("Expected to have version in format x.y.z, got \(version). Invalid patch value.")
-        }
-        return BaboonVersion(major: major, minor: minor, patch: patch)
-    }
-
-    public static func < (lhs: BaboonVersion, rhs: BaboonVersion) -> Bool {
-        if lhs.major != rhs.major { return lhs.major < rhs.major }
-        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
-        return lhs.patch < rhs.patch
-    }
-
-    public var description: String { return "\(major).\(minor).\(patch)" }
-}
-
-public struct BaboonException: Error, CustomStringConvertible {
-    public let message: String
-    public let cause: Error?
-    public init(_ message: String, _ cause: Error? = nil) {
-        self.message = message
-        self.cause = cause
-    }
-    public var description: String { return "BaboonException: \(message)" }
-}
-
-public struct BaboonDomainVersion: Hashable, CustomStringConvertible {
-    public let domainIdentifier: String
-    public let domainVersion: String
-
-    public init(_ domainIdentifier: String, _ domainVersion: String) {
-        self.domainIdentifier = domainIdentifier
-        self.domainVersion = domainVersion
-    }
-
-    public func version() throws -> BaboonVersion {
-        return try BaboonVersion.from(domainVersion)
-    }
-
-    public var description: String { return "\(domainIdentifier):\(domainVersion)" }
-}
-
-// On-wire type meta envelope. Mirrors Dart/Kotlin `BaboonTypeMeta`.
-public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
-    public let metaVersion: Int
-    public let domainIdentifier: String
-    public let domainVersion: String
-    public let domainVersionMinCompat: String
-    public let typeIdentifier: String
-    /// Oldest domain version whose JSON codec can decode the payload under the json-additive
-    /// contract (tolerant key lookup; fields unknown to that version are dropped). Always
-    /// <= domainVersionMinCompat. Published as `$rv` when it differs from the (effective)
-    /// minCompat; the binary v1 envelope does not carry it. Defaults to minCompat.
-    public let domainVersionReadableMin: String
-
-    /// Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`.
-    public static let jsonReadableTier = "json-additive"
-    /// Tier keys of the UEBA prefix bounds in `baboonMinReaderVersions`, per index mode.
-    public static let uebaPrefixCompactTier = "prefix-compact"
-    public static let uebaPrefixAnyModeTier = "prefix-any-mode"
-
-    public init(
-        _ metaVersion: Int,
-        _ domainIdentifier: String,
-        _ domainVersion: String,
-        _ domainVersionMinCompat: String,
-        _ typeIdentifier: String,
-        _ domainVersionReadableMin: String? = nil
-    ) {
-        self.metaVersion = metaVersion
-        self.domainIdentifier = domainIdentifier
-        self.domainVersion = domainVersion
-        self.domainVersionMinCompat = domainVersionMinCompat
-        self.typeIdentifier = typeIdentifier
-        self.domainVersionReadableMin = domainVersionReadableMin ?? domainVersionMinCompat
-    }
-
-    public func versionRef() -> BaboonDomainVersion {
-        return BaboonDomainVersion(domainIdentifier, domainVersion)
-    }
-
-    public func versionReadableMin() -> BaboonDomainVersion? {
-        if domainVersionReadableMin.isEmpty { return versionMinCompat() }
-        if domainVersionReadableMin == domainVersion { return nil }
-        return BaboonDomainVersion(domainIdentifier, domainVersionReadableMin)
-    }
-
-    public func versionMinCompat() -> BaboonDomainVersion? {
-        if domainVersionMinCompat.isEmpty { return nil }
-        if domainVersionMinCompat == domainVersion { return nil }
-        return BaboonDomainVersion(domainIdentifier, domainVersionMinCompat)
-    }
-
-    public func writeBin(_ writer: BaboonBinWriter) {
-        BaboonTypeMetaCodec.writeBin(self, writer)
-    }
-
-    public func writeJson() -> [String: Any] {
-        return BaboonTypeMetaCodec.writeJson(self)
-    }
-
-    // MFACADE-PR-3: accept `$mv` as either a JSON number or a string (back-compat
-    // with M28-vintage fixtures); both must equal `metaVersion`. Absent falls through.
-    public static func readMetaJson(_ json: Any?) -> BaboonTypeMeta? {
-        guard let obj = json as? [String: Any] else { return nil }
-        if let mv = obj["$mv"] {
-            // MFACADE-PR-3-D02: reject Bool explicitly — in Foundation Bool bridges to NSNumber,
-            // so `true`/`false` would otherwise slip through the NSNumber branch with intValue 1/0.
-            if mv is Bool { return nil }
-            var mvInt: Int? = nil
-            if let n = mv as? Int {
-                mvInt = n
-            } else if let n = mv as? NSNumber {
-                // MFACADE-PR-7-D12: reject Float/Double-typed NSNumber. JSONSerialization
-                // bridges JSON numbers as NSNumber whose `objCType` reflects the source literal:
-                // `d` = Double, `f` = Float; integer types ('i'/'l'/'q'/'s'/'c'/etc.) otherwise.
-                // Even whole-valued doubles like `1.0` are rejected because the source token
-                // wasn't integer-typed. Decided per-PR-7 to be strict-everywhere about
-                // numeric-type discrimination where parse-time preservation allows.
-                let oct = String(cString: n.objCType)
-                if oct == "d" || oct == "f" { return nil }
-                mvInt = n.intValue
-            } else if let s = mv as? String {
-                mvInt = Int(s)
-            }
-            guard let n = mvInt, n == BaboonTypeMetaCodec.metaVersion else { return nil }
-        }
-        guard let d = obj["$d"] as? String else { return nil }
-        guard let v = obj["$v"] as? String else { return nil }
-        guard let t = obj["$t"] as? String else { return nil }
-        let minCompat = (obj["$uv"] as? String) ?? v
-        let readableMin = (obj["$rv"] as? String) ?? minCompat
-        return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t, readableMin)
-    }
-
-    public static func readMetaBin(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
-        return try BaboonTypeMetaCodec.readMeta(reader)
-    }
-
-    // Build a meta from a generated value. Optionally use the ADT type identifier when encoding
-    // through an ADT-typed reference (PR-19-D02). Throws when the value does not conform to
-    // [BaboonMetaProvider] — generated DTOs gain this conformance via the codegen's
-    // automatic `: BaboonMetaProvider` clause (MFACADE-PR-E).
-    public static func from(_ value: Any, useAdtIdentifier: Bool = false) throws -> BaboonTypeMeta {
-        guard let meta = value as? BaboonMetaProvider else {
-            throw BaboonException(
-                "BaboonTypeMeta.from: value of type \(type(of: value)) does not conform to BaboonMetaProvider."
-            )
-        }
-        let typeId: String
-        if useAdtIdentifier, let adt = value as? BaboonAdtMember {
-            typeId = adt.baboonAdtTypeIdentifier
-        } else {
-            typeId = meta.baboonTypeIdentifier
-        }
-        let sameIn = meta.baboonSameInVersions
-        // PR-08-D02 fail-fast: a generator emitting an empty `sameInVersions` is a bug.
-        if sameIn.isEmpty {
-            throw BaboonException(
-                "BaboonTypeMeta.from: empty baboonSameInVersions for type [\(meta.baboonDomainIdentifier).\(typeId)]"
-            )
-        }
-        // baboonMinReaderVersions has a protocol-extension default (see BaboonMetaProvider); a
-        // missing json-additive bound means "no forward-read beyond byte-identity", i.e. = minCompat
-        let readableMin = meta.baboonMinReaderVersions[BaboonTypeMeta.jsonReadableTier] ?? sameIn[0]
-        return BaboonTypeMeta(
-            BaboonTypeMetaCodec.metaVersion,
-            meta.baboonDomainIdentifier,
-            meta.baboonDomainVersion,
-            sameIn[0],
-            typeId,
-            readableMin
-        )
-    }
-
-    // Envelope for a UEBA payload written under `ctx`: `from` with `domainVersionMinCompat` lowered
-    // to the prefix bound of the context's index mode when the writer policy is `.tolerant`. A
-    // missing prefix bound (protocol-extension default) means "no forward-read beyond
-    // byte-identity", i.e. minCompat is kept.
-    public static func forBin(_ value: Any, _ ctx: BaboonCodecContext, useAdtIdentifier: Bool = false) throws -> BaboonTypeMeta {
-        let meta = try from(value, useAdtIdentifier: useAdtIdentifier)
-        guard ctx.forwardWritePolicy == .tolerant, let provider = value as? BaboonMetaProvider else {
-            return meta
-        }
-        let tier = ctx.useIndices ? BaboonTypeMeta.uebaPrefixAnyModeTier : BaboonTypeMeta.uebaPrefixCompactTier
-        let bound = provider.baboonMinReaderVersions[tier] ?? meta.domainVersionMinCompat
-        return BaboonTypeMeta(meta.metaVersion, meta.domainIdentifier, meta.domainVersion, bound, meta.typeIdentifier, meta.domainVersionReadableMin)
-    }
-
-    public var description: String {
-        return "BaboonTypeMeta(\(domainIdentifier).\(typeIdentifier)@\(domainVersion))"
-    }
-}
-
-public enum BaboonTypeMetaCodec {
-    public static let metaVersion: Int = 1
-
-    public static func writeBin(_ meta: BaboonTypeMeta, _ writer: BaboonBinWriter) {
-        writer.writeU8(UInt8(metaVersion))
-        writer.writeString(meta.domainIdentifier)
-        writer.writeString(meta.domainVersion)
-        if meta.domainVersion == meta.domainVersionMinCompat {
-            writer.writeU8(0)
-        } else {
-            writer.writeU8(1)
-            writer.writeString(meta.domainVersionMinCompat)
-        }
-        writer.writeString(meta.typeIdentifier)
-    }
-
-    public static func readMeta(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
-        let v = Int(reader.readU8())
-        if v == metaVersion { return try readMetaV1(reader) }
-        return nil
-    }
-
-    private static func readMetaV1(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
-        let d = try reader.readString()
-        let dv = try reader.readString()
-        let hasMinCompat = reader.readU8()
-        // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
-        if hasMinCompat != 0 && hasMinCompat != 1 { return nil }
-        let mc = hasMinCompat == 1 ? try reader.readString() : dv
-        let t = try reader.readString()
-        return BaboonTypeMeta(metaVersion, d, dv, mc, t)
-    }
-
-    public static func writeJson(_ meta: BaboonTypeMeta) -> [String: Any] {
-        // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
-        // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
-        var obj: [String: Any] = [
-            "$mv": metaVersion,
-            "$d": meta.domainIdentifier,
-            "$v": meta.domainVersion,
-            "$t": meta.typeIdentifier,
-        ]
-        if meta.domainVersion != meta.domainVersionMinCompat {
-            obj["$uv"] = meta.domainVersionMinCompat
-        }
-        // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
-        if !meta.domainVersionReadableMin.isEmpty && meta.domainVersionReadableMin != meta.domainVersionMinCompat {
-            obj["$rv"] = meta.domainVersionReadableMin
-        }
-        return obj
-    }
-}
+// `BaboonVersion`, `BaboonDomainVersion`, `BaboonTypeMeta` and `BaboonTypeMetaCodec` live in
+// `baboon_type_meta.swift` (same module; this file is embedded as a single JVM string constant and
+// must stay under 64KB).
 
 // --- Deep Equality / HashCode for JSON-shaped values ---
 //

@@ -37,8 +37,8 @@ const String _CONTENT_JSON_KEY = r'$c';
 enum ForwardReadPolicy { lossless, tolerant }
 
 class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
-  /// JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domainVersionMinCompat`,
-  /// whose meaning is fixed by the WRITER's [ForwardWritePolicy]; binary reads always trust it.
+  /// Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+  /// bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
   ForwardReadPolicy forwardReadPolicy = ForwardReadPolicy.tolerant;
 
   final Map<BaboonDomainVersion, Lazy<AbstractBaboonJsonCodecs>> _versionsCodecsJson = {};
@@ -575,8 +575,9 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
 
   // ----- private dispatch -------------------------------------------------------------------
 
+  // v1 envelopes carry readableMin == minCompat, so the policy only bites on v2 envelopes (and JSON)
   BaboonEither<BaboonCodecException, BaboonCodecData> _getBinCodec(BaboonTypeMeta typeMeta, {required bool exact}) =>
-      _getCodec(_versionsCodecsBin, typeMeta, exact, false);
+      _getCodec(_versionsCodecsBin, typeMeta, exact, forwardReadPolicy == ForwardReadPolicy.tolerant);
 
   BaboonEither<BaboonCodecException, BaboonCodecData> _getJsonCodec(BaboonTypeMeta typeMeta, {required bool exact}) =>
       _getCodec(_versionsCodecsJson, typeMeta, exact, forwardReadPolicy == ForwardReadPolicy.tolerant);

@@ -43,8 +43,8 @@ public enum ForwardReadPolicy {
 }
 
 open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
-    /// JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domainVersionMinCompat`,
-    /// whose meaning is fixed by the WRITER's `ForwardWritePolicy`; binary reads always trust it.
+    /// Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+    /// bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
     public var forwardReadPolicy: ForwardReadPolicy = .tolerant
 
     private var versionsCodecsJson: [BaboonDomainVersion: BaboonLazy<AbstractBaboonJsonCodecs>] = [:]
@@ -616,7 +616,8 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
     // ----- private dispatch -------------------------------------------------------------------
 
     private func getBinCodec(_ typeMeta: BaboonTypeMeta, exact: Bool) -> Result<AnyObject, BaboonCodecException> {
-        return getCodec(typeMeta, exact, false, { (k: BaboonDomainVersion) -> AnyObject? in
+        // v1 envelopes carry readableMin == minCompat, so the policy only bites on v2 envelopes (and JSON)
+        return getCodec(typeMeta, exact, forwardReadPolicy == .tolerant, { (k: BaboonDomainVersion) -> AnyObject? in
             guard let lazy = self.versionsCodecsBin[k] else { return nil }
             return lazy.value
         })
