@@ -189,7 +189,11 @@ The writer is the 2.0.0 facade of `fwde2e.fwd`; the reader registers only
 After `HDR` come the bound bytes — either `00` (elided; bound = 2.0.0) or
 `01 05 31 2E 30 2E 30` (`hasMinCompat` = 1, then `"1.0.0"`) — then the
 length-prefixed type identifier and the payload. Strings in the payload are
-written as `len "text"` for readability; everything else is raw hex.
+written as `len "text"` for readability; everything else is raw hex. The
+`envelope v2` blocks are the same values written with
+`BaboonCodecContext.envelopeVersion = V2`; they start with `02` instead of
+`HDR`'s `01`, and their third field is the flags byte of §2.1.3 rather than
+`hasMinCompat`.
 
 ### `FwdAppendVar` — a variable-length field appended at the tail
 
@@ -283,9 +287,14 @@ Strict, indexed  =  Tolerant, indexed                    1.0.0 reader → refuse
 HDR | 00 | 19 "fwde2e.fwd/:#FwdMidInsert"
     | 01 | 04 00 00 00 05 00 00 00 | 09 00 00 00 02 00 00 00
     | 07 00 00 00  01 63 00 00 00  01 "z"
+
+envelope v2, compact                                     1.0.0 reader → refused (either policy)
+02 | 0A "fwde2e.fwd" | 05 "2.0.0" | 00 | 19 "fwde2e.fwd/:#FwdMidInsert"
+   | 00  07 00 00 00  01 63 00 00 00  01 "z"             flags 0: no bound to publish — the v1 bytes with 02 in front
 ```
 
-No UEBA prefix bound exists, so `Tolerant` writes exactly the Strict bytes.
+No UEBA prefix bound exists, so `Tolerant` writes exactly the Strict bytes and
+v2 carries no bound at all.
 
 ### `FwdStable` — unchanged
 
@@ -351,6 +360,10 @@ HDR | 00 | 18 "fwde2e.fwd/:#FwdEnumHost"
 Strict, indexed  =  Tolerant, indexed                    1.0.0 reader → refused
 HDR | 00 | 18 "fwde2e.fwd/:#FwdEnumHost"
     | 01  02                                             indexed mode byte, no variable-length fields → no index entries
+
+envelope v2, compact                                     1.0.0 reader → refused (either policy)
+02 | 0A "fwde2e.fwd" | 05 "2.0.0" | 00 | 18 "fwde2e.fwd/:#FwdEnumHost" | 00 02
+                                                         flags 0: not forward-readable, nothing to publish
 ```
 
 ### `ChainAppend` — three versions, two appends
