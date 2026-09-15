@@ -131,6 +131,150 @@ client contract is satisfied structurally by the byte-array decode entry points
 consumption); stream-based callers must discard the stream after a forward
 decode.
 
+## Worked examples: what changed on the wire
+
+Everything below was produced by the generated Scala stub over the shared
+`fwd-e2e-ok` and `fwd-e2e-chain-ok` models; the other eight runtimes emit the
+same bytes and keys.
+
+### The knobs
+
+| knob | where | values | affects |
+|---|---|---|---|
+| `ForwardWritePolicy` | writer's `BaboonCodecContext` (next to the index mode) | `Strict` (default), `Tolerant` | the value written into the UEBA `domainVersionMinCompat` slot. No effect on JSON. |
+| index mode | writer's `BaboonCodecContext` | compact, indexed | which prefix tier a `Tolerant` writer consults: `prefix-compact` or `prefix-any-mode` |
+| `ForwardReadPolicy` | reader's facade | `Tolerant` (default), `Lossless` | whether a JSON reader honours `$rv`. No effect on UEBA — the binary envelope carries one bound and the reader cannot tell how it was chosen. |
+
+One reader rule changed for both formats: when the envelope's `$v` /
+`domainVersion` is newer than every registered version and the applicable
+bound is at or below the reader's newest version, the reader decodes with its
+**newest** codec. Previously it took the bound version's `sameIn` run and
+picked the highest member of that run, i.e. a codec byte-identical to the
+bound version's — correct, but dropping every field added between the bound
+and the reader's own version.
+
+### The fixture types and their bounds
+
+Writer-side bounds (`baboonMinReaderVersions`, emitted per type) for the
+2.0.0 domain `fwde2e.fwd` and the 3.0.0 domain `fwde2e.chain`:
+
+| type | evolution | `identical` | `prefix-any-mode` | `prefix-compact` | `json-additive` |
+|---|---|---|---|---|---|
+| `FwdAppendVar` | 1.0.0 `{a, b}` → 2.0.0 appends `t: opt[str]` | 2.0.0 | 2.0.0 | **1.0.0** | 1.0.0 |
+| `FwdMidInsert` | inserts `m: opt[i32]` between `a` and `z` | 2.0.0 | 2.0.0 | 2.0.0 | **1.0.0** |
+| `FwdStable` | unchanged | **1.0.0** | 1.0.0 | 1.0.0 | 1.0.0 |
+| `FwdEnumHost` | its enum gained a member | 2.0.0 | 2.0.0 | 2.0.0 | 2.0.0 |
+| `ChainAppend` | 1.0.0 `{a}` → 2.0.0 `+b: opt[str]` → 3.0.0 `+c: opt[str]` | 3.0.0 | 3.0.0 | **1.0.0** | 1.0.0 |
+
+`FwdAppendVar` earns only `prefix-compact` because the appended field is
+variable-length: an indexed 2.0.0 blob carries two index entries (for `b` and
+`t`) while the 1.0.0 decoder expects one, and the index has no on-wire count.
+
+### JSON
+
+The JSON writer has no policy. It always publishes both bounds and elides each
+when it carries no information: `$uv` when equal to `$v`, `$rv` when equal to
+the effective `$uv`. The reader deployed with only 1.0.0:
+
+```jsonc
+// FwdAppendVar(42, "hi", Some("t")) — identical bound is 2.0.0 ($uv elided), json-additive bound 1.0.0
+{"$mv":1,"$d":"fwde2e.fwd","$v":"2.0.0","$t":"fwde2e.fwd/:#FwdAppendVar","$rv":"1.0.0","$c":{"a":42,"b":"hi","t":"t"}}
+//   reader Tolerant  → FwdAppendVar(42, "hi")      (1.0.0 codec; "t" dropped)
+//   reader Lossless  → refused (no codec)
+
+// FwdMidInsert(7, Some(99), "z") — same shape: positional layout broke, key lookup did not
+{"$mv":1,"$d":"fwde2e.fwd","$v":"2.0.0","$t":"fwde2e.fwd/:#FwdMidInsert","$rv":"1.0.0","$c":{"a":7,"m":99,"z":"z"}}
+//   reader Tolerant  → FwdMidInsert(7, "z")
+//   reader Lossless  → refused (no codec)
+
+// FwdStable("s") — byte-identical since 1.0.0: $uv carries it, $rv elided (equal to $uv)
+{"$mv":1,"$d":"fwde2e.fwd","$v":"2.0.0","$t":"fwde2e.fwd/:#FwdStable","$uv":"1.0.0","$c":{"s":"s"}}
+//   reader Tolerant  → FwdStable("s")
+//   reader Lossless  → FwdStable("s")
+
+// FwdEnumHost(C) — not forward-readable: neither bound published (both equal $v)
+{"$mv":1,"$d":"fwde2e.fwd","$v":"2.0.0","$t":"fwde2e.fwd/:#FwdEnumHost","$c":{"e":"C"}}
+//   reader Tolerant  → refused (no codec)
+//   reader Lossless  → refused (no codec)
+```
+
+The three-version chain shows the reader-rule change. A reader registering
+1.0.0 **and** 2.0.0 receives a 3.0.0 envelope bound at 1.0.0:
+
+```jsonc
+{"$mv":1,"$d":"fwde2e.chain","$v":"3.0.0","$t":"fwde2e.chain/:#ChainAppend","$rv":"1.0.0","$c":{"a":1,"b":"b","c":"c"}}
+//   1.0.0+2.0.0 reader, Tolerant → ChainAppend(1, Some("b"))   — newest codec (2.0.0); before this change: ChainAppend(1)
+//   1.0.0+2.0.0 reader, Lossless → refused (no codec)           — $uv is elided, i.e. 3.0.0
+//   1.0.0 reader,       Tolerant → ChainAppend(1)
+```
+
+### UEBA
+
+Envelope layout (`docs/spec/codec-envelope.md` § 2.1):
+`metaVersion | domainId | domainVersion | hasMinCompat | [minCompat] | typeId | payload`.
+The policy decides only the `hasMinCompat`/`minCompat` bytes; everything else,
+payload included, is identical. `FwdAppendVar(42, "hi", Some("t"))` written by
+the 2.0.0 facade in a compact context:
+
+```
+Strict (default):
+01                                                          metaVersion 1
+0A 66 77 64 65 32 65 2E 66 77 64                            "fwde2e.fwd"
+05 32 2E 30 2E 30                                           "2.0.0"
+00                                                          hasMinCompat = 0  → bound = 2.0.0 (identical bound, elided)
+19 66 77 64 65 32 65 2E 66 77 64 2F 3A 23 46 77 64 41 70 70 65 6E 64 56 61 72   "fwde2e.fwd/:#FwdAppendVar"
+00  2A 00 00 00  02 68 69  01 01 74                         payload: mode=compact, a=42, b="hi", t=Some("t")
+   1.0.0 reader → refused (CodecNotFound)
+
+Tolerant:
+01
+0A 66 77 64 65 32 65 2E 66 77 64
+05 32 2E 30 2E 30
+01 05 31 2E 30 2E 30                                        hasMinCompat = 1, minCompat = "1.0.0" (prefix-compact bound)
+19 66 77 64 65 32 65 2E 66 77 64 2F 3A 23 46 77 64 41 70 70 65 6E 64 56 61 72
+00  2A 00 00 00  02 68 69  01 01 74                         payload unchanged
+   1.0.0 reader → FwdAppendVar(42, "hi")   (reads a, b; the remaining `01 01 74` is never consumed)
+```
+
+The same value in an **indexed** context is byte-identical under both
+policies: the writer consults the `prefix-any-mode` bound, which is 2.0.0, so
+`hasMinCompat` stays 0 and the 1.0.0 reader refuses. This is the case the
+index mode exists for — the payload starts `01 | 04 00 00 00 03 00 00 00 | 07
+00 00 00 03 00 00 00 | …`: two index entries where the 1.0.0 decoder would read
+one.
+
+Every combination, as seen by a reader that registers only 1.0.0
+(`ForwardReadPolicy` is irrelevant for binary):
+
+| value | Strict, compact | Tolerant, compact | Strict, indexed | Tolerant, indexed |
+|---|---|---|---|---|
+| `FwdAppendVar` | bound 2.0.0 → refused | **bound 1.0.0 → `FwdAppendVar(42,"hi")`** | bound 2.0.0 → refused | bound 2.0.0 → refused |
+| `FwdMidInsert` | 2.0.0 → refused | 2.0.0 → refused (json-additive only; bytes identical to Strict) | 2.0.0 → refused | 2.0.0 → refused |
+| `FwdStable` | 1.0.0 → decoded | 1.0.0 → decoded (bytes identical to Strict) | 1.0.0 → decoded | 1.0.0 → decoded |
+| `FwdEnumHost` | 2.0.0 → refused | 2.0.0 → refused (bytes identical to Strict) | 2.0.0 → refused | 2.0.0 → refused |
+
+So `Tolerant` changes exactly one envelope in this fixture — the one whose
+type has a prefix relationship the payload's mode can honour — and leaves the
+rest byte-for-byte as before.
+
+The chain under `Tolerant`, compact (bound `01 05 31 2E 30 2E 30` = 1.0.0,
+`$v` 3.0.0, payload `00 | 01 00 00 00 | 01 01 62 | 01 01 63`):
+
+| reader registers | decodes as | before this change |
+|---|---|---|
+| 1.0.0, 2.0.0 | `ChainAppend(1, Some("b"))` — newest codec, `c` unread | `ChainAppend(1)` — the bound version's codec |
+| 1.0.0 | `ChainAppend(1)` | `ChainAppend(1)` |
+| 1.0.0, 2.0.0 (Strict envelope, bound 3.0.0) | refused | refused |
+
+### Summary matrix
+
+| format | writer policy | reader policy | bound the reader acts on | result for an older reader |
+|---|---|---|---|---|
+| JSON | n/a | `Tolerant` (default) | `$rv`, falling back to `$uv` | decodes whenever the type is json-additive-readable; unknown keys dropped |
+| JSON | n/a | `Lossless` | `$uv` only | decodes only byte-identical payloads |
+| UEBA | `Strict` (default) | either | `minCompat` = identical bound | decodes only byte-identical payloads — unchanged behaviour |
+| UEBA | `Tolerant` | either | `minCompat` = prefix bound for the payload's mode | decodes prefix-readable payloads with its newest codec; trailing appended fields unread; indistinguishable from a byte-identical read |
+
 ## Relationship to sameIn
 
 `identical` forward tiers imply membership in the `sameIn` run. Historically
