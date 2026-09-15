@@ -18,6 +18,7 @@ import {
     BaboonCodecContext,
     BaboonDomainVersion,
     BaboonEither,
+    BaboonEnvelopeVersion,
     BaboonGenerated,
     BaboonJsonCodec,
     BaboonMeta,
@@ -91,8 +92,8 @@ function v1ChainReader(): BaboonCodecsFacade { const f = new BaboonCodecsFacade(
 const fwdWriter = new DomainFwde2eFwdFacade();
 const chainWriter = new DomainFwde2eChainFacade();
 
-const tolerantCompact = BaboonCodecContext.custom(false, ForwardWritePolicy.Tolerant, undefined);
-const tolerantIndexed = BaboonCodecContext.custom(true, ForwardWritePolicy.Tolerant, undefined);
+const tolerantCompact = BaboonCodecContext.custom(false, ForwardWritePolicy.Tolerant, BaboonEnvelopeVersion.V1, undefined);
+const tolerantIndexed = BaboonCodecContext.custom(true, ForwardWritePolicy.Tolerant, BaboonEnvelopeVersion.V1, undefined);
 
 function unwrap<L, R>(e: BaboonEither<L, R>): R {
     if (e.tag !== 'Right') throw new Error(`expected Right, got Left: ${String((e as { value: unknown }).value)}`);

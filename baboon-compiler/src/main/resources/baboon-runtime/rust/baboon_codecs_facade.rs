@@ -1,5 +1,5 @@
 use crate::any_opaque::{AnyMeta, AnyOpaque, BaboonCodecError};
-use crate::baboon_runtime::{BaboonCodecContext, ForwardWritePolicy};
+use crate::baboon_runtime::{BaboonCodecContext, BaboonEnvelopeVersion, ForwardWritePolicy};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
@@ -350,8 +350,8 @@ pub enum ForwardReadPolicy {
 }
 
 pub struct BaboonCodecsFacade {
-    /// JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domain_version_min_compat`,
-    /// whose meaning is fixed by the WRITER's `ForwardWritePolicy`; binary reads always trust it.
+    /// Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+    /// bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
     forward_read_policy: Mutex<ForwardReadPolicy>,
     versions_codecs_json: Mutex<HashMap<BaboonDomainVersion, Arc<LazyCodec<Arc<AbstractBaboonJsonCodecsImpl>>>>>,
     versions_codecs_bin: Mutex<HashMap<BaboonDomainVersion, Arc<LazyCodec<Arc<AbstractBaboonUebaCodecsImpl>>>>>,
@@ -672,7 +672,8 @@ impl BaboonCodecsFacade {
         type_meta: &BaboonTypeMeta,
         exact: bool,
     ) -> Result<Arc<dyn BaboonAnyBinCodec>, BaboonCodecError> {
-        let resolved = self.resolve_version(type_meta, exact, false)?;
+        // v1 envelopes carry readable_min == min_compat, so the policy only bites on v2 envelopes (and JSON)
+        let resolved = self.resolve_version(type_meta, exact, self.forward_read_policy() == ForwardReadPolicy::Tolerant)?;
         let table = {
             let codecs = self.versions_codecs_bin.lock().expect("mutex poisoned");
             codecs
@@ -852,13 +853,24 @@ impl BaboonCodecsFacade {
     /// forward-read beyond byte-identity", i.e. min_compat is kept.
     fn bin_type_meta(&self, value: &dyn BaboonGeneratedDyn, is_adt_trait: bool, ctx: &BaboonCodecContext) -> BaboonTypeMeta {
         let mut meta = self.type_meta_from(value, is_adt_trait);
-        if ctx.forward_write_policy() == ForwardWritePolicy::Tolerant {
+        let v2 = ctx.envelope_version() == BaboonEnvelopeVersion::V2;
+        if v2 || ctx.forward_write_policy() == ForwardWritePolicy::Tolerant {
             let tier = if ctx.use_indices() {
                 BaboonTypeMeta::UEBA_PREFIX_ANY_MODE_TIER
             } else {
                 BaboonTypeMeta::UEBA_PREFIX_COMPACT_TIER
             };
-            if let Some((_, bound)) = value.baboon_min_reader_versions_dyn().into_iter().find(|(t, _)| t == tier) {
+            let bound = value
+                .baboon_min_reader_versions_dyn()
+                .into_iter()
+                .find(|(t, _)| t == tier)
+                .map(|(_, v)| v)
+                .unwrap_or_else(|| meta.domain_version_min_compat.clone());
+            if v2 {
+                // V2 carries both bounds; the writer policy is irrelevant
+                meta.meta_version = BaboonTypeMeta::META_VERSION_2;
+                meta.domain_version_readable_min = bound;
+            } else {
                 meta.domain_version_min_compat = bound;
             }
         }

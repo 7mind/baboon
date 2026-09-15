@@ -23,8 +23,8 @@ enum class ForwardReadPolicy { Lossless, Tolerant }
 
 open class BaboonCodecsFacade {
     /**
-     * JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domainVersionMinCompat`,
-     * whose meaning is fixed by the WRITER's `ForwardWritePolicy`; binary reads always trust it.
+     * Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+     * bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
      */
     var forwardReadPolicy: ForwardReadPolicy = ForwardReadPolicy.Tolerant
     private val CONTENT_JSON_KEY = "${'$'}c"
@@ -232,7 +232,8 @@ open class BaboonCodecsFacade {
     // @baboon:json-end
 
     private fun getBinCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
-        return getCodec(versionsCodecsBin, typeMeta, exact, tolerant = false)
+        // v1 envelopes carry readableMin == minCompat, so the policy only bites on v2 envelopes (and JSON)
+        return getCodec(versionsCodecsBin, typeMeta, exact, tolerant = forwardReadPolicy == ForwardReadPolicy.Tolerant)
     }
 
     private fun <TCodecs : AbstractBaboonCodecs> getCodec(

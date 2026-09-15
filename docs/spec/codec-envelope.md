@@ -24,26 +24,30 @@ Field summary:
 
 | Field                    | Type    | Purpose                                              |
 |--------------------------|---------|------------------------------------------------------|
-| `metaVersion`            | u8      | Format version of the envelope itself. See § 3.      |
+| `metaVersion`            | u8      | Format version of the envelope itself: `1` (single-bound binary layout, the default; always `1` in JSON) or `2` (binary layout carrying both bounds). See § 3. |
 | `domainIdentifier`       | string  | Dotted namespace of the domain, e.g. `"my.ok"`.       |
 | `domainVersion`          | string  | Semver of the encoded value's domain, e.g. `"1.0.0"`.|
 | `domainVersionMinCompat` | string  | Oldest domain version whose codec decodes this payload. Under the writer's default `ForwardWritePolicy.Strict` this is the byte-identical bound (equals `domainVersion` when the type's layout is fresh in this version). Under `Tolerant` — binary only — it is the prefix-read bound for the payload's index mode; see § 2.1.2. |
-| `domainVersionReadableMin` | string | **JSON only.** Oldest domain version whose JSON codec can decode the payload under the `json-additive` contract (tolerant key lookup; fields unknown to that version are dropped). Always `<= domainVersionMinCompat`. See `docs/forward-compat.md`. |
+| `domainVersionReadableMin` | string | **JSON and binary v2.** Oldest domain version whose codec can decode the payload under the format's forward-read contract: `json-additive` for JSON (tolerant key lookup; unknown fields dropped), the prefix tier of the payload's index mode for binary v2 (`prefix-compact` / `prefix-any-mode`; trailing appended fields unread). Always `<= domainVersionMinCompat`. Absent from binary v1. See `docs/forward-compat.md`. |
 | `typeIdentifier`         | string  | Type id within the domain, e.g. `"my.ok/:#Holder"`.  |
 
 `domainVersionMinCompat` may be elided in either encoding when it equals
 `domainVersion` (the common case for newly-introduced types). Readers must
 default a missing `domainVersionMinCompat` to `domainVersion`.
 
-`domainVersionReadableMin` is carried by the JSON envelope only (`$rv`) and is
-elided when it equals the effective `domainVersionMinCompat`; readers default
-it to `domainVersionMinCompat`. Invariant: `$rv <= $uv <= $v`. The binary v1
-envelope has no slot for it: the only bound a binary reader sees is
+`domainVersionReadableMin` is carried by the JSON envelope (`$rv`) and by the
+binary v2 envelope (§ 2.1.3), elided when it equals the effective
+`domainVersionMinCompat`; readers default it to `domainVersionMinCompat`.
+Invariant: `readableMin <= minCompat <= domainVersion`. The binary v1 envelope
+has no slot for it: the only bound a v1 reader sees is
 `domainVersionMinCompat`, whose meaning is chosen by the WRITER
-(`ForwardWritePolicy`, § 2.1.2). Whether a JSON reader honours `$rv` is a
+(`ForwardWritePolicy`, § 2.1.2). Whether a reader honours `readableMin` is a
 reader-side policy (`ForwardReadPolicy`: `Tolerant`, the default, decodes
-newer payloads with the `$rv` version's codec and drops unknown fields;
-`Lossless` ignores `$rv`). Re-encoding intermediaries must use `Lossless`.
+newer payloads with the reader's newest codec whenever `readableMin` reaches a
+registered version; `Lossless` ignores it and requires `minCompat` to). It
+applies to JSON and to binary v2 alike; a v1 envelope carries no separate
+`readableMin`, so the policy has no effect on it. Re-encoding intermediaries
+must use `Lossless`.
 
 ## 2. Wire formats
 
@@ -121,6 +125,41 @@ Consequences the deploying organisation owns:
   binary; re-encoding intermediaries must run at the writer's version or
   newer.
 
+#### 2.1.3 Binary v2 — both bounds
+
+Selected by the writer's `BaboonCodecContext.envelopeVersion = V2` (default
+`V1`). The layout is the JSON envelope's field set in binary form:
+
+```
++--------+-------------------+---------------+----------+--------------------+--------------------+----------------+
+| 1 byte | length-prefixed   | length-       | 1 byte   | length-prefixed    | length-prefixed    | length-        |
+| u8 = 2 | UTF-8 string      | prefixed UTF-8| flags    | UTF-8 string       | UTF-8 string       | prefixed UTF-8 |
+| metaVer| domainIdentifier  | domainVersion |          | (only if bit 0)    | (only if bit 1)    | typeIdentifier |
+|        |                   |               |          | minCompat          | readableMin        |                |
++--------+-------------------+---------------+----------+--------------------+--------------------+----------------+
+```
+
+The `flags` byte:
+- bit 0 (`0x01`) — `domainVersionMinCompat` follows. Elided when it equals
+  `domainVersion`.
+- bit 1 (`0x02`) — `domainVersionReadableMin` follows. Elided when it equals
+  the effective `domainVersionMinCompat`.
+- any other bit set — illegal; readers reject the envelope.
+
+Semantics are fixed, not policy-dependent: `minCompat` is always the
+byte-identical bound and `readableMin` the prefix bound for the payload's
+index mode (`prefix-compact` for compact payloads, `prefix-any-mode` for
+indexed ones). `ForwardWritePolicy` is irrelevant under v2 — both bounds
+travel — and the reader's `ForwardReadPolicy` decides, exactly as for JSON,
+whether `readableMin` may be used: `Tolerant` decodes with the reader's
+newest codec once `readableMin` reaches a registered version, `Lossless`
+requires `minCompat` to. Envelopes whose type has no prefix relationship
+carry `flags` bit 1 clear and are the v1 envelope with `02` in front and the
+`hasMinCompat` byte reinterpreted as `flags` (the two agree bit-for-bit).
+
+Readers accept v1 and v2 (§ 5); a v1-only reader rejects v2 as an unknown
+`metaVersion`, so v2 is for deployments whose readers are known to be current.
+
 ### 2.2 JSON
 
 The envelope is a JSON object with the keys below. A reader does not assume
@@ -154,8 +193,9 @@ idiom; never throw across the version boundary).
 | Byte    | Status      | Meaning                                                                     |
 |---------|-------------|-----------------------------------------------------------------------------|
 | 0       | reserved    | Sentinel; never emitted. Reserved to remain available for future use.       |
-| 1       | **active**  | Full meta — all four fields described in § 1, layout per § 2.               |
-| 2..15   | reserved    | Free for future allocation if a new top-level layout is introduced.         |
+| 1       | **active**  | Single-bound binary layout (§ 2.1); the JSON envelope's `$mv`. Written by default. |
+| 2       | **active**  | Two-bound binary layout (§ 2.1.3). Written when the context selects `V2`.   |
+| 3..15   | reserved    | Free for future allocation if a new top-level layout is introduced.         |
 | 16      | retired     | Briefly used during M32 development. Never released; reader rejection-only. |
 | 17..255 | reserved    | Free for future allocation.                                                 |
 
@@ -219,9 +259,11 @@ across cs/sc/py/rs/ts/jv/dt/sw. See MFACADE-PR-3-D04..D06 in
 `BaboonTypeMetaCodec.readMeta(reader|jsonValue)` returns the envelope
 parsed from the bin reader or JSON value:
 
-- **Success** — a fully-populated `BaboonTypeMeta` value with all four
-  fields present (`domainVersionMinCompat` defaulted to `domainVersion`
-  when elided).
+- **Success** — a fully-populated `BaboonTypeMeta` value with all fields
+  present (`domainVersionMinCompat` defaulted to `domainVersion` when elided,
+  `domainVersionReadableMin` defaulted to the effective `domainVersionMinCompat`
+  when elided or absent from the layout). `metaVersion` records the layout
+  that was read (`1` or `2`); binary readers accept both.
 - **Recoverable failure** (return null/None/Right-of-error per language
   idiom): unrecognised `metaVersion`, malformed envelope (missing
   required fields, wrong types, bin-side ULEB128 truncation).
@@ -237,10 +279,11 @@ caller fall through.
 
 ## 6. Encoder contract
 
-`BaboonTypeMetaCodec.writeBin(meta, writer)` and `writeJson(meta)` always
-emit a `metaVersion=1` envelope per § 2. Writers do not have a fallback
-to byte 16 or any other allocation; new versions get explicit codepaths
-when introduced.
+`BaboonTypeMetaCodec.writeJson(meta)` always emits `$mv = 1`.
+`writeBin(meta, writer)` emits the layout named by `meta.metaVersion` — `1`
+(§ 2.1) or `2` (§ 2.1.3) — and fails fast on any other value. The facade's
+`encodeToBin` picks the layout from `BaboonCodecContext.envelopeVersion`
+(default `V1`). Writers have no fallback to byte 16 or any other allocation.
 
 The encoder always writes the four required fields (`metaVersion`,
 `domainIdentifier`, `domainVersion`, `typeIdentifier`); it elides
@@ -262,7 +305,7 @@ Per-backend runtime sources (where the envelope codec lives):
 - TypeScript: `baboon-compiler/src/main/resources/baboon-runtime/typescript/BaboonSharedRuntime.ts`
 - Python: `baboon-compiler/src/main/resources/baboon-runtime/python/baboon_runtime_shared.py`
 - Dart: `baboon-compiler/src/main/resources/baboon-runtime/dart/baboon_runtime.dart`
-- Swift: `baboon-compiler/src/main/resources/baboon-runtime/swift/baboon_runtime.swift`
+- Swift: `baboon-compiler/src/main/resources/baboon-runtime/swift/baboon_type_meta.swift` (same module as `baboon_runtime.swift`)
 
 All ten implementations share the field set and layout in § 1–§ 2;
 divergences are interop bugs.

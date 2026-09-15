@@ -41,8 +41,8 @@ namespace Baboon.Runtime.Shared
         private const string CONTENT_JSON_KEY = "$c";
 
         /// <summary>
-        /// JSON forward-read policy. UEBA envelopes (v1) carry a single bound, <c>DomainVersionMinCompat</c>,
-        /// whose meaning is fixed by the WRITER's <see cref="ForwardWritePolicy"/>; binary reads always trust it.
+        /// Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+        /// bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
         /// </summary>
         public ForwardReadPolicy ForwardReadPolicy { get; set; } = ForwardReadPolicy.Tolerant;
 
@@ -985,7 +985,8 @@ namespace Baboon.Runtime.Shared
 
         private Either<BaboonCodecException, IBaboonStreamCodec<IBaboonGenerated, BinaryWriter, BinaryReader>> GetBinCodec(BaboonTypeMeta typeMeta, bool exact)
         {
-            var codec = GetCodec(_versionsCodecsBin, typeMeta, exact, tolerant: false);
+            // v1 envelopes carry readableMin == minCompat, so the policy only bites on v2 envelopes (and JSON)
+            var codec = GetCodec(_versionsCodecsBin, typeMeta, exact, tolerant: ForwardReadPolicy == ForwardReadPolicy.Tolerant);
             if (codec.IsLeft)
             {
                 return Either.Left<BaboonCodecException, IBaboonStreamCodec<IBaboonGenerated, BinaryWriter, BinaryReader>>(

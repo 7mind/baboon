@@ -23,6 +23,8 @@ pub struct BaboonTypeMeta {
 
 impl BaboonTypeMeta {
     pub const META_VERSION_1: u8 = 1;
+    pub const META_VERSION_2: u8 = 2;
+    /// Layout written by default (binary) and always (JSON `$mv`).
     pub const META_VERSION: u8 = Self::META_VERSION_1;
     /// Tier key of the JSON envelope's readable-min bound in `baboon_min_reader_versions_dyn`.
     pub const JSON_READABLE_TIER: &'static str = "json-additive";
@@ -97,10 +99,49 @@ pub mod baboon_type_meta_codec {
     pub const DOMAIN_VERSION_READABLE_KEY: &str = "$rv";
     pub const TYPE_IDENTIFIER_KEY: &str = "$t";
 
-    /// Wire format: `[meta-version:u8][domain:string][version:string][has-min-compat:u8][min-compat?:string][type-id:string]`.
-    /// Mirrors C# BaboonTypeMetaCodec.WriteBin / Scala writeBin exactly.
+    // v2 flags byte (codec-envelope.md §2.1.3): bit 0 — min_compat follows; bit 1 — readable_min follows.
+    const V2_FLAG_MIN_COMPAT: u8 = 0x01;
+    const V2_FLAG_READABLE_MIN: u8 = 0x02;
+    const V2_FLAGS_MASK: u8 = V2_FLAG_MIN_COMPAT | V2_FLAG_READABLE_MIN;
+
+    /// Dispatches on `meta.meta_version`: v1 `[01][domain][version][has-min-compat:u8][min-compat?][type-id]`,
+    /// v2 `[02][domain][version][flags:u8][min-compat?][readable-min?][type-id]`.
     pub fn write_bin(meta: &BaboonTypeMeta, writer: &mut dyn Write) -> std::io::Result<()> {
-        bin_tools::write_byte(writer, BaboonTypeMeta::META_VERSION)?;
+        match meta.meta_version {
+            BaboonTypeMeta::META_VERSION_1 => write_bin_v1(meta, writer),
+            BaboonTypeMeta::META_VERSION_2 => write_bin_v2(meta, writer),
+            other => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Unsupported binary envelope meta_version {}", other),
+            )),
+        }
+    }
+
+    // each bound is elided exactly as in JSON (min_compat when == domain_version, readable_min when ==
+    // effective min_compat)
+    fn write_bin_v2(meta: &BaboonTypeMeta, writer: &mut dyn Write) -> std::io::Result<()> {
+        let min_compat = if meta.domain_version_min_compat.is_empty() { &meta.domain_version } else { &meta.domain_version_min_compat };
+        let readable_min = if meta.domain_version_readable_min.is_empty() { min_compat } else { &meta.domain_version_readable_min };
+        let has_min_compat = min_compat != &meta.domain_version;
+        let has_readable_min = readable_min != min_compat;
+        bin_tools::write_byte(writer, BaboonTypeMeta::META_VERSION_2)?;
+        bin_tools::write_string(writer, &meta.domain_identifier)?;
+        bin_tools::write_string(writer, &meta.domain_version)?;
+        bin_tools::write_byte(
+            writer,
+            (if has_min_compat { V2_FLAG_MIN_COMPAT } else { 0 }) | (if has_readable_min { V2_FLAG_READABLE_MIN } else { 0 }),
+        )?;
+        if has_min_compat {
+            bin_tools::write_string(writer, min_compat)?;
+        }
+        if has_readable_min {
+            bin_tools::write_string(writer, readable_min)?;
+        }
+        bin_tools::write_string(writer, &meta.type_identifier)
+    }
+
+    fn write_bin_v1(meta: &BaboonTypeMeta, writer: &mut dyn Write) -> std::io::Result<()> {
+        bin_tools::write_byte(writer, BaboonTypeMeta::META_VERSION_1)?;
         bin_tools::write_string(writer, &meta.domain_identifier)?;
         bin_tools::write_string(writer, &meta.domain_version)?;
         if meta.domain_version == meta.domain_version_min_compat {
@@ -122,9 +163,38 @@ pub mod baboon_type_meta_codec {
                 e,
             )
         })?;
-        if meta_version != BaboonTypeMeta::META_VERSION_1 {
+        match meta_version {
+            BaboonTypeMeta::META_VERSION_1 => read_bin_v1(reader),
+            BaboonTypeMeta::META_VERSION_2 => read_bin_v2(reader),
+            _ => Ok(None),
+        }
+    }
+
+    fn read_bin_v2<R: Read>(reader: &mut R) -> Result<Option<BaboonTypeMeta>, BaboonCodecError> {
+        fn rs<R: Read>(reader: &mut R, what: &str) -> Result<String, BaboonCodecError> {
+            bin_tools::read_string(reader).map_err(|e| {
+                BaboonCodecError::decoder_failure_from_box(&format!("BaboonTypeMetaCodec.read_bin(v2): failed to read {}", what), e)
+            })
+        }
+        let domain_identifier = rs(reader, "domain identifier")?;
+        let domain_version = rs(reader, "domain version")?;
+        let flags = bin_tools::read_byte(reader).map_err(|e| {
+            BaboonCodecError::decoder_failure_from_box("BaboonTypeMetaCodec.read_bin(v2): failed to read flags byte", e)
+        })?;
+        // unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+        if flags & !V2_FLAGS_MASK != 0 {
             return Ok(None);
         }
+        let min_compat = if flags & V2_FLAG_MIN_COMPAT != 0 { rs(reader, "min-compat")? } else { domain_version.clone() };
+        let readable_min = if flags & V2_FLAG_READABLE_MIN != 0 { rs(reader, "readable-min")? } else { min_compat.clone() };
+        let type_identifier = rs(reader, "type identifier")?;
+        Ok(Some(
+            BaboonTypeMeta::new(BaboonTypeMeta::META_VERSION_2, domain_identifier, domain_version, min_compat, type_identifier)
+                .with_readable_min(readable_min),
+        ))
+    }
+
+    fn read_bin_v1<R: Read>(reader: &mut R) -> Result<Option<BaboonTypeMeta>, BaboonCodecError> {
         let domain_identifier = bin_tools::read_string(reader).map_err(|e| {
             BaboonCodecError::decoder_failure_from_box(
                 "BaboonTypeMetaCodec.read_bin: failed to read domain identifier",

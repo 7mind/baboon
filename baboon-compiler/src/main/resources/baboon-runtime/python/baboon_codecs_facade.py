@@ -36,8 +36,8 @@ class BaboonCodecsFacade:
     CONTENT_JSON_KEY = "$c"
 
     def __init__(self):
-        # JSON forward-read policy. UEBA envelopes (v1) carry a single bound, `domain_version_min_compat`,
-        # whose meaning is fixed by the WRITER's `ForwardWritePolicy`; binary reads always trust it.
+        # Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+        # bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
         self.forward_read_policy: ForwardReadPolicy = ForwardReadPolicy.TOLERANT
         self.versions_codecs_json: Dict[BaboonDomainVersion, Lazy[AbstractBaboonJsonCodecs]] = {}
         self.versions_codecs_bin: Dict[BaboonDomainVersion, Lazy[AbstractBaboonUebaCodecs]] = {}
@@ -139,12 +139,17 @@ class BaboonCodecsFacade:
         `domain_version_min_compat` lowered to the prefix bound of the context's index mode when
         the writer policy is TOLERANT."""
         meta = BaboonTypeMeta.from_instance(value)
-        if ctx.forward_write_policy == ForwardWritePolicy.STRICT:
+        v2 = ctx.envelope_version == BaboonEnvelopeVersion.V2
+        if not v2 and ctx.forward_write_policy == ForwardWritePolicy.STRICT:
             return meta
         tier = BaboonTypeMeta.UEBA_PREFIX_ANY_MODE_TIER if ctx.use_indices else BaboonTypeMeta.UEBA_PREFIX_COMPACT_TIER
         # baboon_min_reader_versions has a non-abstract default (see BaboonGenerated); a missing
         # prefix bound means "no forward-read beyond byte-identity", i.e. keep min_compat
         bound = value.baboon_min_reader_versions.get(tier, meta.domain_version_min_compat)
+        if v2:
+            # V2 carries both bounds; the writer policy is irrelevant
+            return meta.model_copy(update={"meta_version": BaboonTypeMetaCodec.META_VERSION_2,
+                                           "domain_version_readable_min": bound})
         return meta.model_copy(update={"domain_version_min_compat": bound})
 
     def decode_from_bin(self, reader: LEDataInputStream) -> BaboonGenerated:
@@ -284,7 +289,9 @@ class BaboonCodecsFacade:
         return from_model
 
     def _get_bin_codec(self, type_meta: BaboonTypeMeta, exact: bool) -> BaboonBinCodec:
-        return self._get_codec(self.versions_codecs_bin, type_meta, exact, tolerant=False)
+        # v1 envelopes carry readable_min == min_compat, so the policy only bites on v2 envelopes (and JSON)
+        return self._get_codec(self.versions_codecs_bin, type_meta, exact,
+                               tolerant=self.forward_read_policy == ForwardReadPolicy.TOLERANT)
 
     def _get_json_codec(self, type_meta: BaboonTypeMeta, exact: bool) -> BaboonJsonCodec:
         return self._get_codec(self.versions_codecs_json, type_meta, exact,

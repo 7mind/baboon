@@ -17,8 +17,8 @@ import java.io.ByteArrayInputStream
 
 class ForwardCompatBinEnvelopeSpec extends AnyFunSuite {
 
-  private val tolerantCompact: BaboonCodecContext = BaboonCodecContext.Custom(useIndices = false, ForwardWritePolicy.Tolerant, None)
-  private val tolerantIndexed: BaboonCodecContext = BaboonCodecContext.Custom(useIndices = true, ForwardWritePolicy.Tolerant, None)
+  private val tolerantCompact: BaboonCodecContext = BaboonCodecContext.Custom(useIndices = false, ForwardWritePolicy.Tolerant, BaboonEnvelopeVersion.V1, None)
+  private val tolerantIndexed: BaboonCodecContext = BaboonCodecContext.Custom(useIndices = true, ForwardWritePolicy.Tolerant, BaboonEnvelopeVersion.V1, None)
 
   private def minCompatOf(bytes: Array[Byte]): String =
     BaboonTypeMeta.readMeta(new LEDataInputStream(new ByteArrayInputStream(bytes))).get.domainVersionMinCompat

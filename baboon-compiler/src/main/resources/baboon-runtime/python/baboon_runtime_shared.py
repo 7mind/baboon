@@ -612,7 +612,14 @@ class BaboonTypeMeta(BaseModel):
 
 class BaboonTypeMetaCodec:
     META_VERSION_1: int = 1
+    META_VERSION_2: int = 2
+    # Layout written by default (binary) and always (JSON `$mv`).
     META_VERSION: int = META_VERSION_1
+
+    # v2 flags byte (codec-envelope.md §2.1.3): bit 0 -- min_compat follows; bit 1 -- readable_min follows.
+    _V2_FLAG_MIN_COMPAT: int = 0x01
+    _V2_FLAG_READABLE_MIN: int = 0x02
+    _V2_FLAGS_MASK: int = _V2_FLAG_MIN_COMPAT | _V2_FLAG_READABLE_MIN
 
     META_VERSION_KEY = "$mv"
     DOMAIN_IDENTIFIER_KEY = "$d"
@@ -623,6 +630,34 @@ class BaboonTypeMetaCodec:
 
     @staticmethod
     def write_bin(meta: BaboonTypeMeta, writer: LEDataOutputStream) -> None:
+        if meta.meta_version == BaboonTypeMetaCodec.META_VERSION_1:
+            BaboonTypeMetaCodec._write_bin_v1(meta, writer)
+        elif meta.meta_version == BaboonTypeMetaCodec.META_VERSION_2:
+            BaboonTypeMetaCodec._write_bin_v2(meta, writer)
+        else:
+            raise BaboonCodecException.EncoderFailure(f"Unsupported binary envelope meta_version {meta.meta_version}")
+
+    @staticmethod
+    def _write_bin_v2(meta: BaboonTypeMeta, writer: LEDataOutputStream) -> None:
+        # v2: `02 | domain_id | domain_version | flags | [min_compat] | [readable_min] | type_id`; each bound
+        # is elided exactly as in JSON (min_compat when == domain_version, readable_min when == effective min_compat)
+        min_compat = meta.domain_version_min_compat or meta.domain_version
+        readable_min = meta.domain_version_readable_min or min_compat
+        has_min_compat = min_compat != meta.domain_version
+        has_readable_min = readable_min != min_compat
+        writer.write_byte(BaboonTypeMetaCodec.META_VERSION_2)
+        writer.write_str(meta.domain_identifier)
+        writer.write_str(meta.domain_version)
+        writer.write_byte((BaboonTypeMetaCodec._V2_FLAG_MIN_COMPAT if has_min_compat else 0)
+                          | (BaboonTypeMetaCodec._V2_FLAG_READABLE_MIN if has_readable_min else 0))
+        if has_min_compat:
+            writer.write_str(min_compat)
+        if has_readable_min:
+            writer.write_str(readable_min)
+        writer.write_str(meta.type_identifier)
+
+    @staticmethod
+    def _write_bin_v1(meta: BaboonTypeMeta, writer: LEDataOutputStream) -> None:
         # PR-23-D03 fix (PR 10.4): pre-existing bugs.
         #   1) `writer.write_string(writer, ...)` — there is no `write_string` method on
         #      `LEDataOutputStream`; the correct API is `write_str(s)` (single arg). The
@@ -667,7 +702,32 @@ class BaboonTypeMetaCodec:
             meta_version = reader.read_byte()
             if meta_version == BaboonTypeMetaCodec.META_VERSION_1:
                 return BaboonTypeMetaCodec._read_meta_v1_bin(reader)
+            if meta_version == BaboonTypeMetaCodec.META_VERSION_2:
+                return BaboonTypeMetaCodec._read_meta_v2_bin(reader)
             return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _read_meta_v2_bin(reader: LEDataInputStream) -> Optional[BaboonTypeMeta]:
+        try:
+            domain_identifier = reader.read_string()
+            domain_version = reader.read_string()
+            flags = reader.read_byte()
+            # unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+            if flags & ~BaboonTypeMetaCodec._V2_FLAGS_MASK:
+                return None
+            min_compat = reader.read_string() if flags & BaboonTypeMetaCodec._V2_FLAG_MIN_COMPAT else domain_version
+            readable_min = reader.read_string() if flags & BaboonTypeMetaCodec._V2_FLAG_READABLE_MIN else min_compat
+            type_identifier = reader.read_string()
+            return BaboonTypeMeta(
+                meta_version=BaboonTypeMetaCodec.META_VERSION_2,
+                domain_identifier=domain_identifier,
+                domain_version=domain_version,
+                domain_version_min_compat=min_compat,
+                type_identifier=type_identifier,
+                domain_version_readable_min=readable_min,
+            )
         except Exception:
             return None
 

@@ -26,13 +26,24 @@ public final class BaboonCodecContext {
      */
     public enum ForwardWritePolicy { STRICT, TOLERANT }
 
+    /**
+     * Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+     * V1 (default): single bound slot (`domainVersionMinCompat`), value chosen by {@link ForwardWritePolicy}.
+     * V2: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for the
+     * payload's index mode; the reader's `ForwardReadPolicy` then applies to binary exactly as it does to
+     * JSON. Only readers that know v2 can decode it.
+     */
+    public enum BaboonEnvelopeVersion { V1, V2 }
+
     private final boolean useIndices;
     private final ForwardWritePolicy forwardWritePolicy;
+    private final BaboonEnvelopeVersion envelopeVersion;
     private final BaboonCodecsFacade facade;
 
-    private BaboonCodecContext(boolean useIndices, ForwardWritePolicy forwardWritePolicy, BaboonCodecsFacade facade) {
+    private BaboonCodecContext(boolean useIndices, ForwardWritePolicy forwardWritePolicy, BaboonEnvelopeVersion envelopeVersion, BaboonCodecsFacade facade) {
         this.useIndices = useIndices;
         this.forwardWritePolicy = forwardWritePolicy;
+        this.envelopeVersion = envelopeVersion;
         this.facade = facade;
     }
 
@@ -44,20 +55,24 @@ public final class BaboonCodecContext {
         return forwardWritePolicy;
     }
 
+    public BaboonEnvelopeVersion envelopeVersion() {
+        return envelopeVersion;
+    }
+
     public BaboonCodecsFacade facade() {
         return facade;
     }
 
-    public static final BaboonCodecContext Indexed = new BaboonCodecContext(true, ForwardWritePolicy.STRICT, null);
-    public static final BaboonCodecContext Compact = new BaboonCodecContext(false, ForwardWritePolicy.STRICT, null);
+    public static final BaboonCodecContext Indexed = new BaboonCodecContext(true, ForwardWritePolicy.STRICT, BaboonEnvelopeVersion.V1, null);
+    public static final BaboonCodecContext Compact = new BaboonCodecContext(false, ForwardWritePolicy.STRICT, BaboonEnvelopeVersion.V1, null);
     public static final BaboonCodecContext Default = Compact;
 
     public static BaboonCodecContext withFacade(boolean useIndices, BaboonCodecsFacade facade) {
-        return new BaboonCodecContext(useIndices, ForwardWritePolicy.STRICT, facade);
+        return new BaboonCodecContext(useIndices, ForwardWritePolicy.STRICT, BaboonEnvelopeVersion.V1, facade);
     }
 
-    /** Fully specified context: index mode, writer-side forward policy and optional facade. */
-    public static BaboonCodecContext custom(boolean useIndices, ForwardWritePolicy forwardWritePolicy, BaboonCodecsFacade facade) {
-        return new BaboonCodecContext(useIndices, forwardWritePolicy, facade);
+    /** Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade. */
+    public static BaboonCodecContext custom(boolean useIndices, ForwardWritePolicy forwardWritePolicy, BaboonEnvelopeVersion envelopeVersion, BaboonCodecsFacade facade) {
+        return new BaboonCodecContext(useIndices, forwardWritePolicy, envelopeVersion, facade);
     }
 }

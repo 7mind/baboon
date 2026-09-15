@@ -111,7 +111,8 @@ public record BaboonTypeMeta(
      */
     public static BaboonTypeMeta forBin(BaboonGenerated value, Class<?> declaredType, BaboonCodecContext ctx) {
         BaboonTypeMeta meta = from(value, declaredType);
-        if (ctx.forwardWritePolicy() == BaboonCodecContext.ForwardWritePolicy.STRICT) {
+        boolean v2 = ctx.envelopeVersion() == BaboonCodecContext.BaboonEnvelopeVersion.V2;
+        if (!v2 && ctx.forwardWritePolicy() == BaboonCodecContext.ForwardWritePolicy.STRICT) {
             return meta;
         }
         String tier = ctx.useIndices() ? UEBA_PREFIX_ANY_MODE_TIER : UEBA_PREFIX_COMPACT_TIER;
@@ -119,7 +120,10 @@ public record BaboonTypeMeta(
         if (bound == null) {
             throw new BaboonException("Type " + value.getClass().getName() + ": baboonMinReaderVersions lacks '" + tier + "'");
         }
-        return new BaboonTypeMeta(meta.metaVersion(), meta.domainIdentifier(), meta.domainVersion(), bound, meta.typeIdentifier(), meta.domainVersionReadableMin());
+        // V2 carries both bounds (the writer policy is irrelevant); V1 TOLERANT puts the prefix bound in its single slot
+        return v2
+            ? new BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION_2, meta.domainIdentifier(), meta.domainVersion(), meta.domainVersionMinCompat(), meta.typeIdentifier(), bound)
+            : new BaboonTypeMeta(meta.metaVersion(), meta.domainIdentifier(), meta.domainVersion(), bound, meta.typeIdentifier(), meta.domainVersionReadableMin());
     }
 
     @SuppressWarnings("unchecked")
@@ -155,7 +159,14 @@ public record BaboonTypeMeta(
         private BaboonTypeMetaCodec() {}
 
         public static final byte META_VERSION_1 = 1;
+        public static final byte META_VERSION_2 = 2;
+        /** Layout written by default (binary) and always (JSON `$mv`). */
         public static final byte META_VERSION = META_VERSION_1;
+
+        // v2 flags byte (codec-envelope.md §2.1.3): bit 0 — minCompat follows; bit 1 — readableMin follows.
+        private static final int V2_FLAG_MIN_COMPAT = 0x01;
+        private static final int V2_FLAG_READABLE_MIN = 0x02;
+        private static final int V2_FLAGS_MASK = V2_FLAG_MIN_COMPAT | V2_FLAG_READABLE_MIN;
 
         public static final String META_VERSION_KEY = "$mv";
         public static final String DOMAIN_IDENTIFIER_KEY = "$d";
@@ -165,7 +176,33 @@ public record BaboonTypeMeta(
         public static final String TYPE_IDENTIFIER_KEY = "$t";
 
         public static void writeBin(BaboonTypeMeta meta, LEDataOutputStream writer) throws Exception {
-            writer.writeByte(META_VERSION);
+            if (meta.metaVersion == META_VERSION_1) {
+                writeBinV1(meta, writer);
+            } else if (meta.metaVersion == META_VERSION_2) {
+                writeBinV2(meta, writer);
+            } else {
+                throw new BaboonException("Unsupported binary envelope metaVersion " + meta.metaVersion);
+            }
+        }
+
+        // v2: `02 | domainId | domainVersion | flags | [minCompat] | [readableMin] | typeId`; each bound is
+        // elided exactly as in JSON (minCompat when == domainVersion, readableMin when == effective minCompat)
+        private static void writeBinV2(BaboonTypeMeta meta, LEDataOutputStream writer) throws Exception {
+            String minCompat = (meta.domainVersionMinCompat == null || meta.domainVersionMinCompat.isEmpty()) ? meta.domainVersion : meta.domainVersionMinCompat;
+            String readableMin = (meta.domainVersionReadableMin == null || meta.domainVersionReadableMin.isEmpty()) ? minCompat : meta.domainVersionReadableMin;
+            boolean hasMinCompat = !minCompat.equals(meta.domainVersion);
+            boolean hasReadableMin = !readableMin.equals(minCompat);
+            writer.writeByte(META_VERSION_2);
+            BaboonBinTools.writeString(writer, meta.domainIdentifier);
+            BaboonBinTools.writeString(writer, meta.domainVersion);
+            writer.writeByte((hasMinCompat ? V2_FLAG_MIN_COMPAT : 0) | (hasReadableMin ? V2_FLAG_READABLE_MIN : 0));
+            if (hasMinCompat) BaboonBinTools.writeString(writer, minCompat);
+            if (hasReadableMin) BaboonBinTools.writeString(writer, readableMin);
+            BaboonBinTools.writeString(writer, meta.typeIdentifier);
+        }
+
+        private static void writeBinV1(BaboonTypeMeta meta, LEDataOutputStream writer) throws Exception {
+            writer.writeByte(META_VERSION_1);
             BaboonBinTools.writeString(writer, meta.domainIdentifier);
             BaboonBinTools.writeString(writer, meta.domainVersion);
             if (meta.domainVersion.equals(meta.domainVersionMinCompat)) {
@@ -198,8 +235,24 @@ public record BaboonTypeMeta(
 
         public static BaboonTypeMeta readMeta(LEDataInputStream reader) throws Exception {
             byte metaVersion = reader.readByte();
-            if (metaVersion != META_VERSION_1) return null;
+            if (metaVersion == META_VERSION_1) return readMetaV1(reader);
+            if (metaVersion == META_VERSION_2) return readMetaV2(reader);
+            return null;
+        }
 
+        private static BaboonTypeMeta readMetaV2(LEDataInputStream reader) throws Exception {
+            String domainIdentifier = BaboonBinTools.readString(reader);
+            String domainVersion = BaboonBinTools.readString(reader);
+            int flags = reader.readByte() & 0xFF;
+            // unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+            if ((flags & ~V2_FLAGS_MASK) != 0) return null;
+            String minCompat = (flags & V2_FLAG_MIN_COMPAT) != 0 ? BaboonBinTools.readString(reader) : domainVersion;
+            String readableMin = (flags & V2_FLAG_READABLE_MIN) != 0 ? BaboonBinTools.readString(reader) : minCompat;
+            String typeIdentifier = BaboonBinTools.readString(reader);
+            return new BaboonTypeMeta(META_VERSION_2, domainIdentifier, domainVersion, minCompat, typeIdentifier, readableMin);
+        }
+
+        private static BaboonTypeMeta readMetaV1(LEDataInputStream reader) throws Exception {
             String domainIdentifier = BaboonBinTools.readString(reader);
             String domainVersion = BaboonBinTools.readString(reader);
             byte hasMinCompat = reader.readByte();
