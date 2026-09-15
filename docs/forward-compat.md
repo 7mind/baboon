@@ -496,6 +496,30 @@ Two consequences of scheme 2:
   envelope bound at 1.0.0 with its 2.0.0 codec (fail-first: the previous
   reader picked the bound version's codec and dropped the 2.0.0 field).
 
+## Known gaps
+
+- **`prefix-any-mode` has no runtime end-to-end test.** The tier requires an
+  appended *fixed-length* field, and every fixed-length scalar is
+  non-defaultable, so such a step needs a hand-written conversion — which the
+  stub projects do not carry. The tier is covered at the compiler level
+  (`ForwardCompatComparatorTest`, isolated `fwd-compat-ok` fixtures) and the
+  runtime suites cover the negative side only: an indexed context does not
+  lower the bound for a variable-length append.
+- **Missing-tier handling is not uniform.** When a value's
+  `baboonMinReaderVersions` lacks the tier the writer needs, Scala, TypeScript,
+  C#, Kotlin, KMP, Java and Dart fail fast; Python, Swift and Rust fall back to
+  the byte-identical bound (no lowering), following their pre-existing
+  leniency for the JSON bound, because those runtimes give
+  `baboonMinReaderVersions` a default in the base trait. The compiler emits all
+  four tiers for every generated type, so the difference is unreachable for
+  generated code and only visible to hand-written `BaboonGenerated`
+  implementations.
+- **Cross-runtime timestamp round trips are not byte-stable.** The `tso`/`tsu`
+  kind byte is derived from the writer's local time zone independently in each
+  runtime; unrelated to the envelope but it makes the converter round-trip
+  test (`RTCodecTest`) intermittently fail on random fixtures. Tracked as
+  https://github.com/7mind/baboon/issues/91.
+
 ## Out of scope (recorded)
 
 UEBA format evolution (on-wire index count + body length + skipping decoder)
