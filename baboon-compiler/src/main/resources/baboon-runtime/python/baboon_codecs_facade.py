@@ -143,9 +143,10 @@ class BaboonCodecsFacade:
         if not v2 and ctx.forward_write_policy == ForwardWritePolicy.STRICT:
             return meta
         tier = BaboonTypeMeta.UEBA_PREFIX_ANY_MODE_TIER if ctx.use_indices else BaboonTypeMeta.UEBA_PREFIX_COMPACT_TIER
-        # baboon_min_reader_versions has a non-abstract default (see BaboonGenerated); a missing
-        # prefix bound means "no forward-read beyond byte-identity", i.e. keep min_compat
-        bound = value.baboon_min_reader_versions.get(tier, meta.domain_version_min_compat)
+        bound = value.baboon_min_reader_versions.get(tier)
+        if bound is None:
+            raise BaboonCodecException.EncoderFailure(
+                f"baboon_min_reader_versions lacks '{tier}' for type {value.baboon_type_identifier}")
         if v2:
             # V2 carries both bounds; the writer policy is irrelevant
             return meta.model_copy(update={"meta_version": BaboonTypeMetaCodec.META_VERSION_2,
