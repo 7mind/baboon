@@ -18,6 +18,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
 
+from .baboon_exceptions import BaboonCodecException
+
 T = TypeVar("T")
 
 
@@ -55,11 +57,13 @@ class BaboonGenerated(ABC):
     # Writer-side inverse of baboon_forward_readable: guarantee tier -> oldest domain
     # version whose codec can decode THIS version's encoding of this type. The
     # "identical" bound equals baboon_same_in_versions[0]; the "json-additive" bound is
-    # published as `$rv`. Non-abstract default (= "no bound beyond byte-identity") keeps
-    # hand-written stubs working; generated classes override it with a ClassVar.
+    # published as `$rv`, the prefix-* bounds feed the binary envelope. Abstract: the
+    # envelope writer fails fast when a tier is missing, so every implementation must
+    # provide all four (generated classes do so with a ClassVar).
     @property
+    @abstractmethod
     def baboon_min_reader_versions(self) -> dict[str, str]:
-        return {}
+        raise NotImplementedError
 
 class BaboonAdtMemberMeta(ABC):
     @property
@@ -318,7 +322,8 @@ class LEDataOutputStream:
         self.write_i64(cs_local_millis_0001)
         self.write_i64(offset_ms)
 
-        kind = 1 if offset_ms == 0 else 2
+        # docs/ueba-format.md: kind is a pure function of the offset (1 = UTC, 0 = otherwise)
+        kind = 1 if offset_ms == 0 else 0
         self.write_byte(kind)
 
     def write_bytes(self, b: bytes):
@@ -583,9 +588,10 @@ class BaboonTypeMeta(BaseModel):
             type_identifier = value.baboon_type_identifier
 
         min_compat = value.baboon_same_in_versions[0]
-        # baboon_min_reader_versions has a non-abstract default (see BaboonGenerated); a missing
-        # json-additive bound means "no forward-read beyond byte-identity", i.e. = min_compat
-        readable_min = value.baboon_min_reader_versions.get(BaboonTypeMeta.JSON_READABLE_TIER, min_compat)
+        readable_min = value.baboon_min_reader_versions.get(BaboonTypeMeta.JSON_READABLE_TIER)
+        if readable_min is None:
+            raise BaboonCodecException.EncoderFailure(
+                f"baboon_min_reader_versions lacks '{BaboonTypeMeta.JSON_READABLE_TIER}' for type {value.baboon_type_identifier}")
         return BaboonTypeMeta(
             meta_version=BaboonTypeMetaCodec.META_VERSION,
             domain_identifier=value.baboon_domain_identifier,

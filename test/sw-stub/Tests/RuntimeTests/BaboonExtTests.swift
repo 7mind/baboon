@@ -16,6 +16,7 @@ private struct StubMeta: BaboonMetaProvider {
     var baboonDomainIdentifier: String
     var baboonTypeIdentifier: String
     var baboonSameInVersions: [String]
+    var baboonMinReaderVersions: [String: String] = [:]
 }
 
 // Minimal stub conforming to BaboonMeta (instance-side registry).

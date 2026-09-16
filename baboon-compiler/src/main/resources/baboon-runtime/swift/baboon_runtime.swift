@@ -1330,9 +1330,10 @@ public protocol BaboonMetaProvider {
 
 // Default keeps hand-written conforming stubs source-compatible; generated types
 // override it with the real per-type table.
+// `baboonMinReaderVersions` has no default: the envelope writer fails fast when a tier is missing,
+// so every conformance must provide all four (generated types do).
 public extension BaboonMetaProvider {
     var baboonForwardReadable: [String: String] { [:] }
-    var baboonMinReaderVersions: [String: String] { [:] }
 }
 
 // Implemented by generated ADT branches. Mirrors Kotlin/Dart `BaboonAdtMember` for the

@@ -36,10 +36,9 @@ pub trait BaboonGeneratedDyn: std::any::Any + Send + Sync {
     /// Writer-side inverse of `baboon_forward_readable_dyn`: `(guarantee tier, oldest domain
     /// version whose codec can decode THIS version's encoding of this type)`. The "identical"
     /// bound equals `baboon_same_in_versions_dyn()[0]`; the "json-additive" bound is published
-    /// as `$rv`. Default is empty (= no bound beyond byte-identity); generated impls override.
-    fn baboon_min_reader_versions_dyn(&self) -> Vec<(String, String)> {
-        Vec::new()
-    }
+    /// as `$rv`, the prefix-* bounds feed the binary envelope. No default: the envelope writer
+    /// fails fast when a tier is missing, so every impl must provide all four (generated impls do).
+    fn baboon_min_reader_versions_dyn(&self) -> Vec<(String, String)>;
     fn as_any(&self) -> &dyn std::any::Any;
     /// Consume the box and recover an `Any` for downcasting via `Box::downcast`. Mirrors
     /// the C# `if (current is TTo result)` pattern used in `Convert<TFrom, TTo>`.
@@ -849,10 +848,10 @@ impl BaboonCodecsFacade {
     /// `baboon_same_in_versions_dyn()` is non-empty. Index `[0]` here panics on violation.
     /// Envelope for a UEBA payload written under `ctx`: `type_meta_from` with
     /// `domain_version_min_compat` lowered to the prefix bound of the context's index mode when the
-    /// writer policy is `Tolerant`. A missing prefix bound (trait default is empty) means "no
-    /// forward-read beyond byte-identity", i.e. min_compat is kept.
-    fn bin_type_meta(&self, value: &dyn BaboonGeneratedDyn, is_adt_trait: bool, ctx: &BaboonCodecContext) -> BaboonTypeMeta {
-        let mut meta = self.type_meta_from(value, is_adt_trait);
+    /// writer policy is `Tolerant`, or with both bounds under v2. Fails fast when the value lacks
+    /// the tier.
+    fn bin_type_meta(&self, value: &dyn BaboonGeneratedDyn, is_adt_trait: bool, ctx: &BaboonCodecContext) -> Result<BaboonTypeMeta, BaboonCodecError> {
+        let mut meta = self.type_meta_from(value, is_adt_trait)?;
         let v2 = ctx.envelope_version() == BaboonEnvelopeVersion::V2;
         if v2 || ctx.forward_write_policy() == ForwardWritePolicy::Tolerant {
             let tier = if ctx.use_indices() {
@@ -860,12 +859,7 @@ impl BaboonCodecsFacade {
             } else {
                 BaboonTypeMeta::UEBA_PREFIX_COMPACT_TIER
             };
-            let bound = value
-                .baboon_min_reader_versions_dyn()
-                .into_iter()
-                .find(|(t, _)| t == tier)
-                .map(|(_, v)| v)
-                .unwrap_or_else(|| meta.domain_version_min_compat.clone());
+            let bound = Self::min_reader_bound(value, tier)?;
             if v2 {
                 // V2 carries both bounds; the writer policy is irrelevant
                 meta.meta_version = BaboonTypeMeta::META_VERSION_2;
@@ -874,10 +868,26 @@ impl BaboonCodecsFacade {
                 meta.domain_version_min_compat = bound;
             }
         }
-        meta
+        Ok(meta)
     }
 
-    fn type_meta_from(&self, value: &dyn BaboonGeneratedDyn, is_adt_trait: bool) -> BaboonTypeMeta {
+    fn min_reader_bound(value: &dyn BaboonGeneratedDyn, tier: &str) -> Result<String, BaboonCodecError> {
+        value
+            .baboon_min_reader_versions_dyn()
+            .into_iter()
+            .find(|(t, _)| t == tier)
+            .map(|(_, v)| v)
+            .ok_or_else(|| {
+                BaboonCodecError::encoder_failure(format!(
+                    "baboon_min_reader_versions_dyn lacks '{}' for type [{}.{}]",
+                    tier,
+                    value.baboon_domain_identifier_dyn(),
+                    value.baboon_type_identifier_dyn()
+                ))
+            })
+    }
+
+    fn type_meta_from(&self, value: &dyn BaboonGeneratedDyn, is_adt_trait: bool) -> Result<BaboonTypeMeta, BaboonCodecError> {
         let type_identifier = if is_adt_trait {
             match value.as_adt_member_meta_dyn() {
                 Some(adt) => adt.baboon_adt_type_identifier_dyn(),
@@ -896,22 +906,15 @@ impl BaboonCodecsFacade {
             value.baboon_type_identifier_dyn()
         );
         let min_compat = same_in[0].clone();
-        // `baboon_min_reader_versions_dyn` has a trait default (empty); a missing json-additive
-        // bound means "no forward-read beyond byte-identity", i.e. = min_compat
-        let readable_min = value
-            .baboon_min_reader_versions_dyn()
-            .into_iter()
-            .find(|(tier, _)| tier == BaboonTypeMeta::JSON_READABLE_TIER)
-            .map(|(_, v)| v)
-            .unwrap_or_else(|| min_compat.clone());
-        BaboonTypeMeta::new(
+        let readable_min = Self::min_reader_bound(value, BaboonTypeMeta::JSON_READABLE_TIER)?;
+        Ok(BaboonTypeMeta::new(
             BaboonTypeMeta::META_VERSION,
             value.baboon_domain_identifier_dyn(),
             value.baboon_domain_version_dyn(),
             min_compat,
             type_identifier,
         )
-        .with_readable_min(readable_min)
+        .with_readable_min(readable_min))
     }
 
     pub fn encode_to_bin_with_override(
@@ -934,7 +937,7 @@ impl BaboonCodecsFacade {
         type_meta_override: Option<&BaboonTypeMeta>,
         is_adt_trait: bool,
     ) -> Result<Vec<u8>, BaboonCodecError> {
-        let type_meta = self.bin_type_meta(value, is_adt_trait, ctx);
+        let type_meta = self.bin_type_meta(value, is_adt_trait, ctx)?;
         let codec = self.get_bin_codec(&type_meta, true)?;
         let effective = type_meta_override.unwrap_or(&type_meta);
         let mut buf = Vec::new();
@@ -975,7 +978,7 @@ impl BaboonCodecsFacade {
         type_meta_override: Option<&BaboonTypeMeta>,
         is_adt_trait: bool,
     ) -> Result<serde_json::Value, BaboonCodecError> {
-        let type_meta = self.type_meta_from(value, is_adt_trait);
+        let type_meta = self.type_meta_from(value, is_adt_trait)?;
         let codec = self.get_json_codec(&type_meta, true)?;
         let content = codec
             .encode_json_dyn(&BaboonCodecContext::Compact, value)

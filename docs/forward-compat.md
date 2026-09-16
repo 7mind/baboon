@@ -87,7 +87,10 @@ ranges — generated types carry `baboonMinReaderVersions` (tier → oldest read
 version; the `identical` bound equals `baboonSameInVersions.head`, the
 `json-additive` bound feeds `$rv`). `$rv` is elided when equal to the effective
 `$uv`, so envelopes of unchanged types are byte-identical to before; invariant
-`$rv <= $uv <= $v`. Old readers ignore the key.
+`$rv <= $uv <= $v`. Old readers ignore the key. A value whose
+`baboonMinReaderVersions` lacks the tier a writer needs is an encoder failure in
+every runtime — generated types always carry all four tiers, so this only
+guards hand-written implementations.
 
 Readers choose via `ForwardReadPolicy`:
 
@@ -505,20 +508,23 @@ Two consequences of scheme 2:
   (`ForwardCompatComparatorTest`, isolated `fwd-compat-ok` fixtures) and the
   runtime suites cover the negative side only: an indexed context does not
   lower the bound for a variable-length append.
-- **Missing-tier handling is not uniform.** When a value's
-  `baboonMinReaderVersions` lacks the tier the writer needs, Scala, TypeScript,
-  C#, Kotlin, KMP, Java and Dart fail fast; Python, Swift and Rust fall back to
-  the byte-identical bound (no lowering), following their pre-existing
-  leniency for the JSON bound, because those runtimes give
-  `baboonMinReaderVersions` a default in the base trait. The compiler emits all
-  four tiers for every generated type, so the difference is unreachable for
-  generated code and only visible to hand-written `BaboonGenerated`
-  implementations.
-- **Cross-runtime timestamp round trips are not byte-stable.** The `tso`/`tsu`
-  kind byte is derived from the writer's local time zone independently in each
-  runtime; unrelated to the envelope but it makes the converter round-trip
-  test (`RTCodecTest`) intermittently fail on random fixtures. Tracked as
-  https://github.com/7mind/baboon/issues/91.
+
+Closed gaps, kept for the record:
+
+- *Missing-tier handling* used to differ: Python, Swift and Rust fell back to
+  the byte-identical bound when `baboonMinReaderVersions` lacked a tier, the
+  other seven runtimes failed fast. All ten now fail fast (encoder failure),
+  `baboonMinReaderVersions` has no default in any runtime's base type, and each
+  of the three has a regression test with a hand-written value lacking the tiers.
+- *Timestamp kind byte round trips* (https://github.com/7mind/baboon/issues/91):
+  the C# `RpDateTime` keeps carrying its `DateTimeKind` on the wire (Local when
+  the offset matches the writer's zone) — this is intentional and unchanged, as
+  is the Scala side — so byte-for-byte equality of a `tso`/`tsu` across writers
+  is not guaranteed (`docs/ueba-format.md`). The converter round-trip test
+  (`RTCodecTest`) now falls back to a structural, equal-length comparison when
+  bytes differ, which is the property the round trip actually promises. Python
+  wrote `2` (Local) for every non-zero offset; it now writes `0` like the other
+  non-.NET runtimes.
 
 ## Out of scope (recorded)
 

@@ -193,9 +193,11 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
                 "BaboonTypeMeta.from: empty baboonSameInVersions for type [\(meta.baboonDomainIdentifier).\(typeId)]"
             )
         }
-        // baboonMinReaderVersions has a protocol-extension default (see BaboonMetaProvider); a
-        // missing json-additive bound means "no forward-read beyond byte-identity", i.e. = minCompat
-        let readableMin = meta.baboonMinReaderVersions[BaboonTypeMeta.jsonReadableTier] ?? sameIn[0]
+        guard let readableMin = meta.baboonMinReaderVersions[BaboonTypeMeta.jsonReadableTier] else {
+            throw BaboonException(
+                "BaboonTypeMeta.from: baboonMinReaderVersions lacks \"\(BaboonTypeMeta.jsonReadableTier)\" for type [\(meta.baboonDomainIdentifier).\(typeId)]"
+            )
+        }
         return BaboonTypeMeta(
             BaboonTypeMetaCodec.metaVersion,
             meta.baboonDomainIdentifier,
@@ -207,9 +209,8 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
     }
 
     // Envelope for a UEBA payload written under `ctx`: `from` with `domainVersionMinCompat` lowered
-    // to the prefix bound of the context's index mode when the writer policy is `.tolerant`. A
-    // missing prefix bound (protocol-extension default) means "no forward-read beyond
-    // byte-identity", i.e. minCompat is kept.
+    // to the prefix bound of the context's index mode when the writer policy is `.tolerant`, or with
+    // both bounds under v2. Fails fast when the value lacks the tier.
     public static func forBin(_ value: Any, _ ctx: BaboonCodecContext, useAdtIdentifier: Bool = false) throws -> BaboonTypeMeta {
         let meta = try from(value, useAdtIdentifier: useAdtIdentifier)
         let v2 = ctx.envelopeVersion == .v2
@@ -217,7 +218,11 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
             return meta
         }
         let tier = ctx.useIndices ? BaboonTypeMeta.uebaPrefixAnyModeTier : BaboonTypeMeta.uebaPrefixCompactTier
-        let bound = provider.baboonMinReaderVersions[tier] ?? meta.domainVersionMinCompat
+        guard let bound = provider.baboonMinReaderVersions[tier] else {
+            throw BaboonException(
+                "BaboonTypeMeta.forBin: baboonMinReaderVersions lacks \"\(tier)\" for type [\(meta.domainIdentifier).\(meta.typeIdentifier)]"
+            )
+        }
         // v2 carries both bounds (the writer policy is irrelevant); v1 tolerant puts the prefix bound in its single slot
         return v2
             ? BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion2, meta.domainIdentifier, meta.domainVersion, meta.domainVersionMinCompat, meta.typeIdentifier, bound)
