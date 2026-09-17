@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.swift
 
 import distage.Id
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.swift.SwBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.swift.SwTypes.*
 import io.septimalmind.baboon.translator.swift.SwValue.SwPackageId
@@ -352,11 +352,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
             List(RenderedConversion(fname, tools.inLib(classDef, Owner.Toplevel), Some(regtree), None))
         }
 
-        if (false) {
-          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
-        } else {
-          F.pure(rendered)
-        }
+        F.pure(rendered): Out[List[RenderedConversion]]
     }
   }
 

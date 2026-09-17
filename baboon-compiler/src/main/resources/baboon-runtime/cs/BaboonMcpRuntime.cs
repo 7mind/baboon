@@ -79,6 +79,40 @@ namespace Baboon.Runtime.Shared
     // carried as a constant value — the runtime does not compute schemas.
     public sealed record McpToolEntry(string Name, BaboonMethodId Method, JToken InputSchema, string? Description = null);
 
+    public sealed class McpToolRegistry
+    {
+        private readonly List<McpToolEntry> _tools = new();
+        private readonly Dictionary<string, McpToolEntry> _byName = new();
+
+        public McpToolRegistry(IEnumerable<McpToolEntry> tools)
+        {
+            foreach (var tool in tools)
+            {
+                var owned = tool with { InputSchema = tool.InputSchema.DeepClone() };
+                _tools.Add(owned);
+                _byName[owned.Name] = owned;
+            }
+        }
+
+        public IReadOnlyList<McpToolEntry> Snapshot()
+        {
+            var result = new List<McpToolEntry>(_tools.Count);
+            foreach (var tool in _tools) result.Add(tool with { InputSchema = tool.InputSchema.DeepClone() });
+            return result.AsReadOnly();
+        }
+
+        public bool TryFind(string name, out BaboonMethodId method)
+        {
+            if (_byName.TryGetValue(name, out var found))
+            {
+                method = found.Method;
+                return true;
+            }
+            method = null!;
+            return false;
+        }
+    }
+
     public sealed record McpServerInfo(string Name, string Version);
 
     // --- Dispatch interface ---
@@ -154,6 +188,60 @@ namespace Baboon.Runtime.Shared
         Ctx ctx,
         BaboonCodecContext codecCtx);
 
+    internal static class McpProtocolDispatch
+    {
+        internal static JsonRpcResponse Initialize(JsonRpcRequest request, McpSession session, Func<McpServerInfo> serverInfo)
+        {
+            var pv = request.Params?["protocolVersion"];
+            if (request.Params == null || pv == null)
+                return new JsonRpcResponse(request.Id, null, new JsonRpcError(JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion"));
+            session.Initialized = true;
+            return new JsonRpcResponse(request.Id, new JObject
+            {
+                ["protocolVersion"] = McpProtocol.Version,
+                ["capabilities"] = new JObject { ["tools"] = new JObject() },
+                ["serverInfo"] = new JObject { ["name"] = serverInfo().Name, ["version"] = serverInfo().Version },
+            });
+        }
+
+        internal static JsonRpcResponse List(JsonRpcRequest request, McpSession session, Func<JArray> tools)
+        {
+            if (!session.Initialized)
+                return new JsonRpcResponse(request.Id, null, new JsonRpcError(JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize"));
+            return new JsonRpcResponse(request.Id, new JObject { ["tools"] = tools() });
+        }
+
+        internal static JArray ToolsList(IEnumerable<McpToolEntry> entries)
+        {
+            var tools = new JArray();
+            foreach (var t in entries)
+            {
+                var entry = new JObject { ["name"] = t.Name, ["inputSchema"] = t.InputSchema };
+                if (t.Description != null) entry["description"] = t.Description;
+                tools.Add(entry);
+            }
+            return tools;
+        }
+
+        internal static JsonRpcResponse? ValidateCall(JsonRpcRequest request, McpSession session, out string toolName)
+        {
+            toolName = "";
+            if (!session.Initialized)
+                return new JsonRpcResponse(request.Id, null, new JsonRpcError(JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize"));
+            var name = request.Params?["name"];
+            if (name == null || name.Type != JTokenType.String)
+                return new JsonRpcResponse(request.Id, null, new JsonRpcError(JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name"));
+            toolName = name.Value<string>()!;
+            return null;
+        }
+
+        internal static JsonRpcResponse ToolResult(JToken? id, string text, bool isError)
+        {
+            var content = new JArray { new JObject { ["type"] = "text", ["text"] = text } };
+            return new JsonRpcResponse(id, new JObject { ["content"] = content, ["isError"] = isError });
+        }
+    }
+
     // --- Transport-abstract dispatch base ---
     //
     // Shared `Handle` state machine. The generated `<Service>McpServer` extends
@@ -178,6 +266,17 @@ namespace Baboon.Runtime.Shared
             return InvokeJson(method, data, ctx, codecCtx);
         }
 
+        protected virtual bool TryFindTool(string name, out BaboonMethodId method)
+        {
+            if (ByName().TryGetValue(name, out var found))
+            {
+                method = found.Method;
+                return true;
+            }
+            method = null!;
+            return false;
+        }
+
         private Dictionary<string, McpToolEntry> ByName()
         {
             var m = new Dictionary<string, McpToolEntry>();
@@ -194,75 +293,24 @@ namespace Baboon.Runtime.Shared
             switch (request.Method)
             {
                 case "initialize":
-                {
-                    var pv = request.Params?["protocolVersion"];
-                    if (request.Params == null || pv == null)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion");
-                    }
-                    session.Initialized = true;
-                    var result = new JObject
-                    {
-                        ["protocolVersion"] = McpProtocol.Version,
-                        ["capabilities"] = new JObject { ["tools"] = new JObject() },
-                        ["serverInfo"] = new JObject { ["name"] = ServerInfo.Name, ["version"] = ServerInfo.Version },
-                    };
-                    return new JsonRpcResponse(id, result);
-                }
+                    return McpProtocolDispatch.Initialize(request, session, () => ServerInfo);
                 case "notifications/initialized":
                     return null;
                 case "tools/list":
-                {
-                    if (!session.Initialized)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize");
-                    }
-                    var tools = new JArray();
-                    foreach (var t in Tools)
-                    {
-                        var entry = new JObject
-                        {
-                            ["name"] = t.Name,
-                            ["inputSchema"] = t.InputSchema,
-                        };
-                        if (t.Description != null)
-                        {
-                            entry["description"] = t.Description;
-                        }
-                        tools.Add(entry);
-                    }
-                    return new JsonRpcResponse(id, new JObject { ["tools"] = tools });
-                }
+                    return McpProtocolDispatch.List(request, session, () => McpProtocolDispatch.ToolsList(Tools));
                 case "tools/call":
                 {
-                    if (!session.Initialized)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize");
-                    }
-                    var name = request.Params?["name"];
-                    if (name == null || name.Type != JTokenType.String)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name");
-                    }
-                    var toolName = name.Value<string>()!;
-                    if (!ByName().TryGetValue(toolName, out var entry))
+                    var invalid = McpProtocolDispatch.ValidateCall(request, session, out var toolName);
+                    if (invalid != null) return invalid;
+                    if (!TryFindTool(toolName, out var method))
                     {
                         return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, $"tools/call: unknown tool '{toolName}'");
                     }
                     var argsToken = request.Params?["arguments"] ?? new JObject();
                     var argsJson = argsToken.ToString(Newtonsoft.Json.Formatting.None);
-                    var result = InvokeJson(entry.Method, argsJson, ctx, codecCtx);
-                    if (result.IsRight)
-                    {
-                        var content = new JArray { new JObject { ["type"] = "text", ["text"] = result.GetRight() } };
-                        return new JsonRpcResponse(id, new JObject { ["content"] = content, ["isError"] = false });
-                    }
-                    else
-                    {
-                        // Channel B: a valid protocol call whose domain payload failed.
-                        var content = new JArray { new JObject { ["type"] = "text", ["text"] = DescribeWiringError(result.GetLeft()) } };
-                        return new JsonRpcResponse(id, new JObject { ["content"] = content, ["isError"] = true });
-                    }
+                    var result = InvokeJson(method, argsJson, ctx, codecCtx);
+                    return McpProtocolDispatch.ToolResult(id,
+                        result.IsRight ? result.GetRight() : DescribeWiringError(result.GetLeft()), !result.IsRight);
                 }
                 default:
                     return ErrorResponse(id, JsonRpcErrorCodes.MethodNotFound, $"Method not found: {request.Method}");
@@ -377,65 +425,25 @@ namespace Baboon.Runtime.Shared
             switch (request.Method)
             {
                 case "initialize":
-                {
-                    var pv = request.Params?["protocolVersion"];
-                    if (request.Params == null || pv == null)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion");
-                    }
-                    session.Initialized = true;
-                    var result = new Newtonsoft.Json.Linq.JObject
-                    {
-                        ["protocolVersion"] = McpProtocol.Version,
-                        ["capabilities"] = new Newtonsoft.Json.Linq.JObject { ["tools"] = new Newtonsoft.Json.Linq.JObject() },
-                        ["serverInfo"] = new Newtonsoft.Json.Linq.JObject { ["name"] = _mergedServerInfo.Name, ["version"] = _mergedServerInfo.Version },
-                    };
-                    return new JsonRpcResponse(id, result);
-                }
+                    return McpProtocolDispatch.Initialize(request, session, () => _mergedServerInfo);
                 case "notifications/initialized":
                     return null;
                 case "tools/list":
-                {
-                    if (!session.Initialized)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize");
-                    }
-                    return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["tools"] = ToolsListUnion() });
-                }
+                    return McpProtocolDispatch.List(request, session, ToolsListUnion);
                 case "tools/call":
                 {
-                    if (!session.Initialized)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize");
-                    }
-                    var name = request.Params?["name"];
-                    if (name == null || name.Type != Newtonsoft.Json.Linq.JTokenType.String)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name");
-                    }
-                    var toolName = name.Value<string>()!;
+                    var invalid = McpProtocolDispatch.ValidateCall(request, session, out var toolName);
+                    if (invalid != null) return invalid;
                     if (!_route.TryGetValue(toolName, out var server))
                     {
-                        // NoMatchingTool: surfaced as the SAME wire response the per-service
-                        // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
-                        // so the bytes are identical whether one server or the muxer rejects.
                         return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, $"tools/call: unknown tool '{toolName}'");
                     }
                     var entry = _entries[toolName];
-                    var argsToken = request.Params?["arguments"] ?? new Newtonsoft.Json.Linq.JObject();
+                    var argsToken = request.Params?["arguments"] ?? new JObject();
                     var argsJson = argsToken.ToString(Newtonsoft.Json.Formatting.None);
                     var result = server.RouteToolCall(entry.Method, argsJson, ctx, codecCtx);
-                    if (result.IsRight)
-                    {
-                        var content = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject { ["type"] = "text", ["text"] = result.GetRight() } };
-                        return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["content"] = content, ["isError"] = false });
-                    }
-                    else
-                    {
-                        // Channel B: a valid protocol call whose domain payload failed.
-                        var content = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject { ["type"] = "text", ["text"] = DescribeWiringError(result.GetLeft()) } };
-                        return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["content"] = content, ["isError"] = true });
-                    }
+                    return McpProtocolDispatch.ToolResult(id,
+                        result.IsRight ? result.GetRight() : DescribeWiringError(result.GetLeft()), !result.IsRight);
                 }
                 default:
                     return ErrorResponse(id, JsonRpcErrorCodes.MethodNotFound, $"Method not found: {request.Method}");
@@ -445,24 +453,14 @@ namespace Baboon.Runtime.Shared
         // Backs tools/list (§3.2): the union of all registered servers' tool entries
         // in registration-then-declaration order (insertion order of `_toolOrder`),
         // each in the same shape the per-service base emits.
-        private Newtonsoft.Json.Linq.JArray ToolsListUnion()
+        private JArray ToolsListUnion()
         {
-            var tools = new Newtonsoft.Json.Linq.JArray();
-            foreach (var name in _toolOrder)
-            {
-                var t = _entries[name];
-                var entry = new Newtonsoft.Json.Linq.JObject
-                {
-                    ["name"] = t.Name,
-                    ["inputSchema"] = t.InputSchema,
-                };
-                if (t.Description != null)
-                {
-                    entry["description"] = t.Description;
-                }
-                tools.Add(entry);
-            }
-            return tools;
+            return McpProtocolDispatch.ToolsList(OrderedTools());
+        }
+
+        private IEnumerable<McpToolEntry> OrderedTools()
+        {
+            foreach (var name in _toolOrder) yield return _entries[name];
         }
 
         protected JsonRpcResponse ErrorResponse(Newtonsoft.Json.Linq.JToken? id, int code, string message)
@@ -520,86 +518,39 @@ namespace Baboon.Runtime.Shared
             switch (request.Method)
             {
                 case "initialize":
-                {
-                    var pv = request.Params?["protocolVersion"];
-                    if (request.Params == null || pv == null)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion");
-                    }
-                    session.Initialized = true;
-                    var result = new Newtonsoft.Json.Linq.JObject
-                    {
-                        ["protocolVersion"] = McpProtocol.Version,
-                        ["capabilities"] = new Newtonsoft.Json.Linq.JObject { ["tools"] = new Newtonsoft.Json.Linq.JObject() },
-                        ["serverInfo"] = new Newtonsoft.Json.Linq.JObject { ["name"] = _mergedServerInfo.Name, ["version"] = _mergedServerInfo.Version },
-                    };
-                    return new JsonRpcResponse(id, result);
-                }
+                    return McpProtocolDispatch.Initialize(request, session, () => _mergedServerInfo);
                 case "notifications/initialized":
                     return null;
                 case "tools/list":
-                {
-                    if (!session.Initialized)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize");
-                    }
-                    return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["tools"] = ToolsListUnion() });
-                }
+                    return McpProtocolDispatch.List(request, session, ToolsListUnion);
                 case "tools/call":
                 {
-                    if (!session.Initialized)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize");
-                    }
-                    var name = request.Params?["name"];
-                    if (name == null || name.Type != Newtonsoft.Json.Linq.JTokenType.String)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name");
-                    }
-                    var toolName = name.Value<string>()!;
+                    var invalid = McpProtocolDispatch.ValidateCall(request, session, out var toolName);
+                    if (invalid != null) return invalid;
                     if (!_route.TryGetValue(toolName, out var server))
                     {
                         return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, $"tools/call: unknown tool '{toolName}'");
                     }
                     var entry = _entries[toolName];
-                    var argsToken = request.Params?["arguments"] ?? new Newtonsoft.Json.Linq.JObject();
+                    var argsToken = request.Params?["arguments"] ?? new JObject();
                     var argsJson = argsToken.ToString(Newtonsoft.Json.Formatting.None);
                     var result = await server.RouteToolCall(entry.Method, argsJson, ctx, codecCtx);
-                    if (result.IsRight)
-                    {
-                        var content = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject { ["type"] = "text", ["text"] = result.GetRight() } };
-                        return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["content"] = content, ["isError"] = false });
-                    }
-                    else
-                    {
-                        // Channel B: a valid protocol call whose domain payload failed.
-                        var content = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject { ["type"] = "text", ["text"] = DescribeWiringError(result.GetLeft()) } };
-                        return new JsonRpcResponse(id, new Newtonsoft.Json.Linq.JObject { ["content"] = content, ["isError"] = true });
-                    }
+                    return McpProtocolDispatch.ToolResult(id,
+                        result.IsRight ? result.GetRight() : DescribeWiringError(result.GetLeft()), !result.IsRight);
                 }
                 default:
                     return ErrorResponse(id, JsonRpcErrorCodes.MethodNotFound, $"Method not found: {request.Method}");
             }
         }
 
-        private Newtonsoft.Json.Linq.JArray ToolsListUnion()
+        private JArray ToolsListUnion()
         {
-            var tools = new Newtonsoft.Json.Linq.JArray();
-            foreach (var name in _toolOrder)
-            {
-                var t = _entries[name];
-                var entry = new Newtonsoft.Json.Linq.JObject
-                {
-                    ["name"] = t.Name,
-                    ["inputSchema"] = t.InputSchema,
-                };
-                if (t.Description != null)
-                {
-                    entry["description"] = t.Description;
-                }
-                tools.Add(entry);
-            }
-            return tools;
+            return McpProtocolDispatch.ToolsList(OrderedTools());
+        }
+
+        private IEnumerable<McpToolEntry> OrderedTools()
+        {
+            foreach (var name in _toolOrder) yield return _entries[name];
         }
 
         protected JsonRpcResponse ErrorResponse(Newtonsoft.Json.Linq.JToken? id, int code, string message)
@@ -635,6 +586,17 @@ namespace Baboon.Runtime.Shared
             return InvokeJson(method, data, ctx, codecCtx);
         }
 
+        protected virtual bool TryFindTool(string name, out BaboonMethodId method)
+        {
+            if (ByName().TryGetValue(name, out var found))
+            {
+                method = found.Method;
+                return true;
+            }
+            method = null!;
+            return false;
+        }
+
         private Dictionary<string, McpToolEntry> ByName()
         {
             var m = new Dictionary<string, McpToolEntry>();
@@ -651,75 +613,24 @@ namespace Baboon.Runtime.Shared
             switch (request.Method)
             {
                 case "initialize":
-                {
-                    var pv = request.Params?["protocolVersion"];
-                    if (request.Params == null || pv == null)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion");
-                    }
-                    session.Initialized = true;
-                    var result = new JObject
-                    {
-                        ["protocolVersion"] = McpProtocol.Version,
-                        ["capabilities"] = new JObject { ["tools"] = new JObject() },
-                        ["serverInfo"] = new JObject { ["name"] = ServerInfo.Name, ["version"] = ServerInfo.Version },
-                    };
-                    return new JsonRpcResponse(id, result);
-                }
+                    return McpProtocolDispatch.Initialize(request, session, () => ServerInfo);
                 case "notifications/initialized":
                     return null;
                 case "tools/list":
-                {
-                    if (!session.Initialized)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize");
-                    }
-                    var tools = new JArray();
-                    foreach (var t in Tools)
-                    {
-                        var entry = new JObject
-                        {
-                            ["name"] = t.Name,
-                            ["inputSchema"] = t.InputSchema,
-                        };
-                        if (t.Description != null)
-                        {
-                            entry["description"] = t.Description;
-                        }
-                        tools.Add(entry);
-                    }
-                    return new JsonRpcResponse(id, new JObject { ["tools"] = tools });
-                }
+                    return McpProtocolDispatch.List(request, session, () => McpProtocolDispatch.ToolsList(Tools));
                 case "tools/call":
                 {
-                    if (!session.Initialized)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize");
-                    }
-                    var name = request.Params?["name"];
-                    if (name == null || name.Type != JTokenType.String)
-                    {
-                        return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name");
-                    }
-                    var toolName = name.Value<string>()!;
-                    if (!ByName().TryGetValue(toolName, out var entry))
+                    var invalid = McpProtocolDispatch.ValidateCall(request, session, out var toolName);
+                    if (invalid != null) return invalid;
+                    if (!TryFindTool(toolName, out var method))
                     {
                         return ErrorResponse(id, JsonRpcErrorCodes.InvalidParams, $"tools/call: unknown tool '{toolName}'");
                     }
                     var argsToken = request.Params?["arguments"] ?? new JObject();
                     var argsJson = argsToken.ToString(Newtonsoft.Json.Formatting.None);
-                    var result = await InvokeJson(entry.Method, argsJson, ctx, codecCtx);
-                    if (result.IsRight)
-                    {
-                        var content = new JArray { new JObject { ["type"] = "text", ["text"] = result.GetRight() } };
-                        return new JsonRpcResponse(id, new JObject { ["content"] = content, ["isError"] = false });
-                    }
-                    else
-                    {
-                        // Channel B: a valid protocol call whose domain payload failed.
-                        var content = new JArray { new JObject { ["type"] = "text", ["text"] = DescribeWiringError(result.GetLeft()) } };
-                        return new JsonRpcResponse(id, new JObject { ["content"] = content, ["isError"] = true });
-                    }
+                    var result = await InvokeJson(method, argsJson, ctx, codecCtx);
+                    return McpProtocolDispatch.ToolResult(id,
+                        result.IsRight ? result.GetRight() : DescribeWiringError(result.GetLeft()), !result.IsRight);
                 }
                 default:
                     return ErrorResponse(id, JsonRpcErrorCodes.MethodNotFound, $"Method not found: {request.Method}");

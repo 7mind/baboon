@@ -3,6 +3,7 @@
 
 
 from abc import ABC, abstractmethod
+import json
 from enum import Enum
 from typing import Any, Optional, TypeVar, Generic
 
@@ -53,7 +54,11 @@ class BaboonStreamCodec(BaboonCodec[T], Generic[T, TIn, TOut]):
         raise NotImplementedError
 
 class BaboonJsonCodec(BaboonValueCodec[T, TCodec], BaboonSingleton[TCodec]):
-    pass
+    def encode_value(self, context: 'BaboonCodecContext', value: T) -> Any:
+        return json.loads(self.encode(context, value))
+
+    def decode_value(self, context: 'BaboonCodecContext', value: Any) -> T:
+        return self.decode(context, json.dumps(value))
 
 class BaboonBinCodec(BaboonStreamCodec[T, 'LEDataInputStream', 'LEDataOutputStream'], BaboonSingleton[TCodec]):
     pass
@@ -226,9 +231,17 @@ class BaboonBinCodecIndexed(ABC):
     def index_elements_count(self, ctx: BaboonCodecContext) -> int: ...
 
     def read_index(self, ctx: BaboonCodecContext, wire: 'LEDataInputStream') -> list[BaboonIndexEntry]:
+        result: list[BaboonIndexEntry] = []
+        self._read_index(ctx, wire, result)
+        return result
+
+    def consume_index(self, ctx: BaboonCodecContext, wire: 'LEDataInputStream') -> int:
+        return self._read_index(ctx, wire, None)
+
+    def _read_index(self, ctx: BaboonCodecContext, wire: 'LEDataInputStream', entries: Optional[list[BaboonIndexEntry]]) -> int:
         header = wire.read_byte()
         is_indexed = (header & 0b00000001) != 0
-        result: list[BaboonIndexEntry] = []
+        count = 0
 
         prev_offset = 0
         prev_len = 0
@@ -242,12 +255,14 @@ class BaboonBinCodecIndexed(ABC):
                 assert length > 0, "Length must be positive"
                 assert offset >= prev_offset + prev_len, f"Offset violation: {offset} < {prev_offset + prev_len}"
 
-                result.append(BaboonIndexEntry(offset=offset, length=length))
+                if entries is not None:
+                    entries.append(BaboonIndexEntry(offset=offset, length=length))
+                count += 1
                 left -= 1
                 prev_offset = offset
                 prev_len = length
 
-        return result
+        return count
 
 class AbstractBaboonCodecs:
     def __init__(self):

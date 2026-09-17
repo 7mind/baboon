@@ -542,17 +542,13 @@ public class BaboonCodecsFacade {
         if (targetClass.isInstance(value)) return BaboonEither.right((TTo) value);
 
         Class<?> actual = value.getClass();
-        String fromDomainId;
-        String fromDomainVersion;
+        BaboonDomainVersion dvFrom;
         try {
-            fromDomainId = (String) actual.getField("baboonDomainIdentifier").get(null);
-            fromDomainVersion = (String) actual.getField("baboonDomainVersion").get(null);
+            dvFrom = BaboonMetadataAccess.conversionDomainVersion(actual);
         } catch (ReflectiveOperationException e) {
             return BaboonEither.left(new BaboonCodecException.ConverterFailure(
                 "Cannot read baboon domain metadata from " + actual.getName(), e));
         }
-        BaboonDomainVersion dvFrom = new BaboonDomainVersion(fromDomainId, fromDomainVersion);
-
         List<BaboonDomainVersion> versions = domainVersions.get(dvFrom.domainIdentifier());
         if (versions == null || versions.isEmpty()) {
             return BaboonEither.left(new BaboonCodecException.ConverterFailure(

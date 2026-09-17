@@ -134,6 +134,106 @@ typealias McpJsonInvoke<Ctx> = (method: BaboonMethodId, data: String, ctx: Ctx, 
 // All JSON-RPC method strings ("tools/list" …) and result keys ("protocolVersion",
 // "inputSchema" …) are literal lowercase strings, NOT subject to any per-language
 // symbol casing.
+private interface McpDispatchOwner<Ctx> {
+    val serverInfo: McpServerInfo
+    val tools: Collection<McpToolEntry>
+    fun lookup(name: String): Pair<McpToolEntry, IBaboonRoutableMcpServer<Ctx>>?
+    fun errorResponse(id: JsonElement?, code: Int, message: String): JsonRpcResponse
+    fun describeWiringError(error: BaboonWiringError): String
+}
+
+private object McpProtocolDispatch {
+    fun <Ctx> handle(owner: McpDispatchOwner<Ctx>, request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse? {
+        val id = request.id
+        return when (request.method) {
+            "initialize" -> {
+                val params = request.params
+                val pv = if (params is JsonObject) params["protocolVersion"] else null
+                if (params == null || pv == null) {
+                    owner.errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "initialize: missing protocolVersion")
+                } else {
+                    session.initialized = true
+                    val result = buildJsonObject {
+                        put("protocolVersion", JsonPrimitive(McpProtocol.VERSION))
+                        put("capabilities", buildJsonObject { put("tools", buildJsonObject { }) })
+                        put("serverInfo", buildJsonObject {
+                            put("name", JsonPrimitive(owner.serverInfo.name))
+                            put("version", JsonPrimitive(owner.serverInfo.version))
+                        })
+                    }
+                    JsonRpcResponse(id, result)
+                }
+            }
+            "notifications/initialized" -> null
+            "tools/list" -> {
+                if (!session.initialized) {
+                    owner.errorResponse(id, JsonRpcErrorCodes.INVALID_REQUEST, "tools/list before initialize")
+                } else {
+                    val toolsArray = buildJsonArray {
+                        for (t in owner.tools) {
+                            val entry = buildJsonObject {
+                                put("name", JsonPrimitive(t.name))
+                                put("inputSchema", t.inputSchema)
+                                t.description?.let { put("description", JsonPrimitive(it)) }
+                            }
+                            add(entry)
+                        }
+                    }
+                    JsonRpcResponse(id, buildJsonObject { put("tools", toolsArray) })
+                }
+            }
+            "tools/call" -> {
+                if (!session.initialized) {
+                    owner.errorResponse(id, JsonRpcErrorCodes.INVALID_REQUEST, "tools/call before initialize")
+                } else {
+                    val paramsObj = request.params as? JsonObject
+                    val nameEl = paramsObj?.get("name")
+                    if (nameEl == null || nameEl is JsonNull) {
+                        owner.errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: missing tool name")
+                    } else {
+                        val toolName = (nameEl as? JsonPrimitive)?.contentOrNull
+                            ?: return owner.errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: tool name must be a string")
+                        val (entry, server) = owner.lookup(toolName)
+                            ?: return owner.errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: unknown tool '$toolName'")
+                        val argsEl = paramsObj["arguments"] ?: buildJsonObject { }
+                        val argsJson = Json.encodeToString(JsonElement.serializer(), argsEl)
+                        val result = server.routeToolCall(entry.method, argsJson, ctx, codecCtx)
+                        when (result) {
+                            is Either.Right -> {
+                                val content = buildJsonArray {
+                                    add(buildJsonObject {
+                                        put("type", JsonPrimitive("text"))
+                                        put("text", JsonPrimitive(result.value))
+                                    })
+                                }
+                                JsonRpcResponse(id, buildJsonObject {
+                                    put("content", content)
+                                    put("isError", JsonPrimitive(false))
+                                })
+                            }
+                            is Either.Left -> {
+                                // Channel B: a valid protocol call whose domain payload failed.
+                                val content = buildJsonArray {
+                                    add(buildJsonObject {
+                                        put("type", JsonPrimitive("text"))
+                                        put("text", JsonPrimitive(owner.describeWiringError(result.value)))
+                                    })
+                                }
+                                JsonRpcResponse(id, buildJsonObject {
+                                    put("content", content)
+                                    put("isError", JsonPrimitive(true))
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+            else -> owner.errorResponse(id, JsonRpcErrorCodes.METHOD_NOT_FOUND, "Method not found: ${request.method}")
+        }
+    }
+
+}
+
 abstract class AbstractBaboonMcpServer<Ctx> : IBaboonMcpServer<Ctx>, IBaboonRoutableMcpServer<Ctx> {
     // PUBLIC routable-server surface (tasks:T114): the muxer reads `serverInfo` /
     // `tools` and routes via `routeToolCall`, never via the private `byName()`
@@ -153,94 +253,19 @@ abstract class AbstractBaboonMcpServer<Ctx> : IBaboonMcpServer<Ctx>, IBaboonRout
         return m
     }
 
-    override fun handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse? {
-        val id = request.id
-        return when (request.method) {
-            "initialize" -> {
-                val params = request.params
-                val pv = if (params is JsonObject) params["protocolVersion"] else null
-                if (params == null || pv == null) {
-                    errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "initialize: missing protocolVersion")
-                } else {
-                    session.initialized = true
-                    val result = buildJsonObject {
-                        put("protocolVersion", JsonPrimitive(McpProtocol.VERSION))
-                        put("capabilities", buildJsonObject { put("tools", buildJsonObject { }) })
-                        put("serverInfo", buildJsonObject {
-                            put("name", JsonPrimitive(serverInfo.name))
-                            put("version", JsonPrimitive(serverInfo.version))
-                        })
-                    }
-                    JsonRpcResponse(id, result)
-                }
-            }
-            "notifications/initialized" -> null
-            "tools/list" -> {
-                if (!session.initialized) {
-                    errorResponse(id, JsonRpcErrorCodes.INVALID_REQUEST, "tools/list before initialize")
-                } else {
-                    val toolsArray = buildJsonArray {
-                        for (t in tools) {
-                            val entry = buildJsonObject {
-                                put("name", JsonPrimitive(t.name))
-                                put("inputSchema", t.inputSchema)
-                                t.description?.let { put("description", JsonPrimitive(it)) }
-                            }
-                            add(entry)
-                        }
-                    }
-                    JsonRpcResponse(id, buildJsonObject { put("tools", toolsArray) })
-                }
-            }
-            "tools/call" -> {
-                if (!session.initialized) {
-                    errorResponse(id, JsonRpcErrorCodes.INVALID_REQUEST, "tools/call before initialize")
-                } else {
-                    val paramsObj = request.params as? JsonObject
-                    val nameEl = paramsObj?.get("name")
-                    if (nameEl == null || nameEl is JsonNull) {
-                        errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: missing tool name")
-                    } else {
-                        val toolName = (nameEl as? JsonPrimitive)?.contentOrNull
-                            ?: return errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: tool name must be a string")
-                        val entry = byName()[toolName]
-                            ?: return errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: unknown tool '$toolName'")
-                        val argsEl = paramsObj["arguments"] ?: buildJsonObject { }
-                        val argsJson = Json.encodeToString(JsonElement.serializer(), argsEl)
-                        val result = invokeJson(entry.method, argsJson, ctx, codecCtx)
-                        when (result) {
-                            is Either.Right -> {
-                                val content = buildJsonArray {
-                                    add(buildJsonObject {
-                                        put("type", JsonPrimitive("text"))
-                                        put("text", JsonPrimitive(result.value))
-                                    })
-                                }
-                                JsonRpcResponse(id, buildJsonObject {
-                                    put("content", content)
-                                    put("isError", JsonPrimitive(false))
-                                })
-                            }
-                            is Either.Left -> {
-                                // Channel B: a valid protocol call whose domain payload failed.
-                                val content = buildJsonArray {
-                                    add(buildJsonObject {
-                                        put("type", JsonPrimitive("text"))
-                                        put("text", JsonPrimitive(describeWiringError(result.value)))
-                                    })
-                                }
-                                JsonRpcResponse(id, buildJsonObject {
-                                    put("content", content)
-                                    put("isError", JsonPrimitive(true))
-                                })
-                            }
-                        }
-                    }
-                }
-            }
-            else -> errorResponse(id, JsonRpcErrorCodes.METHOD_NOT_FOUND, "Method not found: ${request.method}")
-        }
+    private val dispatchOwner = object : McpDispatchOwner<Ctx> {
+        override val serverInfo: McpServerInfo get() = this@AbstractBaboonMcpServer.serverInfo
+        override val tools: Collection<McpToolEntry> get() = this@AbstractBaboonMcpServer.tools
+        override fun lookup(name: String): Pair<McpToolEntry, IBaboonRoutableMcpServer<Ctx>>? =
+            byName()[name]?.let { it to this@AbstractBaboonMcpServer }
+        override fun errorResponse(id: JsonElement?, code: Int, message: String): JsonRpcResponse =
+            this@AbstractBaboonMcpServer.errorResponse(id, code, message)
+        override fun describeWiringError(error: BaboonWiringError): String =
+            this@AbstractBaboonMcpServer.describeWiringError(error)
     }
+
+    override fun handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse? =
+        McpProtocolDispatch.handle(dispatchOwner, request, session, ctx, codecCtx)
 
     protected fun errorResponse(id: JsonElement?, code: Int, message: String): JsonRpcResponse {
         return JsonRpcResponse(id, null, JsonRpcError(code, message))
@@ -325,94 +350,19 @@ class AbstractMcpMuxer<Ctx>(
         }
     }
 
-    override fun handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse? {
-        val id = request.id
-        return when (request.method) {
-            "initialize" -> {
-                val params = request.params
-                val pv = if (params is JsonObject) params["protocolVersion"] else null
-                if (params == null || pv == null) {
-                    errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "initialize: missing protocolVersion")
-                } else {
-                    session.initialized = true
-                    val result = buildJsonObject {
-                        put("protocolVersion", JsonPrimitive(McpProtocol.VERSION))
-                        put("capabilities", buildJsonObject { put("tools", buildJsonObject { }) })
-                        put("serverInfo", buildJsonObject {
-                            put("name", JsonPrimitive(mergedServerInfo.name))
-                            put("version", JsonPrimitive(mergedServerInfo.version))
-                        })
-                    }
-                    JsonRpcResponse(id, result)
-                }
-            }
-            "notifications/initialized" -> null
-            "tools/list" -> {
-                if (!session.initialized) {
-                    errorResponse(id, JsonRpcErrorCodes.INVALID_REQUEST, "tools/list before initialize")
-                } else {
-                    val toolsArray = buildJsonArray {
-                        for (t in entries.values) {
-                            val entry = buildJsonObject {
-                                put("name", JsonPrimitive(t.name))
-                                put("inputSchema", t.inputSchema)
-                                t.description?.let { put("description", JsonPrimitive(it)) }
-                            }
-                            add(entry)
-                        }
-                    }
-                    JsonRpcResponse(id, buildJsonObject { put("tools", toolsArray) })
-                }
-            }
-            "tools/call" -> {
-                if (!session.initialized) {
-                    errorResponse(id, JsonRpcErrorCodes.INVALID_REQUEST, "tools/call before initialize")
-                } else {
-                    val paramsObj = request.params as? JsonObject
-                    val nameEl = paramsObj?.get("name")
-                    if (nameEl == null || nameEl is JsonNull) {
-                        errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: missing tool name")
-                    } else {
-                        val toolName = (nameEl as? JsonPrimitive)?.contentOrNull
-                            ?: return errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: tool name must be a string")
-                        val server = route[toolName]
-                            ?: return errorResponse(id, JsonRpcErrorCodes.INVALID_PARAMS, "tools/call: unknown tool '$toolName'")
-                        val entry = entries[toolName]!!
-                        val argsEl = paramsObj["arguments"] ?: buildJsonObject { }
-                        val argsJson = Json.encodeToString(JsonElement.serializer(), argsEl)
-                        when (val result = server.routeToolCall(entry.method, argsJson, ctx, codecCtx)) {
-                            is Either.Right -> {
-                                val content = buildJsonArray {
-                                    add(buildJsonObject {
-                                        put("type", JsonPrimitive("text"))
-                                        put("text", JsonPrimitive(result.value))
-                                    })
-                                }
-                                JsonRpcResponse(id, buildJsonObject {
-                                    put("content", content)
-                                    put("isError", JsonPrimitive(false))
-                                })
-                            }
-                            is Either.Left -> {
-                                // Channel B: a valid protocol call whose domain payload failed.
-                                val content = buildJsonArray {
-                                    add(buildJsonObject {
-                                        put("type", JsonPrimitive("text"))
-                                        put("text", JsonPrimitive(describeWiringError(result.value)))
-                                    })
-                                }
-                                JsonRpcResponse(id, buildJsonObject {
-                                    put("content", content)
-                                    put("isError", JsonPrimitive(true))
-                                })
-                            }
-                        }
-                    }
-                }
-            }
-            else -> errorResponse(id, JsonRpcErrorCodes.METHOD_NOT_FOUND, "Method not found: ${request.method}")
-        }
+    private val dispatchOwner = object : McpDispatchOwner<Ctx> {
+        override val serverInfo: McpServerInfo get() = mergedServerInfo
+        override val tools: Collection<McpToolEntry> get() = entries.values
+        override fun lookup(name: String): Pair<McpToolEntry, IBaboonRoutableMcpServer<Ctx>>? =
+            route[name]?.let { entries[name]!! to it }
+        override fun errorResponse(id: JsonElement?, code: Int, message: String): JsonRpcResponse =
+            this@AbstractMcpMuxer.errorResponse(id, code, message)
+        override fun describeWiringError(error: BaboonWiringError): String =
+            this@AbstractMcpMuxer.describeWiringError(error)
     }
+
+    override fun handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse? =
+        McpProtocolDispatch.handle(dispatchOwner, request, session, ctx, codecCtx)
 
     protected fun errorResponse(id: JsonElement?, code: Int, message: String): JsonRpcResponse {
         return JsonRpcResponse(id, null, JsonRpcError(code, message))

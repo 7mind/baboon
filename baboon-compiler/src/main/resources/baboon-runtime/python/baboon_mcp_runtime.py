@@ -14,7 +14,7 @@
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Callable, Dict, Generic, Iterable, List, Optional, TypeVar
 
 from .baboon_service_wiring import BaboonLeft, BaboonMethodId, BaboonRight, BaboonWiringError
 
@@ -54,6 +54,57 @@ class McpToolEntry:
 class McpSession:
     def __init__(self) -> None:
         self.initialized: bool = False
+
+
+def _rpc_error(req_id: Any, code: int, message: str) -> Dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
+
+
+def _initialize_response(req_id: Any, params: Any, session: McpSession,
+                         server_info: Callable[[], McpServerInfo],
+                         error: Callable[[Any, int, str], Dict[str, Any]]) -> Dict[str, Any]:
+    pv = params.get("protocolVersion") if isinstance(params, dict) else None
+    if pv is None:
+        return error(req_id, JSONRPC_INVALID_PARAMS, "initialize: missing protocolVersion")
+    session.initialized = True
+    return {
+        "jsonrpc": "2.0", "id": req_id,
+        "result": {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": server_info().name, "version": server_info().version},
+        },
+    }
+
+
+def _tool_entries(tools: Iterable[McpToolEntry]) -> List[Dict[str, Any]]:
+    result = []
+    for tool in tools:
+        entry: Dict[str, Any] = {"name": tool.name, "inputSchema": tool.input_schema}
+        if tool.description is not None:
+            entry["description"] = tool.description
+        result.append(entry)
+    return result
+
+
+def _validate_tool_call(req_id: Any, params: Any, session: McpSession,
+                        error: Callable[[Any, int, str], Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not session.initialized:
+        return error(req_id, JSONRPC_INVALID_REQUEST, "tools/call before initialize")
+    if not isinstance(params, dict):
+        return error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing params")
+    if not isinstance(params.get("name"), str):
+        return error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing tool name")
+    return None
+
+
+def _tool_call_response(req_id: Any, result: Any, describe_error: Callable[[BaboonWiringError], str]) -> Dict[str, Any]:
+    success = isinstance(result, BaboonRight)
+    text = result.value if success else describe_error(result.value)
+    return {
+        "jsonrpc": "2.0", "id": req_id,
+        "result": {"content": [{"type": "text", "text": text}], "isError": not success},
+    }
 
 
 # --- Dispatch interface ---
@@ -139,24 +190,7 @@ class AbstractBaboonMcpServer(IBaboonMcpServer[Ctx]):
         params = request.get("params")
 
         if method == "initialize":
-            pv = None
-            if isinstance(params, dict):
-                pv = params.get("protocolVersion")
-            if pv is None:
-                return self._error_response(req_id, JSONRPC_INVALID_PARAMS, "initialize: missing protocolVersion")
-            session.initialized = True
-            return {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "protocolVersion": MCP_PROTOCOL_VERSION,
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {
-                        "name": self.server_info.name,
-                        "version": self.server_info.version,
-                    },
-                },
-            }
+            return _initialize_response(req_id, params, session, lambda: self.server_info, self._error_response)
 
         elif method == "notifications/initialized":
             # Notification -- no response.
@@ -165,12 +199,7 @@ class AbstractBaboonMcpServer(IBaboonMcpServer[Ctx]):
         elif method == "tools/list":
             if not session.initialized:
                 return self._error_response(req_id, JSONRPC_INVALID_REQUEST, "tools/list before initialize")
-            tools_list = []
-            for t in self.tools:
-                entry: Dict[str, Any] = {"name": t.name, "inputSchema": t.input_schema}
-                if t.description is not None:
-                    entry["description"] = t.description
-                tools_list.append(entry)
+            tools_list = _tool_entries(self.tools)
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -178,48 +207,23 @@ class AbstractBaboonMcpServer(IBaboonMcpServer[Ctx]):
             }
 
         elif method == "tools/call":
-            if not session.initialized:
-                return self._error_response(req_id, JSONRPC_INVALID_REQUEST, "tools/call before initialize")
-            if not isinstance(params, dict):
-                return self._error_response(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing params")
-            name = params.get("name")
-            if not isinstance(name, str):
-                return self._error_response(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing tool name")
+            failure = _validate_tool_call(req_id, params, session, self._error_response)
+            if failure is not None:
+                return failure
+            name = params["name"]
             entry = self._by_name().get(name)
             if entry is None:
                 return self._error_response(req_id, JSONRPC_INVALID_PARAMS, f"tools/call: unknown tool '{name}'")
             args = params.get("arguments") or {}
             args_json = json.dumps(args)
             result = self.invoke_json(entry.method, args_json, ctx, codec_ctx)
-            if isinstance(result, BaboonRight):
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": result.value}],
-                        "isError": False,
-                    },
-                }
-            else:
-                # Channel B: a valid protocol call whose domain payload failed.
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": self._describe_wiring_error(result.value)}],
-                        "isError": True,
-                    },
-                }
+            return _tool_call_response(req_id, result, self._describe_wiring_error)
 
         else:
             return self._error_response(req_id, JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}")
 
     def _error_response(self, req_id: Any, code: int, message: str) -> Dict[str, Any]:
-        return {
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "error": {"code": code, "message": message},
-        }
+        return _rpc_error(req_id, code, message)
 
     def _describe_wiring_error(self, e: BaboonWiringError) -> str:
         return repr(e)
@@ -306,24 +310,7 @@ class AbstractAsyncBaboonMcpServer(IBaboonAsyncMcpServer[Ctx]):
         params = request.get("params")
 
         if method == "initialize":
-            pv = None
-            if isinstance(params, dict):
-                pv = params.get("protocolVersion")
-            if pv is None:
-                return self._error_response(req_id, JSONRPC_INVALID_PARAMS, "initialize: missing protocolVersion")
-            session.initialized = True
-            return {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "protocolVersion": MCP_PROTOCOL_VERSION,
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {
-                        "name": self.server_info.name,
-                        "version": self.server_info.version,
-                    },
-                },
-            }
+            return _initialize_response(req_id, params, session, lambda: self.server_info, self._error_response)
 
         elif method == "notifications/initialized":
             # Notification -- no response.
@@ -332,12 +319,7 @@ class AbstractAsyncBaboonMcpServer(IBaboonAsyncMcpServer[Ctx]):
         elif method == "tools/list":
             if not session.initialized:
                 return self._error_response(req_id, JSONRPC_INVALID_REQUEST, "tools/list before initialize")
-            tools_list = []
-            for t in self.tools:
-                entry: Dict[str, Any] = {"name": t.name, "inputSchema": t.input_schema}
-                if t.description is not None:
-                    entry["description"] = t.description
-                tools_list.append(entry)
+            tools_list = _tool_entries(self.tools)
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -345,48 +327,23 @@ class AbstractAsyncBaboonMcpServer(IBaboonAsyncMcpServer[Ctx]):
             }
 
         elif method == "tools/call":
-            if not session.initialized:
-                return self._error_response(req_id, JSONRPC_INVALID_REQUEST, "tools/call before initialize")
-            if not isinstance(params, dict):
-                return self._error_response(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing params")
-            name = params.get("name")
-            if not isinstance(name, str):
-                return self._error_response(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing tool name")
+            failure = _validate_tool_call(req_id, params, session, self._error_response)
+            if failure is not None:
+                return failure
+            name = params["name"]
             entry = self._by_name().get(name)
             if entry is None:
                 return self._error_response(req_id, JSONRPC_INVALID_PARAMS, f"tools/call: unknown tool '{name}'")
             args = params.get("arguments") or {}
             args_json = json.dumps(args)
             result = await self.invoke_json(entry.method, args_json, ctx, codec_ctx)
-            if isinstance(result, BaboonRight):
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": result.value}],
-                        "isError": False,
-                    },
-                }
-            else:
-                # Channel B: a valid protocol call whose domain payload failed.
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": self._describe_wiring_error(result.value)}],
-                        "isError": True,
-                    },
-                }
+            return _tool_call_response(req_id, result, self._describe_wiring_error)
 
         else:
             return self._error_response(req_id, JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}")
 
     def _error_response(self, req_id: Any, code: int, message: str) -> Dict[str, Any]:
-        return {
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "error": {"code": code, "message": message},
-        }
+        return _rpc_error(req_id, code, message)
 
     def _describe_wiring_error(self, e: BaboonWiringError) -> str:
         return repr(e)
@@ -435,6 +392,14 @@ class BaboonMcpWiringException(Exception):
         self.error = error
 
 
+def _register_tools(server: Any, route: Dict[str, Any], entries: Dict[str, McpToolEntry]) -> None:
+    for tool in server.tools:
+        if tool.name in route:
+            raise BaboonMcpWiringException(DuplicateTool(tool.name))
+        route[tool.name] = server
+        entries[tool.name] = tool
+
+
 # --- Cross-service MCP muxer (tasks:T108; contract:
 # docs/research/mcp-muxer-runtime-contract.md) ---
 #
@@ -471,11 +436,7 @@ class McpMuxer(Generic[Ctx]):
     # across servers (the exact MCP-tier analogue of JsonMuxer.register raising
     # DuplicateService).
     def register(self, server: Any) -> None:
-        for t in server.tools:
-            if t.name in self._route:
-                raise BaboonMcpWiringException(DuplicateTool(t.name))
-            self._route[t.name] = server
-            self._entries[t.name] = t
+        _register_tools(server, self._route, self._entries)
 
     def handle(
         self,
@@ -489,24 +450,7 @@ class McpMuxer(Generic[Ctx]):
         params = request.get("params")
 
         if method == "initialize":
-            pv = None
-            if isinstance(params, dict):
-                pv = params.get("protocolVersion")
-            if pv is None:
-                return self._mux_error(req_id, JSONRPC_INVALID_PARAMS, "initialize: missing protocolVersion")
-            session.initialized = True
-            return {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "protocolVersion": MCP_PROTOCOL_VERSION,
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {
-                        "name": self._merged_server_info.name,
-                        "version": self._merged_server_info.version,
-                    },
-                },
-            }
+            return _initialize_response(req_id, params, session, lambda: self._merged_server_info, self._mux_error)
 
         elif method == "notifications/initialized":
             # Notification -- no response.
@@ -522,13 +466,10 @@ class McpMuxer(Generic[Ctx]):
             }
 
         elif method == "tools/call":
-            if not session.initialized:
-                return self._mux_error(req_id, JSONRPC_INVALID_REQUEST, "tools/call before initialize")
-            if not isinstance(params, dict):
-                return self._mux_error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing params")
-            name = params.get("name")
-            if not isinstance(name, str):
-                return self._mux_error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing tool name")
+            failure = _validate_tool_call(req_id, params, session, self._mux_error)
+            if failure is not None:
+                return failure
+            name = params["name"]
             server = self._route.get(name)
             if server is None:
                 # NoMatchingTool: surfaced as the SAME wire response the per-service
@@ -539,25 +480,7 @@ class McpMuxer(Generic[Ctx]):
             args = params.get("arguments") or {}
             args_json = json.dumps(args)
             result = server.route_tool_call(entry.method, args_json, ctx, codec_ctx)
-            if isinstance(result, BaboonRight):
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": result.value}],
-                        "isError": False,
-                    },
-                }
-            else:
-                # Channel B: a valid protocol call whose domain payload failed.
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": repr(result.value)}],
-                        "isError": True,
-                    },
-                }
+            return _tool_call_response(req_id, result, repr)
 
         else:
             return self._mux_error(req_id, JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}")
@@ -566,20 +489,10 @@ class McpMuxer(Generic[Ctx]):
     # in registration-then-declaration order (the insertion order of `_entries`),
     # each in the same shape the per-service base emits.
     def _tools_list_union(self) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
-        for t in self._entries.values():
-            entry: Dict[str, Any] = {"name": t.name, "inputSchema": t.input_schema}
-            if t.description is not None:
-                entry["description"] = t.description
-            out.append(entry)
-        return out
+        return _tool_entries(self._entries.values())
 
     def _mux_error(self, req_id: Any, code: int, message: str) -> Dict[str, Any]:
-        return {
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "error": {"code": code, "message": message},
-        }
+        return _rpc_error(req_id, code, message)
 
 
 # --- Async cross-service MCP muxer (tasks:T108; contract §7) ---
@@ -600,11 +513,7 @@ class AsyncMcpMuxer(Generic[Ctx]):
             self.register(server)
 
     def register(self, server: Any) -> None:
-        for t in server.tools:
-            if t.name in self._route:
-                raise BaboonMcpWiringException(DuplicateTool(t.name))
-            self._route[t.name] = server
-            self._entries[t.name] = t
+        _register_tools(server, self._route, self._entries)
 
     async def handle(
         self,
@@ -618,24 +527,7 @@ class AsyncMcpMuxer(Generic[Ctx]):
         params = request.get("params")
 
         if method == "initialize":
-            pv = None
-            if isinstance(params, dict):
-                pv = params.get("protocolVersion")
-            if pv is None:
-                return self._async_mux_error(req_id, JSONRPC_INVALID_PARAMS, "initialize: missing protocolVersion")
-            session.initialized = True
-            return {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "protocolVersion": MCP_PROTOCOL_VERSION,
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {
-                        "name": self._merged_server_info.name,
-                        "version": self._merged_server_info.version,
-                    },
-                },
-            }
+            return _initialize_response(req_id, params, session, lambda: self._merged_server_info, self._async_mux_error)
 
         elif method == "notifications/initialized":
             return None
@@ -650,13 +542,10 @@ class AsyncMcpMuxer(Generic[Ctx]):
             }
 
         elif method == "tools/call":
-            if not session.initialized:
-                return self._async_mux_error(req_id, JSONRPC_INVALID_REQUEST, "tools/call before initialize")
-            if not isinstance(params, dict):
-                return self._async_mux_error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing params")
-            name = params.get("name")
-            if not isinstance(name, str):
-                return self._async_mux_error(req_id, JSONRPC_INVALID_PARAMS, "tools/call: missing tool name")
+            failure = _validate_tool_call(req_id, params, session, self._async_mux_error)
+            if failure is not None:
+                return failure
+            name = params["name"]
             server = self._route.get(name)
             if server is None:
                 return self._async_mux_error(req_id, JSONRPC_INVALID_PARAMS, f"tools/call: unknown tool '{name}'")
@@ -664,41 +553,13 @@ class AsyncMcpMuxer(Generic[Ctx]):
             args = params.get("arguments") or {}
             args_json = json.dumps(args)
             result = await server.route_tool_call(entry.method, args_json, ctx, codec_ctx)
-            if isinstance(result, BaboonRight):
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": result.value}],
-                        "isError": False,
-                    },
-                }
-            else:
-                # Channel B: a valid protocol call whose domain payload failed.
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": repr(result.value)}],
-                        "isError": True,
-                    },
-                }
+            return _tool_call_response(req_id, result, repr)
 
         else:
             return self._async_mux_error(req_id, JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}")
 
     def _async_tools_list_union(self) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
-        for t in self._entries.values():
-            entry: Dict[str, Any] = {"name": t.name, "inputSchema": t.input_schema}
-            if t.description is not None:
-                entry["description"] = t.description
-            out.append(entry)
-        return out
+        return _tool_entries(self._entries.values())
 
     def _async_mux_error(self, req_id: Any, code: int, message: str) -> Dict[str, Any]:
-        return {
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "error": {"code": code, "message": message},
-        }
+        return _rpc_error(req_id, code, message)

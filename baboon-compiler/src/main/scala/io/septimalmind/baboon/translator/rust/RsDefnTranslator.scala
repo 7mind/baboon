@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.rust
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.IdentifierFieldKind
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.rust.RsValue.RsType
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
@@ -43,17 +44,14 @@ object RsDefnTranslator {
     enquiries: BaboonEnquiries,
     wiringTranslator: RsServiceWiringTranslator,
     rsDomainTreeTools: RsDomainTreeTools,
-    rsTypes: RsTypes,
   ) extends RsDefnTranslator[F] {
-
-    private val baboonIdReprCursor: RsValue.RsType = rsTypes.baboonIdReprCursor
 
     /** Prepend `///` doc lines before a tree when `docs` is non-empty.
       * Returns the tree unchanged when `docs` is empty.
       */
     private def prependDocs(docs: Docs, tree: TextTree[RsValue]): TextTree[RsValue] = {
       val block = rsTrees.renderDocs(docs, "")
-      if (block.isEmpty) tree else q"${block}$tree"
+      if (block.isEmpty) tree else q"$block$tree"
     }
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -351,44 +349,6 @@ object RsDefnTranslator {
     //   - free function `pub fn parse_repr(s: &str) -> Result<Self, String>`
     //     (NOT `impl FromStr` — Q-FU-4 keeps `.parse()` undiscoverable)
     //   - `Result<T, String>` (not `Either`)
-    private sealed trait IdentifierFieldKind
-    private object IdentifierFieldKind {
-      case object Bit extends IdentifierFieldKind
-      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
-      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong extends IdentifierFieldKind /* u64 */
-      case object Str extends IdentifierFieldKind
-      case object Uid extends IdentifierFieldKind
-      case object Tsu extends IdentifierFieldKind
-      case object Tso extends IdentifierFieldKind
-      case object Bytes extends IdentifierFieldKind
-      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
-    }
-
-    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
-      tpe match {
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          import TypeId.Builtins.*
-          b match {
-            case `bit`                         => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
-            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                         => IdentifierFieldKind.UnsignedLong
-            case `str`                         => IdentifierFieldKind.Str
-            case `uid`                         => IdentifierFieldKind.Uid
-            case `tsu`                         => IdentifierFieldKind.Tsu
-            case `tso`                         => IdentifierFieldKind.Tso
-            case `bytes`                       => IdentifierFieldKind.Bytes
-            case other =>
-              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
-          }
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          IdentifierFieldKind.NestedId(uid)
-        case other =>
-          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
-      }
-    }
-
     private def signedTypeName(tpe: TypeRef): String = {
       tpe match {
         case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
@@ -452,10 +412,10 @@ object RsDefnTranslator {
         // Rust's primitive Display for signed integers produces canonical signed
         // decimal; for u08/u16/u32 it produces unsigned decimal natively (Rust
         // u-types are actually unsigned).
-        case IdentifierFieldKind.SignedInt        => q"self.$rsFieldName.to_string()"
-        case IdentifierFieldKind.UnsignedSmallInt => q"self.$rsFieldName.to_string()"
-        case IdentifierFieldKind.UnsignedLong     => q"crate::baboon_identifier_repr::u64_to_string(self.$rsFieldName)"
-        case IdentifierFieldKind.Str              => q"crate::baboon_identifier_repr::escape_str(&self.$rsFieldName)"
+        case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong => q"self.$rsFieldName.to_string()"
+        case IdentifierFieldKind.UnsignedSmallInt                           => q"self.$rsFieldName.to_string()"
+        case IdentifierFieldKind.UnsignedLong                               => q"crate::baboon_identifier_repr::u64_to_string(self.$rsFieldName)"
+        case IdentifierFieldKind.Str                                        => q"crate::baboon_identifier_repr::escape_str(&self.$rsFieldName)"
         // uuid::Uuid Display is the lowercase 36-char hyphenated form per RFC 4122.
         case IdentifierFieldKind.Uid         => q"self.$rsFieldName.to_string()"
         case IdentifierFieldKind.Tsu         => q"crate::baboon_identifier_repr::tsu_to_string(&self.$rsFieldName)"
@@ -477,7 +437,7 @@ object RsDefnTranslator {
         case (f, idx) =>
           val srcFieldName = f.name.name
           val rsFieldName  = toSnakeCase(srcFieldName)
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val valExpr      = renderFieldValueExpr(rsFieldName, kind)
           val sep          = if (idx == 0) q"" else q"""out.push(':');"""
           List(
@@ -509,7 +469,7 @@ object RsDefnTranslator {
           val valVar       = s"${toSnakeCase(srcFieldName)}_v"
           val rawVar       = s"${toSnakeCase(srcFieldName)}_raw"
           val isLast       = idx == dto.fields.length - 1
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val tpe          = trans.asRsRef(f.tpe, domain, evo)
 
           val parseHead =
@@ -519,7 +479,7 @@ object RsDefnTranslator {
             case IdentifierFieldKind.Bit =>
               q"""let $rawVar = cursor.read_until_structural();
                  |let $valVar: $tpe = crate::baboon_identifier_repr::parse_bit(&$rawVar)?;""".stripMargin
-            case IdentifierFieldKind.SignedInt =>
+            case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong =>
               val typeName   = signedTypeName(f.tpe)
               val rangeCheck = signedRangeCheck(f.tpe, "v")
               val narrow     = signedNarrowFn(f.tpe)
@@ -656,12 +616,11 @@ object RsDefnTranslator {
     private def makeDtoRepr(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
       val fields = dto.fields.map {
         f =>
-          val rawT       = trans.asRsRef(f.tpe, domain, evo)
-          val t          = if (needsBox(f.tpe)) q"Box<$rawT>" else rawT
+          val t          = representation.field(f.tpe).stored
           val serdeAttrs = fieldSerdeAttributes(f)
           val attrLine   = if (serdeAttrs.nonEmpty) serdeAttrs.joinN() else q""
-          val fieldEx    = q"""$attrLine
-             |pub ${toSnakeCase(f.name.name)}: $t,""".stripMargin.trim
+          val fieldEx = q"""$attrLine
+                           |pub ${toSnakeCase(f.name.name)}: $t,""".stripMargin.trim
           prependDocs(f.docs, fieldEx)
       }
       val fieldsList = if (fields.nonEmpty) fields.joinN() else q""
@@ -675,8 +634,7 @@ object RsDefnTranslator {
 
         val innerFields = dto.fields.map {
           f =>
-            val rawT       = trans.asRsRef(f.tpe, domain, evo)
-            val t          = if (needsBox(f.tpe)) q"Box<$rawT>" else rawT
+            val t          = representation.field(f.tpe).stored
             val serdeAttrs = fieldSerdeAttributes(f)
             val attrLine   = if (serdeAttrs.nonEmpty) serdeAttrs.joinN() else q""
             q"""$attrLine
@@ -810,8 +768,8 @@ object RsDefnTranslator {
                         // body uses `self.field.as_ref()` which returns `&rawT` via Deref — exactly
                         // what the trait signature expects. Declaring `&Box<rawT>` caused E0053
                         // (return-type mismatch between the trait signature and the impl body).
-                        val retT   = rawT
-                        val body   = if (needsBox(f.tpe)) q"self.$rsName.as_ref()" else q"&self.$rsName"
+                        val retT = rawT
+                        val body = if (needsBox(f.tpe)) q"self.$rsName.as_ref()" else q"&self.$rsName"
                         q"fn $rsName(&self) -> &$retT { $body }"
                     }
                     val body = if (methods.nonEmpty) methods.joinN() else q""
@@ -1006,9 +964,9 @@ object RsDefnTranslator {
         else "serde::Serialize, serde::Deserialize"
 
       val cmpDerives =
-        if (hasWrappedFlt) "PartialEq, PartialOrd, "
+        if (hasUnorderable) "PartialEq, "
+        else if (hasWrappedFlt) "PartialEq, PartialOrd, "
         else if (hasBareFloat) "" // manual PartialEq/Eq/PartialOrd/Ord via dtoOrdImpls
-        else if (hasUnorderable) "PartialEq, "
         else "PartialEq, Eq, PartialOrd, Ord, "
 
       q"#[derive(Clone, Debug, $cmpDerives$serdeDerives)]"
@@ -1017,7 +975,7 @@ object RsDefnTranslator {
     private def dtoOrdImpls(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
       val hasBareFloat  = dto.fields.exists(f => isBareFloat(f.tpe))
       val hasWrappedFlt = dto.fields.exists(f => hasFloatRecursive(f.tpe) && !isBareFloat(f.tpe))
-      if (hasWrappedFlt) {
+      if (hasWrappedFlt || dto.fields.exists(f => hasAnyField(f.tpe))) {
         // BAB-R04: wrapped-float field types (Option<f64>, Vec<f64>, …) cannot have manual
         // total_cmp synthesized — `total_cmp` is a method of `f64` only. Rely on derive(PartialEq,
         // PartialOrd) (see dtoDerives); no manual Eq/Ord — they are unsound for NaN regardless.
@@ -1064,80 +1022,13 @@ object RsDefnTranslator {
       } else q""
     }
 
-    /** True iff `tpe` is exactly the scalar `f32` or `f64` (no wrapping). */
-    private def isBareFloat(tpe: TypeRef): Boolean = tpe match {
-      case TypeRef.Scalar(TypeId.Builtins.f32) => true
-      case TypeRef.Scalar(TypeId.Builtins.f64) => true
-      case _                                   => false
-    }
+    private def isBareFloat(tpe: TypeRef): Boolean       = representation.isBareFloat(tpe)
+    private def hasFloatRecursive(tpe: TypeRef): Boolean = representation.containsFloat(tpe)
+    private def hasAnyField(tpe: TypeRef): Boolean       = representation.containsAny(tpe)
 
-    /** True iff `tpe` reaches an `f32`/`f64` either directly, through a generic
-      * constructor (`opt`, `lst`, `set`, `map`), or transitively through a referenced
-      * user `data`/`adt` typedef. Enums and foreigns are never float-bearing.
-      *
-      * Transitive propagation is required because Rust's `derive(Eq, Ord)` needs the
-      * field types to themselves implement `Eq, Ord`. Per BAB-R04 a float-bearing struct
-      * derives only `PartialEq, PartialOrd`; any struct that contains it as a field
-      * (directly, in a collection, or inside another wrapping struct) inherits the
-      * same constraint and must also drop `Eq, Ord`.
-      *
-      * Cycle protection: typedefs may contain self-references (recursive ADTs); we
-      * track visited user ids to terminate.
-      */
-    private def hasFloatRecursive(tpe: TypeRef): Boolean =
-      hasFloatRecursive0(tpe, Set.empty)
+    private val representation = new RsFieldRepresentation(domain, evo, trans, enquiries)
 
-    private def hasFloatRecursive0(tpe: TypeRef, seen: Set[TypeId.User]): Boolean = {
-      tpe match {
-        case TypeRef.Scalar(TypeId.Builtins.f32) => true
-        case TypeRef.Scalar(TypeId.Builtins.f64) => true
-        case TypeRef.Scalar(u: TypeId.User) =>
-          if (seen.contains(u)) false
-          else {
-            domain.defs.meta.nodes.get(u) match {
-              case Some(DomainMember.User(_, defn, _, _)) =>
-                userDefnHasFloat(defn, seen + u)
-              case _ => false
-            }
-          }
-        case TypeRef.Constructor(_, args) => args.exists(hasFloatRecursive0(_, seen))
-        case _                            => false
-      }
-    }
-
-    private def userDefnHasFloat(defn: Typedef, seen: Set[TypeId.User]): Boolean = defn match {
-      case dto: Typedef.Dto =>
-        dto.fields.exists(f => hasFloatRecursive0(f.tpe, seen))
-      case adt: Typedef.Adt =>
-        adt.dataMembers(domain).exists {
-          mid =>
-            domain.defs.meta.nodes.get(mid) match {
-              case Some(DomainMember.User(_, branchDefn, _, _)) => userDefnHasFloat(branchDefn, seen + mid)
-              case _                                            => false
-            }
-        }
-      case _ => false // enums, foreigns, contracts, services, aliases — never float-bearing here
-    }
-
-    private def hasAnyField(tpe: TypeRef): Boolean = {
-      tpe match {
-        case _: TypeRef.Any         => true
-        case _: TypeRef.Scalar      => false
-        case c: TypeRef.Constructor => c.args.exists(hasAnyField)
-      }
-    }
-
-    private def needsBox(tpe: TypeRef): Boolean = {
-      tpe match {
-        case TypeRef.Scalar(u: TypeId.User) =>
-          domain.defs.meta.nodes.get(u).exists {
-            case m: DomainMember.User => enquiries.isRecursiveTypedef(m, domain)
-            case _                    => false
-          }
-        case TypeRef.Constructor(_, args) => args.exists(needsBox)
-        case _                            => false
-      }
-    }
+    private def needsBox(tpe: TypeRef): Boolean = representation.needsBox(tpe)
 
     private def fieldSerdeAttributes(f: Field): List[TextTree[RsValue]] = {
       val attrs = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
@@ -1458,13 +1349,14 @@ object RsDefnTranslator {
           }
       }
       val adtCmpDerives =
-        if (adtBranchHasWrappedFloat) "PartialEq, PartialOrd"
+        if (representation.containsAny(TypeRef.Scalar(adt.id))) "PartialEq"
+        else if (adtBranchHasWrappedFloat) "PartialEq, PartialOrd"
         else "PartialEq, Eq, PartialOrd, Ord"
       q"""${branchStructs.toList.joinNN()}
          |
          |${branchCodecs.toList.joinNN()}
          |
-         |${adtDocBlock}#[derive(Clone, Debug, $adtCmpDerives)]
+         |$adtDocBlock#[derive(Clone, Debug, $adtCmpDerives)]
          |pub enum ${name.asName} {
          |    ${variants.toList.joinN().shift(4).trim}
          |}
@@ -1507,7 +1399,7 @@ object RsDefnTranslator {
       val contract = defn.defn.asInstanceOf[Typedef.Contract]
       val methods = contract.fields.map {
         f =>
-          val t       = trans.asRsRef(f.tpe, domain, evo)
+          val t        = trans.asRsRef(f.tpe, domain, evo)
           val methodEx = q"fn ${toSnakeCase(f.name.name)}(&self) -> &$t;"
           prependDocs(f.docs, methodEx)
       }
@@ -1646,10 +1538,10 @@ object RsDefnTranslator {
     */
   def escapeRustModuleName(s: String): String = {
     s match {
-      case "in"                                => "input"
+      case "in"                               => "input"
       case kw if nonRawEscapable.contains(kw) => s"${kw}_"
-      case kw if isRustKeyword(kw)             => s"${kw}_"
-      case other                               => other
+      case kw if isRustKeyword(kw)            => s"${kw}_"
+      case other                              => other
     }
   }
 

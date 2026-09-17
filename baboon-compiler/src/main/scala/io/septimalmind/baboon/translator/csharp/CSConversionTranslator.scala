@@ -85,13 +85,22 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           transfer(TypeRef.Scalar(tpe), ref, 0, maybeOldTpe = maybeOldTpe.map(TypeRef.Scalar.apply))
         }
 
+        val targetMeta = if (conv.sourceTpe != conv.targetTpe) {
+          q"""protected override $csString TargetTypeId()
+             |{
+             |    return "${conv.targetTpe.toString}";
+             |}""".stripMargin
+        } else q""
+
         val fullMeta =
           q"""|$versionsMeta
               |
               |public override $csString TypeId()
               |{
               |    return "${conv.sourceTpe.toString}";
-              |}""".stripMargin.shift(4).trim
+              |}
+              |
+              |$targetMeta""".stripMargin.shift(4).trim
 
         conv match {
           case _: Conversion.CustomConversionRequired =>
@@ -206,8 +215,8 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                   // keyword-escaped; the local-variable stem must NOT (a `@` inside
                   // `_@default` is not a legal identifier — `@` only legalises a
                   // bare keyword at the identifier head).
-                  val base       = op.targetField.name.name.capitalize
-                  val baseRef     = escapeCsKeyword(base)
+                  val base     = op.targetField.name.name.capitalize
+                  val baseRef  = escapeCsKeyword(base)
                   val fieldRef = q"_from.$baseRef"
                   val initExpr = op match {
                     case o: FieldOp.Transfer =>

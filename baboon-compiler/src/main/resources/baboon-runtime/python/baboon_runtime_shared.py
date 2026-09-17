@@ -78,9 +78,8 @@ class BaboonAdtMemberMeta(ABC):
 
 
 class BaboonMeta(ABC):
-    @property
     @abstractmethod
-    def same_in_versions(self) -> list[str]:
+    def same_in_versions(self, type_id_string: str) -> list[str]:
         raise NotImplementedError
 
     # Forward-readability per type: newer version -> guarantee tier (see
@@ -293,7 +292,7 @@ class LEDataOutputStream:
             value >>= 7
             if value != 0:
                 current_byte |= 0x80
-            self.write_byte(current_byte)
+            self.write_ubyte(current_byte)
             if value == 0:
                 break
         self.stream.write(bytes_data)
@@ -445,7 +444,7 @@ class Lazy(Generic[T]):
 
     @property
     def is_value_created(self) -> bool:
-        return self._value_ref is not None
+        return self._value is not None
 
 class BaboonSingleton(ABC, Generic[T]):
     _lazy_instance: Lazy[T]
@@ -832,8 +831,4 @@ def baboon_unmodified_since_version(g: BaboonGenerated) -> str:
 
 
 def unmodified_since_version(meta: BaboonMeta, type_id: str) -> str:
-    # NOTE: The abstract BaboonMeta.same_in_versions property returns list[str] per
-    # its declaration, but concrete implementations (e.g. generated BaboonMetadata)
-    # return a callable(typeId) -> list[str] (matching C#/Scala sameInVersions(typeId)).
-    # We call it as a callable per the C# reference signature.
     return meta.same_in_versions(type_id)[0]

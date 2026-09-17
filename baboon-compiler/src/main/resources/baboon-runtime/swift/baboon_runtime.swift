@@ -282,6 +282,17 @@ public struct BaboonIndexEntry {
 }
 
 extension BaboonBinCodecIndexed {
+    public func consumeIndex(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> Int {
+        let header = reader.readU8()
+        if header & 1 == 0 { return 0 }
+        let count = indexElementsCount
+        for _ in 0..<count {
+            _ = reader.readI32()
+            _ = reader.readI32()
+        }
+        return count
+    }
+
     public func readIndex(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> [BaboonIndexEntry] {
         let header = reader.readU8()
         let hasIndex = (header & 1) != 0
@@ -477,38 +488,12 @@ public class BaboonBinWriter {
     }
 
     public func writeUuid(_ uuid: UUID) {
-        let hex = uuid.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-        assert(hex.count == 32)
-
-        let hexBytes = Array(hex.utf8)
-        func parseByte(_ offset: Int) -> UInt8 {
-            func hexVal(_ c: UInt8) -> UInt8 {
-                if c >= 48 && c <= 57 { return c - 48 }
-                if c >= 97 && c <= 102 { return c - 87 }
-                if c >= 65 && c <= 70 { return c - 55 }
-                fatalError("Invalid hex char")
-            }
-            return hexVal(hexBytes[offset]) << 4 | hexVal(hexBytes[offset + 1])
-        }
-
+        let bytes = uuid.uuid
         // .NET mixed-endian GUID format
-        var bytes = [UInt8](repeating: 0, count: 16)
-        // First 4 bytes: little-endian
-        bytes[0] = parseByte(6)
-        bytes[1] = parseByte(4)
-        bytes[2] = parseByte(2)
-        bytes[3] = parseByte(0)
-        // Next 2 bytes: little-endian
-        bytes[4] = parseByte(10)
-        bytes[5] = parseByte(8)
-        // Next 2 bytes: little-endian
-        bytes[6] = parseByte(14)
-        bytes[7] = parseByte(12)
-        // Remaining 8 bytes: big-endian
-        for i in 0..<8 {
-            bytes[8 + i] = parseByte(16 + i * 2)
-        }
-        writeAll(Data(bytes))
+        writeAll(Data([
+            bytes.3, bytes.2, bytes.1, bytes.0, bytes.5, bytes.4, bytes.7, bytes.6,
+            bytes.8, bytes.9, bytes.10, bytes.11, bytes.12, bytes.13, bytes.14, bytes.15,
+        ]))
     }
 
     public func writeTsu(_ value: Date) {
@@ -743,33 +728,15 @@ public class BaboonBinReader {
         guard pos + 16 <= data.count else {
             throw BaboonCodecError.truncated("readUuid: need 16 bytes at pos \(pos), only \(data.count - pos) available")
         }
-        var bytes = [UInt8](repeating: 0, count: 16)
-        for i in 0..<16 {
-            bytes[i] = data[data.startIndex + pos + i]
-        }
+        let start = data.startIndex + pos
         pos += 16
-
         // .NET mixed-endian GUID format to standard UUID
-        func hexByte(_ b: UInt8) -> String {
-            return String(format: "%02x", b)
-        }
-
-        var hex = ""
-        hex += hexByte(bytes[3]) + hexByte(bytes[2]) + hexByte(bytes[1]) + hexByte(bytes[0])
-        hex += "-"
-        hex += hexByte(bytes[5]) + hexByte(bytes[4])
-        hex += "-"
-        hex += hexByte(bytes[7]) + hexByte(bytes[6])
-        hex += "-"
-        hex += hexByte(bytes[8]) + hexByte(bytes[9])
-        hex += "-"
-        for i in 10..<16 {
-            hex += hexByte(bytes[i])
-        }
-        guard let uuid = UUID(uuidString: hex) else {
-            throw BaboonCodecError.invalidUuid
-        }
-        return uuid
+        return UUID(uuid: (
+            data[start + 3], data[start + 2], data[start + 1], data[start],
+            data[start + 5], data[start + 4], data[start + 7], data[start + 6],
+            data[start + 8], data[start + 9], data[start + 10], data[start + 11],
+            data[start + 12], data[start + 13], data[start + 14], data[start + 15]
+        ))
     }
 
     public func readTsu() -> Date {

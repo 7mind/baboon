@@ -236,6 +236,7 @@ Run Python tests with regular adt codecs.
 ```bash
 dep action.test-cs-regular
 
+BABOON_BIN="$(realpath "${action.build.binary}")"
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/py-stub"
 python3 -m venv .venv
@@ -243,6 +244,15 @@ if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else sou
 python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s BaboonTests/GeneratedTests/testpkg/pkg0
 python3 -m unittest discover -s BaboonTests/RuntimeTests
+"$BABOON_BIN" --model-dir ReviewModels --lockfile GeneratedReview.lock \
+  :python --output GeneratedReview/BaboonDefinitions/Generated \
+  --fixture-output GeneratedReview/BaboonTests/GeneratedFixtures \
+  --test-output GeneratedReview/BaboonTests/GeneratedTests \
+  --generate-json-codecs-by-default=true --generate-ueba-codecs-by-default=true \
+  --py-wrapped-adt-branch-codecs=false
+pushd GeneratedReview
+python3 -m unittest discover -s ../ReviewTests
+popd
 popd
 
 ret success:bool=true
@@ -261,6 +271,16 @@ popd
 ret success:bool=true
 ```
 
+# action: test-rust-conversion-regression
+
+Compile and exercise typed Rust evolution on isolated nested-collection models.
+
+```bash
+BABOON_BIN="$(realpath "${action.build.binary}")"
+bash ./test/rs-conversion-regression/test.sh "$BABOON_BIN"
+ret success:bool=true
+```
+
 # action: test-typescript-regular
 
 Run TypeScript tests with regular ADT codecs.
@@ -268,8 +288,17 @@ Run TypeScript tests with regular ADT codecs.
 ```bash
 dep action.test-cs-regular
 
+BABOON_BIN="$(realpath "${action.build.binary}")"
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/ts-stub"
+"$BABOON_BIN" --model-dir ReviewModels --lockfile generated-review.lock \
+  :typescript --output src/generated-review \
+  --generate-json-codecs-by-default=true --generate-ueba-codecs-by-default=true \
+  --ts-enum-lowercase-values=true --ts-wrapped-adt-branch-codecs=false
+"$BABOON_BIN" --model-dir ReviewModels --lockfile generated-review-records.lock \
+  :typescript --output src/generated-review-records \
+  --generate-json-codecs-by-default=true --generate-ueba-codecs-by-default=true \
+  --ts-enum-lowercase-values=true --ts-maps-as-records=true --ts-wrapped-adt-branch-codecs=false
 npm install
 npm run build
 npm test
@@ -543,6 +572,7 @@ Run Python tests with wrapped ADT codecs
 ```bash
 dep action.test-cs-wrapped
 
+BABOON_BIN="$(realpath "${action.build.binary}")"
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/py-stub"
 python3 -m venv .venv
@@ -550,6 +580,15 @@ if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else sou
 python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s BaboonTests/GeneratedTests/testpkg/pkg0
 python3 -m unittest discover -s BaboonTests/RuntimeTests
+"$BABOON_BIN" --model-dir ReviewModels --lockfile GeneratedReview.lock \
+  :python --output GeneratedReview/BaboonDefinitions/Generated \
+  --fixture-output GeneratedReview/BaboonTests/GeneratedFixtures \
+  --test-output GeneratedReview/BaboonTests/GeneratedTests \
+  --generate-json-codecs-by-default=true --generate-ueba-codecs-by-default=true \
+  --py-wrapped-adt-branch-codecs=true
+pushd GeneratedReview
+python3 -m unittest discover -s ../ReviewTests
+popd
 popd
 
 ret success:bool=true
@@ -575,8 +614,17 @@ Run TypeScript tests with wrapped ADT codecs.
 ```bash
 dep action.test-cs-wrapped
 
+BABOON_BIN="$(realpath "${action.build.binary}")"
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/ts-stub"
+"$BABOON_BIN" --model-dir ReviewModels --lockfile generated-review.lock \
+  :typescript --output src/generated-review \
+  --generate-json-codecs-by-default=true --generate-ueba-codecs-by-default=true \
+  --ts-enum-lowercase-values=true --ts-wrapped-adt-branch-codecs=true
+"$BABOON_BIN" --model-dir ReviewModels --lockfile generated-review-records.lock \
+  :typescript --output src/generated-review-records \
+  --generate-json-codecs-by-default=true --generate-ueba-codecs-by-default=true \
+  --ts-enum-lowercase-values=true --ts-maps-as-records=true --ts-wrapped-adt-branch-codecs=true
 npm install
 npm test
 popd
@@ -1654,7 +1702,7 @@ validation on every returned inputSchema.
 TEST_DIR="${action.test-gen-ts-mcp.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
-npx vitest run src/mcp.test.ts
+npx vitest run src/mcp.test.ts src/dispatch-preparation.test.ts
 popd
 
 ret success:bool=true
@@ -1818,7 +1866,7 @@ to T7 reference) and exercises negative controls.
 ```bash
 TEST_DIR="${action.test-gen-kotlin-mcp.test_dir}"
 pushd "$TEST_DIR/kt-stub"
-gradle --no-daemon clean test --tests "mcp.McpTests"
+gradle --no-daemon clean test --tests "mcp.McpTests" --tests "mcp.McpProtocolOwnershipTest"
 popd
 
 ret success:bool=true
@@ -1929,7 +1977,7 @@ to T7 reference) and exercises negative controls.
 ```bash
 TEST_DIR="${action.test-gen-java-mcp.test_dir}"
 pushd "$TEST_DIR/jv-stub"
-mvn clean test -Dtest=mcp.McpTests
+mvn clean test -Dtest=mcp.McpTests,mcp.McpMetadataOwnershipTest
 popd
 
 ret success:bool=true
@@ -3238,7 +3286,7 @@ pushd "$TEST_DIR/py-stub"
 python3 -m venv .venv
 if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m pip install -r requirements.txt
-python3 -m unittest BaboonTests.mcp.test_mcp
+python3 -m unittest BaboonTests.mcp.test_mcp BaboonTests.mcp.test_dispatch_runtime
 popd
 
 ret success:bool=true
@@ -3508,6 +3556,7 @@ dep action.test-cs-regular
 dep action.test-scala-regular
 dep action.test-python-regular
 dep action.test-rust-regular
+dep action.test-rust-conversion-regression
 dep action.test-typescript-regular
 dep action.test-kotlin-regular
 dep action.test-kotlin-kmp-regular
@@ -4203,8 +4252,8 @@ pushd "$TEST_DIR/dt-stub"
 dart pub get
 # Analyze only the generated lib and MCP test directory (runtime/ tests reference
 # the full model which is not generated in the MCP-only pass).
-dart analyze --fatal-warnings lib/ test/mcp/
-dart test test/mcp/mcp_tests.dart
+dart analyze --fatal-warnings lib/ test/mcp/ test/dispatch_contract_test.dart
+dart test test/mcp/mcp_tests.dart test/dispatch_contract_test.dart
 popd
 
 ret success:bool=true
@@ -6143,7 +6192,7 @@ collision, and NoMatchingTool (-32602) against `AbstractMcpMuxer`.
 ```bash
 TEST_DIR="${action.test-gen-rs-mcp-mux.test_dir}"
 pushd "$TEST_DIR/rs-stub"
-RUSTFLAGS="-D warnings" cargo test --test mcp_mux_tests
+RUSTFLAGS="-D warnings" cargo test --test mcp_mux_tests --test runtime_dispatch_tests
 popd
 
 ret success:bool=true
@@ -6188,6 +6237,7 @@ $BABOON_BIN \
   --rs-async-services=true
 
 rsync -a ./test/rs-stub-mcp-mux-async-overlay/ "$TEST_DIR/rs-stub/"
+cp ./test/rs-stub-mcp-mux-overlay/tests/runtime_dispatch_tests.rs "$TEST_DIR/rs-stub/tests/runtime_dispatch_tests.rs"
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"
@@ -6204,7 +6254,7 @@ async-generated `<Service>McpServer`s.
 ```bash
 TEST_DIR="${action.test-gen-rs-mcp-mux-async.test_dir}"
 pushd "$TEST_DIR/rs-stub"
-RUSTFLAGS="-D warnings" cargo test --test mcp_mux_tests
+RUSTFLAGS="-D warnings" cargo test --test mcp_mux_tests --test runtime_dispatch_tests
 popd
 
 ret success:bool=true

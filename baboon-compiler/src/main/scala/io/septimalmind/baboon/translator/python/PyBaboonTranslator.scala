@@ -83,10 +83,10 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           val metaAlias   = s"BaboonMetadata$suffix"
           val runtimeMod  = s".${vPrefix}baboon_runtime"
           val metadataMod = s".${vPrefix}baboon_metadata"
-          val jsonImport  =
+          val jsonImport =
             if (isLatest) s"from $runtimeMod import BaboonCodecsJson, BaboonCodecsUeba"
             else s"from $runtimeMod import BaboonCodecsJson as $jsonAlias, BaboonCodecsUeba as $uebaAlias"
-          val metaImport  =
+          val metaImport =
             if (isLatest) s"from $metadataMod import BaboonMetadata"
             else s"from $metadataMod import BaboonMetadata as $metaAlias"
           (jsonImport, metaImport, jsonAlias, uebaAlias, metaAlias, version.v.toString)
@@ -98,9 +98,9 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
         case (_, _, jsonAlias, uebaAlias, metaAlias, versionStr) =>
           q"""self.register(
              |    $baboonDomainVersion("$domainIdStr", "$versionStr"),
-             |    codecs_json=lambda: ${jsonAlias}.instance(),
-             |    codecs_bin=lambda: ${uebaAlias}.instance(),
-             |    meta=lambda: ${metaAlias}(),
+             |    codecs_json=lambda: $jsonAlias.instance(),
+             |    codecs_bin=lambda: $uebaAlias.instance(),
+             |    meta=lambda: $metaAlias(),
              |)""".stripMargin
       }
 
@@ -448,6 +448,9 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
          |
          |    def unmodified_since(self, type_id_string: $pyStr) -> $pyList[$pyStr]:
          |        return self.unmodified.get(type_id_string, [])
+         |
+         |    def same_in_versions(self, type_id_string: $pyStr) -> $pyList[$pyStr]:
+         |        return self.unmodified_since(type_id_string)
          |
          |    def forward_readable_versions(self, type_id_string: $pyStr) -> $pyDict[$pyStr, $pyStr]:
          |        return self.forward_readable.get(type_id_string, {})

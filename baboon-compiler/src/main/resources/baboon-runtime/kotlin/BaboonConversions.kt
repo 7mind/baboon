@@ -18,23 +18,26 @@ abstract class AbstractConversion<From : Any, To : Any>(
 ) : BaboonGeneratedConversion {
     protected abstract fun <Ctx> doConvert(context: Ctx?, conversions: AbstractBaboonConversions, from: From): To
 
-    private fun validateBaboonType(obj: Any) {
+    protected open val targetTypeId: String get() = typeId
+
+    private fun validateBaboonType(obj: Any, target: Boolean) {
+        fun expectedTypeId(): String = if (target) targetTypeId else typeId
         when (obj) {
             is BaboonGenerated -> {
-                val conversionTypeIsExactType = typeId == obj.baboonTypeIdentifier
+                val conversionTypeIsExactType = expectedTypeId() == obj.baboonTypeIdentifier
                 when (obj) {
                     is BaboonAdtMemberMeta -> {
-                        val conversionTypeIsAdtType = typeId == obj.baboonAdtTypeIdentifier
+                        val conversionTypeIsAdtType = expectedTypeId() == obj.baboonAdtTypeIdentifier
                         if (!conversionTypeIsAdtType && !conversionTypeIsExactType) {
                             throw IllegalArgumentException(
-                                "Provided instance is adt=${obj.baboonAdtTypeIdentifier} exact=${obj.baboonTypeIdentifier}, one of which must be $typeId"
+                                "Provided instance is adt=${obj.baboonAdtTypeIdentifier} exact=${obj.baboonTypeIdentifier}, one of which must be ${expectedTypeId()}"
                             )
                         }
                     }
                     else -> {
                         if (!conversionTypeIsExactType) {
                             throw IllegalArgumentException(
-                                "Provided instance is ${obj.baboonTypeIdentifier} but must be $typeId"
+                                "Provided instance is ${obj.baboonTypeIdentifier} but must be ${expectedTypeId()}"
                             )
                         }
                     }
@@ -44,9 +47,9 @@ abstract class AbstractConversion<From : Any, To : Any>(
     }
 
     fun <Ctx> convert(context: Ctx?, conversions: AbstractBaboonConversions, from: From): To {
-        validateBaboonType(from)
+        validateBaboonType(from, target = false)
         val result = doConvert(context, conversions, from)
-        validateBaboonType(result)
+        validateBaboonType(result, target = true)
         return result
     }
 

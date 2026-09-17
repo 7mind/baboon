@@ -138,97 +138,20 @@ abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<Ctx>, IB
   String routeToolCall(BaboonMethodId method, String data, Ctx ctx, BaboonCodecContext codecCtx) =>
       invokeJsonFn(method, data, ctx, codecCtx);
 
-  Map<String, McpToolEntry> _byName() {
-    final m = <String, McpToolEntry>{};
-    for (final t in tools) m[t.name] = t;
-    return m;
+  McpToolEntry? _findTool(String name) {
+    McpToolEntry? found;
+    for (final entry in tools) {
+      if (entry.name == name) found = entry;
+    }
+    return found;
   }
 
   @override
-  JsonRpcResponse? handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx) {
-    final id = request.id;
-    switch (request.method) {
-      case 'initialize': {
-        final params = request.params;
-        if (params == null || params is! Map) {
-          return _errorResponse(id, jsonRpcErrorInvalidParams, 'initialize: missing params');
-        }
-        if (params['protocolVersion'] == null) {
-          return _errorResponse(id, jsonRpcErrorInvalidParams, 'initialize: missing protocolVersion');
-        }
-        session.initialized = true;
-        return JsonRpcResponse(id, result: {
-          'protocolVersion': mcpProtocolVersion,
-          'capabilities': {'tools': <String, dynamic>{}},
-          'serverInfo': {'name': serverInfo.name, 'version': serverInfo.version},
-        });
-      }
-      case 'notifications/initialized':
-        return null;
-      case 'tools/list': {
-        if (!session.initialized) {
-          return _errorResponse(id, jsonRpcErrorInvalidRequest, 'tools/list before initialize');
-        }
-        final toolsArr = tools.map((t) {
-          final entry = <String, dynamic>{
-            'name': t.name,
-            'inputSchema': t.inputSchema,
-          };
-          if (t.description != null) entry['description'] = t.description;
-          return entry;
-        }).toList();
-        return JsonRpcResponse(id, result: {'tools': toolsArr});
-      }
-      case 'tools/call': {
-        if (!session.initialized) {
-          return _errorResponse(id, jsonRpcErrorInvalidRequest, 'tools/call before initialize');
-        }
-        final params = request.params;
-        if (params == null || params is! Map) {
-          return _errorResponse(id, jsonRpcErrorInvalidParams, 'tools/call: missing params');
-        }
-        final toolName = params['name'];
-        if (toolName == null || toolName is! String) {
-          return _errorResponse(id, jsonRpcErrorInvalidParams, 'tools/call: missing tool name');
-        }
-        final entry = _byName()[toolName];
-        if (entry == null) {
-          return _errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '$toolName'");
-        }
-        final argsRaw = params['arguments'] ?? <String, dynamic>{};
-        final argsJson = jsonEncode(argsRaw);
-        try {
-          final resultStr = invokeJsonFn(entry.method, argsJson, ctx, codecCtx);
-          return JsonRpcResponse(id, result: {
-            'content': [{'type': 'text', 'text': resultStr}],
-            'isError': false,
-          });
-        } on BaboonWiringException catch (e) {
-          // Channel B: a valid protocol call whose domain payload failed.
-          return JsonRpcResponse(id, result: {
-            'content': [{'type': 'text', 'text': _describeWiringError(e.error)}],
-            'isError': true,
-          });
-        } catch (e) {
-          // Channel B: unexpected error during dispatch.
-          return JsonRpcResponse(id, result: {
-            'content': [{'type': 'text', 'text': e.toString()}],
-            'isError': true,
-          });
-        }
-      }
-      default:
-        return _errorResponse(id, jsonRpcErrorMethodNotFound, 'Method not found: ${request.method}');
-    }
-  }
-
-  JsonRpcResponse _errorResponse(Object? id, int code, String message) {
-    return JsonRpcResponse(id, error: JsonRpcError(code, message));
-  }
-
-  String _describeWiringError(BaboonWiringError e) {
-    return e.toString();
-  }
+  JsonRpcResponse? handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx) =>
+      _handleMcp(request, session, () => serverInfo, () => tools, (name) {
+        final entry = _findTool(name);
+        return entry == null ? null : _McpRoute((data) => invokeJsonFn(entry.method, data, ctx, codecCtx));
+      });
 }
 
 // --- MCP-muxer error taxonomy (tasks:T112; contract §6) ---
@@ -324,7 +247,31 @@ class AbstractMcpMuxer<Ctx> implements IBaboonMcpServer<Ctx> {
   }
 
   @override
-  JsonRpcResponse? handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx) {
+  JsonRpcResponse? handle(JsonRpcRequest request, McpSession session, Ctx ctx, BaboonCodecContext codecCtx) =>
+      _handleMcp(request, session, () => _mergedServerInfo, () => _entries.values, (name) {
+        final server = _route[name];
+        if (server == null) return null;
+        final entry = _entries[name]!;
+        return _McpRoute((data) => server.routeToolCall(entry.method, data, ctx, codecCtx));
+      });
+
+}
+
+class _McpRoute {
+  final String Function(String) invoke;
+  _McpRoute(this.invoke);
+}
+
+JsonRpcResponse _errorResponse(Object? id, int code, String message) =>
+    JsonRpcResponse(id, error: JsonRpcError(code, message));
+
+JsonRpcResponse? _handleMcp(
+  JsonRpcRequest request,
+  McpSession session,
+  McpServerInfo Function() serverInfo,
+  Iterable<McpToolEntry> Function() tools,
+  _McpRoute? Function(String) lookup,
+) {
     final id = request.id;
     switch (request.method) {
       case 'initialize': {
@@ -339,7 +286,7 @@ class AbstractMcpMuxer<Ctx> implements IBaboonMcpServer<Ctx> {
         return JsonRpcResponse(id, result: {
           'protocolVersion': mcpProtocolVersion,
           'capabilities': {'tools': <String, dynamic>{}},
-          'serverInfo': {'name': _mergedServerInfo.name, 'version': _mergedServerInfo.version},
+          'serverInfo': {'name': serverInfo().name, 'version': serverInfo().version},
         });
       }
       case 'notifications/initialized':
@@ -348,7 +295,15 @@ class AbstractMcpMuxer<Ctx> implements IBaboonMcpServer<Ctx> {
         if (!session.initialized) {
           return _errorResponse(id, jsonRpcErrorInvalidRequest, 'tools/list before initialize');
         }
-        return JsonRpcResponse(id, result: {'tools': _toolsListUnion()});
+        final toolsArr = tools().map((t) {
+          final entry = <String, dynamic>{
+            'name': t.name,
+            'inputSchema': t.inputSchema,
+          };
+          if (t.description != null) entry['description'] = t.description;
+          return entry;
+        }).toList();
+        return JsonRpcResponse(id, result: {'tools': toolsArr});
       }
       case 'tools/call': {
         if (!session.initialized) {
@@ -362,18 +317,14 @@ class AbstractMcpMuxer<Ctx> implements IBaboonMcpServer<Ctx> {
         if (toolName == null || toolName is! String) {
           return _errorResponse(id, jsonRpcErrorInvalidParams, 'tools/call: missing tool name');
         }
-        final server = _route[toolName];
-        if (server == null) {
-          // NoMatchingTool: surfaced as the SAME wire response the per-service
-          // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
-          // so the bytes are identical whether one server or the muxer rejects.
+        final route = lookup(toolName);
+        if (route == null) {
           return _errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '$toolName'");
         }
-        final entry = _entries[toolName]!;
         final argsRaw = params['arguments'] ?? <String, dynamic>{};
         final argsJson = jsonEncode(argsRaw);
         try {
-          final resultStr = server.routeToolCall(entry.method, argsJson, ctx, codecCtx);
+          final resultStr = route.invoke(argsJson);
           return JsonRpcResponse(id, result: {
             'content': [{'type': 'text', 'text': resultStr}],
             'isError': false,
@@ -396,24 +347,3 @@ class AbstractMcpMuxer<Ctx> implements IBaboonMcpServer<Ctx> {
         return _errorResponse(id, jsonRpcErrorMethodNotFound, 'Method not found: ${request.method}');
     }
   }
-
-  // Backs tools/list (§3.2): the union of all registered servers' tool entries
-  // in registration-then-declaration order (the insertion order of `_entries`),
-  // each in the same shape the per-service base emits.
-  List<Map<String, dynamic>> _toolsListUnion() {
-    final out = <Map<String, dynamic>>[];
-    for (final t in _entries.values) {
-      final entry = <String, dynamic>{
-        'name': t.name,
-        'inputSchema': t.inputSchema,
-      };
-      if (t.description != null) entry['description'] = t.description;
-      out.add(entry);
-    }
-    return out;
-  }
-
-  JsonRpcResponse _errorResponse(Object? id, int code, String message) {
-    return JsonRpcResponse(id, error: JsonRpcError(code, message));
-  }
-}

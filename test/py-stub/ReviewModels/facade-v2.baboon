@@ -1,0 +1,8 @@
+model review.python.facade
+version "2.0.0"
+
+import "1.0.0" { * } without { Evolving }
+root data Evolving {
+  value: i32
+  extra: opt[str]
+}

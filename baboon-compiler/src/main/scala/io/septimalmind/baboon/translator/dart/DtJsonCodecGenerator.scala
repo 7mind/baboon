@@ -249,18 +249,7 @@ class DtJsonCodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case TypeId.Builtins.bit                                             => q"$ref"
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"$ref"
-          case TypeId.Builtins.i64                                             => q"$ref.toString()"
-          case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"$ref"
-          case TypeId.Builtins.u64                                             => q"BigInt.from($ref).toUnsigned(64).toString()"
-          case TypeId.Builtins.f32 | TypeId.Builtins.f64                       => q"$ref"
-          case TypeId.Builtins.f128                                            => q"$ref.value"
-          case TypeId.Builtins.str                                             => q"$ref"
-          case TypeId.Builtins.uid                                             => q"$ref"
-          case TypeId.Builtins.bytes                                           => q"$ref.toHexString()"
-          case TypeId.Builtins.tsu                                             => q"$baboonTimeFormats.formatUtc($ref)"
-          case TypeId.Builtins.tso                                             => q"$baboonTimeFormats.formatOffset($ref)"
+          case b: TypeId.BuiltinScalar => DtScalarCodecOps.encodeJson(b, ref)
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -309,18 +298,7 @@ class DtJsonCodecGenerator(
       tpe match {
         case TypeRef.Scalar(id) =>
           id match {
-            case TypeId.Builtins.bit                                             => q"$ref as bool"
-            case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"($ref as num).toInt()"
-            case TypeId.Builtins.i64                                             => q"($ref is String ? int.parse($ref as String) : ($ref as num).toInt())"
-            case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"($ref as num).toInt()"
-            case TypeId.Builtins.u64                       => q"($ref is String ? BigInt.parse($ref as String).toSigned(64).toInt() : ($ref as num).toInt())"
-            case TypeId.Builtins.f32 | TypeId.Builtins.f64 => q"($ref as num).toDouble()"
-            case TypeId.Builtins.f128                      => q"$baboonDecimal($ref is String ? $ref as String : $ref.toString())"
-            case TypeId.Builtins.str                       => q"$ref as String"
-            case TypeId.Builtins.uid                       => q"$ref as String"
-            case TypeId.Builtins.bytes                     => q"$baboonByteStringTools.fromHexString($ref as String)"
-            case TypeId.Builtins.tsu                       => q"$baboonTimeFormats.parseUtc($ref as String)"
-            case TypeId.Builtins.tso                       => q"$baboonTimeFormats.parseOffset($ref as String)"
+            case b: TypeId.BuiltinScalar => DtScalarCodecOps.decodeJson(b, ref)
             case u: TypeId.User =>
               domain.defs.meta.nodes(u) match {
                 case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -447,11 +425,10 @@ class DtJsonCodecGenerator(
 
   // Encode delegates to the per-codec-class `encodeAnyField` helper. This site wires the expected
   // kind byte and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
-  // See `anyStaticFallbacks` for the per-variant table.
   private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[DtValue]): TextTree[DtValue] = {
     val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
     val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
-    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    val (staticDom, staticVer, staticTid) = DtAnyFieldPlan.fallbacks(a, domain)
     q"encodeAnyField(ctx, $expectedHex, $staticDom, $staticVer, $staticTid, $ref)"
   }
 
@@ -464,42 +441,7 @@ class DtJsonCodecGenerator(
     q"decodeAnyField($expectedHex, $ref)"
   }
 
-  // Static fallbacks for the cross-format facade helper (`uebaToJson`). The wire `meta` may omit
-  // components that are pinned by the field's static declaration; the codec emits whatever is
-  // statically known so the facade can fill the gaps. See
-  // `BaboonCodecsFacade._buildSyntheticTypeMeta` for the merge semantics. Per spec table:
-  //   A=(null,null,null), B=(currentDomain,null,null), C=(currentDomain,currentVersion,null),
-  //   D1=(null,null,underlyingFqid), D2=(currentDomain,null,underlyingFqid),
-  //   D3=(currentDomain,currentVersion,underlyingFqid).
-  // Duplicated across Scala/C#/Rust/Kotlin/Java/TS/Dart — extraction deferred (textual emission
-  // diverges by language flavor; see PR 4.2 ledger entry's DRY analysis). 11th instance.
-  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[DtValue], TextTree[DtValue], TextTree[DtValue]) = {
-    val none                     = q"null"
-    def some(s: String)          = q""""$s""""
-    val currentDomain: String    = domain.id.toString
-    val currentDomainVer: String = domain.version.v.toString
-    val typeidStatic = a.underlying match {
-      case Some(u) => some(u.id.toString)
-      case None    => none
-    }
-    val (domainStatic, versionStatic) = a.variant match {
-      case AnyVariant.Global  => (none, none)
-      case AnyVariant.ThisDom => (some(currentDomain), none)
-      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
-    }
-    (domainStatic, versionStatic, typeidStatic)
-  }
-
-  // Per-codec-class helpers consolidating the any-field JSON envelope encode/decode (kind check,
-  // cross-format conversion via facade, envelope `$ak/$ad/$av/$at/$c` build & disassemble).
-  // Emitted at most once per codec class that has any any-bearing field. Mirrors PR 6.3's Java
-  // helper shape (closest precedent: JsonNode-style API) and PR 7.3's TS shape. Kind-check on
-  // encode runs before any envelope construction.
-  //
-  // Cast-via-`as`: `ctx.facade` returns the `BaboonCodecsFacadeBase` opaque base (chosen by PR 8.1
-  // to break the `baboon_runtime.dart` <-> `baboon_codecs_facade.dart` import cycle). The concrete
-  // facade class carries `uebaToJson`; the cast is safe because `BaboonCodecContext.withFacade`
-  // is the only construction path and accepts the same hierarchy.
+  // Public generated helpers remain forwarding methods for source compatibility.
   private def anyFieldHelpers: TextTree[DtValue] = {
     q"""Object? encodeAnyField(
        |    $baboonCodecContext ctx,
@@ -508,75 +450,10 @@ class DtJsonCodecGenerator(
        |    String? staticVersion,
        |    String? staticTypeid,
        |    $baboonAnyOpaque value,
-       |) {
-       |  if (value.meta.kind != expectedKind) {
-       |    throw $baboonEncoderFailure(
-       |      'any: meta-kind 0x' + (value.meta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
-       |      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
-       |    );
-       |  }
-       |  Object? anyInner;
-       |  switch (value) {
-       |    case $baboonAnyOpaqueJson(:final json):
-       |      anyInner = json;
-       |    case $baboonAnyOpaqueUeba(:final meta, :final bytes):
-       |      final anyFacadeBase = ctx.facade;
-       |      if (anyFacadeBase == null) {
-       |        throw $baboonEncoderFailure(
-       |          'Cannot encode AnyOpaqueUeba into JSON without a facade reference. '
-       |          'Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), '
-       |          'or supply AnyOpaqueJson directly.',
-       |        );
-       |      }
-       |      // Downcast to the concrete facade — the marker base is empty by design (PR 8.1
-       |      // import-cycle break). Construction goes through BaboonCodecContext.withFacade
-       |      // which only accepts BaboonCodecsFacadeBase, but real callers pass BaboonCodecsFacade.
-       |      final anyFacade = anyFacadeBase as $baboonCodecsFacade;
-       |      final anyConvResult = anyFacade.uebaToJson(
-       |        meta,
-       |        bytes,
-       |        staticDomain: staticDomain,
-       |        staticVersion: staticVersion,
-       |        staticTypeid: staticTypeid,
-       |      );
-       |      switch (anyConvResult) {
-       |        case $baboonLeft(:final value):
-       |          throw value;
-       |        case $baboonRight(:final value):
-       |          anyInner = value;
-       |      }
-       |  }
-       |  final anyEnvelope = $baboonAnyMetaCodec.writeJson(value.meta);
-       |  anyEnvelope[$baboonAnyMetaCodec.ANY_CONTENT_KEY] = anyInner;
-       |  return anyEnvelope;
-       |}
+       |) => $baboonEncodeAnyJsonField(ctx, expectedKind, staticDomain, staticVersion, staticTypeid, value);
        |
-       |$baboonAnyOpaque decodeAnyField(int expectedKind, Object? wire) {
-       |  if (wire is! Map) {
-       |    throw $baboonDecoderFailure('any: JSON envelope must be an object');
-       |  }
-       |  final anyMetaResult = $baboonAnyMetaCodec.readJson(wire);
-       |  final $baboonAnyMeta anyMeta;
-       |  switch (anyMetaResult) {
-       |    case $baboonLeft(:final value):
-       |      throw value;
-       |    case $baboonRight(:final value):
-       |      anyMeta = value;
-       |  }
-       |  if (anyMeta.kind != expectedKind) {
-       |    throw $baboonDecoderFailure(
-       |      'any: wire kind 0x' + (anyMeta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
-       |      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
-       |    );
-       |  }
-       |  if (!wire.containsKey($baboonAnyMetaCodec.ANY_CONTENT_KEY)) {
-       |    throw $baboonDecoderFailure(
-       |      "any: JSON envelope missing '" + $baboonAnyMetaCodec.ANY_CONTENT_KEY + "' content key",
-       |    );
-       |  }
-       |  final anyContent = wire[$baboonAnyMetaCodec.ANY_CONTENT_KEY];
-       |  return $baboonAnyOpaqueJson(anyMeta, anyContent);
-       |}""".stripMargin
+       |$baboonAnyOpaque decodeAnyField(int expectedKind, Object? wire) =>
+       |    $baboonDecodeAnyJsonField(expectedKind, wire);""".stripMargin
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[DtValue]] = {

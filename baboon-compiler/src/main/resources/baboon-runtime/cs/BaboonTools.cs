@@ -69,12 +69,12 @@ namespace Baboon.Runtime.Shared
 
         public static int SetHashcode<T>(ISet<T> value, Func<T, int> mk)
         {
-            return value.Select(item => mk(item)).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, item) => current ^ item);
+            return value.Select(item => mk(item)).Aggregate(0x1EAFDEAD, (current, item) => current ^ item);
         }
 
         public static int MapHashcode<TKey, TValue>(IEnumerable<KeyValuePair<TKey, TValue>> value, Func<TKey, int> mkk, Func<TValue, int> mkv)
         {
-            return (value.Select(item0 => HashCode.Combine(mkk(item0.Key), mkv(item0.Value))).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, item0) => current ^ item0));
+            return (value.Select(item0 => HashCode.Combine(mkk(item0.Key), mkv(item0.Value))).Aggregate(0x1EAFDEAD, (current, item0) => current ^ item0));
         }
 
         public static bool MapEquals<TKey, TValue>(IReadOnlyDictionary<TKey, TValue> left, IReadOnlyDictionary<TKey, TValue> right, Func<TValue, TValue, bool> cmp)

@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.dart
 
 import distage.Id
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.dart.DtBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.dart.DtTypes.*
 import io.septimalmind.baboon.translator.dart.DtValue.DtPackageId
@@ -339,10 +339,11 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                 }
                 q"final $localVar = $expr;"
             }
-            val ctorArgs = dto.fields.map { f =>
-              val dartName = trans.escapeDartKeyword(f.name.name)
-              val localVar = trans.escapeDartKeyword(f.name.name.toLowerCase)
-              q"$dartName: $localVar"
+            val ctorArgs = dto.fields.map {
+              f =>
+                val dartName = trans.escapeDartKeyword(f.name.name)
+                val localVar = trans.escapeDartKeyword(f.name.name.toLowerCase)
+                q"$dartName: $localVar"
             }
             val classDef = q"""class $className
                               |  extends $baboonAbstractConversion<$tin, $tout> {
@@ -365,11 +366,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
             List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
         }
 
-        if (false) {
-          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
-        } else {
-          F.pure(rendered)
-        }
+        F.pure(rendered): Out[List[RenderedConversion]]
     }
   }
 

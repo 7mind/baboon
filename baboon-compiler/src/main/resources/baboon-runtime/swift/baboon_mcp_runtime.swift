@@ -109,6 +109,86 @@ public struct McpServerInfo {
     }
 }
 
+
+private enum PreparedMcpCall<Route> {
+    case immediate(JsonRpcResponse?)
+    case invoke(Route, String)
+}
+
+private enum McpProtocolDispatch {
+    static func tool(_ tool: McpToolEntry) -> [String: Any] {
+        var entry: [String: Any] = ["name": tool.name, "inputSchema": tool.inputSchema]
+        if let description = tool.description { entry["description"] = description }
+        return entry
+    }
+
+    static func error(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {
+        JsonRpcResponse(id, error: JsonRpcError(code, message))
+    }
+
+    static func result(_ id: Any?, _ text: String, isError: Bool) -> JsonRpcResponse {
+        JsonRpcResponse(id, result: ["content": [["type": "text", "text": text]], "isError": isError])
+    }
+
+    static func failedCall(_ id: Any?, _ error: Error) -> JsonRpcResponse {
+        let text: String
+        if let wiring = error as? BaboonWiringException { text = "\(wiring.error)" }
+        else { text = "\(error)" }
+        return result(id, text, isError: true)
+    }
+
+    static func prepare<Route>(
+        _ request: JsonRpcRequest, _ session: McpSession,
+        info: () -> McpServerInfo, tools: () -> [[String: Any]], find: (String) -> Route?
+    ) -> PreparedMcpCall<Route> {
+        let id = request.id
+        switch request.method {
+        case "initialize":
+            guard let params = request.params as? [String: Any] else {
+                return .immediate(error(id, jsonRpcErrorInvalidParams, "initialize: missing params"))
+            }
+            if params["protocolVersion"] == nil {
+                return .immediate(error(id, jsonRpcErrorInvalidParams, "initialize: missing protocolVersion"))
+            }
+            session.initialized = true
+            return .immediate(JsonRpcResponse(id, result: [
+                "protocolVersion": mcpProtocolVersion,
+                "capabilities": ["tools": [String: Any]()],
+                "serverInfo": ["name": info().name, "version": info().version],
+            ]))
+        case "notifications/initialized":
+            return .immediate(nil)
+        case "tools/list":
+            if !session.initialized {
+                return .immediate(error(id, jsonRpcErrorInvalidRequest, "tools/list before initialize"))
+            }
+            return .immediate(JsonRpcResponse(id, result: ["tools": tools()]))
+        case "tools/call":
+            if !session.initialized {
+                return .immediate(error(id, jsonRpcErrorInvalidRequest, "tools/call before initialize"))
+            }
+            guard let params = request.params as? [String: Any] else {
+                return .immediate(error(id, jsonRpcErrorInvalidParams, "tools/call: missing params"))
+            }
+            guard let name = params["name"] as? String else {
+                return .immediate(error(id, jsonRpcErrorInvalidParams, "tools/call: missing tool name"))
+            }
+            guard let route = find(name) else {
+                return .immediate(error(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '\(name)'"))
+            }
+            let args: Any = params["arguments"] ?? [String: Any]()
+            do {
+                let data = try JSONSerialization.data(withJSONObject: args, options: [.sortedKeys, .fragmentsAllowed])
+                return .invoke(route, String(data: data, encoding: .utf8)!)
+            } catch {
+                return .immediate(self.error(id, jsonRpcErrorInternalError, "tools/call: failed to serialize arguments: \(error)"))
+            }
+        default:
+            return .immediate(error(id, jsonRpcErrorMethodNotFound, "Method not found: \(request.method)"))
+        }
+    }
+}
+
 // --- Dispatch interface ---
 //
 // The single generated entrypoint, analogous to `IBaboonJsonServiceCtx`. It is
@@ -128,6 +208,7 @@ public protocol IBaboonMcpServer {
     associatedtype Ctx
     var serverInfo: McpServerInfo { get }
     var tools: [McpToolEntry] { get }
+    func tool(named name: String) -> McpToolEntry?
 
     // The JSON `tools/call` delegate the generated server supplies: routes one
     // tool invocation into the already-generated service dispatch (the
@@ -148,10 +229,8 @@ public protocol IBaboonMcpServer {
 // keys ("protocolVersion", "inputSchema" …) are literal lowercase strings, NOT
 // subject to any per-language symbol casing.
 extension IBaboonMcpServer {
-    private func byName() -> [String: McpToolEntry] {
-        var m: [String: McpToolEntry] = [:]
-        for t in tools { m[t.name] = t }
-        return m
+    public func tool(named name: String) -> McpToolEntry? {
+        tools.last { $0.name == name }
     }
 
     // --- PUBLIC routable-server surface (tasks:T114) ---
@@ -161,105 +240,24 @@ extension IBaboonMcpServer {
     // `handle` drives for its own `tools/call` arm (`invokeJson`). The
     // cross-service MCP muxer (AbstractMcpMuxer) composes registered servers
     // through `serverInfo`/`tools`/`routeToolCall` ONLY — never via the private
-    // `byName()` and never via `handle`. It reuses Channel-A/Channel-B mapping
+    // tool lookup and never via `handle`. It reuses Channel-A/Channel-B mapping
     // unchanged.
     public func routeToolCall(_ method: BaboonMethodId, _ data: String, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) throws -> String {
         return try invokeJson(method, data, ctx, codecCtx)
     }
 
-    private func errorResponse(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {
-        return JsonRpcResponse(id, error: JsonRpcError(code, message))
-    }
-
     public func handle(_ request: JsonRpcRequest, _ session: McpSession, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) -> JsonRpcResponse? {
-        let id = request.id
-        switch request.method {
-        case "initialize":
-            guard let params = request.params as? [String: Any] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing params")
-            }
-            if params["protocolVersion"] == nil {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing protocolVersion")
-            }
-            session.initialized = true
-            let result: [String: Any] = [
-                "protocolVersion": mcpProtocolVersion,
-                "capabilities": ["tools": [String: Any]()],
-                "serverInfo": ["name": serverInfo.name, "version": serverInfo.version],
-            ]
-            return JsonRpcResponse(id, result: result)
-
-        case "notifications/initialized":
-            return nil
-
-        case "tools/list":
-            if !session.initialized {
-                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/list before initialize")
-            }
-            var toolsArr: [[String: Any]] = []
-            for t in tools {
-                var entry: [String: Any] = [
-                    "name": t.name,
-                    "inputSchema": t.inputSchema,
-                ]
-                if let d = t.description {
-                    entry["description"] = d
-                }
-                toolsArr.append(entry)
-            }
-            return JsonRpcResponse(id, result: ["tools": toolsArr])
-
-        case "tools/call":
-            if !session.initialized {
-                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/call before initialize")
-            }
-            guard let params = request.params as? [String: Any] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing params")
-            }
-            guard let toolName = params["name"] as? String else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing tool name")
-            }
-            guard let entry = byName()[toolName] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '\(toolName)'")
-            }
-            let argsRaw: Any = params["arguments"] ?? [String: Any]()
-            let argsJson: String
+        let prepared: PreparedMcpCall<McpToolEntry> = McpProtocolDispatch.prepare(request, session, info: { self.serverInfo }, tools: { self.tools.map(McpProtocolDispatch.tool) }, find: { self.tool(named: $0) })
+        switch prepared {
+        case .immediate(let response): return response
+        case .invoke(let route, let args):
             do {
-                let data = try JSONSerialization.data(withJSONObject: argsRaw, options: [.sortedKeys, .fragmentsAllowed])
-                argsJson = String(data: data, encoding: .utf8)!
+                let text = try invokeJson(route.method, args, ctx, codecCtx)
+                return McpProtocolDispatch.result(request.id, text, isError: false)
             } catch {
-                return errorResponse(id, jsonRpcErrorInternalError, "tools/call: failed to serialize arguments: \(error)")
+                return McpProtocolDispatch.failedCall(request.id, error)
             }
-            do {
-                let resultStr = try invokeJson(entry.method, argsJson, ctx, codecCtx)
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": resultStr]],
-                    "isError": false,
-                ]
-                return JsonRpcResponse(id, result: result)
-            } catch let e as BaboonWiringException {
-                // Channel B: a valid protocol call whose domain payload failed.
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": describeWiringError(e.error)]],
-                    "isError": true,
-                ]
-                return JsonRpcResponse(id, result: result)
-            } catch {
-                // Channel B: unexpected error during dispatch.
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": "\(error)"]],
-                    "isError": true,
-                ]
-                return JsonRpcResponse(id, result: result)
-            }
-
-        default:
-            return errorResponse(id, jsonRpcErrorMethodNotFound, "Method not found: \(request.method)")
         }
-    }
-
-    private func describeWiringError(_ e: BaboonWiringError) -> String {
-        return "\(e)"
     }
 }
 
@@ -308,13 +306,12 @@ public struct AnyMcpServer<Ctx> {
 // suspension points) and identical to the sync state machine; only the
 // `invokeJson` call is awaited.
 //
-// The sync `IBaboonMcpServer` protocol + extension above are UNTOUCHED, so with
-// `--sw-async-services=false` the generated output is byte-identical to baseline.
 // ===========================================================================
 public protocol IBaboonAsyncMcpServer {
     associatedtype Ctx
     var serverInfo: McpServerInfo { get }
     var tools: [McpToolEntry] { get }
+    func tool(named name: String) -> McpToolEntry?
 
     // The async `tools/call` delegate the generated server supplies: routes one
     // tool invocation into the generated async service dispatch (the
@@ -326,10 +323,8 @@ public protocol IBaboonAsyncMcpServer {
 }
 
 extension IBaboonAsyncMcpServer {
-    private func byName() -> [String: McpToolEntry] {
-        var m: [String: McpToolEntry] = [:]
-        for t in tools { m[t.name] = t }
-        return m
+    public func tool(named name: String) -> McpToolEntry? {
+        tools.last { $0.name == name }
     }
 
     // PUBLIC routable-server surface (tasks:T114), async flavour: `routeToolCall`
@@ -338,99 +333,18 @@ extension IBaboonAsyncMcpServer {
         return try await invokeJson(method, data, ctx, codecCtx)
     }
 
-    private func errorResponse(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {
-        return JsonRpcResponse(id, error: JsonRpcError(code, message))
-    }
-
     public func handle(_ request: JsonRpcRequest, _ session: McpSession, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) async -> JsonRpcResponse? {
-        let id = request.id
-        switch request.method {
-        case "initialize":
-            guard let params = request.params as? [String: Any] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing params")
-            }
-            if params["protocolVersion"] == nil {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing protocolVersion")
-            }
-            session.initialized = true
-            let result: [String: Any] = [
-                "protocolVersion": mcpProtocolVersion,
-                "capabilities": ["tools": [String: Any]()],
-                "serverInfo": ["name": serverInfo.name, "version": serverInfo.version],
-            ]
-            return JsonRpcResponse(id, result: result)
-
-        case "notifications/initialized":
-            return nil
-
-        case "tools/list":
-            if !session.initialized {
-                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/list before initialize")
-            }
-            var toolsArr: [[String: Any]] = []
-            for t in tools {
-                var entry: [String: Any] = [
-                    "name": t.name,
-                    "inputSchema": t.inputSchema,
-                ]
-                if let d = t.description {
-                    entry["description"] = d
-                }
-                toolsArr.append(entry)
-            }
-            return JsonRpcResponse(id, result: ["tools": toolsArr])
-
-        case "tools/call":
-            if !session.initialized {
-                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/call before initialize")
-            }
-            guard let params = request.params as? [String: Any] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing params")
-            }
-            guard let toolName = params["name"] as? String else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing tool name")
-            }
-            guard let entry = byName()[toolName] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '\(toolName)'")
-            }
-            let argsRaw: Any = params["arguments"] ?? [String: Any]()
-            let argsJson: String
+        let prepared: PreparedMcpCall<McpToolEntry> = McpProtocolDispatch.prepare(request, session, info: { self.serverInfo }, tools: { self.tools.map(McpProtocolDispatch.tool) }, find: { self.tool(named: $0) })
+        switch prepared {
+        case .immediate(let response): return response
+        case .invoke(let route, let args):
             do {
-                let data = try JSONSerialization.data(withJSONObject: argsRaw, options: [.sortedKeys, .fragmentsAllowed])
-                argsJson = String(data: data, encoding: .utf8)!
+                let text = try await invokeJson(route.method, args, ctx, codecCtx)
+                return McpProtocolDispatch.result(request.id, text, isError: false)
             } catch {
-                return errorResponse(id, jsonRpcErrorInternalError, "tools/call: failed to serialize arguments: \(error)")
+                return McpProtocolDispatch.failedCall(request.id, error)
             }
-            do {
-                let resultStr = try await invokeJson(entry.method, argsJson, ctx, codecCtx)
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": resultStr]],
-                    "isError": false,
-                ]
-                return JsonRpcResponse(id, result: result)
-            } catch let e as BaboonWiringException {
-                // Channel B: a valid protocol call whose domain payload failed.
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": describeWiringError(e.error)]],
-                    "isError": true,
-                ]
-                return JsonRpcResponse(id, result: result)
-            } catch {
-                // Channel B: unexpected error during dispatch.
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": "\(error)"]],
-                    "isError": true,
-                ]
-                return JsonRpcResponse(id, result: result)
-            }
-
-        default:
-            return errorResponse(id, jsonRpcErrorMethodNotFound, "Method not found: \(request.method)")
         }
-    }
-
-    private func describeWiringError(_ e: BaboonWiringError) -> String {
-        return "\(e)"
     }
 }
 
@@ -547,10 +461,13 @@ public final class AbstractMcpMuxer<Ctx> {
     // duplicateTool on a tool-name collision across servers (the exact MCP-tier
     // analogue of JsonMuxer.register throwing duplicateService).
     public func register(_ server: AnyRoutableMcpServer<Ctx>) throws {
+        var incoming = Set<String>()
         for t in server.tools {
-            if _route[t.name] != nil {
+            if _route[t.name] != nil || !incoming.insert(t.name).inserted {
                 throw BaboonMcpWiringException(BaboonMcpWiringError.duplicateTool(t.name))
             }
+        }
+        for t in server.tools {
             _route[t.name] = server
             _entries[t.name] = t
             _toolOrder.append(t.name)
@@ -558,111 +475,29 @@ public final class AbstractMcpMuxer<Ctx> {
         _servers.append(server)
     }
 
-    private func errorResponse(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {
-        return JsonRpcResponse(id, error: JsonRpcError(code, message))
-    }
-
     public func handle(_ request: JsonRpcRequest, _ session: McpSession, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) -> JsonRpcResponse? {
-        let id = request.id
-        switch request.method {
-        case "initialize":
-            guard let params = request.params as? [String: Any] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing params")
-            }
-            if params["protocolVersion"] == nil {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing protocolVersion")
-            }
-            session.initialized = true
-            let result: [String: Any] = [
-                "protocolVersion": mcpProtocolVersion,
-                "capabilities": ["tools": [String: Any]()],
-                "serverInfo": ["name": _mergedServerInfo.name, "version": _mergedServerInfo.version],
-            ]
-            return JsonRpcResponse(id, result: result)
-
-        case "notifications/initialized":
-            return nil
-
-        case "tools/list":
-            if !session.initialized {
-                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/list before initialize")
-            }
-            return JsonRpcResponse(id, result: ["tools": toolsListUnion()])
-
-        case "tools/call":
-            if !session.initialized {
-                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/call before initialize")
-            }
-            guard let params = request.params as? [String: Any] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing params")
-            }
-            guard let toolName = params["name"] as? String else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing tool name")
-            }
-            guard let server = _route[toolName], let entry = _entries[toolName] else {
-                // NoMatchingTool: surfaced as the SAME wire response the per-service
-                // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
-                // so the bytes are identical whether one server or the muxer rejects.
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '\(toolName)'")
-            }
-            let argsRaw: Any = params["arguments"] ?? [String: Any]()
-            let argsJson: String
+        let prepared: PreparedMcpCall<(AnyRoutableMcpServer<Ctx>, McpToolEntry)> = McpProtocolDispatch.prepare(request, session, info: { self._mergedServerInfo }, tools: { self.toolsListUnion() }, find: { name in
+            guard let server = self._route[name], let entry = self._entries[name] else { return nil }
+            return (server, entry)
+        })
+        switch prepared {
+        case .immediate(let response): return response
+        case .invoke(let route, let args):
             do {
-                let data = try JSONSerialization.data(withJSONObject: argsRaw, options: [.sortedKeys, .fragmentsAllowed])
-                argsJson = String(data: data, encoding: .utf8)!
+                let text = try route.0.routeToolCall(route.1.method, args, ctx, codecCtx)
+                return McpProtocolDispatch.result(request.id, text, isError: false)
             } catch {
-                return errorResponse(id, jsonRpcErrorInternalError, "tools/call: failed to serialize arguments: \(error)")
+                return McpProtocolDispatch.failedCall(request.id, error)
             }
-            do {
-                let resultStr = try server.routeToolCall(entry.method, argsJson, ctx, codecCtx)
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": resultStr]],
-                    "isError": false,
-                ]
-                return JsonRpcResponse(id, result: result)
-            } catch let e as BaboonWiringException {
-                // Channel B: a valid protocol call whose domain payload failed.
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": describeWiringError(e.error)]],
-                    "isError": true,
-                ]
-                return JsonRpcResponse(id, result: result)
-            } catch {
-                // Channel B: unexpected error during dispatch.
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": "\(error)"]],
-                    "isError": true,
-                ]
-                return JsonRpcResponse(id, result: result)
-            }
-
-        default:
-            return errorResponse(id, jsonRpcErrorMethodNotFound, "Method not found: \(request.method)")
         }
     }
-
     // Backs tools/list (§3.2): the union of all registered servers' tool entries
     // in registration-then-declaration order (the insertion order of `_toolOrder`),
     // each in the same shape the per-service base emits.
     private func toolsListUnion() -> [[String: Any]] {
-        var toolsArr: [[String: Any]] = []
-        for name in _toolOrder {
-            guard let t = _entries[name] else { continue }
-            var entry: [String: Any] = [
-                "name": t.name,
-                "inputSchema": t.inputSchema,
-            ]
-            if let d = t.description {
-                entry["description"] = d
-            }
-            toolsArr.append(entry)
-        }
-        return toolsArr
+        _toolOrder.compactMap { _entries[$0] }.map(McpProtocolDispatch.tool)
     }
 
-    private func describeWiringError(_ e: BaboonWiringError) -> String {
-        return "\(e)"
-    }
 }
 
 // --- Type-erasing routable-server box (async) ---
@@ -715,10 +550,13 @@ public final class AbstractAsyncMcpMuxer<Ctx> {
     }
 
     public func register(_ server: AnyAsyncRoutableMcpServer<Ctx>) throws {
+        var incoming = Set<String>()
         for t in server.tools {
-            if _route[t.name] != nil {
+            if _route[t.name] != nil || !incoming.insert(t.name).inserted {
                 throw BaboonMcpWiringException(BaboonMcpWiringError.duplicateTool(t.name))
             }
+        }
+        for t in server.tools {
             _route[t.name] = server
             _entries[t.name] = t
             _toolOrder.append(t.name)
@@ -726,101 +564,24 @@ public final class AbstractAsyncMcpMuxer<Ctx> {
         _servers.append(server)
     }
 
-    private func errorResponse(_ id: Any?, _ code: Int, _ message: String) -> JsonRpcResponse {
-        return JsonRpcResponse(id, error: JsonRpcError(code, message))
-    }
-
     public func handle(_ request: JsonRpcRequest, _ session: McpSession, _ ctx: Ctx, _ codecCtx: BaboonCodecContext) async -> JsonRpcResponse? {
-        let id = request.id
-        switch request.method {
-        case "initialize":
-            guard let params = request.params as? [String: Any] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing params")
-            }
-            if params["protocolVersion"] == nil {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "initialize: missing protocolVersion")
-            }
-            session.initialized = true
-            let result: [String: Any] = [
-                "protocolVersion": mcpProtocolVersion,
-                "capabilities": ["tools": [String: Any]()],
-                "serverInfo": ["name": _mergedServerInfo.name, "version": _mergedServerInfo.version],
-            ]
-            return JsonRpcResponse(id, result: result)
-
-        case "notifications/initialized":
-            return nil
-
-        case "tools/list":
-            if !session.initialized {
-                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/list before initialize")
-            }
-            return JsonRpcResponse(id, result: ["tools": toolsListUnion()])
-
-        case "tools/call":
-            if !session.initialized {
-                return errorResponse(id, jsonRpcErrorInvalidRequest, "tools/call before initialize")
-            }
-            guard let params = request.params as? [String: Any] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing params")
-            }
-            guard let toolName = params["name"] as? String else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: missing tool name")
-            }
-            guard let server = _route[toolName], let entry = _entries[toolName] else {
-                return errorResponse(id, jsonRpcErrorInvalidParams, "tools/call: unknown tool '\(toolName)'")
-            }
-            let argsRaw: Any = params["arguments"] ?? [String: Any]()
-            let argsJson: String
+        let prepared: PreparedMcpCall<(AnyAsyncRoutableMcpServer<Ctx>, McpToolEntry)> = McpProtocolDispatch.prepare(request, session, info: { self._mergedServerInfo }, tools: { self.toolsListUnion() }, find: { name in
+            guard let server = self._route[name], let entry = self._entries[name] else { return nil }
+            return (server, entry)
+        })
+        switch prepared {
+        case .immediate(let response): return response
+        case .invoke(let route, let args):
             do {
-                let data = try JSONSerialization.data(withJSONObject: argsRaw, options: [.sortedKeys, .fragmentsAllowed])
-                argsJson = String(data: data, encoding: .utf8)!
+                let text = try await route.0.routeToolCall(route.1.method, args, ctx, codecCtx)
+                return McpProtocolDispatch.result(request.id, text, isError: false)
             } catch {
-                return errorResponse(id, jsonRpcErrorInternalError, "tools/call: failed to serialize arguments: \(error)")
+                return McpProtocolDispatch.failedCall(request.id, error)
             }
-            do {
-                let resultStr = try await server.routeToolCall(entry.method, argsJson, ctx, codecCtx)
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": resultStr]],
-                    "isError": false,
-                ]
-                return JsonRpcResponse(id, result: result)
-            } catch let e as BaboonWiringException {
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": describeWiringError(e.error)]],
-                    "isError": true,
-                ]
-                return JsonRpcResponse(id, result: result)
-            } catch {
-                let result: [String: Any] = [
-                    "content": [["type": "text", "text": "\(error)"]],
-                    "isError": true,
-                ]
-                return JsonRpcResponse(id, result: result)
-            }
-
-        default:
-            return errorResponse(id, jsonRpcErrorMethodNotFound, "Method not found: \(request.method)")
         }
     }
-
     private func toolsListUnion() -> [[String: Any]] {
-        var toolsArr: [[String: Any]] = []
-        for name in _toolOrder {
-            guard let t = _entries[name] else { continue }
-            var entry: [String: Any] = [
-                "name": t.name,
-                "inputSchema": t.inputSchema,
-            ]
-            if let d = t.description {
-                entry["description"] = d
-            }
-            toolsArr.append(entry)
-        }
-        return toolsArr
+        _toolOrder.compactMap { _entries[$0] }.map(McpProtocolDispatch.tool)
     }
 
-    private func describeWiringError(_ e: BaboonWiringError) -> String {
-        return "\(e)"
-    }
 }

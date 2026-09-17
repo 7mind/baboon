@@ -7,7 +7,7 @@ import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
+import io.septimalmind.baboon.translator.AnyFieldPlan
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -71,87 +71,6 @@ class ScUEBACodecGenerator(
           )
       }
     } else None
-  }
-
-  // Per-codec-object helpers consolidating the any-field framing, kind-check, and
-  // buffer-then-write / read-then-skip paths — emitted at most once per codec object.
-  // See spec §172 (factor any-field encode/decode into helpers).
-  private def anyFieldHelpers: TextTree[ScValue] = {
-    q"""private def encodeAnyField(
-       |  ctx: $baboonCodecContext,
-       |  writer: $binaryOutput,
-       |  expectedKind: $scByte,
-       |  staticDomain: $scOption[$scString],
-       |  staticVersion: $scOption[$scString],
-       |  staticTypeid: $scOption[$scString],
-       |  value: $baboonAnyOpaque,
-       |): $scUnit = {
-       |  if (value.meta.kind != expectedKind) {
-       |    throw $baboonCodecException.EncoderFailure(s"any: meta-kind mismatch on encode: expected 0x$${(expectedKind & 0xFF).toHexString}, got 0x$${(value.meta.kind & 0xFF).toHexString}")
-       |  }
-       |  val anyBytes: $scArray[$scByte] = value match {
-       |    case anyUeba: $baboonAnyOpaqueUeba =>
-       |      anyUeba.bytes
-       |    case anyJson: $baboonAnyOpaqueJson =>
-       |      val f = ctx.facade.getOrElse(
-       |        throw $baboonCodecException.EncoderFailure(
-       |          "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.WithFacade(useIndices, facade) into encode(), or supply AnyOpaqueUeba directly."
-       |        )
-       |      )
-       |      f.jsonToUebaBytes(anyJson.meta, anyJson.json, staticDomain, staticVersion, staticTypeid) match {
-       |        case Right(b) => b
-       |        case Left(e)  => throw e
-       |      }
-       |  }
-       |  val anyMetaBuf    = new $byteArrayOutputStream()
-       |  val anyMetaWriter = new $binaryOutput(anyMetaBuf)
-       |  try {
-       |    $baboonAnyMetaCodec.writeBin(value.meta, anyMetaWriter)
-       |  } finally {
-       |    anyMetaWriter.close()
-       |  }
-       |  val anyMetaBytes = anyMetaBuf.toByteArray
-       |  val anyLength    = 4 + anyMetaBytes.length + anyBytes.length
-       |  writer.writeInt(anyLength)
-       |  writer.writeInt(anyMetaBytes.length)
-       |  writer.write(anyMetaBytes)
-       |  writer.write(anyBytes)
-       |}
-       |
-       |private def decodeAnyField(wire: $binaryInput, expectedKind: $scByte): $baboonAnyOpaqueUeba = {
-       |  val anyLength            = wire.readInt()
-       |  val anyMetaLen           = wire.readInt()
-       |  val (anyMeta, anyMetaBytesRead) = $baboonAnyMetaCodec.readBinWithLength(wire)
-       |  if (anyMetaBytesRead > anyMetaLen) {
-       |    throw $baboonCodecException.DecoderFailure(s"any: meta consumed $$anyMetaBytesRead bytes but meta-length=$$anyMetaLen")
-       |  }
-       |  if (anyMetaBytesRead < anyMetaLen) {
-       |    // Skip future meta extension bytes within the meta-length window (forward-compat).
-       |    wire.skipBytes(anyMetaLen - anyMetaBytesRead)
-       |  }
-       |  if (anyMeta.kind != expectedKind) {
-       |    throw new $genericException(s"any: meta-kind mismatch: expected 0x$${(expectedKind & 0xFF).toHexString}, got 0x$${(anyMeta.kind & 0xFF).toHexString}")
-       |  }
-       |  val anyBlobLen = anyLength - 4 - anyMetaLen
-       |  if (anyBlobLen < 0) {
-       |    throw new $genericException(s"any: negative blob length $$anyBlobLen (length=$$anyLength, metaLen=$$anyMetaLen)")
-       |  }
-       |  val anyBlob = new $scArray[$scByte](anyBlobLen)
-       |  wire.readFully(anyBlob)
-       |  $baboonAnyOpaqueUeba(anyMeta, anyBlob)
-       |}""".stripMargin
-  }
-
-  private def hasAnyField(defn: DomainMember.User): Boolean = {
-    def hasAny(tpe: TypeRef): Boolean = tpe match {
-      case _: TypeRef.Any         => true
-      case _: TypeRef.Scalar      => false
-      case c: TypeRef.Constructor => c.args.exists(hasAny)
-    }
-    defn.defn match {
-      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
-      case _              => false
-    }
   }
 
   private def genCodec(
@@ -229,15 +148,15 @@ class ScUEBACodecGenerator(
     val parents = List(cParent, q"$baboonBinCodecIndexed")
     val meta    = renderMeta(defn, scDomainTreeTools.makeCodecMeta(defn))
 
-    val anyHelpers: List[TextTree[ScValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
-    val tail                                = (anyHelpers ++ meta).joinNN()
+    val tail = meta.joinNN()
 
     q"""object ${cName.name} extends ${parents.join(" with ")} {
        |  ${baseMethods.joinNN().shift(2).trim}
        |
        |  ${tail.shift(2).trim}
        |
-       |  override protected def LazyInstance: $baboonLazy[$codecIface] = $baboonLazy($cName)
+       |  private lazy val cachedLazyInstance: $baboonLazy[$codecIface] = $baboonLazy($cName)
+       |  override protected def LazyInstance: $baboonLazy[$codecIface] = cachedLazyInstance
        |  override def instance: $codecIface = LazyInstance.value
        |}
      """.stripMargin
@@ -403,8 +322,8 @@ class ScUEBACodecGenerator(
 
   private def dtoDec(name: ScValue.ScType, fields: List[TextTree[ScValue]]): TextTree[ScValue] = {
     q"""for {
-       |  index  <- this.readIndex(ctx, wire)
-       |  _      <- $scTry(if (ctx.useIndices) assert(index.size == indexElementsCount(ctx)) else ()).toEither
+       |  index  <- this.readIndexCount(ctx, wire)
+       |  _      <- $scTry(if (ctx.useIndices) assert(index == indexElementsCount(ctx)) else ()).toEither
        |  result <- $scTry {
        |    $name(
        |      ${fields.join(",\n").shift(6).trim}
@@ -470,30 +389,7 @@ class ScUEBACodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit => q"wire.readBoolean()"
-              case TypeId.Builtins.i08 => q"wire.readByte()"
-              case TypeId.Builtins.i16 => q"wire.readShort()"
-              case TypeId.Builtins.i32 => q"wire.readInt()"
-              case TypeId.Builtins.i64 => q"wire.readLong()"
-              case TypeId.Builtins.u08 => q"wire.readByte()"
-              case TypeId.Builtins.u16 => q"wire.readShort()"
-              case TypeId.Builtins.u32 => q"wire.readInt()"
-              case TypeId.Builtins.u64 => q"wire.readLong()"
-              case TypeId.Builtins.f32 => q"wire.readFloat()"
-              case TypeId.Builtins.f64 => q"wire.readDouble()"
-
-              case TypeId.Builtins.f128  => q"$baboonBinTools.readBigDecimal(wire)"
-              case TypeId.Builtins.str   => q"$baboonBinTools.readString(wire)"
-              case TypeId.Builtins.bytes => q"$baboonBinTools.readByteString(wire)"
-
-              case TypeId.Builtins.uid => q"$baboonBinTools.readUid(wire)"
-              case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-                q"$baboonBinTools.readTimestamp(wire)"
-
-              case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+          case s: TypeId.BuiltinScalar => ScScalarCodecEmitter.uebaDecode(s, q"wire")
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -529,43 +425,18 @@ class ScUEBACodecGenerator(
 
   }
 
-  // Wire layout (locked, see docs/drafts/20260424-1738-any-opaque-fields.md §"Wire format"):
-  //   length:i32 | meta-length:i32 | meta-kind:u8 | meta-strings | blob
-  // length covers everything after itself; meta-length covers (kind + strings); blob runs the rest.
-  // The actual framing/kind-check/skip-extension logic lives in the per-codec-object
-  // `decodeAnyField` helper emitted by `anyFieldHelpers`; this just wires the expected kind in.
+  // The runtime helper owns envelope framing and metadata-window skipping.
   private def mkAnyDecoder(a: TypeRef.Any): TextTree[ScValue] = {
-    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedKind = AnyFieldPlan.forField(a, domain).kind
     val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
-    q"""decodeAnyField(wire, $expectedHex.toByte)"""
+    q"""$baboonAnyBinCodec.decode(wire, $expectedHex.toByte)"""
   }
 
   private def mkEncoder(tpe: TypeRef, ref: TextTree[ScValue], wref: TextTree[ScValue]): TextTree[ScValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit   => q"$wref.writeBoolean($ref)"
-              case TypeId.Builtins.i08   => q"$wref.writeByte($ref.toInt)"
-              case TypeId.Builtins.i16   => q"$wref.writeShort($ref.toInt)"
-              case TypeId.Builtins.i32   => q"$wref.writeInt($ref)"
-              case TypeId.Builtins.i64   => q"$wref.writeLong($ref)"
-              case TypeId.Builtins.u08   => q"$wref.writeByte($ref.toInt)"
-              case TypeId.Builtins.u16   => q"$wref.writeShort($ref.toInt)"
-              case TypeId.Builtins.u32   => q"$wref.writeInt($ref)"
-              case TypeId.Builtins.u64   => q"$wref.writeLong($ref)"
-              case TypeId.Builtins.f32   => q"$wref.writeFloat($ref)"
-              case TypeId.Builtins.f64   => q"$wref.writeDouble($ref)"
-              case TypeId.Builtins.f128  => q"$baboonBinTools.writeBigDecimal($wref, $ref)"
-              case TypeId.Builtins.str   => q"$baboonBinTools.writeString($wref, $ref)"
-              case TypeId.Builtins.bytes => q"$baboonBinTools.writeByteString($wref, $ref)"
-              case TypeId.Builtins.uid   => q"$baboonBinTools.writeUid($wref, $ref)"
-              case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-                q"$baboonBinTools.writeTimestamp($wref, $ref)"
-              case o =>
-                throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+          case s: TypeId.BuiltinScalar => ScScalarCodecEmitter.uebaEncode(s, wref, ref)
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -621,14 +492,12 @@ class ScUEBACodecGenerator(
     }
   }
 
-  // Encode delegates to the per-codec-object `encodeAnyField` helper emitted by
-  // `anyFieldHelpers`. This site wires the expected kind byte and the field's static
-  // (codec-gen-time) fallbacks for cross-format meta resolution; see `anyStaticFallbacks`.
+  // The runtime helper owns envelope framing and cross-format conversion.
   private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[ScValue], wref: TextTree[ScValue]): TextTree[ScValue] = {
-    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedKind                      = AnyFieldPlan.forField(a, domain).kind
     val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
     val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
-    q"""encodeAnyField(ctx, $wref, $expectedHex.toByte, $staticDom, $staticVer, $staticTid, $ref)"""
+    q"""$baboonAnyBinCodec.encode(ctx, $wref, $expectedHex.toByte, $staticDom, $staticVer, $staticTid, $ref)"""
   }
 
   // Static fallbacks for the cross-format facade helpers (`jsonToUebaBytes` / `uebaToJson`).
@@ -636,20 +505,9 @@ class ScUEBACodecGenerator(
   // codec emits whatever is statically known so the facade can fill the gaps. See
   // `BaboonCodecsFacade.buildSyntheticTypeMeta` for the merge semantics.
   private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[ScValue], TextTree[ScValue], TextTree[ScValue]) = {
-    val none                     = q"_root_.scala.None"
-    def some(s: String)          = q"""_root_.scala.Some("$s")"""
-    val currentDomain: String    = domain.id.toString
-    val currentDomainVer: String = domain.version.v.toString
-    val typeidStatic = a.underlying match {
-      case Some(u) => some(u.id.toString)
-      case None    => none
-    }
-    val (domainStatic, versionStatic) = a.variant match {
-      case AnyVariant.Global  => (none, none)
-      case AnyVariant.ThisDom => (some(currentDomain), none)
-      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
-    }
-    (domainStatic, versionStatic, typeidStatic)
+    val plan                                             = AnyFieldPlan.forField(a, domain)
+    def render(value: Option[String]): TextTree[ScValue] = value.fold[TextTree[ScValue]](q"_root_.scala.None")(s => q"""_root_.scala.Some("$s")""")
+    (render(plan.staticDomain), render(plan.staticVersion), render(plan.staticTypeId))
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[ScValue]] = {

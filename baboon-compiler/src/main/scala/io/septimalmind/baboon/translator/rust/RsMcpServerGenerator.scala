@@ -50,9 +50,10 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
   override def generateMcpServer(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
       lineage =>
-        val evo          = lineage.evolution
-        val latestDomain = lineage.versions(evo.latest)
-        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
+        val evo           = lineage.evolution
+        val latestDomain  = lineage.versions(evo.latest)
+        val schemaContext = schemaEmitter.prepare(latestDomain)
+        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo, schemaContext))
     }
 
     // The runtime file is emitted unconditionally (D40/T180): even a family with
@@ -87,8 +88,8 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
       if (swapped == resource)
         throw new IllegalStateException(
           "RsMcpServerGenerator: failed to locate the sync McpJsonInvoke alias in " +
-            "baboon-runtime/rust/baboon_mcp_server.rs for the async swap. The resource " +
-            "alias text drifted from RsMcpServerGenerator.syncInvokeAlias.",
+          "baboon-runtime/rust/baboon_mcp_server.rs for the async swap. The resource " +
+          "alias text drifted from RsMcpServerGenerator.syncInvokeAlias."
         )
       swapped
     }
@@ -125,21 +126,22 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
     }
   }
 
-  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution): (String, OutputFile) = {
+  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution, schemaContext: McpInputSchemaEmitter.PreparedDomain)
+    : (String, OutputFile) = {
     val path = serverPath(svc, domain, evo)
 
-    val serviceName   = svc.id.name.name
-    val snakeName     = toSnakeCaseRaw(serviceName)
-    val structName    = s"${serviceName}McpServer"
-    val modelVer      = domain.version.v.toString
-    val modelId       = domain.id.path.mkString(".")
+    val serviceName = svc.id.name.name
+    val snakeName   = toSnakeCaseRaw(serviceName)
+    val structName  = s"${serviceName}McpServer"
+    val modelVer    = domain.version.v.toString
+    val modelId     = domain.id.path.mkString(".")
 
     // Declaration-ordered tool entries (K4 §2.3): one per method.
     // The schema is carried as a parsed serde_json::Value constant.
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
-        val toolName    = s"${serviceName}_${m.name.name}"
-        val schema      = schemaEmitter.emitInputSchema(m.sig, domain)
+        val toolName      = s"${serviceName}_${m.name.name}"
+        val schema        = schemaEmitter.emitInputSchema(m.sig, schemaContext)
         val schemaLiteral = rustJsonLiteral(schema)
         val descriptionLiteral = McpDocs.flatten(m.docs) match {
           case Some(text) => s"Some(${jsonString(text)})"
@@ -235,7 +237,7 @@ class RsMcpServerGenerator[F[+_, +_]: Error2](
          |// Transport-abstract: `handle` delegates to BaboonMcpServerBase and
          |// performs no I/O. The `invoke_json` closure routes `tools/call` into the
          |// generated service dispatch; the integrator supplies it (typically the
-         |// errors-mode `invoke_json_${snakeName}` bound to this service) plus the
+         |// errors-mode `invoke_json_$snakeName` bound to this service) plus the
          |// per-request `Ctx`.
          |$blockOnHelper
          |pub struct $structName<Ctx: Clone> {

@@ -71,8 +71,12 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
         }
     }.flatten.toList
     assert(services.size == 1, s"expected one service, got ${services.map(_.id)}")
+    val prepared = emitter.prepare(domain)
     services.head.methods.iterator.map {
-      m => m.name.name -> emitter.emitInputSchema(m.sig, domain)
+      m =>
+        val schema = emitter.emitInputSchema(m.sig, prepared)
+        assert(schema == emitter.emitInputSchema(m.sig, domain))
+        m.name.name -> schema
     }.toMap
   }
 
@@ -105,15 +109,20 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
 
   /** Validate a conforming instance — proves the schema (incl. its `$defs`
     * closure) actually resolves and accepts valid data, with zero validation
-    * messages. */
+    * messages.
+    */
   private def assertAccepts(name: String, schema: Json, instance: Json): org.scalatest.Assertion = {
     val compiled = compileSchema(schema)
     val messages = compiled.validate(instance.noSpaces, InputFormat.JSON).asScala.toList
-    assert(messages.isEmpty, s"tool '$name' rejected a conforming instance: ${messages.map(_.getMessage)}\nschema: ${schema.spaces2}\ninstance: ${instance.noSpaces}")
+    assert(
+      messages.isEmpty,
+      s"tool '$name' rejected a conforming instance: ${messages.map(_.getMessage)}\nschema: ${schema.spaces2}\ninstance: ${instance.noSpaces}",
+    )
   }
 
   /** Validate a NON-conforming instance is rejected — proves constraints are
-    * live (the validator is actually enforcing the schema, not a no-op). */
+    * live (the validator is actually enforcing the schema, not a no-op).
+    */
   private def assertRejects(name: String, schema: Json, instance: Json): org.scalatest.Assertion = {
     val compiled = compileSchema(schema)
     val messages = compiled.validate(instance.noSpaces, InputFormat.JSON).asScala.toList
@@ -145,10 +154,11 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
             s"unexpected tool set: ${tools.keySet}",
           )
           // (b) EVERY emitted inputSchema must be well-formed JSON Schema.
-          tools.foreach { case (name, schema) =>
-            assert(schema.asObject.flatMap(_("$schema")).flatMap(_.asString).contains(McpInputSchemaEmitter.schemaDialect), s"tool '$name' missing $$schema dialect")
-            assert(field(schema, "type").asString.contains("object"), s"tool '$name' root is not type:object")
-            assertWellFormed(name, schema)
+          tools.foreach {
+            case (name, schema) =>
+              assert(schema.asObject.flatMap(_("$schema")).flatMap(_.asString).contains(McpInputSchemaEmitter.schemaDialect), s"tool '$name' missing $$schema dialect")
+              assert(field(schema, "type").asString.contains("object"), s"tool '$name' root is not type:object")
+              assertWellFormed(name, schema)
           }
         }
     }
@@ -182,7 +192,7 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
           assert(nestedRef.startsWith("#/$defs/"), s"nested ref must be local, got: $nestedRef")
 
           // maybePoint: opt[Point] -> oneOf[ {$ref}, {type:null} ]
-          val maybeOneOf = field(field(props, "maybePoint"), "oneOf").asArray.getOrElse(fail("maybePoint not oneOf")).toList
+          val maybeOneOf                            = field(field(props, "maybePoint"), "oneOf").asArray.getOrElse(fail("maybePoint not oneOf")).toList
           def key(j: Json, k: String): Option[Json] = j.asObject.flatMap(_(k))
           assert(maybeOneOf.exists(j => key(j, "$ref").flatMap(_.asString).exists(_.startsWith("#/$defs/"))), "maybePoint missing local $ref branch")
           assert(maybeOneOf.exists(j => key(j, "type").flatMap(_.asString).contains("null")), "maybePoint missing null branch")
@@ -191,7 +201,10 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
           assert(field(field(props, "color"), "$ref").asString.exists(_.startsWith("#/$defs/")), "color ref not local")
 
           // fancy: FFancyStr foreign, maps to string in all 9 langs -> precise scalar, NOT opaque object
-          assert(field(props, "fancy") == Json.obj("type" -> Json.fromString("string")), s"fancy foreign type not resolved to string scalar: ${field(props, "fancy").noSpaces}")
+          assert(
+            field(props, "fancy") == Json.obj("type" -> Json.fromString("string")),
+            s"fancy foreign type not resolved to string scalar: ${field(props, "fancy").noSpaces}",
+          )
 
           // $defs closure contains Nested, Point, Color (FFancyStr collapsed to scalar -> not in $defs)
           val defs = field(schema, "$defs").asObject.getOrElse(fail("no $defs")).keys.toSet
@@ -285,8 +298,8 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
           assert(defs.keys.exists(_.endsWith("_Rect")), s"Rect branch missing from $$defs: ${defs.keys}")
 
           // tree: Tree -> recursive; its $defs entry self-refs locally (terminates)
-          val treeRef = field(field(props, "tree"), "$ref").asString.getOrElse(fail("tree no $ref"))
-          val treeDef = defs(treeRef.stripPrefix("#/$defs/")).getOrElse(fail("Tree not in $$defs"))
+          val treeRef   = field(field(props, "tree"), "$ref").asString.getOrElse(fail("tree no $ref"))
+          val treeDef   = defs(treeRef.stripPrefix("#/$defs/")).getOrElse(fail("Tree not in $$defs"))
           val treeProps = field(treeDef, "properties")
           // children: lst[Tree] -> array whose items $ref back to Tree locally
           val childItems = field(field(treeProps, "children"), "items")
@@ -321,7 +334,7 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
           val defs   = field(schema, "$defs").asObject.getOrElse(fail("no $defs"))
 
           // tagged: Tagged -> local ref to a oneOf ADT entry
-          val taggedRef     = field(field(props, "tagged"), "$ref").asString.getOrElse(fail("tagged has no $ref"))
+          val taggedRef = field(field(props, "tagged"), "$ref").asString.getOrElse(fail("tagged has no $ref"))
           assert(taggedRef.startsWith("#/$defs/"), s"tagged ref must be local, got: $taggedRef")
           val taggedDefName = taggedRef.stripPrefix("#/$defs/")
           val taggedDef     = defs(taggedDefName).getOrElse(fail(s"$taggedDefName not in $$defs"))
@@ -351,12 +364,12 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
           assert(field(tagBIdSchema, "type").asString.contains("string"), s"TagB.id must be type:string, got: ${tagBIdSchema.noSpaces}")
 
           // branch-specific fields are also present (tag / weight)
-          assert(tagAProps.contains("tag"),    s"TagA missing its own field 'tag'")
+          assert(tagAProps.contains("tag"), s"TagA missing its own field 'tag'")
           assert(tagBProps.contains("weight"), s"TagB missing its own field 'weight'")
 
           // id is required in both branches (non-optional field from the contract)
-          assert(requiredSet(tagADef).contains("id"),  s"TagA: contract field 'id' must be required")
-          assert(requiredSet(tagBDef).contains("id"),  s"TagB: contract field 'id' must be required")
+          assert(requiredSet(tagADef).contains("id"), s"TagA: contract field 'id' must be required")
+          assert(requiredSet(tagBDef).contains("id"), s"TagB: contract field 'id' must be required")
 
           // No allOf present in either branch entry (H3: merge already happened at typing, not emission)
           assert(!hasKey(tagADef, "allOf"), s"TagA branch must NOT have allOf (fields are merged at typing, not emission): ${tagADef.noSpaces}")
@@ -387,7 +400,7 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
 
           val pageRef = field(field(props, "page"), "$ref").asString.getOrElse(fail("page no $ref"))
           assert(pageRef.startsWith("#/$defs/"))
-          val pageDef = defs(pageRef.stripPrefix("#/$defs/")).getOrElse(fail("Page def missing"))
+          val pageDef   = defs(pageRef.stripPrefix("#/$defs/")).getOrElse(fail("Page def missing"))
           val pageProps = field(pageDef, "properties")
           // items: lst[Point] -> array whose items $ref Point locally
           val itemsItems = field(field(pageProps, "items"), "items")

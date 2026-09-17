@@ -102,11 +102,9 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
             }
           }
           facade <- {
-            if (
-              target.language.generateDomainFacade &&
+            if (target.language.generateDomainFacade &&
               target.output.products.contains(CompilerProduct.Conversion) &&
-              domain.version == evo.latest
-            ) {
+              domain.version == evo.latest) {
               generateDomainFacade(domain, lineage)
             } else {
               F.pure(List.empty)
@@ -397,6 +395,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
           rt("BaboonRuntime/baboon_type_meta.swift", "baboon-runtime/swift/baboon_type_meta.swift"),
           rt("BaboonRuntime/baboon_service_wiring.swift", "baboon-runtime/swift/baboon_service_wiring.swift"),
           rt("BaboonRuntime/BaboonAnyOpaque.swift", "baboon-runtime/swift/BaboonAnyOpaque.swift"),
+          rt("BaboonRuntime/baboon_any_field_codec.swift", "baboon-runtime/swift/baboon_any_field_codec.swift"),
           rt("BaboonRuntime/BaboonCodecsFacade.swift", "baboon-runtime/swift/BaboonCodecsFacade.swift"),
           rt("BaboonRuntime/BaboonIdentifierRepr.swift", "baboon-runtime/swift/BaboonIdentifierRepr.swift"),
         )

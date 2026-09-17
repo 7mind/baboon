@@ -59,16 +59,27 @@ public interface BaboonBinCodec<T> extends BaboonCodecData {
     }
 
     static List<int[]> readIndex(BaboonCodecContext ctx, LEDataInputStream input, int expectedElements) throws Exception {
+        List<int[]> index = new ArrayList<>();
+        readIndexEntries(input, expectedElements, index);
+        return index;
+    }
+
+    static int consumeIndex(BaboonCodecContext ctx, LEDataInputStream input, int expectedElements) throws Exception {
+        return readIndexEntries(input, expectedElements, null);
+    }
+
+    private static int readIndexEntries(LEDataInputStream input, int expectedElements, List<int[]> index) throws Exception {
         byte header = input.readByte();
         boolean hasIndex = (header & 1) != 0;
-        List<int[]> index = new ArrayList<>();
+        int count = 0;
         if (hasIndex) {
             for (int i = 0; i < expectedElements; i++) {
                 int offset = input.readInt();
                 int length = input.readInt();
-                index.add(new int[]{offset, length});
+                if (index != null) index.add(new int[]{offset, length});
+                count++;
             }
         }
-        return index;
+        return count;
     }
 }

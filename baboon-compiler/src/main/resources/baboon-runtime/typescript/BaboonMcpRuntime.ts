@@ -172,9 +172,61 @@ export type BaboonEitherResult =
 // All JSON-RPC method strings ("tools/list" …) and result keys ("protocolVersion",
 // "inputSchema" …) are literal lowercase strings, NOT subject to any per-language
 // symbol casing.
+type PreparedMcpCall<T> =
+    | { readonly tag: "Response"; readonly response: JsonRpcResponse | undefined }
+    | { readonly tag: "Call"; readonly id: JsonRpcId | null; readonly target: T; readonly data: string };
+
+function describeMcpTool(tool: McpToolEntry): { name: string; inputSchema: unknown; description?: string } {
+    const entry: { name: string; inputSchema: unknown; description?: string } = { name: tool.name, inputSchema: tool.inputSchema };
+    if (tool.description !== undefined) entry.description = tool.description;
+    return entry;
+}
+
+function prepareMcpCall<T>(
+    request: JsonRpcRequest,
+    session: McpSession,
+    serverInfo: () => McpServerInfo,
+    tools: () => ReadonlyArray<{ name: string; inputSchema: unknown; description?: string }>,
+    lookup: (name: string) => T | undefined,
+    error: (id: JsonRpcId | null, code: number, message: string) => JsonRpcResponse,
+): PreparedMcpCall<T> {
+    const id = request.id ?? null;
+    const response = (value: JsonRpcResponse | undefined): PreparedMcpCall<T> => ({ tag: "Response", response: value });
+    switch (request.method) {
+        case "initialize": {
+            const params = request.params as { protocolVersion?: unknown } | undefined;
+            if (params === undefined || params === null || params.protocolVersion === undefined) {
+                return response(error(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion"));
+            }
+            session.initialized = true;
+            return response({ id, result: { protocolVersion: McpProtocolVersion, capabilities: { tools: {} }, serverInfo: { name: serverInfo().name, version: serverInfo().version } } });
+        }
+        case "notifications/initialized":
+            return response(undefined);
+        case "tools/list":
+            if (!session.initialized) return response(error(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize"));
+            return response({ id, result: { tools: tools() } });
+        case "tools/call": {
+            if (!session.initialized) return response(error(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize"));
+            const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
+            const name = params?.name;
+            if (typeof name !== "string") return response(error(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name"));
+            const target = lookup(name);
+            if (target === undefined) return response(error(id, JsonRpcErrorCodes.InvalidParams, `tools/call: unknown tool '${name}'`));
+            return { tag: "Call", id, target, data: JSON.stringify(params?.arguments ?? {}) };
+        }
+        default:
+            return response(error(id, JsonRpcErrorCodes.MethodNotFound, `Method not found: ${request.method}`));
+    }
+}
+
+function mcpCallResponse(id: JsonRpcId | null, result: BaboonEitherResult, describe: (error: BaboonWiringError) => string): JsonRpcResponse {
+    return { id, result: { content: [{ type: "text", text: result.tag === "Right" ? result.value : describe(result.value) }], isError: result.tag === "Left" } };
+}
+
 export abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<Ctx>, IBaboonRoutableMcpServer<Ctx> {
     // PUBLIC routable-server surface (tasks:T114): the muxer reads serverInfo /
-    // tools and routes via routeToolCall, never via the (private) byName() and
+    // tools and routes via routeToolCall, never via the protected findTool() and
     // never via handle().
     public abstract readonly serverInfo: McpServerInfo;
     public abstract readonly tools: readonly McpToolEntry[];
@@ -186,68 +238,18 @@ export abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<C
         return this.invokeJson(method, data, ctx, codecCtx);
     }
 
-    private byName(): Map<string, McpToolEntry> {
-        const m = new Map<string, McpToolEntry>();
-        for (const t of this.tools) m.set(t.name, t);
-        return m;
+    protected findTool(name: string): McpToolEntry | undefined {
+        let result: McpToolEntry | undefined;
+        for (const tool of this.tools) if (tool.name === name) result = tool;
+        return result;
     }
 
     handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse | undefined {
-        const id: JsonRpcId | null = request.id ?? null;
-        switch (request.method) {
-            case 'initialize': {
-                const params = request.params as { protocolVersion?: unknown } | undefined;
-                if (params === undefined || params === null || params.protocolVersion === undefined) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'initialize: missing protocolVersion');
-                }
-                session.initialized = true;
-                return {
-                    id,
-                    result: {
-                        protocolVersion: McpProtocolVersion,
-                        capabilities: { tools: {} },
-                        serverInfo: { name: this.serverInfo.name, version: this.serverInfo.version },
-                    },
-                };
-            }
-            case 'notifications/initialized':
-                return undefined;
-            case 'tools/list': {
-                if (!session.initialized) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/list before initialize');
-                }
-                const tools = this.tools.map(t => {
-                    const entry: { name: string; inputSchema: unknown; description?: string } = { name: t.name, inputSchema: t.inputSchema };
-                    if (t.description !== undefined) entry.description = t.description;
-                    return entry;
-                });
-                return { id, result: { tools } };
-            }
-            case 'tools/call': {
-                if (!session.initialized) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/call before initialize');
-                }
-                const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
-                const name = params?.name;
-                if (typeof name !== 'string') {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'tools/call: missing tool name');
-                }
-                const entry = this.byName().get(name);
-                if (entry === undefined) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, `tools/call: unknown tool '${name}'`);
-                }
-                const argsJson = JSON.stringify(params?.arguments ?? {});
-                const result = this.invokeJson(entry.method, argsJson, ctx, codecCtx);
-                if (result.tag === 'Right') {
-                    return { id, result: { content: [{ type: 'text', text: result.value }], isError: false } };
-                } else {
-                    // Channel B: a valid protocol call whose domain payload failed.
-                    return { id, result: { content: [{ type: 'text', text: this.describeWiringError(result.value) }], isError: true } };
-                }
-            }
-            default:
-                return this.errorResponse(id, JsonRpcErrorCodes.MethodNotFound, `Method not found: ${request.method}`);
-        }
+        const prepared = prepareMcpCall(request, session, () => this.serverInfo, () => this.tools.map(describeMcpTool), name => this.findTool(name),
+            (id, code, message) => this.errorResponse(id, code, message));
+        if (prepared.tag === "Response") return prepared.response;
+        const result = this.invokeJson(prepared.target.method, prepared.data, ctx, codecCtx);
+        return mcpCallResponse(prepared.id, result, error => this.describeWiringError(error));
     }
 
     protected errorResponse(id: JsonRpcId | null, code: number, message: string): JsonRpcResponse {
@@ -281,13 +283,28 @@ export abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<C
 // three arms differing only in operating over the union: `tools/list` returns
 // the union, `tools/call` routes by tool name to the owning server, and
 // `initialize` returns a single merged `serverInfo` supplied to the ctor.
+class McpRegistry<S extends { readonly tools: readonly McpToolEntry[] }> {
+    private readonly entries = new Map<string, { server: S; entry: McpToolEntry }>();
+
+    register(server: S): void {
+        for (const entry of server.tools) {
+            if (this.entries.has(entry.name)) throw new BaboonMcpWiringException({ tag: 'DuplicateTool', toolName: entry.name });
+            this.entries.set(entry.name, { server, entry });
+        }
+    }
+
+    lookup(name: string): { server: S; entry: McpToolEntry } | undefined { return this.entries.get(name); }
+
+    describeTools(): Array<{ name: string; inputSchema: unknown; description?: string }> {
+        return Array.from(this.entries.values(), target => describeMcpTool(target.entry));
+    }
+}
+
 export class AbstractMcpMuxer<Ctx> implements IBaboonMcpServer<Ctx> {
     // Registration order preserved (insertion-ordered Map / array — JsonMuxer
-    // LinkedHashMap precedent). `route`/`entries` are built at registration
+    // LinkedHashMap precedent). The registry is built at registration
     // (contract §2), never per request.
-    private readonly servers: IBaboonRoutableMcpServer<Ctx>[] = [];
-    private readonly route = new Map<string, IBaboonRoutableMcpServer<Ctx>>();
-    private readonly entries = new Map<string, McpToolEntry>();
+    private readonly registry = new McpRegistry<IBaboonRoutableMcpServer<Ctx>>();
     private readonly mergedServerInfo: McpServerInfo;
 
     // varargs ctor mirrors `JsonMuxer(...services)`. `mergedServerInfo` is the
@@ -300,86 +317,16 @@ export class AbstractMcpMuxer<Ctx> implements IBaboonMcpServer<Ctx> {
     // Folds the server's declaration-ordered `tools()` into the union table;
     // throws DuplicateTool on a tool-name collision across servers (the exact
     // MCP-tier analogue of JsonMuxer.register throwing DuplicateService).
-    register(server: IBaboonRoutableMcpServer<Ctx>): void {
-        for (const t of server.tools) {
-            if (this.route.has(t.name)) {
-                throw new BaboonMcpWiringException({ tag: 'DuplicateTool', toolName: t.name });
-            }
-            this.route.set(t.name, server);
-            this.entries.set(t.name, t);
-        }
-        this.servers.push(server);
-    }
+    register(server: IBaboonRoutableMcpServer<Ctx>): void { this.registry.register(server); }
 
     handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): JsonRpcResponse | undefined {
-        const id: JsonRpcId | null = request.id ?? null;
-        switch (request.method) {
-            case 'initialize': {
-                const params = request.params as { protocolVersion?: unknown } | undefined;
-                if (params === undefined || params === null || params.protocolVersion === undefined) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'initialize: missing protocolVersion');
-                }
-                session.initialized = true;
-                return {
-                    id,
-                    result: {
-                        protocolVersion: McpProtocolVersion,
-                        capabilities: { tools: {} },
-                        serverInfo: { name: this.mergedServerInfo.name, version: this.mergedServerInfo.version },
-                    },
-                };
-            }
-            case 'notifications/initialized':
-                return undefined;
-            case 'tools/list': {
-                if (!session.initialized) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/list before initialize');
-                }
-                return { id, result: { tools: this.toolsListUnion() } };
-            }
-            case 'tools/call': {
-                if (!session.initialized) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/call before initialize');
-                }
-                const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
-                const name = params?.name;
-                if (typeof name !== 'string') {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'tools/call: missing tool name');
-                }
-                const server = this.route.get(name);
-                if (server === undefined) {
-                    // NoMatchingTool: surfaced as the SAME wire response the per-service
-                    // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
-                    // so the bytes are identical whether one server or the muxer rejects.
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, `tools/call: unknown tool '${name}'`);
-                }
-                const entry = this.entries.get(name)!;
-                const argsJson = JSON.stringify(params?.arguments ?? {});
-                const result = server.routeToolCall(entry.method, argsJson, ctx, codecCtx);
-                if (result.tag === 'Right') {
-                    return { id, result: { content: [{ type: 'text', text: result.value }], isError: false } };
-                } else {
-                    // Channel B: a valid protocol call whose domain payload failed.
-                    return { id, result: { content: [{ type: 'text', text: this.describeWiringError(result.value) }], isError: true } };
-                }
-            }
-            default:
-                return this.errorResponse(id, JsonRpcErrorCodes.MethodNotFound, `Method not found: ${request.method}`);
-        }
+        const prepared = prepareMcpCall(request, session, () => this.mergedServerInfo, () => this.registry.describeTools(), name => this.registry.lookup(name),
+            (id, code, message) => this.errorResponse(id, code, message));
+        if (prepared.tag === "Response") return prepared.response;
+        const result = prepared.target.server.routeToolCall(prepared.target.entry.method, prepared.data, ctx, codecCtx);
+        return mcpCallResponse(prepared.id, result, error => this.describeWiringError(error));
     }
 
-    // Backs tools/list (§3.2): the union of all registered servers' tool entries
-    // in registration-then-declaration order (the insertion order of `entries`),
-    // each in the same shape the per-service base emits.
-    private toolsListUnion(): Array<{ name: string; inputSchema: unknown; description?: string }> {
-        const out: Array<{ name: string; inputSchema: unknown; description?: string }> = [];
-        for (const t of this.entries.values()) {
-            const entry: { name: string; inputSchema: unknown; description?: string } = { name: t.name, inputSchema: t.inputSchema };
-            if (t.description !== undefined) entry.description = t.description;
-            out.push(entry);
-        }
-        return out;
-    }
 
     protected errorResponse(id: JsonRpcId | null, code: number, message: string): JsonRpcResponse {
         return { id, error: { code, message } };
@@ -432,68 +379,18 @@ export abstract class AbstractAsyncBaboonMcpServer<Ctx> implements IBaboonAsyncM
         return this.invokeJson(method, data, ctx, codecCtx);
     }
 
-    private byName(): Map<string, McpToolEntry> {
-        const m = new Map<string, McpToolEntry>();
-        for (const t of this.tools) m.set(t.name, t);
-        return m;
+    protected findTool(name: string): McpToolEntry | undefined {
+        let result: McpToolEntry | undefined;
+        for (const tool of this.tools) if (tool.name === name) result = tool;
+        return result;
     }
 
     async handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): Promise<JsonRpcResponse | undefined> {
-        const id: JsonRpcId | null = request.id ?? null;
-        switch (request.method) {
-            case 'initialize': {
-                const params = request.params as { protocolVersion?: unknown } | undefined;
-                if (params === undefined || params === null || params.protocolVersion === undefined) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'initialize: missing protocolVersion');
-                }
-                session.initialized = true;
-                return {
-                    id,
-                    result: {
-                        protocolVersion: McpProtocolVersion,
-                        capabilities: { tools: {} },
-                        serverInfo: { name: this.serverInfo.name, version: this.serverInfo.version },
-                    },
-                };
-            }
-            case 'notifications/initialized':
-                return undefined;
-            case 'tools/list': {
-                if (!session.initialized) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/list before initialize');
-                }
-                const tools = this.tools.map(t => {
-                    const entry: { name: string; inputSchema: unknown; description?: string } = { name: t.name, inputSchema: t.inputSchema };
-                    if (t.description !== undefined) entry.description = t.description;
-                    return entry;
-                });
-                return { id, result: { tools } };
-            }
-            case 'tools/call': {
-                if (!session.initialized) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/call before initialize');
-                }
-                const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
-                const name = params?.name;
-                if (typeof name !== 'string') {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'tools/call: missing tool name');
-                }
-                const entry = this.byName().get(name);
-                if (entry === undefined) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, `tools/call: unknown tool '${name}'`);
-                }
-                const argsJson = JSON.stringify(params?.arguments ?? {});
-                const result = await this.invokeJson(entry.method, argsJson, ctx, codecCtx);
-                if (result.tag === 'Right') {
-                    return { id, result: { content: [{ type: 'text', text: result.value }], isError: false } };
-                } else {
-                    // Channel B: a valid protocol call whose domain payload failed.
-                    return { id, result: { content: [{ type: 'text', text: this.describeWiringError(result.value) }], isError: true } };
-                }
-            }
-            default:
-                return this.errorResponse(id, JsonRpcErrorCodes.MethodNotFound, `Method not found: ${request.method}`);
-        }
+        const prepared = prepareMcpCall(request, session, () => this.serverInfo, () => this.tools.map(describeMcpTool), name => this.findTool(name),
+            (id, code, message) => this.errorResponse(id, code, message));
+        if (prepared.tag === "Response") return prepared.response;
+        const result = await this.invokeJson(prepared.target.method, prepared.data, ctx, codecCtx);
+        return mcpCallResponse(prepared.id, result, error => this.describeWiringError(error));
     }
 
     protected errorResponse(id: JsonRpcId | null, code: number, message: string): JsonRpcResponse {
@@ -515,9 +412,7 @@ export abstract class AbstractAsyncBaboonMcpServer<Ctx> implements IBaboonAsyncM
 // `initialize`, the ordering rule, and the `NoMatchingTool` wire mapping are
 // identical to the sync muxer; only the `tools/call` hop awaits.
 export class AbstractAsyncMcpMuxer<Ctx> implements IBaboonAsyncMcpServer<Ctx> {
-    private readonly servers: IBaboonRoutableAsyncMcpServer<Ctx>[] = [];
-    private readonly route = new Map<string, IBaboonRoutableAsyncMcpServer<Ctx>>();
-    private readonly entries = new Map<string, McpToolEntry>();
+    private readonly registry = new McpRegistry<IBaboonRoutableAsyncMcpServer<Ctx>>();
     private readonly mergedServerInfo: McpServerInfo;
 
     constructor(mergedServerInfo: McpServerInfo, ...servers: IBaboonRoutableAsyncMcpServer<Ctx>[]) {
@@ -525,79 +420,16 @@ export class AbstractAsyncMcpMuxer<Ctx> implements IBaboonAsyncMcpServer<Ctx> {
         for (const s of servers) this.register(s);
     }
 
-    register(server: IBaboonRoutableAsyncMcpServer<Ctx>): void {
-        for (const t of server.tools) {
-            if (this.route.has(t.name)) {
-                throw new BaboonMcpWiringException({ tag: 'DuplicateTool', toolName: t.name });
-            }
-            this.route.set(t.name, server);
-            this.entries.set(t.name, t);
-        }
-        this.servers.push(server);
-    }
+    register(server: IBaboonRoutableAsyncMcpServer<Ctx>): void { this.registry.register(server); }
 
     async handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): Promise<JsonRpcResponse | undefined> {
-        const id: JsonRpcId | null = request.id ?? null;
-        switch (request.method) {
-            case 'initialize': {
-                const params = request.params as { protocolVersion?: unknown } | undefined;
-                if (params === undefined || params === null || params.protocolVersion === undefined) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'initialize: missing protocolVersion');
-                }
-                session.initialized = true;
-                return {
-                    id,
-                    result: {
-                        protocolVersion: McpProtocolVersion,
-                        capabilities: { tools: {} },
-                        serverInfo: { name: this.mergedServerInfo.name, version: this.mergedServerInfo.version },
-                    },
-                };
-            }
-            case 'notifications/initialized':
-                return undefined;
-            case 'tools/list': {
-                if (!session.initialized) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/list before initialize');
-                }
-                return { id, result: { tools: this.toolsListUnion() } };
-            }
-            case 'tools/call': {
-                if (!session.initialized) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, 'tools/call before initialize');
-                }
-                const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
-                const name = params?.name;
-                if (typeof name !== 'string') {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, 'tools/call: missing tool name');
-                }
-                const server = this.route.get(name);
-                if (server === undefined) {
-                    return this.errorResponse(id, JsonRpcErrorCodes.InvalidParams, `tools/call: unknown tool '${name}'`);
-                }
-                const entry = this.entries.get(name)!;
-                const argsJson = JSON.stringify(params?.arguments ?? {});
-                const result = await server.routeToolCall(entry.method, argsJson, ctx, codecCtx);
-                if (result.tag === 'Right') {
-                    return { id, result: { content: [{ type: 'text', text: result.value }], isError: false } };
-                } else {
-                    return { id, result: { content: [{ type: 'text', text: this.describeWiringError(result.value) }], isError: true } };
-                }
-            }
-            default:
-                return this.errorResponse(id, JsonRpcErrorCodes.MethodNotFound, `Method not found: ${request.method}`);
-        }
+        const prepared = prepareMcpCall(request, session, () => this.mergedServerInfo, () => this.registry.describeTools(), name => this.registry.lookup(name),
+            (id, code, message) => this.errorResponse(id, code, message));
+        if (prepared.tag === "Response") return prepared.response;
+        const result = await prepared.target.server.routeToolCall(prepared.target.entry.method, prepared.data, ctx, codecCtx);
+        return mcpCallResponse(prepared.id, result, error => this.describeWiringError(error));
     }
 
-    private toolsListUnion(): Array<{ name: string; inputSchema: unknown; description?: string }> {
-        const out: Array<{ name: string; inputSchema: unknown; description?: string }> = [];
-        for (const t of this.entries.values()) {
-            const entry: { name: string; inputSchema: unknown; description?: string } = { name: t.name, inputSchema: t.inputSchema };
-            if (t.description !== undefined) entry.description = t.description;
-            out.push(entry);
-        }
-        return out;
-    }
 
     protected errorResponse(id: JsonRpcId | null, code: number, message: string): JsonRpcResponse {
         return { id, error: { code, message } };

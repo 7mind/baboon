@@ -3,6 +3,24 @@ package baboon.runtime.shared
 import kotlinx.datetime.Instant
 import kotlinx.datetime.UtcOffset
 
+internal data class BaboonCivilDate(val year: Int, val month: Int, val day: Int) {
+    companion object {
+        fun fromEpochDays(days: Int): BaboonCivilDate {
+            val z = days + 719468
+            val era = (if (z >= 0) z else z - 146096) / 146097
+            val doe = z - era * 146097
+            val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+            val y = yoe + era * 400
+            val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+            val mp = (5 * doy + 2) / 153
+            val d = doy - (153 * mp + 2) / 5 + 1
+            val m = mp + (if (mp < 10) 3 else -9)
+            val year = y + (if (m <= 2) 1 else 0)
+            return BaboonCivilDate(year, m, d)
+        }
+    }
+}
+
 /**
  * Multiplatform offset date-time wrapper. Represents a point in time with a UTC offset.
  * Compatible with Baboon's tso (timestamp with offset) type.
@@ -33,16 +51,7 @@ data class BaboonOffsetDateTime(
         val seconds = timeOfDay % 60
 
         // Gregorian calendar from days since epoch (1970-01-01)
-        val z = days + 719468
-        val era = (if (z >= 0) z else z - 146096) / 146097
-        val doe = z - era * 146097
-        val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
-        val y = yoe + era * 400
-        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
-        val mp = (5 * doy + 2) / 153
-        val d = doy - (153 * mp + 2) / 5 + 1
-        val m = mp + (if (mp < 10) 3 else -9)
-        val year = y + (if (m <= 2) 1 else 0)
+        val (year, m, d) = BaboonCivilDate.fromEpochDays(days)
 
         val sign = if (totalSeconds >= 0) "+" else "-"
         val absOffset = kotlin.math.abs(totalSeconds)

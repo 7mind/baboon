@@ -357,10 +357,28 @@ object BaboonComparator {
       val oldTypes = prev.defs.meta.nodes.keySet
 
       // Identify valid renames: new type has was[] pointing to an existing old type
-      val validRenames: Map[TypeId.User, TypeId.User] = last.renames.filter {
+      val explicitRenames: Map[TypeId.User, TypeId.User] = last.renames.filter {
         case (newId, oldId) =>
           newTypes.contains(newId) && oldTypes.contains(oldId) && !newTypes.contains(oldId)
       }
+      val explicitSources = explicitRenames.values.toSet
+      // Moving an ADT changes its branches' owner IDs even when their names stay the same.
+      val branchRenames = explicitRenames.toList.flatMap {
+        case (newId, oldId) =>
+          (last.defs.meta.nodes(newId), prev.defs.meta.nodes(oldId)) match {
+            case (DomainMember.User(_, current: Typedef.Adt, _, _), DomainMember.User(_, previous: Typedef.Adt, _, _)) =>
+              val oldBranches = previous.dataMembers(prev).map(id => id.name -> id).toMap
+              current.dataMembers(last).flatMap {
+                newBranch =>
+                  oldBranches
+                    .get(newBranch.name).filter {
+                      oldBranch => !explicitRenames.contains(newBranch) && !explicitSources.contains(oldBranch) && !newTypes.contains(oldBranch)
+                    }.map(oldBranch => newBranch -> oldBranch)
+              }
+            case _ => Nil
+          }
+      }.toMap
+      val validRenames  = explicitRenames ++ branchRenames
       val renamedNewIds = validRenames.keySet.asInstanceOf[Set[TypeId]]
       val renamedOldIds = validRenames.values.toSet.asInstanceOf[Set[TypeId]]
 
@@ -551,7 +569,9 @@ object BaboonComparator {
         // For renamed ADTs, compare branches by name since TypeIds will differ
         val members1ByName = a1.members.map(m => (m.name.name, m)).toMap
         val members2ByName = a2.members.map(m => (m.name.name, m)).toMap
-        val renamedByName  = branchRenames.map { case (newId, oldId) => (oldId.name.name, newId.name.name) }
+        val renamedByName = branchRenames.collect {
+          case (newId, oldId) if newId.name != oldId.name => (oldId.name.name, newId.name.name)
+        }
 
         val names1       = members1ByName.keySet
         val names2       = members2ByName.keySet

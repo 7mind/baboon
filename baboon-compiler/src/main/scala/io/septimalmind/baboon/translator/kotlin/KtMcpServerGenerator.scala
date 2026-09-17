@@ -53,9 +53,10 @@ class KtMcpServerGenerator[F[+_, +_]: Error2](
   override def generateMcpServer(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
       lineage =>
-        val evo          = lineage.evolution
-        val latestDomain = lineage.versions(evo.latest)
-        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
+        val evo           = lineage.evolution
+        val latestDomain  = lineage.versions(evo.latest)
+        val schemaContext = schemaEmitter.prepare(latestDomain)
+        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo, schemaContext))
     }
 
     val runtimeFile =
@@ -80,7 +81,8 @@ class KtMcpServerGenerator[F[+_, +_]: Error2](
     s"$basename/$fname"
   }
 
-  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution): (String, OutputFile) = {
+  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution, schemaContext: McpInputSchemaEmitter.PreparedDomain)
+    : (String, OutputFile) = {
     val path = serverPath(svc, domain, evo)
 
     val serviceName = svc.id.name.name
@@ -104,7 +106,7 @@ class KtMcpServerGenerator[F[+_, +_]: Error2](
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
         val toolName = s"${serviceName}_${m.name.name}"
-        val schema   = schemaEmitter.emitInputSchema(m.sig, domain)
+        val schema   = schemaEmitter.emitInputSchema(m.sig, schemaContext)
         // Embed schema as a regular Kotlin string literal. Escape rules for
         // a Kotlin non-raw string: `\` → `\\`, `"` → `\"`, `$` → `\$`.
         val schemaLiteral = schema.noSpaces
@@ -112,7 +114,9 @@ class KtMcpServerGenerator[F[+_, +_]: Error2](
           .replace("\"", "\\\"")
           .replace("$", "\\$")
         val descArg = McpDocs.flatten(m.docs).map(d => s", description = ${ktDescString(d)}").getOrElse("")
-        s"""        McpToolEntry(${ktString(toolName)}, BaboonMethodId(${ktString(serviceName)}, ${ktString(m.name.name)}), Json.parseToJsonElement("$schemaLiteral")$descArg),"""
+        s"""        McpToolEntry(${ktString(toolName)}, BaboonMethodId(${ktString(serviceName)}, ${ktString(
+            m.name.name
+          )}), Json.parseToJsonElement("$schemaLiteral")$descArg),"""
     }
 
     val content =

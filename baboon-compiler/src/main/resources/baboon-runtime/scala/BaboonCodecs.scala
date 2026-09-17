@@ -47,7 +47,7 @@ package baboon.runtime.shared {
   trait BaboonCodecContext {
     def useIndices: Boolean
     def forwardWritePolicy: ForwardWritePolicy = ForwardWritePolicy.Strict
-    def envelopeVersion: BaboonEnvelopeVersion   = BaboonEnvelopeVersion.V1
+    def envelopeVersion: BaboonEnvelopeVersion = BaboonEnvelopeVersion.V1
     // Optional facade reference, supplied only when an `any`-bearing codec needs to cross-convert
     // between UEBA and JSON branches (`AnyOpaqueJson` → UEBA, `AnyOpaqueUeba` → JSON). Defaults to
     // `None` so existing call sites stay compatible; users who need cross-convert pass
@@ -223,28 +223,43 @@ package baboon.runtime.shared {
 
     def readIndex(ctx: BaboonCodecContext, wire: LEDataInputStream): Either[Throwable, List[BaboonIndexEntry]] = {
       Try {
-        val header           = wire.readByte()
-        val isIndexed        = (header & 0x01) != 0
-        val result           = scala.collection.mutable.ListBuffer.empty[BaboonIndexEntry]
-        var prevOffset: Long = 0L
-        var prevLen: Long    = 0L
-        if (isIndexed) {
-          var left = indexElementsCount(ctx).toInt
-          while (left > 0) {
-            val offset = wire.readInt()
-            val len    = wire.readInt()
-
-            require(len > 0, "Length must be positive")
-            require(offset >= prevOffset + prevLen, s"Offset violation: $offset not >= ${prevOffset + prevLen}")
-
-            result += BaboonIndexEntry(offset.toLong, len.toLong)
-            left       = left - 1
-            prevOffset = offset.toLong
-            prevLen    = len.toLong
-          }
-        }
+        val result = scala.collection.mutable.ListBuffer.empty[BaboonIndexEntry]
+        readIndexInto(ctx, wire, Some(result))
         result.toList
       }.toEither
+    }
+
+    def readIndexCount(ctx: BaboonCodecContext, wire: LEDataInputStream): Either[Throwable, Int] =
+      Try(readIndexInto(ctx, wire, None)).toEither
+
+    private def readIndexInto(
+      ctx: BaboonCodecContext,
+      wire: LEDataInputStream,
+      entries: Option[scala.collection.mutable.ListBuffer[BaboonIndexEntry]],
+    ): Int = {
+      val header           = wire.readByte()
+      val isIndexed        = (header & 0x01) != 0
+      var prevOffset: Long = 0L
+      var prevLen: Long    = 0L
+      var count            = 0
+      if (isIndexed) {
+        var left = indexElementsCount(ctx).toInt
+        while (left > 0) {
+          val offset = wire.readInt()
+          val len    = wire.readInt()
+          require(len > 0, "Length must be positive")
+          require(offset >= prevOffset + prevLen, s"Offset violation: $offset not >= ${prevOffset + prevLen}")
+          entries match {
+            case Some(result) => result += BaboonIndexEntry(offset.toLong, len.toLong)
+            case None         => ()
+          }
+          count += 1
+          left -= 1
+          prevOffset = offset.toLong
+          prevLen    = len.toLong
+        }
+      }
+      count
     }
   }
 

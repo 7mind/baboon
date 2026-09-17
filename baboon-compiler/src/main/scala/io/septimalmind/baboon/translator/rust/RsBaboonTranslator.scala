@@ -258,14 +258,26 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
             // the real sameIn run: the envelope's byte-identical bound is its head, so a degenerate
             // `[own version]` here would make Rust-written envelopes of unchanged types unreadable by
             // older readers in every language
-            val sameInVec = sameInByTypeId.getOrElse(typeId, List(versionStr)).map(v => s""""$v".to_string()""").mkString(", ")
+            val sameInVec   = sameInByTypeId.getOrElse(typeId, List(versionStr)).map(v => s""""$v".to_string()""").mkString(", ")
+            val firstSameIn = sameInByTypeId.getOrElse(typeId, List(versionStr)).head
+            val minReaderCases = minReadersByTypeId
+              .get(typeId).toList.flatMap(_.toList.sortBy(_._1.weight)).map {
+                case (tier, v) => q""""${tier.wireName}" => Some(std::borrow::Cow::Borrowed("${v.v.toString}")),"""
+              }.joinN()
             q"""impl BaboonGeneratedDyn for $fullPath {
                |    fn baboon_domain_version_dyn(&self) -> &str { "$versionStr" }
                |    fn baboon_domain_identifier_dyn(&self) -> &str { "$domainIdStr" }
                |    fn baboon_type_identifier_dyn(&self) -> &str { "$typeId" }
                |    fn baboon_same_in_versions_dyn(&self) -> Vec<String> { vec![$sameInVec] }
+               |    fn baboon_first_same_in_version_dyn(&self) -> Option<std::borrow::Cow<'_, str>> { Some(std::borrow::Cow::Borrowed("$firstSameIn")) }
                |    fn baboon_forward_readable_dyn(&self) -> Vec<(String, String)> { vec![${fwdPairs(typeId)}] }
                |    fn baboon_min_reader_versions_dyn(&self) -> Vec<(String, String)> { vec![${minReaderPairs(typeId)}] }
+               |    fn baboon_min_reader_version_dyn(&self, tier: &str) -> Option<std::borrow::Cow<'_, str>> {
+               |        match tier {
+               |            ${minReaderCases.shift(12).trim}
+               |            _ => None,
+               |        }
+               |    }
                |    fn as_any(&self) -> &dyn std::any::Any { self }
                |    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }
                |}
@@ -424,15 +436,19 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         if (parts.size == 1) allDirs += ""
     }
 
+    val childrenByDir = allDirs.iterator
+      .filter(_.nonEmpty).toList.groupBy {
+        dir =>
+          val separator = dir.lastIndexOf('/')
+          if (separator < 0) "" else dir.substring(0, separator)
+      }.view.mapValues(_.map(_.split('/').last).toSet).toMap
+
     allDirs.toList.sorted.map {
       dir =>
         val prefix = if (dir.isEmpty) "" else dir + "/"
 
         // Direct child directories of this directory
-        val childDirs = allDirs.filter {
-          d =>
-            d.startsWith(prefix) && d != dir && !d.drop(prefix.length).contains('/')
-        }.map(_.drop(prefix.length)).toSet
+        val childDirs = childrenByDir.getOrElse(dir, Set.empty[String])
 
         // File modules in this directory, EXCLUDING those that clash with child directories
         val fileModNames = filesByDir

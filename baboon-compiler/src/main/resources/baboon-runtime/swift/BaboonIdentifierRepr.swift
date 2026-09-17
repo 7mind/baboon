@@ -216,15 +216,12 @@ public enum BaboonIdentifierRepr {
     ///
     /// Reference type so the emitted decoder can mutate `pos` in place across
     /// nested-id recursive calls. Stores source as `[UInt8]` (ASCII metachars
-    /// are byte-comparable) but reads back as Swift `String` slices via the
-    /// retained `String` for non-ASCII passthrough.
+    /// are byte-comparable) and decodes only consumed slices for non-ASCII text.
     public final class Cursor {
-        private let source: String
         private let bytes: [UInt8]
         private(set) public var pos: Int = 0
 
         public init(_ source: String) {
-            self.source = source
             self.bytes = Array(source.utf8)
         }
 
@@ -285,22 +282,20 @@ public enum BaboonIdentifierRepr {
         /// lexeme. Used for tsu/tso (which contain `:` characters inside the
         /// lexeme).
         public func readFixed(_ n: Int) -> BaboonEither<String, String> {
-            let remaining = String(bytes: bytes[pos..<bytes.count], encoding: .utf8) ?? ""
             var taken = 0
-            var endByteOffset = 0
-            var iter = remaining.unicodeScalars.makeIterator()
-            var byteCursor = 0
-            while taken < n {
-                guard let sc = iter.next() else { break }
+            var end = pos
+            // The buffer comes from a valid String; cursor operations retain scalar boundaries.
+            while taken < n && end < bytes.count {
+                let lead = bytes[end]
+                let width = lead < 0x80 ? 1 : (lead < 0xE0 ? 2 : (lead < 0xF0 ? 3 : 4))
+                end += width
                 taken += 1
-                byteCursor += sc.utf8.count
-                endByteOffset = byteCursor
             }
             if taken < n {
                 return .left("expected \(n) chars at \(pos) but only \(taken) remain")
             }
-            let result = String(bytes: bytes[pos..<(pos + endByteOffset)], encoding: .utf8) ?? ""
-            pos += endByteOffset
+            let result = String(bytes: bytes[pos..<end], encoding: .utf8) ?? ""
+            pos = end
             return .right(result)
         }
 

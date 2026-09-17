@@ -7,7 +7,7 @@ import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
+import io.septimalmind.baboon.translator.AnyFieldPlan
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -60,66 +60,6 @@ class ScJsonCodecGenerator(
       }
     } else None
   }
-  // Per-codec-object helpers consolidating the any-field envelope encode (JSON) and decode (JSON);
-  // emitted at most once per codec object and called from every field-level any site. See
-  // spec §172 (factor any-field encode/decode into helpers) and the symmetric UEBA helpers
-  // in `ScUEBACodecGenerator.anyFieldHelpers`.
-  private def anyFieldHelpers: TextTree[ScValue] = {
-    q"""private def encodeAnyField(
-       |  ctx: $baboonCodecContext,
-       |  expectedKind: $scByte,
-       |  staticDomain: $scOption[$scString],
-       |  staticVersion: $scOption[$scString],
-       |  staticTypeid: $scOption[$scString],
-       |  value: $baboonAnyOpaque,
-       |): $circeJson = {
-       |  if (value.meta.kind != expectedKind) {
-       |    throw $baboonCodecException.EncoderFailure(s"any: meta-kind mismatch on encode: expected 0x$${(expectedKind & 0xFF).toHexString}, got 0x$${(value.meta.kind & 0xFF).toHexString}")
-       |  }
-       |  val innerJson: $circeJson = value match {
-       |    case anyJson: $baboonAnyOpaqueJson =>
-       |      anyJson.json
-       |    case anyUeba: $baboonAnyOpaqueUeba =>
-       |      val f = ctx.facade.getOrElse(
-       |        throw $baboonCodecException.EncoderFailure(
-       |          "Cannot encode AnyOpaqueUeba into JSON without a facade reference. Pass BaboonCodecContext.WithFacade(useIndices, facade) into encode(), or supply AnyOpaqueJson directly."
-       |        )
-       |      )
-       |      f.uebaToJson(anyUeba.meta, anyUeba.bytes, staticDomain, staticVersion, staticTypeid) match {
-       |        case Right(j) => j
-       |        case Left(e)  => throw e
-       |      }
-       |  }
-       |  $baboonAnyMetaCodec.writeJson(value.meta).mapObject(_.add("$$c", innerJson))
-       |}
-       |
-       |private def decodeAnyField(expectedKind: $scByte, wire: $circeJson): $scEither[$javaThrowable, $baboonAnyOpaqueJson] = {
-       |  $baboonAnyMetaCodec.readJson(wire) match {
-       |    case Left(e) => Left(e)
-       |    case Right(meta) =>
-       |      if (meta.kind != expectedKind) {
-       |        Left($baboonCodecException.DecoderFailure(s"any: meta-kind mismatch: expected 0x$${(expectedKind & 0xFF).toHexString}, got 0x$${(meta.kind & 0xFF).toHexString}"))
-       |      } else {
-       |        wire.hcursor.downField("$$c").as[$circeJson] match {
-       |          case Right(content) => Right($baboonAnyOpaqueJson(meta, content))
-       |          case Left(err)      => Left($baboonCodecException.DecoderFailure(s"any: missing or unreadable content key: $${err.getMessage}"))
-       |        }
-       |      }
-       |  }
-       |}""".stripMargin
-  }
-
-  private def hasAnyField(defn: DomainMember.User): Boolean = {
-    def hasAny(tpe: TypeRef): Boolean = tpe match {
-      case _: TypeRef.Any         => true
-      case _: TypeRef.Scalar      => false
-      case c: TypeRef.Constructor => c.args.exists(hasAny)
-    }
-    defn.defn match {
-      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
-      case _              => false
-    }
-  }
 
   private def genCodec(
     defn: DomainMember.User,
@@ -164,15 +104,15 @@ class ScJsonCodecGenerator(
       }
     }
 
-    val meta                                = renderMeta(defn, scDomainTreeTools.makeCodecMeta(defn))
-    val anyHelpers: List[TextTree[ScValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
-    val tail                                = (anyHelpers ++ meta).joinNN()
+    val meta = renderMeta(defn, scDomainTreeTools.makeCodecMeta(defn))
+    val tail = meta.joinNN()
     q"""object ${cName.name} extends $cParent {
        |  ${baseMethods.joinNN().shift(2).trim}
        |
        |  ${tail.shift(2).trim}
        |
-       |  override protected def LazyInstance: $baboonLazy[$iName] = $baboonLazy($cName)
+       |  private lazy val cachedLazyInstance: $baboonLazy[$iName] = $baboonLazy($cName)
+       |  override protected def LazyInstance: $baboonLazy[$iName] = cachedLazyInstance
        |  override def instance: $iName = LazyInstance.value
        |}
        |""".stripMargin
@@ -358,26 +298,7 @@ class ScJsonCodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case TypeId.Builtins.uid => q"$circeJson.fromString($ref.toString())"
-          case TypeId.Builtins.tsu => q"$circeJson.fromString($baboonTimeFormats.formatTsu($ref))"
-          case TypeId.Builtins.tso => q"$circeJson.fromString($baboonTimeFormats.formatTso($ref))"
-          case TypeId.Builtins.bit => q"$circeJson.fromBoolean($ref)"
-          case TypeId.Builtins.i08 => q"$circeJson.fromInt($ref.toInt)"
-          case TypeId.Builtins.i16 => q"$circeJson.fromInt($ref.toInt)"
-          case TypeId.Builtins.i32 => q"$circeJson.fromInt($ref)"
-
-          case TypeId.Builtins.i64 => q"$circeJson.fromLong($ref)"
-          case TypeId.Builtins.u08 => q"$circeJson.fromInt(java.lang.Byte.toUnsignedInt($ref))"
-          case TypeId.Builtins.u16 => q"$circeJson.fromInt(java.lang.Short.toUnsignedInt($ref))"
-          case TypeId.Builtins.u32 => q"$circeJson.fromLong(java.lang.Integer.toUnsignedLong($ref))"
-          case TypeId.Builtins.u64 => q"$circeJson.fromBigInt($baboonBinTools.toUnsignedBigInt($ref))"
-
-          case TypeId.Builtins.f32  => q"$circeJson.fromFloat($ref).get"
-          case TypeId.Builtins.f64  => q"$circeJson.fromDouble($ref).get"
-          case TypeId.Builtins.f128 => q"$circeJson.fromBigDecimal($ref)"
-
-          case TypeId.Builtins.str   => q"$circeJson.fromString($ref)"
-          case TypeId.Builtins.bytes => q"$circeJson.fromString($ref.toHexString)"
+          case b: TypeId.BuiltinScalar => ScScalarCodecEmitter.jsonEncode(b, ref)
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -411,10 +332,10 @@ class ScJsonCodecGenerator(
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
       case a: TypeRef.Any =>
-        val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+        val expectedKind                      = AnyFieldPlan.forField(a, domain).kind
         val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
         val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
-        q"""encodeAnyField(ctx, $expectedHex.toByte, $staticDom, $staticVer, $staticTid, $ref)"""
+        q"""$baboonAnyJsonCodec.encode(ctx, $expectedHex.toByte, $staticDom, $staticVer, $staticTid, $ref)"""
     }
   }
 
@@ -423,20 +344,9 @@ class ScJsonCodecGenerator(
   // codec emits whatever is statically known so the facade can fill the gaps. See
   // `BaboonCodecsFacade.buildSyntheticTypeMeta` for the merge semantics.
   private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[ScValue], TextTree[ScValue], TextTree[ScValue]) = {
-    val none                     = q"_root_.scala.None"
-    def some(s: String)          = q"""_root_.scala.Some("$s")"""
-    val currentDomain: String    = domain.id.toString
-    val currentDomainVer: String = domain.version.v.toString
-    val typeidStatic = a.underlying match {
-      case Some(u) => some(u.id.toString)
-      case None    => none
-    }
-    val (domainStatic, versionStatic) = a.variant match {
-      case AnyVariant.Global  => (none, none)
-      case AnyVariant.ThisDom => (some(currentDomain), none)
-      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
-    }
-    (domainStatic, versionStatic, typeidStatic)
+    val plan                                             = AnyFieldPlan.forField(a, domain)
+    def render(value: Option[String]): TextTree[ScValue] = value.fold[TextTree[ScValue]](q"_root_.scala.None")(s => q"""_root_.scala.Some("$s")""")
+    (render(plan.staticDomain), render(plan.staticVersion), render(plan.staticTypeId))
   }
 
   private def decoder(fieldName: String, tpe: TypeRef, jsonObjectRef: TextTree[ScValue]): TextTree[ScValue] = {
@@ -524,28 +434,7 @@ class ScJsonCodecGenerator(
       tpe match {
         case TypeRef.Scalar(id) =>
           id match {
-            case s: TypeId.BuiltinScalar =>
-              s match {
-                case TypeId.Builtins.bit => q"$circeDecodeBoolean"
-                case TypeId.Builtins.i08 => q"$baboonDecodeByte"
-                case TypeId.Builtins.i16 => q"$baboonDecodeShort"
-                case TypeId.Builtins.i32 => q"$baboonDecodeInt"
-                case TypeId.Builtins.i64 => q"$baboonDecodeLong"
-                case TypeId.Builtins.u08 => q"$baboonDecodeByte"
-                case TypeId.Builtins.u16 => q"$baboonDecodeShort"
-                case TypeId.Builtins.u32 => q"$baboonDecodeInt"
-                case TypeId.Builtins.u64 => q"$baboonDecodeLong"
-
-                case TypeId.Builtins.f32   => q"$circeDecodeFloat"
-                case TypeId.Builtins.f64   => q"$circeDecodeDouble"
-                case TypeId.Builtins.f128  => q"$baboonDecodeBigDecimalLenient"
-                case TypeId.Builtins.str   => q"$circeDecodeString"
-                case TypeId.Builtins.bytes => q"$baboonDecodeByteString"
-                case TypeId.Builtins.uid   => q"$circeDecodeUuid"
-                case TypeId.Builtins.tsu   => q"$baboonDecodeTsu"
-                case TypeId.Builtins.tso   => q"$baboonDecodeTso"
-                case other                 => throw new RuntimeException(s"BUG: Unexpected type: $other")
-              }
+            case s: TypeId.BuiltinScalar => ScScalarCodecEmitter.jsonDecoder(s)
             case u: TypeId.User =>
               domain.defs.meta.nodes(u) match {
                 case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -578,13 +467,13 @@ class ScJsonCodecGenerator(
             case o                   => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
         case a: TypeRef.Any =>
-          val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+          val expectedKind = AnyFieldPlan.forField(a, domain).kind
           val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
           // Lift the helper's Either[Throwable, AnyOpaqueJson] into circe's Decoder.Result
           // (Either[DecodingFailure, AnyOpaqueJson]) so this slot is shape-compatible with the
           // surrounding `field.flatMap(v => $decoder(v.hcursor))` template. Decoder is symmetric
           // — no facade plumbing needed (decode never cross-converts).
-          q"""$circeDecoder.instance(c => decodeAnyField($expectedHex.toByte, c.value).left.map(t => $circeDecodingFailure(t.getMessage, c.history)))"""
+          q"""$circeDecoder.instance(c => $baboonAnyJsonCodec.decode($expectedHex.toByte, c.value).left.map(t => $circeDecodingFailure(t.getMessage, c.history)))"""
       }
     }
 

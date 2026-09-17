@@ -15,9 +15,10 @@ import {
     BaboonBinWriter,
     BaboonCodecException,
     BaboonDecoderFailure,
+    BaboonEncoderFailure,
     BinTools,
 } from "./BaboonSharedRuntime";
-import type { BaboonEither } from "./BaboonSharedRuntime";
+import type { BaboonEither, BaboonCodecContext } from "./BaboonSharedRuntime";
 
 // --- AnyMeta -----------------------------------------------------------------------------------
 
@@ -301,4 +302,133 @@ function readOptString(
             `AnyMetaCodec.readJson: kind 0x${(kind & 0xFF).toString(16)} forbids '${key}' (${name}) but it is present`,
         ),
     };
+}
+
+export function encodeAnyJsonField(
+    ctx: BaboonCodecContext,
+    expectedKind: number,
+    staticDomain: string | undefined,
+    staticVersion: string | undefined,
+    staticTypeid: string | undefined,
+    value: AnyOpaque,
+): unknown {
+    if (value.meta.kind !== expectedKind) {
+        throw new BaboonEncoderFailure(
+            `any: meta-kind 0x${(value.meta.kind & 0xFF).toString(16).padStart(2, "0")} does not match field-declared 0x${(expectedKind & 0xFF).toString(16).padStart(2, "0")}`
+        );
+    }
+    let anyInner: unknown;
+    if (value.tag === "Json") {
+        anyInner = value.json;
+    } else {
+        const anyFacade = ctx.facade;
+        if (anyFacade === undefined) {
+            throw new BaboonEncoderFailure(
+                "Cannot encode AnyOpaqueUeba into JSON without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply anyOpaqueJson directly."
+            );
+        }
+        const anyConvResult = anyFacade.uebaToJson(value.meta, value.bytes, staticDomain, staticVersion, staticTypeid);
+        if (anyConvResult.tag === "Left") {
+            throw anyConvResult.value;
+        }
+        anyInner = anyConvResult.value;
+    }
+    const anyEnvelope = AnyMetaCodec.writeJson(value.meta);
+    anyEnvelope[AnyMetaCodec.ANY_CONTENT_KEY] = anyInner;
+    return anyEnvelope;
+}
+
+export function decodeAnyJsonField(expectedKind: number, wire: unknown): AnyOpaque {
+    if (wire === null || typeof wire !== "object" || Array.isArray(wire)) {
+        throw new BaboonDecoderFailure("any: JSON envelope must be an object");
+    }
+    const anyMetaResult = AnyMetaCodec.readJson(wire);
+    if (anyMetaResult.tag === "Left") {
+        throw anyMetaResult.value;
+    }
+    const anyMeta = anyMetaResult.value;
+    if (anyMeta.kind !== expectedKind) {
+        throw new BaboonDecoderFailure(
+            `any: wire kind 0x${(anyMeta.kind & 0xFF).toString(16).padStart(2, "0")} does not match field-declared 0x${(expectedKind & 0xFF).toString(16).padStart(2, "0")}`
+        );
+    }
+    const anyObj = wire as Record<string, unknown>;
+    const anyContent = anyObj[AnyMetaCodec.ANY_CONTENT_KEY];
+    if (anyContent === undefined) {
+        throw new BaboonDecoderFailure(`any: JSON envelope missing '${AnyMetaCodec.ANY_CONTENT_KEY}' content key`);
+    }
+    return anyOpaqueJson(anyMeta, anyContent);
+}
+
+export function encodeAnyUebaField(
+    ctx: BaboonCodecContext,
+    writer: BaboonBinWriter,
+    expectedKind: number,
+    staticDomain: string | undefined,
+    staticVersion: string | undefined,
+    staticTypeid: string | undefined,
+    value: AnyOpaque,
+): void {
+    if (value.meta.kind !== expectedKind) {
+        throw new BaboonEncoderFailure(
+            `any: meta-kind 0x${(value.meta.kind & 0xFF).toString(16).padStart(2, "0")} does not match field-declared 0x${(expectedKind & 0xFF).toString(16).padStart(2, "0")}`
+        );
+    }
+    let anyBlob: Uint8Array;
+    if (value.tag === "Ueba") {
+        anyBlob = value.bytes;
+    } else {
+        const anyFacade = ctx.facade;
+        if (anyFacade === undefined) {
+            throw new BaboonEncoderFailure(
+                "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply anyOpaqueUeba directly."
+            );
+        }
+        const anyConvResult = anyFacade.jsonToUebaBytes(value.meta, value.json, staticDomain, staticVersion, staticTypeid);
+        if (anyConvResult.tag === "Left") {
+            throw anyConvResult.value;
+        }
+        anyBlob = anyConvResult.value;
+    }
+    // Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
+    const anyMetaBuf = new BaboonBinWriter();
+    AnyMetaCodec.writeBin(value.meta, anyMetaBuf);
+    const anyMetaBytes = anyMetaBuf.toBytes();
+    const anyTotalLength = 4 + anyMetaBytes.length + anyBlob.length;
+    BinTools.writeI32(writer, anyTotalLength);
+    BinTools.writeI32(writer, anyMetaBytes.length);
+    writer.writeBytes(anyMetaBytes);
+    writer.writeBytes(anyBlob);
+}
+
+export function decodeAnyUebaField(reader: BaboonBinReader, expectedKind: number): AnyOpaque {
+    const anyTotalLength = BinTools.readI32(reader);
+    if (anyTotalLength < 0) {
+        throw new BaboonDecoderFailure(`any: negative total-length ${anyTotalLength}`);
+    }
+    const anyMetaLength = BinTools.readI32(reader);
+    if (anyMetaLength < 0) {
+        throw new BaboonDecoderFailure(`any: negative meta-length ${anyMetaLength}`);
+    }
+    if (anyTotalLength < 4 + anyMetaLength) {
+        throw new BaboonDecoderFailure(`any: total-length ${anyTotalLength} smaller than 4 + meta-length ${anyMetaLength}`);
+    }
+    const anyReadResult = AnyMetaCodec.readBinWithLength(reader);
+    const anyMeta = anyReadResult.meta;
+    const anyBytesRead = anyReadResult.bytesRead;
+    if (anyBytesRead > anyMetaLength) {
+        throw new BaboonDecoderFailure(`any: meta bytes-read ${anyBytesRead} exceeded meta-length window ${anyMetaLength}`);
+    }
+    if (anyBytesRead < anyMetaLength) {
+        // Forward-compat: skip future meta-extension bytes within the meta-length window.
+        reader.readBytes(anyMetaLength - anyBytesRead);
+    }
+    if (anyMeta.kind !== expectedKind) {
+        throw new BaboonDecoderFailure(
+            `any: wire kind 0x${(anyMeta.kind & 0xFF).toString(16).padStart(2, "0")} does not match field-declared 0x${(expectedKind & 0xFF).toString(16).padStart(2, "0")}`
+        );
+    }
+    const anyBlobLen = anyTotalLength - 4 - anyMetaLength;
+    const anyBlob = reader.readBytes(anyBlobLen);
+    return anyOpaqueUeba(anyMeta, anyBlob);
 }

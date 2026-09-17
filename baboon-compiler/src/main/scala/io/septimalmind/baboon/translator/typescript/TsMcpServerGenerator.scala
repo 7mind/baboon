@@ -50,9 +50,10 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
   override def generateMcpServer(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
       lineage =>
-        val evo          = lineage.evolution
-        val latestDomain = lineage.versions(evo.latest)
-        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
+        val evo           = lineage.evolution
+        val latestDomain  = lineage.versions(evo.latest)
+        val schemaContext = schemaEmitter.prepare(latestDomain)
+        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo, schemaContext))
     }
 
     val runtimeFile =
@@ -76,7 +77,8 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
     s"$basename/$serviceDir/mcp-server.ts"
   }
 
-  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution): (String, OutputFile) = {
+  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution, schemaContext: McpInputSchemaEmitter.PreparedDomain)
+    : (String, OutputFile) = {
     val basename = tsFileTools.basename(domain, evo)
     val path     = serverPath(svc, basename)
     // Relative prefix from the server file's directory back to the generated
@@ -91,12 +93,14 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
     // Declaration-ordered tool entries (K4 §2.3): one per method.
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
-        val toolName   = s"${serviceName}_${m.name.name}"
-        val schema     = schemaEmitter.emitInputSchema(m.sig, domain)
-        val descField  = McpDocs.flatten(m.docs).map(d => s" description: ${jsString(d)},").getOrElse("")
+        val toolName  = s"${serviceName}_${m.name.name}"
+        val schema    = schemaEmitter.emitInputSchema(m.sig, schemaContext)
+        val descField = McpDocs.flatten(m.docs).map(d => s" description: ${jsString(d)},").getOrElse("")
         // The self-contained JSON Schema is carried as a constant literal value.
         // description is only emitted when present (TS `description?: string` — key must be absent, not undefined/null, for undocumented tools).
-        s"""        { name: ${jsString(toolName)}, method: { serviceName: ${jsString(serviceName)}, methodName: ${jsString(m.name.name)} },$descField inputSchema: ${jsonLiteral(schema)} },"""
+        s"""        { name: ${jsString(toolName)}, method: { serviceName: ${jsString(serviceName)}, methodName: ${jsString(
+            m.name.name
+          )} },$descField inputSchema: ${jsonLiteral(schema)} },"""
     }
 
     // Async axis (`--ts-async-services=true`): the errors-mode wiring entry
@@ -126,9 +130,18 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
          |export class $className<Ctx> extends $baseClass<Ctx> {
          |    public readonly serverInfo: McpServerInfo = { name: ${jsString(serviceName)}, version: ${jsString(modelVer)} };
          |
-         |    public readonly tools: readonly McpToolEntry[] = [
+         |    private readonly toolEntries: readonly McpToolEntry[] = [
          |${toolEntries.mkString("\n")}
          |    ];
+         |    private readonly toolsByName = new Map(this.toolEntries.map(tool => [tool.name, tool]));
+         |
+         |    public get tools(): readonly McpToolEntry[] {
+         |        return this.toolEntries.map(tool => ({ ...tool, method: { ...tool.method }, inputSchema: JSON.parse(JSON.stringify(tool.inputSchema)) }));
+         |    }
+         |
+         |    protected findTool(name: string): McpToolEntry | undefined {
+         |        return this.toolsByName.get(name);
+         |    }
          |
          |    private readonly _invokeJson: (method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext) => $delegateRet;
          |

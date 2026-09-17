@@ -1,0 +1,49 @@
+model review.evolution
+version "1.0.0"
+
+
+data Child {
+  number: i64
+  tags: set[str]
+  amounts: map[str, i64]
+}
+
+root data NestedHolder {
+  child: Child
+}
+
+root data CollectionHolder {
+  values: opt[i32]
+}
+root adt Shape {
+  data Circle { radius: i32 }
+}
+
+enum Color { red green }
+enum Tone { lightBlue }
+root data ToneHolder { tone: Tone }
+
+data Leaf { value: i32 }
+
+root data Containers {
+  leaves: lst[Leaf]
+  named: map[str, Leaf]
+  numbered: map[i32, Leaf]
+  color: Color
+}
+
+foreign NativeValue { typescript = "Date" }
+
+root data NativeHolder { value: NativeValue }
+
+data Manual { value: i32 }
+root data ManualHolder { value: Manual }
+
+root data ScalarCollections : derived[json] {
+  values: lst[i32]
+  uniques: set[str]
+}
+
+root adt OldRenamedShape {
+  data Circle { radius: i32 }
+}
