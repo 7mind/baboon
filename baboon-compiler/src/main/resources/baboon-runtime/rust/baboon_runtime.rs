@@ -159,24 +159,17 @@ pub trait BaboonBinCodecIndexed {
         let header = bin_tools::read_byte(reader)?;
         let is_indexed = (header & 0x01) != 0;
         let mut result = Vec::new();
-        let mut prev_offset: u32 = 0;
-        let mut prev_len: u32 = 0;
+        let mut previous_end: i64 = 0;
         if is_indexed {
             let mut left = Self::index_elements_count(ctx) as usize;
             while left > 0 {
-                let offset = bin_tools::read_i32(reader)? as u32;
-                let len = bin_tools::read_i32(reader)? as u32;
-                assert!(len > 0, "Length must be positive");
-                assert!(
-                    offset >= prev_offset + prev_len,
-                    "Offset violation: {} not >= {}",
-                    offset,
-                    prev_offset + prev_len
-                );
-                result.push(BaboonIndexEntry { offset, length: len });
+                let offset = bin_tools::read_i32(reader)?;
+                let len = bin_tools::read_i32(reader)?;
+                if len <= 0 { return Err(format!("Invalid UEBA index length: {}", len).into()); }
+                if i64::from(offset) < previous_end { return Err(format!("Invalid UEBA index offset: {}", offset).into()); }
+                previous_end = i64::from(offset) + i64::from(len);
+                result.push(BaboonIndexEntry { offset: offset as u32, length: len as u32 });
                 left -= 1;
-                prev_offset = offset;
-                prev_len = len;
             }
         }
         Ok((header, result))

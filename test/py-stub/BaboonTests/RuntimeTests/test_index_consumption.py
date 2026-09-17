@@ -25,14 +25,12 @@ class IndexConsumptionTest(unittest.TestCase):
                 self.assertEqual(b"payload", consumed.stream.read())
 
     def test_both_paths_reject_invalid_indices(self):
-        if not __debug__:
-            self.skipTest("index validation uses assertions")
         codec = TwoEntries()
-        for fields in ((0, 0, 0, 1), (0, 3, 2, 1)):
+        for fields in ((0, 0, 0, 1), (-1, 1, 1, 1), (0, -1, 1, 1), (0, 3, 2, 1), (2147483647, 1, 0, 1)):
             for read in (codec.read_index, codec.consume_index):
                 with self.subTest(fields=fields, read=read.__name__):
-                    with self.assertRaises(AssertionError):
-                        read(BaboonCodecContext.Compact, LEDataInputStream(BytesIO(b"\x01" + struct.pack("<IIII", *fields))))
+                    with self.assertRaises(ValueError):
+                        read(BaboonCodecContext.Compact, LEDataInputStream(BytesIO(b"\x01" + struct.pack("<iiii", *fields))))
 
     def test_both_paths_reject_truncated_indices(self):
         codec = TwoEntries()

@@ -7,7 +7,7 @@ import io.septimalmind.baboon.translator.kotlin.KtDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.translator.AnyFieldPlan
+import io.septimalmind.baboon.translator.{AnyFieldPlan, UebaLayoutPlan, UebaLengthCheckRenderer}
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -19,6 +19,7 @@ class KtUEBACodecGenerator(
   ktDomainTreeTools: KtDomainTreeTools,
   ktTypes: KtTypes,
 ) extends KtCodecTranslator {
+  private val layout = new UebaLayoutPlan(domain)
   import ktTypes.*
 
   private val scalarCodecs = new KtScalarCodecEmitter(ktTypes)
@@ -90,7 +91,7 @@ class KtUEBACodecGenerator(
     val isEncoderEnabled = target.language.enableDeprecatedEncoders || domain.version == evo.latest
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
-        val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
+        val varlens = layout.indexedFields(d)
         val comment = varlens.map(f => q"// ${f.toString}").joinN()
         q"""$comment
            |return ${varlens.size.toString}.toShort()""".stripMargin
@@ -306,22 +307,9 @@ class KtUEBACodecGenerator(
 
     val fdec = dtoDec(name, fields.map(_._2))
 
-    def adtBranchIndex(id: TypeId.User) = {
-      domain.defs.meta
-        .nodes(id)
-        .asInstanceOf[DomainMember.User]
-        .defn
-        .asInstanceOf[Typedef.Adt]
-        .dataMembers(domain)
-        .zipWithIndex
-        .find(_._1 == dto.id)
-        .get
-        ._2
-    }
-
     val enc = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
 
         q"""writer.writeByte(${idx.toString})
            |$fenc""".stripMargin
@@ -330,9 +318,9 @@ class KtUEBACodecGenerator(
 
     val dec = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
-        q"""val marker = wire.readByte().toInt()
-           |assert(marker == ${idx.toString})
+        val idx = layout.adtBranchIndex(id, dto.id)
+        q"""val marker = wire.readByte().toInt() and 0xFF
+           |require(marker == ${idx.toString}) { "Unexpected UEBA ADT branch marker: " + marker }
            |return decodeBranch(ctx, wire)""".stripMargin
       case _ => fdec
     }
@@ -341,7 +329,7 @@ class KtUEBACodecGenerator(
 
   private def dtoDec(name: KtValue.KtType, fields: List[TextTree[KtValue]]): TextTree[KtValue] = {
     q"""val index = this.readIndex(ctx, wire)
-       |if (ctx.useIndices) assert(index.size == indexElementsCount(ctx).toInt())
+       |if (ctx.useIndices) require(index.size == indexElementsCount(ctx).toInt()) { "Unexpected UEBA index count: " + index.size }
        |return $name(
        |  ${fields.join(",\n").shift(2).trim}
        |)
@@ -349,8 +337,8 @@ class KtUEBACodecGenerator(
   }
 
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[KtValue], TextTree[KtValue], TextTree[KtValue])] = {
-    dto.fields.map {
-      field =>
+    layout.fields(dto).map {
+      case UebaLayoutPlan.FieldLayout(field, length) =>
         val ktFieldName = KtTypeTranslator.escapeKtKeyword(field.name.name)
         val fieldRef    = q"instance.$ktFieldName"
         val enc         = mkEncoder(field.tpe, fieldRef, q"writer")
@@ -358,7 +346,7 @@ class KtUEBACodecGenerator(
         val decoder     = mkDecoder(field.tpe)
         val decodeTree  = q"$ktFieldName = $decoder"
 
-        val w = domain.refMeta(field.tpe).len match {
+        val w = length match {
           case BinReprLen.Fixed(bytes) =>
             q"""run {
                |  // ${field.toString}
@@ -366,23 +354,11 @@ class KtUEBACodecGenerator(
                |  ${fakeEnc.shift(2).trim}
                |  val after = $bufferSizeExpr
                |  val length = after - before
-               |  assert(length == ${bytes.toString})
+               |  ${lengthChecks(BinReprLen.Fixed(bytes)).shift(2).trim}
                |}""".stripMargin
 
           case v: BinReprLen.Variable =>
-            val sanityChecks = v match {
-              case BinReprLen.Unknown() =>
-                q"assert(after >= before) { \"Got after=$$after, before=$$before\" }"
-
-              case BinReprLen.Alternatives(variants) =>
-                q"assert(setOf(${variants.mkString(", ")}).contains(length)) { \"Got length=$$length\" }"
-
-              case BinReprLen.Range(min, max) =>
-                (
-                  Seq(q"assert(length >= ${min.toString}) { \"Got length=$$length\" }") ++
-                  max.toSeq.map(m => q"assert(length <= ${m.toString}) { \"Got length=$$length\" }")
-                ).joinN()
-            }
+            val sanityChecks = lengthChecks(v)
 
             q"""run {
                |  // ${field.toString}
@@ -399,6 +375,14 @@ class KtUEBACodecGenerator(
         (enc, decodeTree, w)
     }
   }
+
+  private def lengthChecks(length: BinReprLen): TextTree[KtValue] =
+    UebaLengthCheckRenderer.render[KtValue](
+      length,
+      equalTo = bytes => q"length == ${bytes.toString}",
+      oneOf   = bytes => q"setOf(${bytes.mkString(", ")}).contains(length)",
+      enforce = condition => q"""require($condition) { "Invalid UEBA field length: " + length }""",
+    )
 
   private def mkDecoder(tpe: TypeRef): TextTree[KtValue] = {
     tpe match {

@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.python
 
+import io.septimalmind.baboon.translator.{UebaLayoutPlan, UebaLengthCheckRenderer}
 import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.python.PyKeywords.escapePyKeyword
@@ -19,6 +20,7 @@ class PyUEBACodecGenerator(
   pyTarget: PyTarget,
   domain: Domain,
 ) extends PyCodecTranslator {
+  private val layout = new UebaLayoutPlan(domain)
   override def translate(
     defn: DomainMember.User,
     pyRef: PyValue.PyType,
@@ -56,7 +58,7 @@ class PyUEBACodecGenerator(
     val isEncoderEnabled = pyTarget.language.enableDeprecatedEncoders || domain.version == evolution.latest
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
-        val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
+        val varlens = layout.indexedFields(d)
         val comment = varlens.map(f => q"# ${f.toString}").joinN()
         q"""$comment
            |return ${varlens.size.toString}""".stripMargin
@@ -232,7 +234,7 @@ class PyUEBACodecGenerator(
     q"""index_count = self.consume_index(ctx, wire)
        |
        |if ctx.use_indices:
-       |    assert index_count == self.index_elements_count(ctx)
+       |    if index_count != self.index_elements_count(ctx): raise ValueError("Unexpected UEBA index count: " + str(index_count))
        |
        |return ${name.name}(
        |    ${fieldsDecoders.join(",\n").shift(4).trim}
@@ -241,14 +243,6 @@ class PyUEBACodecGenerator(
   }
 
   private def genDtoBodies(name: PyType, dto: Typedef.Dto): (TextTree[PyValue], TextTree[PyValue]) = {
-    def adtBranchIndex(id: TypeId.User) = {
-      domain.defs.meta
-        .nodes(id).asInstanceOf[DomainMember.User]
-        .defn.asInstanceOf[Typedef.Adt]
-        .dataMembers(domain)
-        .zipWithIndex.find(_._1 == dto.id).get._2
-    }
-
     val fields = fieldsOf(dto)
 
     val noIndex = Seq(
@@ -275,7 +269,7 @@ class PyUEBACodecGenerator(
 
     val enc = dto.id.owner match {
       case Owner.Adt(id) if pyTarget.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""wire.write_byte(${idx.toString})
            |$fieldsEncoders""".stripMargin
       case _ => fieldsEncoders
@@ -283,9 +277,9 @@ class PyUEBACodecGenerator(
 
     val dec = dto.id.owner match {
       case Owner.Adt(id) if pyTarget.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""marker = wire.read_byte()
-           |assert marker == ${idx.toString}
+           |if marker != ${idx.toString}: raise ValueError("Unexpected UEBA ADT branch marker: " + str(marker))
            |return self.decode_branch(ctx, wire)""".stripMargin
       case _ => fieldsDecoders
     }
@@ -294,37 +288,25 @@ class PyUEBACodecGenerator(
   }
 
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[PyValue], TextTree[PyValue], TextTree[PyValue])] = {
-    dto.fields.map {
-      f =>
+    layout.fields(dto).map {
+      case UebaLayoutPlan.FieldLayout(f, length) =>
         val fieldRef = q"value.${escapePyKeyword(f.name.name)}"
         val encoder  = mkEncoder(f.tpe, fieldRef, q"wire")
         val fakeEnc  = mkEncoder(f.tpe, fieldRef, q"fake_writer")
         val dec      = mkDecoder(f.tpe)
 
-        val w = domain.refMeta(f.tpe).len match {
+        val w = length match {
           case BinReprLen.Fixed(bytes) =>
             q"""# ${f.toString}
                |before = write_memory_stream.tell()
                |${fakeEnc.trim}
                |after = write_memory_stream.tell()
                |length = after - before
-               |assert length == ${bytes.toString}
+               |${lengthChecks(BinReprLen.Fixed(bytes)).trim}
                |""".stripMargin
 
           case v: BinReprLen.Variable =>
-            val sanityChecks = v match {
-              case BinReprLen.Unknown() =>
-                q"assert after >= before, f\"Got after={after}, before={before}\""
-
-              case BinReprLen.Alternatives(variants) =>
-                q"assert length in {${variants.mkString(", ")}}, f\"Got length={length}\""
-
-              case BinReprLen.Range(min, max) =>
-                List(
-                  Some(q"assert length >= ${min.toString}, f\"Got length={length}\" "),
-                  max.map(m => q"assert length <= ${m.toString}, $$\"Got length={length}\""),
-                ).flatten.joinN()
-            }
+            val sanityChecks = lengthChecks(v)
 
             q"""# ${f.toString}
                |before = write_memory_stream.tell()
@@ -339,6 +321,14 @@ class PyUEBACodecGenerator(
         (encoder, dec, w)
     }
   }
+
+  private def lengthChecks(length: BinReprLen): TextTree[PyValue] =
+    UebaLengthCheckRenderer.render[PyValue](
+      length,
+      equalTo = bytes => q"length == ${bytes.toString}",
+      oneOf   = bytes => q"length in {${bytes.mkString(", ")}}",
+      enforce = condition => q"""if not ($condition): raise ValueError("Invalid UEBA field length: " + str(length))""",
+    )
 
   private def mkEncoder(tpe: TypeRef, ref: TextTree[PyValue], writerRef: TextTree[PyValue]): TextTree[PyValue] = {
     tpe match {

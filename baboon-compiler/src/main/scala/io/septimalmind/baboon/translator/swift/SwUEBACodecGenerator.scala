@@ -8,7 +8,7 @@ import io.septimalmind.baboon.translator.swift.SwTypes.*
 import io.septimalmind.baboon.translator.swift.SwValue.SwType
 import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.translator.AnyFieldPlan
+import io.septimalmind.baboon.translator.{AnyFieldPlan, UebaLayoutPlan, UebaLengthCheckRenderer}
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -19,6 +19,7 @@ class SwUEBACodecGenerator(
   evo: BaboonEvolution,
   swDomainTreeTools: SwDomainTreeTools,
 ) extends SwCodecTranslator {
+  private val layout = new UebaLayoutPlan(domain)
 
   override def translate(
     defn: DomainMember.User,
@@ -63,7 +64,7 @@ class SwUEBACodecGenerator(
     val isEncoderEnabled = domain.version == evo.latest
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
-        val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
+        val varlens = layout.indexedFields(d)
         val comment = varlens.map(f => q"// ${f.toString}").joinN()
         q"""$comment
            |return ${varlens.size.toString}""".stripMargin
@@ -254,22 +255,9 @@ class SwUEBACodecGenerator(
 
     val fdec = dtoDec(name, fields.map(_._2))
 
-    def adtBranchIndex(id: TypeId.User) = {
-      domain.defs.meta
-        .nodes(id)
-        .asInstanceOf[DomainMember.User]
-        .defn
-        .asInstanceOf[Typedef.Adt]
-        .dataMembers(domain)
-        .zipWithIndex
-        .find(_._1 == dto.id)
-        .get
-        ._2
-    }
-
     val enc = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
 
         q"""writer.writeU8(${idx.toString})
            |$fenc""".stripMargin
@@ -278,9 +266,9 @@ class SwUEBACodecGenerator(
 
     val dec = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""let marker = reader.readU8()
-           |assert(marker == ${idx.toString})
+           |guard marker == ${idx.toString} else { throw BaboonCodecError.invalidInput("Unexpected UEBA ADT branch marker: " + String(marker)) }
            |return try decodeBranch(ctx, reader)""".stripMargin
       case _ => fdec
     }
@@ -295,15 +283,15 @@ class SwUEBACodecGenerator(
     }
 
     q"""let indexCount = try consumeIndex(ctx, reader)
-       |if ctx.useIndices { assert(indexCount == indexElementsCount) }
+       |if ctx.useIndices && indexCount != indexElementsCount { throw BaboonCodecError.invalidInput("Unexpected UEBA index count: " + String(indexCount)) }
        |return ${name.asDeclName}(
        |    $fieldAssignments
        |)""".stripMargin
   }
 
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[SwValue], TextTree[SwValue], TextTree[SwValue])] = {
-    dto.fields.map {
-      field =>
+    layout.fields(dto).map {
+      case UebaLayoutPlan.FieldLayout(field, length) =>
         val escaped             = trans.escapeSwiftKeyword(field.name.name)
         val fieldRef            = q"value.$escaped"
         val enc                 = mkEncoder(field.tpe, fieldRef, q"writer")
@@ -311,7 +299,7 @@ class SwUEBACodecGenerator(
         val (decoder, mayThrow) = mkDecoder(field.tpe)
         val decodeTree          = if (mayThrow) q"$escaped: try $decoder" else q"$escaped: $decoder"
 
-        val w = domain.refMeta(field.tpe).len match {
+        val w = length match {
           case BinReprLen.Fixed(bytes) =>
             q"""do {
                |    // ${field.toString}
@@ -319,39 +307,36 @@ class SwUEBACodecGenerator(
                |    ${bufferEnc.shift(4).trim}
                |    let after = buffer.position
                |    let length = after - before
-               |    assert(length == ${bytes.toString})
+               |    ${lengthChecks(BinReprLen.Fixed(bytes)).shift(4).trim}
                |}""".stripMargin
 
           case v: BinReprLen.Variable =>
-            val sanityChecks = v match {
-              case BinReprLen.Unknown() =>
-                q"""assert(after >= before, "Got after=\\(after), before=\\(before)")"""
-
-              case BinReprLen.Alternatives(variants) =>
-                q"""assert([${variants.mkString(", ")}].contains(length), "Got length=\\(length)")"""
-
-              case BinReprLen.Range(min, max) =>
-                (
-                  Seq(q"""assert(length >= ${min.toString}, "Got length=\\(length)")""") ++
-                  max.toSeq.map(m => q"""assert(length <= ${m.toString}, "Got length=\\(length)")""")
-                ).joinN()
-            }
+            val sanityChecks = lengthChecks(v)
 
             q"""do {
                |    // ${field.toString}
                |    let before = buffer.position
+               |    guard before <= ${UebaLayoutPlan.MaxIndexValue.toString} else { fatalError("UEBA index offset exceeds i32") }
                |    writer.writeI32(Int32(before))
                |    ${bufferEnc.shift(4).trim}
                |    let after = buffer.position
                |    let length = after - before
-               |    writer.writeI32(Int32(length))
                |    ${sanityChecks.shift(4).trim}
+               |    writer.writeI32(Int32(length))
                |}""".stripMargin
         }
 
         (enc, decodeTree, w)
     }
   }
+
+  private def lengthChecks(length: BinReprLen): TextTree[SwValue] =
+    UebaLengthCheckRenderer.render[SwValue](
+      length,
+      equalTo = bytes => q"length == ${bytes.toString}",
+      oneOf   = bytes => q"[${bytes.mkString(", ")}].contains(length)",
+      enforce = condition => q"""guard $condition else { fatalError("Invalid UEBA field length: " + String(length)) }""",
+    )
 
   // Returns (expression, mayThrow). `mayThrow` is true when the expression contains a top-level
   // throwing call that needs `try` at the parent site (e.g. inside a closure body or ternary).

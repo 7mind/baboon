@@ -12,6 +12,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class IndexConsumptionTest {
     @Test
+    public void rejectsInvalidIndexEntriesWithoutAssertions() throws Exception {
+        int[][] cases = {{0, 0, 1, 1}, {-1, 1, 1, 1}, {0, -1, 1, 1}, {0, 2, 1, 1}, {Integer.MAX_VALUE, 1, 0, 1}};
+        for (int[] entries : cases) {
+            var buffer = new ByteArrayOutputStream();
+            var writer = new LEDataOutputStream(buffer);
+            writer.writeByte(1);
+            for (int value : entries) writer.writeInt(value);
+            var bytes = buffer.toByteArray();
+            assertThrows(IllegalArgumentException.class, () -> BaboonBinCodec.readIndex(BaboonCodecContext.Compact, new LEDataInputStream(new ByteArrayInputStream(bytes)), 2));
+            assertThrows(IllegalArgumentException.class, () -> BaboonBinCodec.consumeIndex(BaboonCodecContext.Compact, new LEDataInputStream(new ByteArrayInputStream(bytes)), 2));
+        }
+    }
+
+    @Test
     public void streamCopyOverloadsAreObservableToPublicSubclasses() throws Exception {
         class ObservingOutput extends LEDataOutputStream {
             int wholeWrites;

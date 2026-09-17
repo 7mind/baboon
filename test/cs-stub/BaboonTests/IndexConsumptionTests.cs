@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using Baboon.Runtime.Shared;
 using NUnit.Framework;
+using Testpkg.Pkg0;
 
 namespace ConversionsTest
 {
@@ -62,6 +63,80 @@ namespace ConversionsTest
                 if (consumeOnly) codec.ConsumeIndex(BaboonCodecContext.Compact, reader);
                 else codec.ReadIndex(BaboonCodecContext.Compact, reader);
             });
+        }
+
+        [TestCase(0, 0, 1, 1)]
+        [TestCase(-1, 1, 1, 1)]
+        [TestCase(0, -1, 1, 1)]
+        [TestCase(0, 2, 1, 1)]
+        [TestCase(int.MaxValue, 1, 0, 1)]
+        public void RejectsInvalidEntriesInRelease(int firstOffset, int firstLength, int secondOffset, int secondLength)
+        {
+            using var data = new MemoryStream();
+            using (var writer = new BinaryWriter(data, System.Text.Encoding.UTF8, true))
+            {
+                writer.Write((byte)1);
+                writer.Write(firstOffset);
+                writer.Write(firstLength);
+                writer.Write(secondOffset);
+                writer.Write(secondLength);
+            }
+            IBaboonBinCodecIndexed codec = new TwoEntries();
+            foreach (var consumeOnly in new[] { false, true })
+            {
+                using var reader = new BinaryReader(new MemoryStream(data.ToArray()));
+                Assert.Throws<InvalidDataException>(() =>
+                {
+                    if (consumeOnly) codec.ConsumeIndex(BaboonCodecContext.Compact, reader);
+                    else codec.ReadIndex(BaboonCodecContext.Compact, reader);
+                });
+            }
+        }
+
+        [TestCase(0)]
+        [TestCase(2)]
+        public void RejectsIncorrectFixedLengthsInRelease(int actual)
+        {
+            IBaboonBinCodecIndexed codec = new TwoEntries();
+            using var buffer = new MemoryStream();
+            using var writer = new BinaryWriter(buffer);
+            Assert.Throws<InvalidDataException>(() => codec.WriteIndexFixedLenField(writer, 1, () => writer.Write(new byte[actual])));
+        }
+
+        [Test]
+        public void RejectsEmptyVariableFieldsInRelease()
+        {
+            IBaboonBinCodecIndexed codec = new TwoEntries();
+            using var buffer = new MemoryStream();
+            using var index = new MemoryStream();
+            using var writer = new BinaryWriter(index);
+            using var fakeWriter = new BinaryWriter(buffer);
+            Assert.Throws<InvalidDataException>(() => codec.WriteIndexVarLenField(writer, fakeWriter, () => { }));
+        }
+
+        [Test]
+        public void GeneratedDecoderRejectsMissingRequiredIndexInRelease()
+        {
+            using var buffer = new MemoryStream();
+            using var writer = new BinaryWriter(buffer);
+            var codec = T1_E2_RET_UEBACodec.Instance;
+            codec.Encode(BaboonCodecContext.Compact, writer, new T1_E2_RET(T1_E2.A, null));
+            buffer.Position = 0;
+            using var reader = new BinaryReader(buffer);
+            Assert.Catch<Exception>(() => codec.Decode(BaboonCodecContext.Indexed, reader));
+        }
+
+        [Test]
+        public void GeneratedBranchDecoderRejectsCorruptPrefixInRelease()
+        {
+            using var buffer = new MemoryStream();
+            using var writer = new BinaryWriter(buffer);
+            var codec = T5_A1.B1_UEBACodec.Instance;
+            codec.Encode(BaboonCodecContext.Compact, writer, new T5_A1.B1("x"));
+            var bytes = buffer.ToArray();
+            bytes[0] = 255;
+            using var reader = new BinaryReader(new MemoryStream(bytes));
+            Assert.Catch<Exception>(() => codec.Decode(BaboonCodecContext.Compact, reader));
         }
     }
 }

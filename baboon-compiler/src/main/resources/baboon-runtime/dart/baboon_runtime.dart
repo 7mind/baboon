@@ -195,9 +195,13 @@ mixin BaboonBinCodecIndexed {
     if (!hasIndex) return [];
     final count = indexElementsCount;
     final entries = <BaboonIndexEntry>[];
+    var previousEnd = 0;
     for (var i = 0; i < count; i++) {
       final offset = reader.readI32();
       final length = reader.readI32();
+      if (length <= 0) throw FormatException('Invalid UEBA index length: $length');
+      if (offset < previousEnd) throw FormatException('Invalid UEBA index offset: $offset');
+      previousEnd = offset + length;
       entries.add(BaboonIndexEntry(offset, length));
     }
     return entries;

@@ -5,6 +5,24 @@ import BaboonRuntime
 final class RuntimePrimitiveCharacterizationTests: XCTestCase {
     private struct Indexed: BaboonBinCodecIndexed { let indexElementsCount = 2 }
 
+    func testInvalidIndexEntriesThrowInRelease() throws {
+        let cases: [[Int32]] = [[0, 0, 1, 1], [-1, 1, 1, 1], [0, -1, 1, 1], [0, 2, 1, 1], [Int32.max, 1, 0, 1]]
+        for entries in cases {
+            let writer = BaboonBinWriter()
+            writer.writeU8(1)
+            for value in entries { writer.writeI32(value) }
+            XCTAssertThrowsError(try Indexed().readIndex(.compact, BaboonBinReader(writer.toData())))
+            XCTAssertThrowsError(try Indexed().consumeIndex(.compact, BaboonBinReader(writer.toData())))
+        }
+    }
+
+    func testTruncatedIndexThrowsWithoutTrapping() throws {
+        for bytes: [UInt8] in [[], [1], [1, 0], [1, 0, 0, 0, 0]] {
+            XCTAssertThrowsError(try Indexed().readIndex(.compact, BaboonBinReader(Data(bytes))))
+            XCTAssertThrowsError(try Indexed().consumeIndex(.compact, BaboonBinReader(Data(bytes))))
+        }
+    }
+
     func testIndexConsumptionFollowsHeaderRatherThanContext() throws {
         for context in [BaboonCodecContext.compact, BaboonCodecContext.indexed] {
             for header: UInt8 in [0, 1, 2, 3] {

@@ -3550,6 +3550,7 @@ Run complete test suite (orchestrator action).
 
 ```bash
 dep action.test-sbt-basic
+dep action.test-ueba-layout-regression
 dep action.test-graphql
 dep action.test-openapi
 dep action.test-cs-regular
@@ -3682,6 +3683,16 @@ dep action.test-swift-mcp-zero
 dep action.test-gen-cs-adt-capture
 dep action.test-cs-adt-capture
 
+ret success:bool=true
+```
+
+# action: test-ueba-layout-regression
+
+Verify wrapped UEBA branch ordinals across the signed-byte boundary in Scala and Kotlin.
+
+```bash
+dep action.build
+bash test/ueba-layout-regression/run.sh "${action.build.binary}"
 ret success:bool=true
 ```
 

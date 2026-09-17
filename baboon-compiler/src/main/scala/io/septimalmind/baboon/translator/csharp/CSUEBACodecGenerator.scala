@@ -7,7 +7,7 @@ import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.translator.AnyFieldPlan
+import io.septimalmind.baboon.translator.{AnyFieldPlan, UebaLayoutPlan, UebaLengthCheckRenderer}
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 import izumi.fundamentals.platform.strings.TextTree.style.c.*
@@ -20,6 +20,7 @@ class CSUEBACodecGenerator(
   evo: BaboonEvolution,
   csTypeInfo: CSTypeInfo,
 ) extends CSCodecTranslator {
+  private val layout = new UebaLayoutPlan(domain)
 
   override def translate(
     defn: DomainMember.User,
@@ -103,7 +104,7 @@ class CSUEBACodecGenerator(
 
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
-        val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
+        val varlens = layout.indexedFields(d)
         val comment = varlens.map(f => q"// ${f.toString}").join("\n")
         q"""$comment
            |return ${varlens.size.toString};""".stripMargin
@@ -321,22 +322,9 @@ class CSUEBACodecGenerator(
     val fdec =
       dtoDec(name, fields.map { case (a, b, _) => (a, b) })
 
-    def adtBranchIndex(id: TypeId.User) = {
-      domain.defs.meta
-        .nodes(id)
-        .asInstanceOf[DomainMember.User]
-        .defn
-        .asInstanceOf[Typedef.Adt]
-        .dataMembers(domain)
-        .zipWithIndex
-        .find(_._1 == d.id)
-        .get
-        ._2
-    }
-
     val enc = d.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, d.id)
 
         q"""writer.Write((byte)${idx.toString});
            |$fenc""".stripMargin
@@ -345,10 +333,10 @@ class CSUEBACodecGenerator(
 
     val dec = d.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, d.id)
 
         q"""var marker = wire.ReadByte();
-           |$debug.Assert(marker == ${idx.toString});
+           |if (marker != ${idx.toString}) throw new $csArgumentException("Unexpected UEBA ADT branch marker: " + marker);
            |return DecodeBranch(ctx, wire);""".stripMargin
       case _ => fdec
     }
@@ -361,7 +349,7 @@ class CSUEBACodecGenerator(
        |
        |if (ctx.UseIndices)
        |{
-       |    $debug.Assert(indexCount == IndexElementsCount(ctx));
+       |    if (indexCount != IndexElementsCount(ctx)) throw new $csArgumentException("Unexpected UEBA index count: " + indexCount);
        |}
        |
        |return new $name(
@@ -371,14 +359,14 @@ class CSUEBACodecGenerator(
   }
 
   private def fieldsOf(d: Typedef.Dto) = {
-    d.fields.map {
-      f =>
+    layout.fields(d).map {
+      case UebaLayoutPlan.FieldLayout(f, length) =>
         val fieldRef = q"value.${escapeCsKeyword(f.name.name.capitalize)}"
         val enc      = mkEncoder(f.tpe, fieldRef, q"writer")
         val fakeEnc  = mkEncoder(f.tpe, fieldRef, q"fakeWriter")
         val dec      = mkDecoder(f.tpe, q"wire")
 
-        val w = domain.refMeta(f.tpe).len match {
+        val w = length match {
           case BinReprLen.Fixed(bytes) =>
             q"""// ${f.toString}
                |w.WriteIndexFixedLenField(fakeWriter, ${bytes.toString}, () =>
@@ -388,18 +376,7 @@ class CSUEBACodecGenerator(
              """.stripMargin
 
           case v: BinReprLen.Variable =>
-            val sanityChecks = v match {
-              case BinReprLen.Unknown() =>
-                q"$debug.Assert(length > 0, $$\"Got length={length}\");"
-
-              case BinReprLen.Alternatives(variants) =>
-                q"$debug.Assert(new $csSet<uint>() { ${variants.mkString(", ")} }.Contains(length), $$\"Got length={length}\");"
-              case BinReprLen.Range(min, max) =>
-                (
-                  Seq(q"$debug.Assert(length >= ${min.toString}, $$\"Got length={length}\");") ++
-                  max.toSeq.map(m => q"$debug.Assert(length <= ${m.toString}, $$\"Got length={length}\");")
-                ).joinCN()
-            }
+            val sanityChecks = lengthChecks(v)
 
             q"""// ${f.toString}
                |{
@@ -415,6 +392,14 @@ class CSUEBACodecGenerator(
         (enc, dec, w)
     }
   }
+
+  private def lengthChecks(length: BinReprLen): TextTree[CSValue] =
+    UebaLengthCheckRenderer.render[CSValue](
+      length,
+      equalTo = bytes => q"length == ${bytes.toString}",
+      oneOf   = bytes => q"new $csSet<uint>() { ${bytes.mkString(", ")} }.Contains(length)",
+      enforce = condition => q"""if (!($condition)) throw new $csArgumentException("Invalid UEBA field length: " + length);""",
+    )
 
   private def mkAnyDecoder(a: TypeRef.Any, wref: TextTree[CSValue]): TextTree[CSValue] = {
     val expectedHex = "0x%02x".format(AnyFieldPlan.forField(a, domain).kind & 0xFF)
