@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, escapeRustModuleName, escapeRustTypeName, toSnakeCaseRaw}
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, DomainProductTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -106,14 +106,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     p: CompilerProduct,
     translate: DomainMember.User => F[NEList[BaboonIssue], List[RsDefnTranslator.Output]],
   ): F[NEList[BaboonIssue], List[RsDefnTranslator.Output]] = {
-    if (target.output.products.contains(p)) {
-      F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-        case (_, defn: DomainMember.User) => translate(defn)
-        case _                            => F.pure(List.empty)
-      }
-    } else {
-      F.pure(List.empty)
-    }
+    DomainProductTranslator.translate(domain, target.output.products, p, translate)
   }
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[RsDefnTranslator.Output]] = {
@@ -230,26 +223,26 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         val types                     = collectTypes(domain)
         val (jsonFn, binFn, metaName) = factoryNames(domain)
 
-        val fwdByTypeId = lineage.evolution.typesForwardReadable(domain.version).map { case (tid, fr) => (tid.toString, fr) }
+        val metadata    = EvolutionMetadataPlan(lineage.evolution, domain.version)
+        val fwdByTypeId = metadata.forwardReadable.map { case EvolutionMetadataPlan.ForwardReadable(tid, readers) => (tid.toString, readers) }.toMap
         def fwdPairs(typeId: String): String = {
           fwdByTypeId
-            .get(typeId).toList.flatMap(_.readable.toList).map {
-              case (v, tier) => s"""("${v.v.toString}".to_string(), "${tier.wireName}".to_string())"""
+            .get(typeId).toList.flatten.map {
+              case EvolutionMetadataPlan.ReaderVersion(v, tier) => s"""("$v".to_string(), "$tier".to_string())"""
             }.mkString(", ")
         }
-        val minReadersByTypeId = lineage.evolution
-          .typesForwardReadable(domain.version).keys.map {
-            tid => (tid.toString, lineage.evolution.minReaders(domain.version, tid))
-          }.toMap
+        val minReadersByTypeId = metadata.forwardReadable.map {
+          entry => (entry.typeId.toString, lineage.evolution.minReaders(domain.version, entry.typeId))
+        }.toMap
         def minReaderPairs(typeId: String): String = {
           minReadersByTypeId
             .get(typeId).toList.flatMap(_.toList.sortBy(_._1.weight)).map {
               case (tier, v) => s"""("${tier.wireName}".to_string(), "${v.v.toString}".to_string())"""
             }.mkString(", ")
         }
-        val sameInByTypeId = lineage.evolution.typesUnchangedSince(domain.version).map {
-          case (tid, u) => (tid.toString, u.sameIn.toList.map(_.v.toString))
-        }
+        val sameInByTypeId = metadata.sameIn.map {
+          case EvolutionMetadataPlan.SameIn(tid, versions) => (tid.toString, versions)
+        }.toMap
 
         val perType: List[TextTree[RsValue]] = types.map {
           case (fullPath, dynBase, typeId, _) =>

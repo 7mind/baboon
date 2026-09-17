@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.kotlin
 
 import io.septimalmind.baboon.CompilerTarget.KtTarget
-import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceResultResolver}
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceMethodPlan, ServiceResultResolver}
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
@@ -51,6 +51,9 @@ object KtServiceWiringTranslator {
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "kotlin", target.language.serviceResult, target.language.pragmas)
+
+    private def methodPlan(method: Typedef.MethodDef): ServiceMethodPlan[TextTree[KtValue]] =
+      new ServiceMethodPlan(method, trans.asKtRef(_, domain, evo), resolved, KtTypeTranslator.escapeKtKeyword(method.name.name))
 
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "kotlin", target.language.serviceContext, target.language.pragmas)
@@ -365,7 +368,7 @@ object KtServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val plan     = new KtServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val encodeOutput = m.out match {
@@ -407,7 +410,7 @@ object KtServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val plan     = new KtServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
           val encodeOutput = m.out match {
@@ -587,7 +590,7 @@ object KtServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val plan     = new KtServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val inRef    = plan.input
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
@@ -696,7 +699,7 @@ object KtServiceWiringTranslator {
       inRef: TextTree[KtValue],
       decodeIn: TextTree[KtValue],
     ): TextTree[KtValue] = {
-      val plan       = new KtServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved)
+      val plan       = methodPlan(m)
       val hasErrType = plan.hasError
 
       val decodeStep =
@@ -773,7 +776,7 @@ object KtServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val plan     = new KtServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val inRef    = plan.input
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
@@ -878,7 +881,7 @@ object KtServiceWiringTranslator {
       inRef: TextTree[KtValue],
       decodeIn: TextTree[KtValue],
     ): TextTree[KtValue] = {
-      val plan       = new KtServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved)
+      val plan       = methodPlan(m)
       val hasErrType = plan.hasError
 
       val decodeStep =
@@ -962,7 +965,7 @@ object KtServiceWiringTranslator {
 
           val clientMethods = service.methods.flatMap {
             m =>
-              val plan       = new KtServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved)
+              val plan       = methodPlan(m)
               val inTypeRef  = plan.input
               val outTypeRef = plan.output
               val retType    = outTypeRef.getOrElse(q"Unit")

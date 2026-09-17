@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.scl.ScTypes.*
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources, scl}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources, scl}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -162,24 +162,17 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     val basename = scFiles.basename(domain, lineage.evolution)
     val pkg      = trans.toScPkg(domain.id, domain.version, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q"""unmodified.put("${tid.toString}", $scList(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}))"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q"""unmodified.put("${tid.toString}", $scList(${versions.map(s => q"\"$s\"").join(", ")}))"""
+    }
 
-    val forwardEntries = lineage.evolution
-      .typesForwardReadable(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, fr) =>
-          val pairs = fr.readable.toList.map { case (v, tier) => s""""${v.v.toString}" -> "${tier.wireName}"""" }.mkString(", ")
-          q"""forwardReadable.put("${tid.toString}", ${ScTypes.scMap.fullyQualified}($pairs))"""
-      }
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s""""$v" -> "$tier"""" }.mkString(", ")
+        q"""forwardReadable.put("${tid.toString}", ${ScTypes.scMap.fullyQualified}($pairs))"""
+    }
 
     val metaTree =
       q"""object BaboonMetadata extends $baboonMeta {

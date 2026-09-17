@@ -6,7 +6,7 @@ import io.septimalmind.baboon.CompilerTarget.KtTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
 import io.septimalmind.baboon.translator.kotlin.KtValue.KtPackageId
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -180,24 +180,17 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
     val basename = ktFiles.basename(domain, lineage.evolution)
     val pkg      = trans.toKtPkg(domain.id, domain.version, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q"""unmodified["${tid.toString}"] = listOf(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")})"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q"""unmodified["${tid.toString}"] = listOf(${versions.map(s => q"\"$s\"").join(", ")})"""
+    }
 
-    val forwardEntries = lineage.evolution
-      .typesForwardReadable(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, fr) =>
-          val pairs = fr.readable.toList.map { case (v, tier) => s""""${v.v.toString}" to "${tier.wireName}"""" }.mkString(", ")
-          q"""forwardReadable["${tid.toString}"] = mapOf($pairs)"""
-      }
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s""""$v" to "$tier"""" }.mkString(", ")
+        q"""forwardReadable["${tid.toString}"] = mapOf($pairs)"""
+    }
 
     val metaTree =
       q"""object BaboonMetadata : $baboonMeta {

@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.kotlin
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.KtTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.IdentifierFieldKind
+import io.septimalmind.baboon.translator.{IdentifierFieldKind, ServiceMethodPlan}
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.kotlin.KtValue.KtType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -433,7 +433,7 @@ object KtDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val plan = new KtServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved)
+              val plan = new ServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved, KtTypeTranslator.escapeKtKeyword(m.name.name))
               val in   = plan.input
               val out  = plan.output
               val err  = plan.error

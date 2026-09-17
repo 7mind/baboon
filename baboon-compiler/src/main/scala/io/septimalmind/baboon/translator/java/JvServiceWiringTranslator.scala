@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.java
 
 import io.septimalmind.baboon.CompilerTarget.JvTarget
-import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceResultResolver}
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceMethodPlan, ServiceResultResolver}
 import io.septimalmind.baboon.translator.java.JvTypes.*
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
@@ -24,6 +24,9 @@ object JvServiceWiringTranslator {
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "java", target.language.serviceResult, target.language.pragmas)
+
+    private def methodPlan(method: Typedef.MethodDef): ServiceMethodPlan[TextTree[JvValue]] =
+      new ServiceMethodPlan(method, trans.asJvRef(_, domain, evo), resolved, JvTypeTranslator.escapeJvKeyword(method.name.name))
 
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "java", target.language.serviceContext, target.language.pragmas)
@@ -179,7 +182,7 @@ object JvServiceWiringTranslator {
 
           val clientMethods = service.methods.flatMap {
             m =>
-              val plan  = new JvServiceMethodPlan(m, tpe => trans.asJvRef(tpe, domain, evo), resolved)
+              val plan  = methodPlan(m)
               val inRef = plan.input
 
               val uebaMethod = if (hasUeba) Some(generateClientUebaMethod(svcName, plan, inRef)) else None
@@ -277,7 +280,7 @@ object JvServiceWiringTranslator {
 
     private def generateClientUebaMethod(
       svcName: String,
-      plan: JvServiceMethodPlan,
+      plan: ServiceMethodPlan[TextTree[JvValue]],
       inRef: TextTree[JvValue],
     ): TextTree[JvValue] = {
       val m          = plan.method
@@ -335,7 +338,7 @@ object JvServiceWiringTranslator {
 
     private def generateClientJsonMethod(
       svcName: String,
-      plan: JvServiceMethodPlan,
+      plan: ServiceMethodPlan[TextTree[JvValue]],
       inRef: TextTree[JvValue],
     ): TextTree[JvValue] = {
       val m          = plan.method
@@ -677,7 +680,7 @@ object JvServiceWiringTranslator {
 
     private def ct(error: String, success: String): String = renderContainer(error, success)
 
-    private def synchronousInvocation(plan: JvServiceMethodPlan): TextTree[JvValue] = {
+    private def synchronousInvocation(plan: ServiceMethodPlan[TextTree[JvValue]]): TextTree[JvValue] = {
       val m = plan.method
       if (plan.hasError) {
         q"""try {
@@ -709,7 +712,7 @@ object JvServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val plan     = new JvServiceMethodPlan(m, tpe => trans.asJvRef(tpe, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val inRef    = plan.input
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
@@ -786,7 +789,7 @@ object JvServiceWiringTranslator {
     // CompletableFuture-around-F double-wrap. Decode failures short-circuit with
     // a single completedFuture(rt.fail(…)).
     private def generateErrorsJsonCaseAsync(
-      plan: JvServiceMethodPlan,
+      plan: ServiceMethodPlan[TextTree[JvValue]],
       inRef: TextTree[JvValue],
       decodeIn: TextTree[JvValue],
     ): TextTree[JvValue] = {
@@ -840,7 +843,7 @@ object JvServiceWiringTranslator {
     }
 
     private def asynchronousInvocation(
-      plan: JvServiceMethodPlan,
+      plan: ServiceMethodPlan[TextTree[JvValue]],
       bindOutput: TextTree[JvValue],
       encode: TextTree[JvValue],
     ): TextTree[JvValue] = {
@@ -874,7 +877,7 @@ object JvServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val plan     = new JvServiceMethodPlan(m, tpe => trans.asJvRef(tpe, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val inRef    = plan.input
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
@@ -948,7 +951,7 @@ object JvServiceWiringTranslator {
     // Async errors-mode UEBA case (one `switch` arm). See
     // [[generateErrorsJsonCaseAsync]] for the chain-then-thread rationale.
     private def generateErrorsUebaCaseAsync(
-      plan: JvServiceMethodPlan,
+      plan: ServiceMethodPlan[TextTree[JvValue]],
       inRef: TextTree[JvValue],
       decodeIn: TextTree[JvValue],
     ): TextTree[JvValue] = {

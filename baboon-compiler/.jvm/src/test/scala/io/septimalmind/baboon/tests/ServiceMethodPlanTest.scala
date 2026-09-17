@@ -1,10 +1,9 @@
 package io.septimalmind.baboon.tests
 
-import io.septimalmind.baboon.translator.ResolvedServiceResult
-import io.septimalmind.baboon.translator.csharp.CSServiceMethodPlan
-import io.septimalmind.baboon.translator.java.JvServiceMethodPlan
-import io.septimalmind.baboon.translator.kotlin.KtServiceMethodPlan
-import io.septimalmind.baboon.translator.scl.ScServiceMethodPlan
+import io.septimalmind.baboon.translator.{ResolvedServiceResult, ServiceMethodPlan}
+import io.septimalmind.baboon.translator.csharp.CSTypes
+import io.septimalmind.baboon.translator.java.JvTypeTranslator
+import io.septimalmind.baboon.translator.kotlin.KtTypeTranslator
 import io.septimalmind.baboon.typer.model.{TypeId, TypeRef, Typedef}
 import io.septimalmind.baboon.typer.model.Typedef.MethodName
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -19,10 +18,11 @@ class ServiceMethodPlanTest extends AnyFlatSpec with Matchers {
 
   "Kotlin method facts" should "retain keyword escaping and defer type resolution until its output is used" in {
     var resolvedTypes = List.empty[TypeRef]
-    val plan = new KtServiceMethodPlan(
+    val plan = new ServiceMethodPlan(
       method,
       tpe => { resolvedTypes = resolvedTypes :+ tpe; q"Type" },
       ResolvedServiceResult(noErrors = false, Some("Either"), Some("<$error, $success>"), None),
+      KtTypeTranslator.escapeKtKeyword(method.name.name),
     )
     plan.methodName shouldBe "`when`"
     plan.hasError shouldBe true
@@ -38,10 +38,11 @@ class ServiceMethodPlanTest extends AnyFlatSpec with Matchers {
 
   "Scala method facts" should "retain raw method spelling and configured error suppression" in {
     var resolvedTypes = List.empty[TypeRef]
-    val plan = new ScServiceMethodPlan(
+    val plan = new ServiceMethodPlan(
       method,
       tpe => { resolvedTypes = resolvedTypes :+ tpe; q"Type" },
       ResolvedServiceResult(noErrors = true, Some("Either"), Some("[$error, $success]"), None),
+      method.name.name,
     )
     plan.methodName shouldBe "when"
     plan.hasError shouldBe false
@@ -54,8 +55,8 @@ class ServiceMethodPlanTest extends AnyFlatSpec with Matchers {
   it should "keep absent output and error types unresolved" in {
     val empty  = method.copy(out = None, err = None)
     val result = ResolvedServiceResult(noErrors = false, Some("Either"), Some("[$error, $success]"), None)
-    val sc     = new ScServiceMethodPlan(empty, _ => throw new AssertionError("unused type resolved"), result)
-    val kt     = new KtServiceMethodPlan(empty, _ => throw new AssertionError("unused type resolved"), result)
+    val sc     = new ServiceMethodPlan(empty, _ => throw new AssertionError("unused type resolved"), result, empty.name.name)
+    val kt     = new ServiceMethodPlan(empty, _ => throw new AssertionError("unused type resolved"), result, KtTypeTranslator.escapeKtKeyword(empty.name.name))
     sc.output shouldBe None
     sc.error shouldBe None
     sc.hasError shouldBe false
@@ -66,12 +67,13 @@ class ServiceMethodPlanTest extends AnyFlatSpec with Matchers {
 
   "Java method facts" should "escape declarations and resolve requested types once" in {
     var resolvedTypes = List.empty[TypeRef]
-    val plan = new JvServiceMethodPlan(
+    val plan = new ServiceMethodPlan(
       method.copy(name = MethodName("class")),
       tpe => { resolvedTypes = resolvedTypes :+ tpe; q"Type" },
       ResolvedServiceResult(noErrors = false, Some("Either"), Some("<$error, $success>"), None),
+      JvTypeTranslator.escapeJvKeyword("class"),
     )
-    plan.declarationName shouldBe "class_"
+    plan.methodName shouldBe "class_"
     plan.hasError shouldBe true
     plan.hasOutput shouldBe true
     resolvedTypes shouldBe Nil
@@ -84,10 +86,11 @@ class ServiceMethodPlanTest extends AnyFlatSpec with Matchers {
 
   "C# method facts" should "retain PascalCase and resolve each requested type once" in {
     var resolvedTypes = List.empty[TypeRef]
-    val plan = new CSServiceMethodPlan(
+    val plan = new ServiceMethodPlan(
       method,
       tpe => { resolvedTypes = resolvedTypes :+ tpe; q"Type" },
       ResolvedServiceResult(noErrors = false, Some("Either"), Some("<$error, $success>"), None),
+      CSTypes.escapeCsKeyword(method.name.name.capitalize),
     )
     plan.methodName shouldBe "When"
     plan.hasError shouldBe true

@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.JvTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.java.JvTypes.*
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, DomainProductTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, DomainProductTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -163,24 +163,17 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
     val basename = jvFiles.basename(domain, lineage.evolution)
     val pkg      = trans.toJvPkg(domain.id, domain.version, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q"""unmodified.put("${tid.toString}", $jvList.of(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}));"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q"""unmodified.put("${tid.toString}", $jvList.of(${versions.map(s => q"\"$s\"").join(", ")}));"""
+    }
 
-    val forwardEntries = lineage.evolution
-      .typesForwardReadable(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, fr) =>
-          val pairs = fr.readable.toList.map { case (v, tier) => s"""java.util.Map.entry("${v.v.toString}", "${tier.wireName}")""" }.mkString(", ")
-          q"""forwardReadable.put("${tid.toString}", $jvMap.ofEntries($pairs));"""
-      }
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s"""java.util.Map.entry("$v", "$tier")""" }.mkString(", ")
+        q"""forwardReadable.put("${tid.toString}", $jvMap.ofEntries($pairs));"""
+    }
 
     val metaTree =
       q"""public final class BaboonMetadata implements $baboonMeta {
