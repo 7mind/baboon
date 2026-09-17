@@ -249,11 +249,13 @@ class BaboonBinCodecIndexed(ABC):
         if is_indexed:
             left = self.index_elements_count(ctx)
             while left > 0:
-                offset = wire.read_u32()
-                length = wire.read_u32()
+                offset = wire.read_i32()
+                length = wire.read_i32()
 
-                assert length > 0, "Length must be positive"
-                assert offset >= prev_offset + prev_len, f"Offset violation: {offset} < {prev_offset + prev_len}"
+                if length <= 0:
+                    raise ValueError(f"Invalid UEBA index length: {length}")
+                if offset < prev_offset + prev_len:
+                    raise ValueError(f"Invalid UEBA index offset: {offset}")
 
                 if entries is not None:
                     entries.append(BaboonIndexEntry(offset=offset, length=length))

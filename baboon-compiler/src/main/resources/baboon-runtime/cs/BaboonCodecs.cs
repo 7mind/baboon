@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System;
 using System.Collections.Immutable;
-using System.Diagnostics;
 using Newtonsoft.Json.Linq;
 
 // ReSharper disable UnusedTypeParameter
@@ -218,8 +217,9 @@ namespace Baboon.Runtime.Shared
                 {
                     var offset = wire.ReadUInt32();
                     var len = wire.ReadUInt32();
-                    Debug.Assert(len > 0);
-                    Debug.Assert(offset >= prevoffset + prevlen);
+                    if (len == 0 || len > int.MaxValue) throw new InvalidDataException($"Invalid UEBA index length: {len}");
+                    if (offset > int.MaxValue || (ulong)offset < (ulong)prevoffset + prevlen)
+                        throw new InvalidDataException($"Invalid UEBA index offset: {offset}");
                     if (entries != null) entries.Add(new BaboonIndexEntry(offset, len));
                     count++;
                     left = (ushort) (left - 1);
@@ -233,24 +233,25 @@ namespace Baboon.Runtime.Shared
 
         void WriteIndexFixedLenField(BinaryWriter writer, int expected, Action doWrite)
         {
-            var before = (uint) writer.BaseStream.Position;
+            var before = writer.BaseStream.Position;
             doWrite();
-            var after = (uint) writer.BaseStream.Position;
+            var after = writer.BaseStream.Position;
             var length = after - before;
-            Debug.Assert(length == expected);
-            Debug.Assert(after >= before, $"Got after={after}, before={before}");
+            if (length != expected || after < before)
+                throw new InvalidDataException($"Invalid UEBA field length: {length}, expected {expected}");
         }
 
         uint WriteIndexVarLenField(BinaryWriter writer, BinaryWriter fakeWriter, Action doWrite)
         {
-            var before = (uint) fakeWriter.BaseStream.Position;
+            var before = fakeWriter.BaseStream.Position;
             doWrite();
-            var after = (uint) fakeWriter.BaseStream.Position;
+            var after = fakeWriter.BaseStream.Position;
             var length = after - before;
-            writer.Write(before);
-            writer.Write(length);
-            Debug.Assert(after >= before, $"Got after={after}, before={before}");
-            return length;
+            if (before < 0 || before > int.MaxValue || length <= 0 || length > int.MaxValue)
+                throw new InvalidDataException($"Invalid UEBA index entry: offset={before}, length={length}");
+            writer.Write((int)before);
+            writer.Write((int)length);
+            return (uint)length;
         }
     }
 

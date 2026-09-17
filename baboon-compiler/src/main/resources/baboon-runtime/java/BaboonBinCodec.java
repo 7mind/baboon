@@ -72,10 +72,14 @@ public interface BaboonBinCodec<T> extends BaboonCodecData {
         byte header = input.readByte();
         boolean hasIndex = (header & 1) != 0;
         int count = 0;
+        long previousEnd = 0;
         if (hasIndex) {
             for (int i = 0; i < expectedElements; i++) {
                 int offset = input.readInt();
                 int length = input.readInt();
+                if (length <= 0) throw new IllegalArgumentException("Invalid UEBA index length: " + length);
+                if (offset < previousEnd) throw new IllegalArgumentException("Invalid UEBA index offset: " + offset);
+                previousEnd = (long)offset + length;
                 if (index != null) index.add(new int[]{offset, length});
                 count++;
             }

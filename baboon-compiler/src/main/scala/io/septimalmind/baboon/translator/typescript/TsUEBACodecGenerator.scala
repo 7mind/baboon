@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.typescript
 
 import io.septimalmind.baboon.CompilerTarget.TsTarget
+import io.septimalmind.baboon.translator.{UebaLayoutPlan, UebaLengthCheckRenderer}
 import io.septimalmind.baboon.translator.typescript.TsTypes.*
 import io.septimalmind.baboon.translator.typescript.TsValue.TsType
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
@@ -17,6 +18,7 @@ class TsUEBACodecGenerator(
   tsFileTools: TsFileTools,
   tsDomainTreeTools: TsDomainTreeTools,
 ) extends TsCodecTranslator {
+  private val layout    = new UebaLayoutPlan(domain)
   private val scalarOps = new TsScalarCodecOps(target)
   override def translate(defn: DomainMember.User, tsRef: TsValue.TsType, srcRef: TsValue.TsType): Option[TextTree[TsValue]] = {
     if (isActive(defn.id)) {
@@ -110,19 +112,6 @@ class TsUEBACodecGenerator(
     )
   }
 
-  private def adtBranchIndex(adtId: TypeId.User, dtoId: TypeId): Int = {
-    domain.defs.meta
-      .nodes(adtId)
-      .asInstanceOf[DomainMember.User]
-      .defn
-      .asInstanceOf[Typedef.Adt]
-      .dataMembers(domain)
-      .zipWithIndex
-      .find(_._1 == dtoId)
-      .get
-      ._2
-  }
-
   private def genBranchDecoder(
     name: TsType,
     d: Typedef.Dto,
@@ -137,19 +126,13 @@ class TsUEBACodecGenerator(
   }
 
   private def dtoDec(dto: Typedef.Dto, name: TsType, fields: List[TextTree[TsValue]]): TextTree[TsValue] = {
-    val indexCount = dto.fields.count(f => domain.refMeta(f.tpe).len.isVariable)
+    val indexCount = layout.indexedFields(dto).size
     val ctorFields = dto.fields.map {
       f =>
         q"${typeTranslator.escapeTsKeyword(f.name.name)},"
     }
-    q"""const header = $tsBinTools.readByte(reader);
-       |const useIndices = header === 0x01;
-       |if (useIndices) {
-       |    for (let i = 0; i < ${indexCount.toString}; i++) {
-       |        $tsBinTools.readI32(reader);
-       |        $tsBinTools.readI32(reader);
-       |    }
-       |}
+    q"""const indexCount = $tsBinTools.consumeIndex(reader, ${indexCount.toString});
+       |if (ctx.useIndices && indexCount !== ${indexCount.toString}) throw new $tsBaboonDecoderFailure("Unexpected UEBA index count: " + indexCount);
        |${fields.joinN().trim}
        |return new $name(
        |    ${ctorFields.joinN().shift(4).trim}
@@ -157,31 +140,40 @@ class TsUEBACodecGenerator(
   }
 
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[TsValue], TextTree[TsValue], TextTree[TsValue])] = {
-    dto.fields.map {
-      field =>
+    layout.fields(dto).map {
+      case UebaLayoutPlan.FieldLayout(field, length) =>
         val fieldName        = field.name.name
         val escapedFieldName = typeTranslator.escapeTsKeyword(fieldName)
-        val isVariable       = domain.refMeta(field.tpe).len.isVariable
         // Property access uses the escaped getter name; local var name is also escaped to avoid
         // emitting `const default = ...` or `const class = ...` which are TS syntax errors.
         val enc     = mkEncoder(field.tpe, q"value.$escapedFieldName", "writer")
         val fakeEnc = mkEncoder(field.tpe, q"value.$escapedFieldName", "buffer")
         val dec     = q"const $escapedFieldName = ${mkDecoder(field.tpe)};"
-        val w = if (isVariable) {
-          q"""{
-             |    const before = buffer.position();
-             |    $tsBinTools.writeI32(writer, before);
-             |    $fakeEnc
-             |    const after = buffer.position();
-             |    $tsBinTools.writeI32(writer, after - before);
-             |}""".stripMargin
-        } else {
-          fakeEnc
-        }
+        val indexOffset =
+          if (length.isVariable) q"""if (before > ${UebaLayoutPlan.MaxIndexValue.toString}) throw new $tsBaboonEncoderFailure("UEBA index offset exceeds i32");
+                                    |$tsBinTools.writeI32(writer, before);""".stripMargin else q""
+        val indexLength = if (length.isVariable) q"$tsBinTools.writeI32(writer, length);" else q""
+        val w = q"""{
+                   |    const before = buffer.position();
+                   |    $indexOffset
+                   |    $fakeEnc
+                   |    const after = buffer.position();
+                   |    const length = after - before;
+                   |    ${lengthChecks(length).shift(4).trim}
+                   |    $indexLength
+                   |}""".stripMargin
 
         (enc, dec, w)
     }
   }
+
+  private def lengthChecks(length: BinReprLen): TextTree[TsValue] =
+    UebaLengthCheckRenderer.render[TsValue](
+      length,
+      equalTo = bytes => q"length === ${bytes.toString}",
+      oneOf   = bytes => q"[${bytes.mkString(", ")}].includes(length)",
+      enforce = condition => q"""if (!($condition)) throw new $tsBaboonEncoderFailure("Invalid UEBA field length: " + length);""",
+    )
 
   private def genDtoCodec(name: TsValue.TsType, dto: Typedef.Dto): (TextTree[TsValue], TextTree[TsValue]) = {
     val fields = fieldsOf(dto)
@@ -191,7 +183,7 @@ class TsUEBACodecGenerator(
     ).filterNot(_.isEmpty).joinN()
 
     val fenc =
-      q"""if (ctx === $tsBaboonCodecContext.Indexed) {
+      q"""if (ctx.useIndices) {
          |    $tsBinTools.writeByte(writer, 0x01);
          |    const buffer = new $tsBaboonBinWriter();
          |    ${fields.map(_._3).joinN().shift(4).trim}
@@ -204,7 +196,7 @@ class TsUEBACodecGenerator(
 
     val enc = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id, dto.id)
+        val idx = layout.adtBranchIndex(id, dto.id)
 
         q"""$tsBinTools.writeByte(writer, ${idx.toString})
            |$fenc""".stripMargin
@@ -213,9 +205,9 @@ class TsUEBACodecGenerator(
 
     val dec = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id, dto.id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""const marker = $tsBinTools.readByte(reader)
-           |if (marker !== ${idx.toString}) { throw new Error("Expected ADT branch marker ${idx.toString}, got " + marker); }
+           |if (marker !== ${idx.toString}) { throw new $tsBaboonDecoderFailure("Expected ADT branch marker ${idx.toString}, got " + marker); }
            |return this.decodeBranch(ctx, reader)""".stripMargin
       case _ => fdec
     }

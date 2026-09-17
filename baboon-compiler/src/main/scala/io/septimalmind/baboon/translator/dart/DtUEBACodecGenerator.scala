@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.dart
 
+import io.septimalmind.baboon.translator.{UebaLayoutPlan, UebaLengthCheckRenderer}
 import io.septimalmind.baboon.CompilerTarget.DtTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.dart.DtCodecTranslator.CodecMeta
@@ -19,6 +20,7 @@ class DtUEBACodecGenerator(
   evo: BaboonEvolution,
   dtDomainTreeTools: DtDomainTreeTools,
 ) extends DtCodecTranslator {
+  private val layout = new UebaLayoutPlan(domain)
 
   override def translate(
     defn: DomainMember.User,
@@ -77,7 +79,7 @@ class DtUEBACodecGenerator(
     val isEncoderEnabled = domain.version == evo.latest
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
-        val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
+        val varlens = layout.indexedFields(d)
         val comment = varlens.map(f => q"// ${f.toString}").joinN()
         q"""$comment
            |return ${varlens.size.toString};""".stripMargin
@@ -293,22 +295,9 @@ class DtUEBACodecGenerator(
 
     val fdec = dtoDec(name, fields.map(_._2))
 
-    def adtBranchIndex(id: TypeId.User) = {
-      domain.defs.meta
-        .nodes(id)
-        .asInstanceOf[DomainMember.User]
-        .defn
-        .asInstanceOf[Typedef.Adt]
-        .dataMembers(domain)
-        .zipWithIndex
-        .find(_._1 == dto.id)
-        .get
-        ._2
-    }
-
     val enc = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
 
         q"""writer.writeU8(${idx.toString});
            |$fenc""".stripMargin
@@ -317,9 +306,9 @@ class DtUEBACodecGenerator(
 
     val dec = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""final marker = reader.readU8();
-           |assert(marker == ${idx.toString});
+           |if (marker != ${idx.toString}) throw FormatException("Unexpected UEBA ADT branch marker: " + marker.toString());
            |return decodeBranch(ctx, reader);""".stripMargin
       case _ => fdec
     }
@@ -334,7 +323,7 @@ class DtUEBACodecGenerator(
     }
 
     q"""final index = readIndex(ctx, reader);
-       |if (ctx.useIndices) assert(index.length == indexElementsCount);
+       |if (ctx.useIndices && index.length != indexElementsCount) throw FormatException("Unexpected UEBA index count: " + index.length.toString());
        |return $name(
        |  $fieldAssignments
        |);
@@ -342,8 +331,8 @@ class DtUEBACodecGenerator(
   }
 
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[DtValue], TextTree[DtValue], TextTree[DtValue])] = {
-    dto.fields.map {
-      field =>
+    layout.fields(dto).map {
+      case UebaLayoutPlan.FieldLayout(field, length) =>
         val dartName   = trans.escapeDartKeyword(field.name.name)
         val fieldRef   = q"value.$dartName"
         val enc        = mkEncoder(field.tpe, fieldRef, q"writer", 0)
@@ -351,7 +340,7 @@ class DtUEBACodecGenerator(
         val decoder    = mkDecoder(field.tpe)
         val decodeTree = q"$dartName: $decoder"
 
-        val w = domain.refMeta(field.tpe).len match {
+        val w = length match {
           case BinReprLen.Fixed(bytes) =>
             q"""{
                |  // ${field.toString}
@@ -359,39 +348,36 @@ class DtUEBACodecGenerator(
                |  ${bufferEnc.shift(2).trim}
                |  final after = buffer.position;
                |  final length = after - before;
-               |  assert(length == ${bytes.toString});
+               |  ${lengthChecks(BinReprLen.Fixed(bytes)).shift(2).trim}
                |}""".stripMargin
 
           case v: BinReprLen.Variable =>
-            val sanityChecks = v match {
-              case BinReprLen.Unknown() =>
-                q"""assert(after >= before, 'Got after=$$after, before=$$before');"""
-
-              case BinReprLen.Alternatives(variants) =>
-                q"""assert({${variants.mkString(", ")}}.contains(length), 'Got length=$$length');"""
-
-              case BinReprLen.Range(min, max) =>
-                (
-                  Seq(q"""assert(length >= ${min.toString}, 'Got length=$$length');""") ++
-                  max.toSeq.map(m => q"""assert(length <= ${m.toString}, 'Got length=$$length');""")
-                ).joinN()
-            }
+            val sanityChecks = lengthChecks(v)
 
             q"""{
                |  // ${field.toString}
                |  final before = buffer.position;
+               |  if (before > ${UebaLayoutPlan.MaxIndexValue.toString}) throw FormatException("UEBA index offset exceeds i32");
                |  writer.writeI32(before);
                |  ${bufferEnc.shift(2).trim}
                |  final after = buffer.position;
                |  final length = after - before;
-               |  writer.writeI32(length);
                |  ${sanityChecks.shift(2).trim}
+               |  writer.writeI32(length);
                |}""".stripMargin
         }
 
         (enc, decodeTree, w)
     }
   }
+
+  private def lengthChecks(length: BinReprLen): TextTree[DtValue] =
+    UebaLengthCheckRenderer.render[DtValue](
+      length,
+      equalTo = bytes => q"length == ${bytes.toString}",
+      oneOf   = bytes => q"{${bytes.mkString(", ")}}.contains(length)",
+      enforce = condition => q"""if (!($condition)) throw FormatException("Invalid UEBA field length: " + length.toString());""",
+    )
 
   private def mkDecoder(tpe: TypeRef): TextTree[DtValue] = {
     tpe match {

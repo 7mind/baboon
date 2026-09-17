@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.rust
 
 import io.septimalmind.baboon.CompilerTarget.RsTarget
+import io.septimalmind.baboon.translator.{UebaLayoutPlan, UebaLengthCheckRenderer}
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustTypeName, toSnakeCase}
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
@@ -16,6 +17,7 @@ class RsUEBACodecGenerator(
   evo: BaboonEvolution,
   enquiries: BaboonEnquiries,
 ) extends RsCodecTranslator {
+  private val layout = new UebaLayoutPlan(domain)
 
   override def translate(defn: DomainMember.User, rsRef: RsValue.RsType, srcRef: RsValue.RsType): Option[TextTree[RsValue]] = {
     if (isActive(defn.id)) {
@@ -81,7 +83,7 @@ class RsUEBACodecGenerator(
   private def genIndexedImpl(defn: DomainMember.User, name: RsValue.RsType): TextTree[RsValue] = {
     val indexCount = defn.defn match {
       case d: Typedef.Dto =>
-        d.fields.count(f => domain.refMeta(f.tpe).len.isVariable)
+        layout.indexedFields(d).size
       case _: Typedef.Enum => 0
       case _: Typedef.Adt  => 0
       case _               => 0
@@ -94,18 +96,14 @@ class RsUEBACodecGenerator(
        |}""".stripMargin
   }
 
-  private def adtBranchIndex(adtId: TypeId.User, dtoId: TypeId): Int = {
-    domain.defs.meta
-      .nodes(adtId)
-      .asInstanceOf[DomainMember.User]
-      .defn
-      .asInstanceOf[Typedef.Adt]
-      .dataMembers(domain)
-      .zipWithIndex
-      .find(_._1 == dtoId)
-      .get
-      ._2
-  }
+  private def lengthChecks(length: BinReprLen): TextTree[RsValue] =
+    UebaLengthCheckRenderer.render[RsValue](
+      length,
+      equalTo = bytes => q"length == ${bytes.toString}",
+      oneOf   = bytes => q"[${bytes.mkString(", ")}].contains(&length)",
+      enforce =
+        condition => q"""if !($condition) { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid UEBA field length: {}", length))); }""",
+    )
 
   private def genDtoCodec(defn: DomainMember.User, name: RsValue.RsType, dto: Typedef.Dto): TextTree[RsValue] = {
     // Compact mode encoder: fields written directly to writer
@@ -122,25 +120,28 @@ class RsUEBACodecGenerator(
     // Indexed mode encoder: fields written to buffer, index entries to main writer
     // Uses &mut buffer directly (not a long-lived binding) so borrow is dropped between calls,
     // allowing buffer.len() reads for variable-length field index entries.
-    val indexedEncFields = dto.fields.map {
-      f =>
-        val fieldRef   = q"value.${toSnakeCase(f.name.name)}"
-        val actualRef  = if (needsBox(f.tpe)) q"(*$fieldRef)" else fieldRef
-        val fakeEnc    = mkEncoder(f.tpe, actualRef, q"&mut buffer")
-        val isVariable = domain.refMeta(f.tpe).len.isVariable
-
-        if (isVariable) {
-          q"""{
-             |    let before = buffer.len();
-             |    crate::baboon_runtime::bin_tools::write_i32(writer, before as i32)?;
-             |    $fakeEnc
-             |    let after = buffer.len();
-             |    let length = after - before;
-             |    crate::baboon_runtime::bin_tools::write_i32(writer, length as i32)?;
-             |}""".stripMargin
-        } else {
-          fakeEnc
-        }
+    val indexedEncFields = layout.fields(dto).map {
+      case UebaLayoutPlan.FieldLayout(f, length) =>
+        val fieldRef  = q"value.${toSnakeCase(f.name.name)}"
+        val actualRef = if (needsBox(f.tpe)) q"(*$fieldRef)" else fieldRef
+        val fakeEnc   = mkEncoder(f.tpe, actualRef, q"&mut buffer")
+        val indexOffset =
+          if (length.isVariable)
+            q"crate::baboon_runtime::bin_tools::write_i32(writer, i32::try_from(before).map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?)?;"
+          else q""
+        val indexLength =
+          if (length.isVariable)
+            q"crate::baboon_runtime::bin_tools::write_i32(writer, i32::try_from(length).map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?)?;"
+          else q""
+        q"""{
+           |    let before = buffer.len();
+           |    $indexOffset
+           |    $fakeEnc
+           |    let after = buffer.len();
+           |    let length = after - before;
+           |    ${lengthChecks(length).shift(4).trim}
+           |    $indexLength
+           |}""".stripMargin
     }
 
     val decFields = dto.fields.map {
@@ -162,7 +163,7 @@ class RsUEBACodecGenerator(
 
     val encPrefix = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id, dto.id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         Some(q"crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?;")
       case _ => None
     }
@@ -179,7 +180,7 @@ class RsUEBACodecGenerator(
              |        use crate::baboon_runtime::BaboonBinDecode;
              |        let (_header, index) = <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::read_index(ctx, reader)?;
              |        if ctx.use_indices() {
-             |            assert_eq!(index.len(), <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::index_elements_count(ctx) as usize);
+             |            if index.len() != <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::index_elements_count(ctx) as usize { return Err("Unexpected UEBA index count".into()); }
              |        }
              |        ${decFields.joinN().shift(8).trim}
              |        Ok(${name.asName} {
@@ -193,14 +194,14 @@ class RsUEBACodecGenerator(
 
     val decBody = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id, dto.id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""let marker = crate::baboon_runtime::bin_tools::read_byte(reader)?;
-           |assert_eq!(marker, ${idx.toString}, "Expected ADT branch marker ${idx.toString}, got {}", marker);
+           |if marker != ${idx.toString} { return Err(format!("Unexpected UEBA ADT branch marker: {}", marker).into()); }
            |Self::decode_ueba_branch(ctx, reader)""".stripMargin
       case _ =>
         q"""let (_header, index) = <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::read_index(ctx, reader)?;
            |if ctx.use_indices() {
-           |    assert_eq!(index.len(), <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::index_elements_count(ctx) as usize);
+           |    if index.len() != <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::index_elements_count(ctx) as usize { return Err("Unexpected UEBA index count".into()); }
            |}
            |${decFields.joinN().shift(0).trim}
            |Ok(${name.asName} {

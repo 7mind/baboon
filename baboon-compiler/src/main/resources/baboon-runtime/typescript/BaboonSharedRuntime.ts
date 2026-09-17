@@ -431,6 +431,20 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 export class BinTools {
+    static consumeIndex(reader: BaboonBinReader, expectedElements: number): number {
+        const header = reader.readByte();
+        if ((header & 1) === 0) return 0;
+        let previousEnd = 0;
+        for (let i = 0; i < expectedElements; i++) {
+            const offset = reader.readI32();
+            const length = reader.readI32();
+            if (length <= 0) throw new BaboonDecoderFailure("Invalid UEBA index length: " + length);
+            if (offset < previousEnd) throw new BaboonDecoderFailure("Invalid UEBA index offset: " + offset);
+            previousEnd = offset + length;
+        }
+        return expectedElements;
+    }
+
     // --- Writers ---
 
     static writeBool(writer: BaboonBinWriter, value: boolean): void {

@@ -283,28 +283,34 @@ public struct BaboonIndexEntry {
 
 extension BaboonBinCodecIndexed {
     public func consumeIndex(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> Int {
-        let header = reader.readU8()
-        if header & 1 == 0 { return 0 }
-        let count = indexElementsCount
-        for _ in 0..<count {
-            _ = reader.readI32()
-            _ = reader.readI32()
-        }
-        return count
+        try readIndexEntries(reader) { _, _ in }
     }
 
     public func readIndex(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> [BaboonIndexEntry] {
-        let header = reader.readU8()
-        let hasIndex = (header & 1) != 0
-        if !hasIndex { return [] }
-        let count = indexElementsCount
         var entries: [BaboonIndexEntry] = []
-        for _ in 0..<count {
-            let offset = reader.readI32()
-            let length = reader.readI32()
+        _ = try readIndexEntries(reader) { offset, length in
             entries.append(BaboonIndexEntry(offset: offset, length: length))
         }
         return entries
+    }
+
+    private func readIndexEntries(_ reader: BaboonBinReader, _ consume: (Int32, Int32) -> Void) throws -> Int {
+        guard reader.remaining >= 1 else { throw BaboonCodecError.truncated("Missing UEBA index header") }
+        let header = reader.readU8()
+        if header & 1 == 0 { return 0 }
+        let count = indexElementsCount
+        let indexEntryBytes = 2 * MemoryLayout<Int32>.size
+        var previousEnd: Int64 = 0
+        for _ in 0..<count {
+            guard reader.remaining >= indexEntryBytes else { throw BaboonCodecError.truncated("Truncated UEBA index entry") }
+            let offset = reader.readI32()
+            let length = reader.readI32()
+            guard length > 0 else { throw BaboonCodecError.invalidInput("Invalid UEBA index length: \(length)") }
+            guard Int64(offset) >= previousEnd else { throw BaboonCodecError.invalidInput("Invalid UEBA index offset: \(offset)") }
+            previousEnd = Int64(offset) + Int64(length)
+            consume(offset, length)
+        }
+        return count
     }
 }
 
@@ -529,6 +535,7 @@ public class BaboonBinWriter {
 public class BaboonBinReader {
     private let data: Data
     private var pos: Int = 0
+    fileprivate var remaining: Int { data.count - pos }
 
     public init(_ data: Data) {
         self.data = data
