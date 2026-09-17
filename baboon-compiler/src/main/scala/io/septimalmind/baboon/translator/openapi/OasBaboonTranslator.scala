@@ -1,5 +1,7 @@
 package io.septimalmind.baboon.translator.openapi
 
+import io.circe.Json
+import io.septimalmind.baboon.translator.schema.SchemaReferences
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.OasTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
@@ -93,11 +95,7 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
       return List.empty
     }
 
-    val pkg                = domain.id
-    val ver                = domain.version
-    val foreignResolutions = typeTranslator.foreignTypeResolution(domain)
-    val enumKeys           = typeTranslator.enumKeysOf(domain)
-
+    val references = SchemaReferences.prepare(domain)
     val members = domain.defs.meta.nodes.values.collect {
       case u: DomainMember.User => u
     }.toList.sortBy(_.id.toString)
@@ -105,168 +103,93 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
     val schemas = members.flatMap {
       m =>
         m.defn match {
-          case _: Typedef.NonDataTypedef                       => None
-          case f: Typedef.Foreign if f.runtimeMapping.nonEmpty => None
-          case f: Typedef.Foreign                              => Some(renderForeignSchema(f))
-          case _ if m.ownedByAdt                               => None
-          case defn                                            => Some(renderTypedef(defn, m.docs, domain, foreignResolutions, enumKeys))
+          case _: Typedef.NonDataTypedef                       => Nil
+          case f: Typedef.Foreign if f.runtimeMapping.nonEmpty => Nil
+          case f: Typedef.Foreign =>
+            List(
+              typeTranslator.schemaName(f.id) -> Json.obj(
+                "type"        -> Json.fromString("object"),
+                "description" -> Json.fromString(s"Foreign type: ${typeTranslator.schemaName(f.id)}"),
+              )
+            )
+          case _ if m.ownedByAdt => Nil
+          case defn              => renderTypedef(defn, m.docs, domain, references)
         }
     }
 
-    val schemasJson = schemas.mkString(",\n")
-
-    val esc = typeTranslator.escapeJson _
-    val doc =
-      s"""{
-         |  "openapi": "3.1.0",
-         |  "info": {
-         |    "title": "${esc(pkg.toString)}",
-         |    "version": "${esc(ver.toString)}"
-         |  },
-         |  "paths": {},
-         |  "components": {
-         |    "schemas": {
-         |$schemasJson
-         |    }
-         |  }
-         |}
-         |""".stripMargin
-
-    val versionStr = ver.toString.replace(".", "_")
-    val pkgStr     = pkg.path.toList.map(typeTranslator.sanitize).mkString("_")
-    val filename   = s"$pkgStr/v$versionStr/openapi.json"
-
-    List(filename -> OutputFile(doc, CompilerProduct.Definition))
+    val doc = Json.obj(
+      "openapi"    -> Json.fromString("3.1.0"),
+      "info"       -> Json.obj("title" -> Json.fromString(domain.id.toString), "version" -> Json.fromString(domain.version.toString)),
+      "paths"      -> Json.obj(),
+      "components" -> Json.obj("schemas" -> Json.obj(schemas*)),
+    )
+    val versionStr = domain.version.toString.replace(".", "_")
+    val pkgStr     = domain.id.path.toList.map(typeTranslator.sanitize).mkString("_")
+    List(s"$pkgStr/v$versionStr/openapi.json" -> OutputFile(doc.spaces2 + "\n", CompilerProduct.Definition))
   }
 
-  private def renderTypedef(
-    defn: Typedef.User,
-    docs: Docs,
-    domain: Domain,
-    foreignResolutions: Map[TypeId.User, Option[TypeRef]],
-    enumKeys: Set[TypeId.User],
-  ): String = {
+  private def renderTypedef(defn: Typedef.User, docs: Docs, domain: Domain, references: SchemaReferences): List[(String, Json)] = {
     defn match {
-      case dto: Typedef.Dto => renderDto(dto, docs, foreignResolutions, enumKeys)
-      case e: Typedef.Enum  => renderEnum(e, docs)
-      case adt: Typedef.Adt => renderAdt(adt, docs, domain, foreignResolutions, enumKeys)
+      case dto: Typedef.Dto => List(typeTranslator.schemaName(dto.id) -> renderDto(dto, docs, references))
+      case e: Typedef.Enum  => List(typeTranslator.schemaName(e.id) -> renderEnum(e, docs))
+      case adt: Typedef.Adt => renderAdt(adt, docs, domain, references)
       case other            => throw new IllegalArgumentException(s"Unexpected typedef in OpenAPI renderTypedef: ${other.id}")
     }
   }
 
-  private def renderDto(dto: Typedef.Dto, docs: Docs, foreignResolutions: Map[TypeId.User, Option[TypeRef]], enumKeys: Set[TypeId.User]): String = {
-    val name        = typeTranslator.schemaName(dto.id)
-    val esc         = typeTranslator.escapeJson _
-    val descJson    = typeTranslator.renderOasDescription(docs).map(d => s""", "description": "${esc(d)}"""").getOrElse("")
+  private def described(schema: Json, docs: Docs): Json = {
+    typeTranslator.renderOasDescription(docs) match {
+      // Preserve the built-in envelope description's precedence over field docs.
+      case Some(description) if !schema.hcursor.downField("description").succeeded =>
+        schema.mapObject(_.add("description", Json.fromString(description)))
+      case _ => schema
+    }
+  }
 
-    if (dto.fields.isEmpty) {
-      s"""      "${esc(name)}": {"type": "object"$descJson}"""
-    } else {
-      val resolvedFields = dto.fields.map(f => f.copy(tpe = typeTranslator.resolveTypeRef(f.tpe, foreignResolutions)))
-
-      val requiredFields = resolvedFields.filterNot(f => isOptional(f.tpe))
-      val requiredJson =
-        if (requiredFields.isEmpty) ""
-        else {
-          val names = requiredFields.map(f => s""""${esc(f.name.name)}"""").mkString(", ")
-          s""", "required": [$names]"""
-        }
-
-      val propsJson = resolvedFields.map {
+  private def renderDto(dto: Typedef.Dto, docs: Docs, references: SchemaReferences): Json = {
+    val base = described(Json.obj("type" -> Json.fromString("object")), docs)
+    if (dto.fields.isEmpty) base
+    else {
+      val fields   = dto.fields.map(f => f.copy(tpe = references.resolve(f.tpe)))
+      val required = fields.filterNot(f => isOptional(f.tpe)).map(f => Json.fromString(f.name.name))
+      val properties = fields.map {
         f =>
-          val schema    = typeTranslator.typeRefSchema(f.tpe, enumKeys)
-          val fieldDesc = typeTranslator.renderOasDescription(f.docs)
-          fieldDesc match {
-            case Some(d) =>
-              // Inject "description" into the field's schema object.
-              // The schema is a JSON object string; insert the description key
-              // after the opening brace.
-              val descEntry = s""""description": "${esc(d)}", """
-              val augmented = schema match {
-                case s if s.startsWith("{") => "{" + descEntry + s.drop(1)
-                case s                      => s
-              }
-              s"""          "${esc(f.name.name)}": $augmented"""
-            case None =>
-              s"""          "${esc(f.name.name)}": $schema"""
-          }
-      }.mkString(",\n")
-
-      s"""      "${esc(name)}": {"type": "object"$descJson$requiredJson, "properties": {
-         |$propsJson
-         |        }}""".stripMargin
+          f.name.name -> described(typeTranslator.typeRefSchemaValue(f.tpe, references.enums.keySet), f.docs)
+      }
+      val withRequired = if (required.isEmpty) base else base.mapObject(_.add("required", Json.arr(required*)))
+      withRequired.mapObject(_.add("properties", Json.obj(properties*)))
     }
   }
 
-  private def renderEnum(e: Typedef.Enum, docs: Docs): String = {
-    val name     = typeTranslator.schemaName(e.id)
-    val esc      = typeTranslator.escapeJson _
-    val values   = e.members.toList.map(m => s""""${esc(m.name)}"""").mkString(", ")
-    val descJson = typeTranslator.renderOasDescription(docs).map(d => s""", "description": "${esc(d)}"""").getOrElse("")
-    s"""      "${esc(name)}": {"type": "string"$descJson, "enum": [$values]}"""
-  }
+  private def renderEnum(e: Typedef.Enum, docs: Docs): Json =
+    described(Json.obj("type" -> Json.fromString("string")), docs)
+      .mapObject(_.add("enum", Json.arr(e.members.toList.map(m => Json.fromString(m.name))*)))
 
-  private def renderAdt(
-    adt: Typedef.Adt,
-    docs: Docs,
-    domain: Domain,
-    foreignResolutions: Map[TypeId.User, Option[TypeRef]],
-    enumKeys: Set[TypeId.User],
-  ): String = {
+  private def renderAdt(adt: Typedef.Adt, docs: Docs, domain: Domain, references: SchemaReferences): List[(String, Json)] = {
     import Typedef.Adt.AdtSyntax
-    val name             = typeTranslator.schemaName(adt.id)
-    val esc              = typeTranslator.escapeJson _
-    val dataMembers      = adt.dataMembers(domain)
-    val branchShortNames = dataMembers.map(_.name.name).toList
-    val wrapperNote      = typeTranslator.adtWrapperDoc(branchShortNames)
-    val rawDesc          = typeTranslator.renderOasDescription(docs) match {
-      case Some(d) => s"$d\n\n$wrapperNote"
-      case None    => wrapperNote
-    }
-    val descJson         = s""", "description": "${esc(rawDesc)}""""
-
-    // Emit each branch schema inline, then the union
-    val branchSchemas = dataMembers.flatMap {
+    val dataMembers = adt.dataMembers(domain).toList
+    val wrapperNote = typeTranslator.adtWrapperDoc(dataMembers.map(_.name.name))
+    val description = typeTranslator.renderOasDescription(docs).map(d => s"$d\n\n$wrapperNote").getOrElse(wrapperNote)
+    val branches = dataMembers.flatMap {
       memberId =>
         domain.defs.meta.nodes.get(memberId).collect {
           case u: DomainMember.User =>
-            u.defn match {
-              case dto: Typedef.Dto => renderDto(dto, u.docs, foreignResolutions, enumKeys)
+            val schema = u.defn match {
+              case dto: Typedef.Dto => renderDto(dto, u.docs, references)
               case e: Typedef.Enum  => renderEnum(e, u.docs)
               case other            => throw new IllegalArgumentException(s"Unexpected ADT branch type in OpenAPI backend: ${other.id}")
             }
+            typeTranslator.schemaName(memberId) -> schema
         }
     }
-
-    val branchRefs = dataMembers.map {
-      memberId =>
-        val refName = typeTranslator.schemaName(memberId)
-        s"""{"$$ref": "#/components/schemas/${esc(refName)}"}"""
-    }
-
-    val refsJson  = branchRefs.mkString(", ")
-    val adtSchema = s"""      "${esc(name)}": {"oneOf": [$refsJson]$descJson}"""
-
-    if (branchSchemas.nonEmpty) {
-      val branchLines = branchSchemas.mkString(",\n")
-      s"""$branchLines,
-         |$adtSchema""".stripMargin
-    } else {
-      adtSchema
-    }
+    branches :+ (typeTranslator.schemaName(adt.id) -> Json.obj(
+      "oneOf"       -> Json.arr(dataMembers.map(typeTranslator.componentRef)*),
+      "description" -> Json.fromString(description),
+    ))
   }
 
-  private def renderForeignSchema(f: Typedef.Foreign): String = {
-    val name = typeTranslator.schemaName(f.id)
-    val esc  = typeTranslator.escapeJson _
-    s"""      "${esc(name)}": {"type": "object", "description": "Foreign type: ${esc(name)}"}"""
+  private def isOptional(ref: TypeRef): Boolean = ref match {
+    case TypeRef.Constructor(TypeId.Builtins.opt, _) => true
+    case _                                           => false
   }
-
-  private def isOptional(ref: TypeRef): Boolean = {
-    ref match {
-      case TypeRef.Constructor(TypeId.Builtins.opt, _) => true
-      case _                                           => false
-    }
-  }
-
 }

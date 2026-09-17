@@ -101,11 +101,9 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
             }
           }
           facade <- {
-            if (
-              target.language.generateDomainFacade &&
+            if (target.language.generateDomainFacade &&
               target.output.products.contains(CompilerProduct.Conversion) &&
-              domain.version == evo.latest
-            ) {
+              domain.version == evo.latest) {
               generateDomainFacade(domain, lineage)
             } else {
               F.pure(List.empty)
@@ -309,7 +307,7 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     val rendered = o.tree.mapRender {
       case t: DtValue.DtTypeName => trans.escapeDartKeyword(t.name)
       case t: DtValue.DtType if t.fq =>
-        fqPrefixMap.get(fqFileKey(t)) match {
+        fqPrefixMap.get(dtFileKey(t)) match {
           case Some(prefix) => s"$prefix.${trans.escapeDartKeyword(t.name)}"
           case None         => trans.escapeDartKeyword(t.name)
         }
@@ -336,20 +334,35 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def dtFileKey(t: DtValue.DtType): String = {
-    val fileName = t.importAs.getOrElse(trans.toSnakeCase(t.name))
-    s"${t.pkg.parts.toList.mkString("/")}/$fileName"
+  private case class LibraryRef(fileName: String, packageParts: List[String]) {
+    def physicalKey: String = s"${packageParts.mkString("/")}/$fileName"
   }
 
-  private def fqFileKey(t: DtValue.DtType): String = {
-    val fileName = t.importAs.getOrElse(trans.toSnakeCase(t.name))
-    s"${t.pkg.parts.toList.mkString("/")}/$fileName"
+  private case class ResolvedLibrary(uri: String, alias: Option[String]) {
+    def render: String = s"import '$uri'${alias.fold("")(a => s" as $a")};"
+  }
+
+  private def libraryRef(t: DtValue.DtType): LibraryRef =
+    LibraryRef(t.importAs.getOrElse(trans.toSnakeCase(t.name)), t.pkg.parts.toList)
+
+  private def dtFileKey(t: DtValue.DtType): String = libraryRef(t).physicalKey
+
+  private def runtimeLibrary(t: DtValue.DtType): Option[ResolvedLibrary] = {
+    val file = t.pkg match {
+      case p if p == baboonRuntimePkg      => Some("baboon_runtime")
+      case p if p == baboonAnyOpaquePkg    => Some("baboon_any_opaque")
+      case p if p == baboonCodecsFacadePkg => Some("baboon_codecs_facade")
+      case p if p == baboonFixturePkg      => Some("baboon_fixture")
+      case p if p == baboonIdReprPkg       => Some("baboon_identifier_repr")
+      case _                               => None
+    }
+    file.map(name => ResolvedLibrary(s"package:baboon_runtime/$name.dart", None))
   }
 
   private def buildFqPrefixMap(fqTypes: Seq[DtValue.DtType]): Map[String, String] = {
     fqTypes.map {
       t =>
-        val key        = fqFileKey(t)
+        val key        = dtFileKey(t)
         val fileName   = t.importAs.getOrElse(trans.toSnakeCase(t.name))
         val pkgParts   = t.pkg.parts.toList
         val versionIdx = pkgParts.indexWhere(p => p.startsWith("v") && p.length > 1 && p.lift(1).exists(_.isDigit))
@@ -371,26 +384,20 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     currentDir: String,
     fqPrefixMap: Map[String, String],
   ): Option[String] = {
+    val runtime = runtimeLibrary(t)
     if (t.pkg == dartCorePkg) {
       None // dart:core is implicitly imported
-    } else if (t.pkg == baboonRuntimePkg) {
-      Some("import 'package:baboon_runtime/baboon_runtime.dart';")
-    } else if (t.pkg == baboonAnyOpaquePkg) {
-      Some("import 'package:baboon_runtime/baboon_any_opaque.dart';")
-    } else if (t.pkg == baboonCodecsFacadePkg) {
-      Some("import 'package:baboon_runtime/baboon_codecs_facade.dart';")
-    } else if (t.pkg == baboonFixturePkg) {
-      Some("import 'package:baboon_runtime/baboon_fixture.dart';")
-    } else if (t.pkg == baboonIdReprPkg) {
-      Some("import 'package:baboon_runtime/baboon_identifier_repr.dart';")
+    } else if (runtime.isDefined) {
+      runtime.map(_.render)
     } else {
-      val fileName     = t.importAs.getOrElse(trans.toSnakeCase(t.name))
-      val typePath     = t.pkg.parts.toList.map(moduleSegmentToFilesystem).mkString("/")
+      val library      = libraryRef(t)
+      val fileName     = library.fileName
+      val typePath     = library.packageParts.map(moduleSegmentToFilesystem).mkString("/")
       val fullFilePath = s"$typePath/$fileName.dart"
       val relativePath = makeRelativePath(currentDir, fullFilePath)
-      val key          = fqFileKey(t)
+      val key          = dtFileKey(t)
       val prefix       = fqPrefixMap.getOrElse(key, "fq")
-      Some(s"import '$relativePath' as $prefix;")
+      Some(ResolvedLibrary(relativePath, Some(prefix)).render)
     }
   }
 
@@ -419,18 +426,11 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     currentFileName: String,
     filePrefixMap: Map[String, String],
   ): Option[String] = {
+    val runtime = runtimeLibrary(t)
     if (t.pkg == dartCorePkg) {
       None // dart:core is implicitly imported
-    } else if (t.pkg == baboonRuntimePkg) {
-      Some("import 'package:baboon_runtime/baboon_runtime.dart';")
-    } else if (t.pkg == baboonAnyOpaquePkg) {
-      Some("import 'package:baboon_runtime/baboon_any_opaque.dart';")
-    } else if (t.pkg == baboonCodecsFacadePkg) {
-      Some("import 'package:baboon_runtime/baboon_codecs_facade.dart';")
-    } else if (t.pkg == baboonFixturePkg) {
-      Some("import 'package:baboon_runtime/baboon_fixture.dart';")
-    } else if (t.pkg == baboonIdReprPkg) {
-      Some("import 'package:baboon_runtime/baboon_identifier_repr.dart';")
+    } else if (runtime.isDefined) {
+      runtime.map(_.render)
     } else if (t.pkg == dartTypedDataPkg) {
       Some("import 'dart:typed_data';")
     } else if (t.pkg == dartConvertPkg) {
@@ -438,19 +438,20 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     } else if (t.pkg == dartIoPkg) {
       Some("import 'dart:io';")
     } else {
-      val typePath    = t.pkg.parts.toList.mkString("/")
-      val fileName    = t.importAs.getOrElse(trans.toSnakeCase(t.name))
+      val library     = libraryRef(t)
+      val typePath    = library.packageParts.mkString("/")
+      val fileName    = library.fileName
       val currentPath = currentModule.parts.toList.mkString("/")
-      val asClause    = filePrefixMap.get(dtFileKey(t)).map(p => s" as $p").getOrElse("")
+      val alias       = filePrefixMap.get(library.physicalKey)
       if (typePath == currentPath) {
         if (fileName == currentFileName) {
           None // Skip self-import
         } else {
-          Some(s"import '$fileName.dart'$asClause;")
+          Some(ResolvedLibrary(s"$fileName.dart", alias).render)
         }
       } else {
         val relativePath = makeRelativePath(currentPath, s"$typePath/$fileName.dart")
-        Some(s"import '$relativePath'$asClause;")
+        Some(ResolvedLibrary(relativePath, alias).render)
       }
     }
   }

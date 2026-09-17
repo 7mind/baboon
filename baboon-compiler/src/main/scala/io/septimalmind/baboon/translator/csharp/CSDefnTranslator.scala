@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.IdentifierFieldKind
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
@@ -285,7 +286,7 @@ object CSDefnTranslator {
       */
     private def prependDocs(docs: Docs, tree: TextTree[CSValue]): TextTree[CSValue] = {
       val block = csTrees.renderDocs(docs, "")
-      if (block.isEmpty) tree else q"${block}$tree"
+      if (block.isEmpty) tree else q"$block$tree"
     }
 
     /** D38: prepend the type `<summary>` block followed by the `<param>` block as
@@ -295,7 +296,7 @@ object CSDefnTranslator {
     private def prependDocs(docs: Docs, paramDocs: String, tree: TextTree[CSValue]): TextTree[CSValue] = {
       val summaryBlock = csTrees.renderDocs(docs, "")
       val block        = summaryBlock + paramDocs
-      if (block.isEmpty) tree else q"${block}$tree"
+      if (block.isEmpty) tree else q"$block$tree"
     }
 
     private def makeRepr(defn: DomainMember.User, name: CSValue.CSType, isLatestVersion: Boolean): DefnRepr = {
@@ -506,21 +507,22 @@ object CSDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val out = m.out.map(r => trans.asCsRef(r, domain, evo))
-              val err = m.err.map(r => trans.asCsRef(r, domain, evo))
+              val plan = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+              val out  = plan.output
+              val err  = plan.error
               val csFqName: CSValue => String = {
                 case t: CSValue.CSType     => (t.pkg.parts :+ t.name).mkString(".")
                 case t: CSValue.CSTypeName => t.name
               }
-              val outStr   = out.map(_.mapRender(csFqName)).getOrElse("")
-              val errStr   = err.map(_.mapRender(csFqName))
-              val syncRet  = resolved.renderReturnType(outStr, errStr, "void")
+              val outStr  = out.map(_.mapRender(csFqName)).getOrElse("")
+              val errStr  = err.map(_.mapRender(csFqName))
+              val syncRet = resolved.renderReturnType(outStr, errStr, "void")
               val retStr =
                 if (target.language.asyncServices) {
                   if (syncRet == "void") "System.Threading.Tasks.Task"
                   else s"System.Threading.Tasks.Task<$syncRet>"
                 } else syncRet
-              val methodEx = q"""public $retStr ${escapeCsKeyword(m.name.name.capitalize)}($ctxParam${trans.asCsRef(m.sig, domain, evo)} arg);"""
+              val methodEx = q"""public $retStr ${plan.methodName}($ctxParam${plan.input} arg);"""
               prependDocs(m.docs, methodEx)
           }.join("\n")
 
@@ -593,7 +595,8 @@ object CSDefnTranslator {
       * service-method I/O types nest in `static partial class <Service> {
       * static partial class <Method> { … } }` (the interface-companion layout);
       * everything else lives in a flat namespace. Shared by the definition,
-      * fixture, and test emitters so all three agree on the type's location. */
+      * fixture, and test emitters so all three agree on the type's location.
+      */
     private def wrapInContainer(defn: DomainMember.User, srcRef: CSValue.CSType, tree: TextTree[CSValue]): TextTree[CSValue] = {
       trans.serviceMethodContainers(defn.id, domain, evo) match {
         case Some((nsPrefix, classes)) =>
@@ -613,7 +616,8 @@ object CSDefnTranslator {
       * `serviceMethodFixtureNs` namespace (NOT the static-class companion): the
       * fixture/test classes are siblings referencing the type by FQN, so the
       * separate test assembly compiles (no cross-assembly `partial`). Other
-      * types keep the fixture beside the type's own namespace. */
+      * types keep the fixture beside the type's own namespace.
+      */
     private def wrapFixtureNs(defn: DomainMember.User, srcRef: CSValue.CSType, tree: TextTree[CSValue]): TextTree[CSValue] = {
       trans.serviceMethodFixtureNs(defn.id, domain, evo) match {
         case Some(ns) => csTrees.inNs(ns, tree)
@@ -645,9 +649,9 @@ object CSDefnTranslator {
     ): List[TextTree[CSValue]] = {
       fields.map {
         f =>
-          val tpe      = trans.asCsRef(f.tpe, domain, evo)
-          val mname    = escapeCsKeyword(s"${f.name.name.capitalize}")
-          val fieldEx  = q"public $tpe $mname { get; }"
+          val tpe     = trans.asCsRef(f.tpe, domain, evo)
+          val mname   = escapeCsKeyword(s"${f.name.name.capitalize}")
+          val fieldEx = q"public $tpe $mname { get; }"
           prependDocs(f.docs, fieldEx)
       }
     }
@@ -719,49 +723,11 @@ object CSDefnTranslator {
     // Spec contract: docs/spec/identifier-repr.md. Mirrors ScDefnTranslator
     // section but uses C# stdlib + BaboonIdentifierRepr runtime helper.
 
-    private sealed trait IdentifierFieldKind
-    private object IdentifierFieldKind {
-      case object Bit extends IdentifierFieldKind
-      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
-      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong extends IdentifierFieldKind /* u64 */
-      case object Str extends IdentifierFieldKind
-      case object Uid extends IdentifierFieldKind
-      case object Tsu extends IdentifierFieldKind
-      case object Tso extends IdentifierFieldKind
-      case object Bytes extends IdentifierFieldKind
-      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
-    }
-
-    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
-      tpe match {
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          import TypeId.Builtins.*
-          b match {
-            case `bit`                         => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
-            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                         => IdentifierFieldKind.UnsignedLong
-            case `str`                         => IdentifierFieldKind.Str
-            case `uid`                         => IdentifierFieldKind.Uid
-            case `tsu`                         => IdentifierFieldKind.Tsu
-            case `tso`                         => IdentifierFieldKind.Tso
-            case `bytes`                       => IdentifierFieldKind.Bytes
-            case other =>
-              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
-          }
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          IdentifierFieldKind.NestedId(uid)
-        case other =>
-          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
-      }
-    }
-
     private def renderFieldValueExpr(csFieldName: String, kind: IdentifierFieldKind): TextTree[CSValue] = {
       kind match {
-        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.BitToString(this.$csFieldName)"
-        case IdentifierFieldKind.SignedInt        => q"this.$csFieldName.ToString($csInvariantCulture.InvariantCulture)"
-        case IdentifierFieldKind.UnsignedSmallInt =>
+        case IdentifierFieldKind.Bit                                        => q"$baboonIdRepr.BitToString(this.$csFieldName)"
+        case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong => q"this.$csFieldName.ToString($csInvariantCulture.InvariantCulture)"
+        case IdentifierFieldKind.UnsignedSmallInt                           =>
           // u08/u16/u32 already map to C# unsigned types; ToString(InvariantCulture) is
           // unsigned-correct unlike Java/Scala where the same value is signed.
           q"this.$csFieldName.ToString($csInvariantCulture.InvariantCulture)"
@@ -787,7 +753,7 @@ object CSDefnTranslator {
         f =>
           val srcFieldName = f.name.name
           val csFieldName  = escapeCsKeyword(srcFieldName.capitalize)
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val valueExpr    = renderFieldValueExpr(csFieldName, kind)
           // The repr field name is the source name per spec §2.1.
           q""""$srcFieldName:" + ($valueExpr)"""
@@ -873,7 +839,7 @@ object CSDefnTranslator {
           val rawVar       = s"${srcFieldName}_raw"
           val valVar       = s"${srcFieldName}_v"
           val isLast       = idx == dto.fields.length - 1
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val tpe          = trans.asCsRef(f.tpe, domain, evo)
 
           val parseHead =
@@ -891,7 +857,7 @@ object CSDefnTranslator {
                  |    if (__r is $either<string, bool>.Left __l) return $either.Left<string, $name>(__l.Value);
                  |    $valVar = (($either<string, bool>.Right)__r).Value;
                  |}""".stripMargin
-            case IdentifierFieldKind.SignedInt =>
+            case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong =>
               val rangeCheck = signedRangeCheck(f.tpe)
               val typeName   = signedTypeName(f.tpe)
               val cast       = signedNarrowCast(f.tpe)

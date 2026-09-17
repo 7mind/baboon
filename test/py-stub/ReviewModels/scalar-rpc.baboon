@@ -1,0 +1,18 @@
+model review.python.scalars
+version "1.0.0"
+
+root data ScalarValues {
+  blob: bytes
+  identifier: uid
+  amount: f128
+  timestamp: tsu
+  offset: tso
+}
+
+root service ScalarService {
+  def blob(bytes): bytes
+  def identifier(uid): uid
+  def amount(f128): f128
+  def timestamp(tsu): tsu
+  def offset(tso): tso
+}

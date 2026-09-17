@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.java
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.JvTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.IdentifierFieldKind
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.java.JvValue.JvType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -303,7 +304,7 @@ object JvDefnTranslator {
       */
     private def prependDocs(docs: Docs, tree: TextTree[JvValue]): TextTree[JvValue] = {
       val block = jvTrees.renderDocs(docs, "")
-      if (block.isEmpty) tree else q"${block}$tree"
+      if (block.isEmpty) tree else q"$block$tree"
     }
 
     /** PR-I.1b (M24 Phase 3.1) — emit a `<Foreign>_KeyCodec` extension hook for
@@ -594,17 +595,18 @@ object JvDefnTranslator {
       }
       val methods = service.methods.map {
         m =>
-          val in  = trans.asJvRef(m.sig, domain, evo)
-          val out = m.out.map(trans.asJvRef(_, domain, evo))
-          val err = m.err.map(trans.asJvRef(_, domain, evo))
+          val plan = new JvServiceMethodPlan(m, tpe => trans.asJvRef(tpe, domain, evo), resolved)
+          val in   = plan.input
+          val out  = plan.output
+          val err  = plan.error
           val jvFqName: JvValue => String = {
             case t: JvValue.JvType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
             case t: JvValue.JvTypeName => t.name
           }
-          val outStr     = out.map(_.mapRender(jvFqName)).getOrElse("void")
-          val errStr     = err.map(_.mapRender(jvFqName))
-          val retStr     = resolved.renderReturnType(outStr, errStr, "void")
-          val javaMethodName = JvTypeTranslator.escapeJvKeyword(m.name.name)
+          val outStr         = out.map(_.mapRender(jvFqName)).getOrElse("void")
+          val errStr         = err.map(_.mapRender(jvFqName))
+          val retStr         = resolved.renderReturnType(outStr, errStr, "void")
+          val javaMethodName = plan.declarationName
           val retTree: TextTree[JvValue] =
             if (target.language.asyncServices) {
               val inner = if (retStr == "void") "Void" else retStr
@@ -612,7 +614,7 @@ object JvDefnTranslator {
             } else {
               q"$retStr"
             }
-          val methodTree     = q"$retTree $javaMethodName($ctxParam$in arg);"
+          val methodTree = q"$retTree $javaMethodName($ctxParam$in arg);"
           prependDocs(m.docs, methodTree)
       }
       val typeParams = Seq(
@@ -631,17 +633,6 @@ object JvDefnTranslator {
         Nil,
         Nil,
       )
-    }
-
-    private def collectContractFieldNames(contracts: List[TypeId.User]): Set[String] = {
-      contracts.flatMap {
-        contractId =>
-          domain.defs.meta.nodes.get(contractId) match {
-            case Some(DomainMember.User(_, ct: Typedef.Contract, _, _)) =>
-              ct.fields.map(_.name.name) ++ collectContractFieldNames(ct.contracts)
-            case _ => Seq.empty
-          }
-      }.toSet
     }
 
     private def ownerSubdir(owner: Owner): String = owner match {
@@ -666,48 +657,10 @@ object JvDefnTranslator {
     // Spec contract: docs/spec/identifier-repr.md. Mirrors ScDefnTranslator
     // section but uses Java stdlib + BaboonIdentifierRepr runtime helper.
 
-    private sealed trait IdentifierFieldKind
-    private object IdentifierFieldKind {
-      case object Bit extends IdentifierFieldKind
-      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
-      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong extends IdentifierFieldKind /* u64 */
-      case object Str extends IdentifierFieldKind
-      case object Uid extends IdentifierFieldKind
-      case object Tsu extends IdentifierFieldKind
-      case object Tso extends IdentifierFieldKind
-      case object Bytes extends IdentifierFieldKind
-      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
-    }
-
-    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
-      tpe match {
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          import TypeId.Builtins.*
-          b match {
-            case `bit`                         => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
-            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                         => IdentifierFieldKind.UnsignedLong
-            case `str`                         => IdentifierFieldKind.Str
-            case `uid`                         => IdentifierFieldKind.Uid
-            case `tsu`                         => IdentifierFieldKind.Tsu
-            case `tso`                         => IdentifierFieldKind.Tso
-            case `bytes`                       => IdentifierFieldKind.Bytes
-            case other =>
-              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
-          }
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          IdentifierFieldKind.NestedId(uid)
-        case other =>
-          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
-      }
-    }
-
     private def renderFieldValueExpr(jvFieldName: String, kind: IdentifierFieldKind, f: Field): TextTree[JvValue] = {
       kind match {
-        case IdentifierFieldKind.Bit       => q"$baboonIdRepr.bitToString(this.$jvFieldName())"
-        case IdentifierFieldKind.SignedInt =>
+        case IdentifierFieldKind.Bit                                        => q"$baboonIdRepr.bitToString(this.$jvFieldName())"
+        case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong =>
           // Java's primitive toString is locale-independent for integers.
           q"$jvBoxedLong.toString(this.$jvFieldName())"
         case IdentifierFieldKind.UnsignedSmallInt =>
@@ -739,9 +692,9 @@ object JvDefnTranslator {
 
       val fieldExprs: List[TextTree[JvValue]] = dto.fields.map {
         f =>
-          val srcFieldName = f.name.name  // original model name (used in repr key)
+          val srcFieldName = f.name.name // original model name (used in repr key)
           val javaName     = JvTypeTranslator.escapeJvKeyword(srcFieldName) // Java accessor name
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val valueExpr    = renderFieldValueExpr(javaName, kind, f)
           // The repr field name is the source name per spec §2.1.
           q""""$srcFieldName:" + ($valueExpr)"""
@@ -824,7 +777,7 @@ object JvDefnTranslator {
           val rawVar       = s"${srcFieldName}_raw"
           val valVar       = s"${srcFieldName}_v"
           val isLast       = idx == dto.fields.length - 1
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val tpe          = trans.asJvRef(f.tpe, domain, evo)
 
           val parseHead =
@@ -842,7 +795,7 @@ object JvDefnTranslator {
                  |  if (__r instanceof $baboonEither.Left<String, Boolean> __l) return $baboonEither.left(__l.value());
                  |  $valVar = (($baboonEither.Right<String, Boolean>) __r).value();
                  |}""".stripMargin
-            case IdentifierFieldKind.SignedInt =>
+            case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong =>
               val rangeCheck = signedRangeCheck(f.tpe)
               val typeName   = signedTypeName(f.tpe)
               val cast       = signedNarrow(f.tpe)

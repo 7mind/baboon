@@ -193,9 +193,21 @@ namespace Baboon.Runtime.Shared
 
         List<BaboonIndexEntry> ReadIndex(BaboonCodecContext ctx, BinaryReader wire)
         {
+            var result = new List<BaboonIndexEntry>();
+            ReadIndexEntries(ctx, wire, result);
+            return result;
+        }
+
+        ushort ConsumeIndex(BaboonCodecContext ctx, BinaryReader wire)
+        {
+            return ReadIndexEntries(ctx, wire, null);
+        }
+
+        private ushort ReadIndexEntries(BaboonCodecContext ctx, BinaryReader wire, List<BaboonIndexEntry>? entries)
+        {
             var header = wire.ReadByte();
             var isIndexed = (header & 0b0000001) != 0;
-            var result = new List<BaboonIndexEntry>();
+            ushort count = 0;
             uint prevoffset = 0;
             uint prevlen = 0;
             // ReSharper disable once InvertIf
@@ -208,14 +220,15 @@ namespace Baboon.Runtime.Shared
                     var len = wire.ReadUInt32();
                     Debug.Assert(len > 0);
                     Debug.Assert(offset >= prevoffset + prevlen);
-                    result.Add(new BaboonIndexEntry(offset, len));
+                    if (entries != null) entries.Add(new BaboonIndexEntry(offset, len));
+                    count++;
                     left = (ushort) (left - 1);
                     prevoffset = offset;
                     prevlen = len;
                 }
             }
 
-            return result;
+            return count;
         }
 
         void WriteIndexFixedLenField(BinaryWriter writer, int expected, Action doWrite)

@@ -1,9 +1,10 @@
 package io.septimalmind.baboon.translator.rust
 
 import distage.Id
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustModuleName, escapeRustTypeName, toSnakeCase, toSnakeCaseFileName}
 import io.septimalmind.baboon.translator.rust.RsValue.RsCrateId
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 import izumi.functional.bio.{Error2, F}
@@ -26,8 +27,6 @@ object RsConversionTranslator {
 case class RsRenderedConversion(
   fname: String,
   conv: TextTree[RsValue],
-  reg: Option[TextTree[RsValue]],
-  missing: Option[TextTree[RsValue]],
 )
 
 class RsConversionTranslator[F[+_, +_]: Error2](
@@ -37,38 +36,94 @@ class RsConversionTranslator[F[+_, +_]: Error2](
   domain: Domain @Id("current"),
   rules: BaboonRuleset,
   evo: BaboonEvolution,
+  enquiries: BaboonEnquiries,
 ) {
   private val srcVer = srcDom.version
   type Out[T] = F[NEList[BaboonIssue], T]
-
-  private def hasUserType(tpe: TypeRef): Boolean = {
-    tpe match {
-      case TypeRef.Scalar(_: TypeId.User) => true
-      case TypeRef.Constructor(_, args)   => args.exists(hasUserType)
-      case _                              => false
-    }
-  }
 
   private def serdeConvert(expr: TextTree[RsValue]): TextTree[RsValue] = {
     q"serde_json::from_value(serde_json::to_value(&$expr).unwrap()).unwrap()"
   }
 
-  def makeConvs: Out[List[RsRenderedConversion]] = {
-    def makeName(prefix: String, conv: Conversion): String =
-      (Seq(prefix) ++ conv.sourceTpe.owner.asPseudoPkg.map(s => escapeRustModuleName(s.toLowerCase)) ++ Seq(
+  private val sourceRepresentation = new RsFieldRepresentation(srcDom, evo, trans, enquiries)
+  private val targetRepresentation = new RsFieldRepresentation(domain, evo, trans, enquiries)
+
+  private def conversionName(conv: Conversion): String =
+    toSnakeCase(
+      (Seq("convert") ++ conv.sourceTpe.owner.asPseudoPkg.map(s => escapeRustModuleName(s.toLowerCase)) ++ Seq(
         conv.sourceTpe.name.name,
         "from",
         srcVer.v.toString.replace('.', '_'),
       )).mkString("__")
+    )
 
+  private def conversionFile(conv: Conversion): String =
+    (Seq("from", srcVer.v.toString.replace('.', '_')) ++ conv.sourceTpe.owner.asPseudoPkg.map(s => escapeRustModuleName(s.toLowerCase)) ++ Seq(
+      toSnakeCaseFileName(conv.sourceTpe.name.name)
+    )).mkString("_")
+
+  private def transferField(name: FieldName, oldTpe: TypeRef, newTpe: TypeRef): TextTree[RsValue] = {
+    val field = toSnakeCase(name.name)
+    val ref   = if (sourceRepresentation.needsBox(oldTpe)) q"from.$field.as_ref()" else q"&from.$field"
+    val value = transfer(oldTpe, newTpe, ref)
+    if (targetRepresentation.needsBox(newTpe)) q"Box::new($value)" else value
+  }
+
+  // References here borrow surface values; field-level boxes are handled by transferField.
+  private def transfer(oldTpe: TypeRef, newTpe: TypeRef, ref: TextTree[RsValue]): TextTree[RsValue] = {
+    (oldTpe, newTpe) match {
+      case (TypeRef.Scalar(oldId: TypeId.User), TypeRef.Scalar(newId: TypeId.User)) =>
+        rules.conversions.collectFirst {
+          case c: TargetedConversion if c.sourceTpe == oldId && c.targetTpe == newId && !c.isInstanceOf[Conversion.CustomConversionRequired] =>
+            q"${crate.parts.mkString("::")}::${conversionFile(c)}::${conversionName(c)}($ref)"
+        }.getOrElse(serdeConvert(ref))
+      case (TypeRef.Scalar(oldId: TypeId.BuiltinScalar), TypeRef.Scalar(newId: TypeId.BuiltinScalar)) if oldId != newId =>
+        val integers = Set(
+          TypeId.Builtins.i08,
+          TypeId.Builtins.i16,
+          TypeId.Builtins.i32,
+          TypeId.Builtins.i64,
+          TypeId.Builtins.u08,
+          TypeId.Builtins.u16,
+          TypeId.Builtins.u32,
+          TypeId.Builtins.u64,
+        )
+        if (integers.contains(oldId) && integers.contains(newId)) q"(*($ref)) as ${trans.asRsRef(newTpe, domain, evo)}"
+        else serdeConvert(ref)
+      case (old: TypeRef.Scalar, TypeRef.Constructor(newId, args)) =>
+        val inner = transfer(old, args.head, ref)
+        newId match {
+          case TypeId.Builtins.opt => q"Some($inner)"
+          case TypeId.Builtins.lst => q"vec![$inner]"
+          case TypeId.Builtins.set => q"std::collections::BTreeSet::from([$inner])"
+          case _                   => serdeConvert(ref)
+        }
+      case (TypeRef.Constructor(oldId, oldArgs), TypeRef.Constructor(newId, newArgs)) =>
+        (oldId, newId) match {
+          case (TypeId.Builtins.map, TypeId.Builtins.map) =>
+            val key   = transfer(oldArgs.head, newArgs.head, q"k")
+            val value = transfer(oldArgs.last, newArgs.last, q"v")
+            q"($ref).iter().map(|(k, v)| ($key, $value)).collect()"
+          case (TypeId.Builtins.opt, TypeId.Builtins.opt) =>
+            val inner = transfer(oldArgs.head, newArgs.head, q"e")
+            q"($ref).as_ref().map(|e| $inner)"
+          case (_, TypeId.Builtins.lst | TypeId.Builtins.set) =>
+            val inner = transfer(oldArgs.head, newArgs.head, q"e")
+            q"($ref).iter().map(|e| $inner).collect()"
+          case _ => serdeConvert(ref)
+        }
+      case _ if oldTpe == newTpe => q"(*($ref)).clone()"
+      case _                     => serdeConvert(ref)
+    }
+  }
+
+  def makeConvs: Out[List[RsRenderedConversion]] = {
     val targetedConversions = rules.conversions.collect { case tc: TargetedConversion => tc }
 
     F.flatTraverseAccumErrors(targetedConversions) {
       conv =>
-        val fnName = toSnakeCase(makeName("convert", conv))
-        val fname = (Seq("from", srcVer.v.toString.replace('.', '_')) ++ conv.sourceTpe.owner.asPseudoPkg.map(s => escapeRustModuleName(s.toLowerCase)) ++ Seq(
-          s"${toSnakeCaseFileName(conv.sourceTpe.name.name)}.rs"
-        )).mkString("_")
+        val fnName = conversionName(conv)
+        val fname  = s"${conversionFile(conv)}.rs"
 
         val tin  = trans.asRsType(conv.sourceTpe, srcDom, evo).fullyQualified
         val tout = trans.asRsType(conv.targetTpe, domain, evo).fullyQualified
@@ -81,8 +136,6 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                 q"""// Custom conversion required: $tin -> $tout
                    |// Implement this function manually:
                    |// pub fn $fnName(from: &$tin) -> $tout { todo!() }""".stripMargin,
-                None,
-                Some(q"pub fn $fnName(from: &$tin) -> $tout;"),
               )
             )
 
@@ -110,16 +163,15 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                 q"""pub fn $fnName(from: &$tin) -> $tout {
                    |    $mappedExpr
                    |}""".stripMargin,
-                Some(q"$fnName"),
-                None,
               )
             )
 
           case c: Conversion.CopyAdtBranchByName =>
             val cases = c.oldDefn.dataMembers(srcDom).map {
               oldId =>
-                val newId = c.branchMapping.getOrElse(oldId.name.name, oldId)
-                q"""$tin::${escapeRustTypeName(oldId.name.name.capitalize)}(x) => $tout::${escapeRustTypeName(newId.name.name.capitalize)}(serde_json::from_value(serde_json::to_value(x).unwrap()).unwrap()),"""
+                val newId     = c.branchMapping.getOrElse(oldId.name.name, oldId)
+                val converted = transfer(TypeRef.Scalar(oldId), TypeRef.Scalar(newId), q"x")
+                q"""$tin::${escapeRustTypeName(oldId.name.name.capitalize)}(x) => $tout::${escapeRustTypeName(newId.name.name.capitalize)}($converted),"""
             }
             List(
               RsRenderedConversion(
@@ -129,8 +181,6 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                    |        ${cases.toList.joinN().shift(8).trim}
                    |    }
                    |}""".stripMargin,
-                Some(q"$fnName"),
-                None,
               )
             )
 
@@ -155,11 +205,7 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                 val fld = toSnakeCase(f.name.name)
                 val expr = op match {
                   case _: FieldOp.Transfer =>
-                    if (hasUserType(f.tpe)) {
-                      serdeConvert(q"from.$fld")
-                    } else {
-                      q"from.$fld.clone()"
-                    }
+                    transferField(f.name, f.tpe, f.tpe)
                   case o: FieldOp.InitializeWithDefault =>
                     o.targetField.tpe match {
                       case TypeRef.Constructor(id, _) =>
@@ -182,28 +228,12 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                         throw new IllegalStateException("BUG: `any` field has no schema-agnostic default; evolution rules should reject InitializeWithDefault on Any")
                       case _ => throw new IllegalStateException("Unsupported target field type")
                     }
-                  case _: FieldOp.WrapIntoCollection =>
-                    val innerExpr = if (hasUserType(f.tpe)) serdeConvert(q"from.$fld") else q"from.$fld.clone()"
-                    f.tpe match {
-                      case TypeRef.Constructor(TypeId.Builtins.opt, _) => q"Some($innerExpr)"
-                      case TypeRef.Constructor(TypeId.Builtins.set, _) => q"std::collections::BTreeSet::from([$innerExpr])"
-                      case TypeRef.Constructor(TypeId.Builtins.lst, _) => q"vec![$innerExpr]"
-                      case _                                           => q"vec![$innerExpr]"
-                    }
-                  case _: FieldOp.ExpandPrecision =>
-                    serdeConvert(q"from.$fld")
-                  case _: FieldOp.SwapCollectionType =>
-                    serdeConvert(q"from.$fld")
+                  case o: FieldOp.Modify =>
+                    transferField(o.fieldName, o.oldTpe, o.newTpe)
                   case o: FieldOp.Rename =>
-                    val srcFld = toSnakeCase(o.sourceFieldName.name)
-                    if (hasUserType(f.tpe)) {
-                      serdeConvert(q"from.$srcFld")
-                    } else {
-                      q"from.$srcFld.clone()"
-                    }
+                    transferField(o.sourceFieldName, f.tpe, f.tpe)
                   case o: FieldOp.Redef =>
-                    val srcFld = toSnakeCase(o.sourceFieldName.name)
-                    serdeConvert(q"from.$srcFld")
+                    transferField(o.sourceFieldName, o.modify.oldTpe, o.modify.newTpe)
                 }
                 q"$fld: $expr,"
             }
@@ -216,17 +246,11 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                    |        ${assigns.joinN().shift(8).trim}
                    |    }
                    |}""".stripMargin,
-                Some(q"$fnName"),
-                None,
               )
             )
         }
 
-        if (false) {
-          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
-        } else {
-          F.pure(rendered)
-        }
+        F.pure(rendered): Out[List[RsRenderedConversion]]
     }
   }
 }

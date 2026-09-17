@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.python
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.IdentifierFieldKind
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.python.PyKeywords.escapePyKeyword
 import io.septimalmind.baboon.translator.python.PyTypes.*
@@ -297,7 +298,7 @@ object PyDefnTranslator {
         case enum: Typedef.Enum =>
           val branches = enum.members.map {
             m =>
-              val wireName      = EnumWireStyle.wireName(m.name)
+              val wireName = EnumWireStyle.wireName(m.name)
               // Escape Python keywords in enum member identifiers. The value (wire-string) stays
               // as the original wire name; only the Python attribute name gets the trailing `_`.
               val memberPyIdent = escapePyKeyword(wireName)
@@ -405,7 +406,7 @@ object PyDefnTranslator {
           val contractDocTree: Option[TextTree[PyValue]] =
             if (contractDocstring.isEmpty) None else Some(q"$contractDocstring")
           val contractBody = contractDocTree.toList ++ (if (methods.isEmpty) List(q"pass") else methods)
-          val allMethods = contractBody.joinN()
+          val allMethods   = contractBody.joinN()
           PyDefnRepr(
             q"""|class ${contract.id.name.name.capitalize}($parents):
                 |    ${allMethods.shift(4).trim}
@@ -451,7 +452,7 @@ object PyDefnTranslator {
           val serviceDocTree: Option[TextTree[PyValue]] =
             if (serviceDocstring.isEmpty) None else Some(q"$serviceDocstring")
           val serviceBody = serviceDocTree.toList ++ (if (methods.isEmpty) List(q"pass") else methods)
-          val allMethods = serviceBody.joinN()
+          val allMethods  = serviceBody.joinN()
           // Abstract mode: the service interface is `Generic[Ctx]`. `Generic`
           // and `TypeVar` must be imported (reference them as PyTypes so the
           // import pass emits `from typing import Generic, TypeVar`) and the
@@ -544,49 +545,47 @@ object PyDefnTranslator {
     private def genDtoFields(dtoFields: List[Field], contractsFields: Set[Field]): List[TextTree[PyValue]] = {
       val fields = dtoFields.map {
         field =>
-          val fieldName   = field.name.name
-          val fieldType   = typeTranslator.asPyRef(field.tpe, domain, evolution, fileTools.definitionsBasePkg)
+          val plan      = PyFieldPlan(field, contractsFields.contains(field))
+          val fieldName = plan.wireName
+          val fieldType = typeTranslator.asPyRef(field.tpe, domain, evolution, fileTools.definitionsBasePkg)
           // A trailing `_` suffix is needed when either the field is a Python keyword (PEP 8
           // convention) or the field implements a contract abstract method (to avoid a Python
           // name-clash with the @property accessor). In both cases a pydantic alias preserves the
           // original model name as the wire key.
-          val needsAlias  = contractsFields.contains(field) || PyKeywords.isKeyword(fieldName)
-
-          if (needsAlias) {
-            q"${fieldName}_: $fieldType = $pydanticField(alias='$fieldName', serialization_alias='$fieldName')"
-          } else q"$fieldName: $fieldType"
+          if (plan.needsAlias) {
+            q"${plan.attributeName}: $fieldType = $pydanticField(alias='$fieldName', serialization_alias='$fieldName')"
+          } else q"${plan.attributeName}: $fieldType"
       }
       if (fields.isEmpty) List(q"pass") else fields
     }
 
     private def genDtoProperties(contractsFields: List[Field]): Option[List[TextTree[PyValue]]] = {
       if (contractsFields.nonEmpty) {
-        val properties = contractsFields
-          .map {
-            f =>
-              val fieldName    = f.name.name
-              // The backing pydantic field is always `${fieldName}_` (see genDtoFields).
-              // The property accessor uses the keyword-escaped name so the method declaration is
-              // valid Python (e.g. `def class_(self)` instead of `def class(self)`).
-              val propertyName = escapePyKeyword(fieldName)
-              q"""@property
-                 |def $propertyName(self) -> ${typeTranslator.asPyRef(f.tpe, domain, evolution, fileTools.definitionsBasePkg)}:
-                 |    return self.${fieldName}_
-                 |""".stripMargin
-          }
+        val properties = contractsFields.map {
+          f =>
+            val plan = PyFieldPlan(f, true)
+            // The backing pydantic field is always `${fieldName}_` (see genDtoFields).
+            // The property accessor uses the keyword-escaped name so the method declaration is
+            // valid Python (e.g. `def class_(self)` instead of `def class(self)`).
+            val propertyName = plan.accessorName
+            q"""@property
+               |def $propertyName(self) -> ${typeTranslator.asPyRef(f.tpe, domain, evolution, fileTools.definitionsBasePkg)}:
+               |    return self.${plan.attributeName}
+               |""".stripMargin
+        }
         Some(properties)
       } else None
     }
 
     private def genDtoPydanticModelConf(dtoFields: List[Field], hasContracts: Boolean, jsonCodecActive: Boolean): TextTree[PyType] = {
-      val frozen             = Some(q"frozen=True")
-      val hasKeywordField    = dtoFields.exists(f => PyKeywords.isKeyword(f.name.name))
-      val serializeByAlias   = if (jsonCodecActive && (hasContracts || hasKeywordField)) Some(q"serialize_by_alias=True") else None
+      val frozen           = Some(q"frozen=True")
+      val hasKeywordField  = dtoFields.exists(f => PyKeywords.isKeyword(f.name.name))
+      val serializeByAlias = if (jsonCodecActive && (hasContracts || hasKeywordField)) Some(q"serialize_by_alias=True") else None
       // populate_by_name=True allows constructing instances using the Python attribute name (the
       // escaped name, e.g. `class_`) instead of the alias (the original model name `class`). This
       // is required when any field is a Python keyword, because the alias cannot be used as a
       // constructor keyword argument in generated Python code.
-      val populateByName     = if (hasKeywordField) Some(q"populate_by_name=True") else None
+      val populateByName = if (hasKeywordField) Some(q"populate_by_name=True") else None
       val serializeJsonBytesAsHex =
         if (dtoFields.map(_.tpe.id).contains(TypeId.Builtins.bytes)) {
           List(
@@ -603,13 +602,8 @@ object PyDefnTranslator {
       // pydantic doesn't know how to validate the runtime `AnyOpaque` ABC; opt into
       // arbitrary-types when any field carries an `any`-typed payload (direct or nested via a
       // constructor like `lst[any]` / `opt[any]` / `map[str, any]`).
-      def hasAnyType(tpe: TypeRef): Boolean = tpe match {
-        case _: TypeRef.Any         => true
-        case _: TypeRef.Scalar      => false
-        case c: TypeRef.Constructor => c.args.exists(hasAnyType)
-      }
       val arbitraryTypesAllowed =
-        if (dtoFields.exists(f => hasAnyType(f.tpe))) Some(q"arbitrary_types_allowed=True") else None
+        if (dtoFields.exists(f => PyFieldPlan.containsAny(f.tpe))) Some(q"arbitrary_types_allowed=True") else None
 
       val configs = List(frozen, serializeByAlias, populateByName, serializeJsonBytesAsHex, serializeDecimalAsJsonNumber, arbitraryTypesAllowed).flatten
 
@@ -628,46 +622,6 @@ object PyDefnTranslator {
     //   - `__repr__(self) -> str` method on the dataclass
     //   - sibling `<TypeName>Codec` class with `@staticmethod parse_repr` (Q-FU-4)
     //   - snake_case method names per PEP 8
-    private sealed trait IdentifierFieldKind
-    private object IdentifierFieldKind {
-      case object Bit extends IdentifierFieldKind
-      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32 */
-      case object SignedLong extends IdentifierFieldKind /* i64 */
-      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong extends IdentifierFieldKind /* u64 */
-      case object Str extends IdentifierFieldKind
-      case object Uid extends IdentifierFieldKind
-      case object Tsu extends IdentifierFieldKind
-      case object Tso extends IdentifierFieldKind
-      case object Bytes extends IdentifierFieldKind
-      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
-    }
-
-    private def identifierFieldKindPy(tpe: TypeRef): IdentifierFieldKind = {
-      tpe match {
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          import TypeId.Builtins.*
-          b match {
-            case `bit`                 => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` => IdentifierFieldKind.SignedInt
-            case `i64`                 => IdentifierFieldKind.SignedLong
-            case `u08` | `u16` | `u32` => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                 => IdentifierFieldKind.UnsignedLong
-            case `str`                 => IdentifierFieldKind.Str
-            case `uid`                 => IdentifierFieldKind.Uid
-            case `tsu`                 => IdentifierFieldKind.Tsu
-            case `tso`                 => IdentifierFieldKind.Tso
-            case `bytes`               => IdentifierFieldKind.Bytes
-            case other =>
-              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
-          }
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          IdentifierFieldKind.NestedId(uid)
-        case other =>
-          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
-      }
-    }
-
     private def signedTypeNamePy(tpe: TypeRef): String = tpe match {
       case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
       case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
@@ -722,7 +676,7 @@ object PyDefnTranslator {
         f =>
           val srcFieldName     = f.name.name
           val escapedFieldName = escapePyKeyword(srcFieldName)
-          val kind             = identifierFieldKindPy(f.tpe)
+          val kind             = IdentifierFieldKind.classify(f.tpe)
           val valueExpr        = renderIdentifierFieldValueExprPy(escapedFieldName, kind)
           q""""$srcFieldName:" + ($valueExpr)"""
       }
@@ -751,7 +705,7 @@ object PyDefnTranslator {
           val valVar       = s"${srcFieldName}_v"
           val resVar       = s"${srcFieldName}_r"
           val isLast       = idx == dto.fields.length - 1
-          val kind         = identifierFieldKindPy(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
 
           val parseHead =
             q"""${srcFieldName}_fnr = $baboonIdReprParseFieldName(cursor, "$srcFieldName")

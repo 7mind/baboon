@@ -3,7 +3,6 @@ package io.septimalmind.baboon.translator.typescript
 import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
-import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyOpaqueModule, tsBaboonIdReprModule, tsBaboonRuntimeShared, tsCrossLangFixtureModule, tsFixtureShared}
 import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
@@ -124,31 +123,6 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     val className      = s"Domain${pascalDomainId}Facade"
     val domainIdStr    = latestDomain.id.path.mkString(".")
 
-    // Per-type codec activation predicate, mirroring `isActive` in
-    // TsJsonCodecGenerator / TsUEBACodecGenerator. Foreign-bound types emit
-    // no codec class at all, and the global generate-X flags plus the
-    // per-type `derived[…]` opt-in further constrain emission. If either
-    // codec is inactive for a type, the facade must NOT import or register
-    // that flavour for it.
-    def jsonCodecActive(domain: Domain, id: TypeId): Boolean = {
-      !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Typescript) &&
-      target.language.generateJsonCodecs && (
-        target.language.generateJsonCodecsByDefault ||
-        domain.derivationRequests.getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id)
-      )
-    }
-    def uebaCodecActive(domain: Domain, defn: DomainMember.User): Boolean = {
-      val id = defn.id
-      !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Typescript) &&
-      target.language.generateUebaCodecs && (
-        target.language.generateUebaCodecsByDefault ||
-        domain.derivationRequests.getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id)
-      )
-      // Foreign-bearing types are no longer suppressed: a Custom foreign now emits a `<F>_UEBACodec`
-      // value codec (throwing by default, host-overridable via lazyInstance), so containing types
-      // route the foreign field through it — mirroring the JSON side and the C# backend.
-    }
-
     // Collect non-ADT-branch User types per version with codec-activation flags.
     // Returns list of (tsImportPath, typeAlias, typeName, typeIdentifier, hasJsonCodec, hasUebaCodec).
     // typeAlias differs from typeName when either (a) the version is older
@@ -159,7 +133,9 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     // the on-disk layout produced by TsDefnTranslator.getOutputPath. Types
     // where neither codec is active (foreign-bound types) are dropped — they
     // emit no codec class so there is nothing for the facade to register.
-    def collectTypes(domain: Domain): List[(String, String, String, String, Boolean, Boolean)] = {
+    case class CodecEntry(importPath: String, typeAlias: String, typeName: String, typeId: String, hasJson: Boolean, hasUeba: Boolean)
+
+    def collectTypes(domain: Domain): List[CodecEntry] = {
       val versionStr = domain.version.v.toString
       val isLatest   = domain.version == evo.latest
       val verSuffix  = versionStr.replace('.', '_')
@@ -172,8 +148,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             case owner =>
               defn.defn match {
                 case _: Typedef.Dto | _: Typedef.Enum | _: Typedef.Adt =>
-                  val hasJson = jsonCodecActive(domain, defn.id)
-                  val hasUeba = uebaCodecActive(domain, defn)
+                  val hasJson = TsCodecActivation.isActive(target, domain, defn.id, TsCodecActivation.Json)
+                  val hasUeba = TsCodecActivation.isActive(target, domain, defn.id, TsCodecActivation.Ueba)
                   if (!hasJson && !hasUeba) None
                   else {
                     // `typeName` is the TS-class symbol exported by the source
@@ -204,7 +180,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
                     val typeAlias     = if (isLatest) baseAlias else s"${baseAlias}V$verSuffix"
                     val importPath    = s"$relPrefix/$nsPathSegment$fileBase"
                     val typeId        = defn.id.toString
-                    Some((importPath, typeAlias, typeName, typeId, hasJson, hasUeba))
+                    Some(CodecEntry(importPath, typeAlias, typeName, typeId, hasJson, hasUeba))
                   }
                 case _ => None
               }
@@ -215,11 +191,12 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       // non-deterministic across runs/JVMs. Sort the collected types by their
       // rendered import path then symbol name, giving the facade a total lexical
       // ordering for both its import lines and its codec/meta registrations.
-      collected.sortBy { case (importPath, _, typeName, typeId, _, _) => (importPath, typeName, typeId) }
+      collected.sortBy(e => (e.importPath, e.typeName, e.typeId))
     }
 
     // Ordered versions (ascending)
     val orderedVersions = lineage.versions.toSeq.sortBy(_._1).map { case (_, domain) => domain }
+    val codecEntries    = orderedVersions.map(domain => domain.version -> collectTypes(domain)).toMap
 
     val sfx = target.language.importSuffix
 
@@ -237,8 +214,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     // since identity registration goes through the codec class.
     val typeImports: List[TextTree[TsValue]] = orderedVersions.toList.flatMap {
       domain =>
-        collectTypes(domain).map {
-          case (importPath, typeAlias, typeName, _, hasJson, hasUeba) =>
+        codecEntries(domain.version).map {
+          case CodecEntry(importPath, typeAlias, typeName, _, hasJson, hasUeba) =>
             val pieces = List(
               Some((typeName, typeAlias)),
               if (hasJson) Some((s"${typeName}_JsonCodec", s"${typeAlias}_JsonCodec")) else None,
@@ -266,15 +243,15 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     val perVersion: List[TextTree[TsValue]] = orderedVersions.toList.map {
       domain =>
         val versionStr   = domain.version.v.toString
-        val types        = collectTypes(domain)
+        val types        = codecEntries(domain.version)
         val verClassName = versionClassName(domain)
 
         val jsonRegistrations = types.collect {
-          case (_, typeAlias, _, _, true, _) =>
+          case CodecEntry(_, typeAlias, _, _, true, _) =>
             q"this.register(${typeAlias}_JsonCodec.BaboonTypeIdentifier, new Lazy<BaboonJsonCodec<unknown>>(() => ${typeAlias}_JsonCodec.instance as unknown as BaboonJsonCodec<unknown>));"
         }
         val uebaRegistrations = types.collect {
-          case (_, typeAlias, _, _, _, true) =>
+          case CodecEntry(_, typeAlias, _, _, _, true) =>
             q"this.register(${typeAlias}_UEBACodec.BaboonTypeIdentifier, new Lazy<BaboonBinCodec<unknown>>(() => ${typeAlias}_UEBACodec.instance as unknown as BaboonBinCodec<unknown>));"
         }
 
@@ -357,6 +334,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         moduleId,
         CompilerProduct.Runtime,
         doNotModify = true,
+        exports     = Some(List(TsDefnTranslator.ExportedSymbol(className, typeOnly = false))),
       )
     )
   }
@@ -504,7 +482,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       }
     }
 
-    val usedTypes = o.tree.values.collect { case t: TsValue.TsType => t }
+    val usedTypes = (o.tree.values.collect { case t: TsValue.TsType => t } ++ o.imports)
       .filterNot(_.moduleId.path.isEmpty)
       .filterNot(_.moduleId == o.module)
       .filterNot(_.predef)
@@ -596,31 +574,12 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  /** Extract type names that a file defines (types whose module matches the file's own module).
-    * Returns a map from name to typeOnly flag (true = type-only, false = value-bearing).
-    */
   private def exportedNames(output: TsDefnTranslator.Output): Map[String, Boolean] = {
-    output.tree.values.collect {
-      case t: TsValue.TsType if t.moduleId == output.module && !t.predef => t.name -> t.typeOnly
-    }.toMap
+    output.exports.toList.flatten.map(s => s.name -> s.typeOnly).toMap
   }
 
-  /** Whether a file emits at least one top-level export. `exportedNames` only
-    * sees exports embedded as `TsType` values; declarations whose symbol is
-    * interpolated as a plain string (service interfaces, client/wiring classes
-    * and functions) are invisible to it. A textual scan catches those so a
-    * non-empty wiring/client/service file is barrel-able while a genuinely empty
-    * one (e.g. wiring suppressed by flags) is not (avoids TS2306).
-    */
   private def hasExports(output: TsDefnTranslator.Output): Boolean = {
-    if (exportedNames(output).nonEmpty) true
-    else {
-      val text = output.tree.mapRender {
-        case TsValue.TsType(_, name, Some(alias), _, _) => alias
-        case t: TsValue.TsType                          => t.name
-      }
-      text.linesIterator.exists(_.trim.startsWith("export "))
-    }
+    output.exports.exists(_.nonEmpty)
   }
 
   /** Render a named re-export line, splitting type-only and value-bearing names into separate statements. */
@@ -785,16 +744,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         // empty .ts) must be skipped from the barrel — `export * from './X'` against an empty
         // file produces TS2306 "File ... is not a module" on strict tsc/deno.
         val fileExports = sortedFiles.map(f => (f, exportedNames(f))).filter(_._2.nonEmpty)
-        // D45: a file whose only export is string-form (the domain facade is a string-only TextTree
-        // carrying a plain-text `export class ...Facade extends BaboonCodecsFacade`)
-        // contributes no TsValue.TsType nodes, so exportedNames is empty and it is dropped from
-        // fileExports above. Detect such files via the textual hasExports fallback (the same
-        // predicate generateServiceBarrels uses) and re-export each with a plain `export *`. They
-        // carry no AST names, so they cannot collide with named exports and need no collision
-        // handling — the same treatment collision-free named files already receive.
-        val verbatimExportFiles = sortedFiles.filter(f => exportedNames(f).isEmpty && hasExports(f))
-        val nameCount           = fileExports.flatMap(_._2.keys).groupBy(identity).view.mapValues(_.size).toMap
-        val colliding           = nameCount.filter(_._2 > 1).keySet
+        val nameCount   = fileExports.flatMap(_._2.keys).groupBy(identity).view.mapValues(_.size).toMap
+        val colliding   = nameCount.filter(_._2 > 1).keySet
 
         val reexports = if (colliding.isEmpty) {
           // No collisions — simple export * for all files with exports
@@ -825,15 +776,9 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
           }
         }
 
-        val verbatimReexports = verbatimExportFiles.map {
-          f =>
-            val fname = f.path.drop(dir.length + 1).stripSuffix(".ts")
-            TextTree.text[TsValue](s"export * from './$fname$sfx';")
-        }
-
         // A models-level dir that contains services also re-exports each
         // service as a namespace (`export * as PetStore from './pet-store'`).
-        val allReexports = reexports ++ verbatimReexports ++ modelsExtras.getOrElse(dir, Nil)
+        val allReexports = reexports ++ modelsExtras.getOrElse(dir, Nil)
 
         if (allReexports.nonEmpty) {
           Some(barrelOutput(s"$dir/index.ts", allReexports.reduce((a, b) => q"$a\n$b")))
@@ -884,6 +829,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             conv.conv,
             convModule,
             CompilerProduct.Conversion,
+            exports = Some(conv.exportedName.toList.map(TsDefnTranslator.ExportedSymbol(_, typeOnly = false))),
           )
       }
     }

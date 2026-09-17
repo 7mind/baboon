@@ -53,9 +53,10 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
   override def generateMcpServer(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
       lineage =>
-        val evo          = lineage.evolution
-        val latestDomain = lineage.versions(evo.latest)
-        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
+        val evo           = lineage.evolution
+        val latestDomain  = lineage.versions(evo.latest)
+        val schemaContext = schemaEmitter.prepare(latestDomain)
+        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo, schemaContext))
     }
 
     // Additive MCP runtime files (one class per file, all in baboon.runtime.shared).
@@ -74,11 +75,12 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
       "BaboonMcpWiringError.java",
       "BaboonMcpWiringException.java",
       "AbstractMcpMuxer.java",
-    ).map { fname =>
-      fname -> OutputFile(
-        BaboonRuntimeResources.read(s"baboon-runtime/java/$fname"),
-        io.septimalmind.baboon.CompilerProduct.Runtime,
-      )
+    ).map {
+      fname =>
+        fname -> OutputFile(
+          BaboonRuntimeResources.read(s"baboon-runtime/java/$fname"),
+          io.septimalmind.baboon.CompilerProduct.Runtime,
+        )
     }
     F.pure(Sources((mcpRuntimeFiles ++ perService).toMap))
   }
@@ -97,7 +99,8 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
     s"$basename/$fname"
   }
 
-  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution): (String, OutputFile) = {
+  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution, schemaContext: McpInputSchemaEmitter.PreparedDomain)
+    : (String, OutputFile) = {
     val path = serverPath(svc, domain, evo)
 
     val serviceName = svc.id.name.name
@@ -118,13 +121,15 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
     // Backslashes and double-quotes are escaped as `\\` and `\"` respectively.
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
-        val toolName    = s"${serviceName}_${m.name.name}"
-        val schema      = schemaEmitter.emitInputSchema(m.sig, domain)
+        val toolName = s"${serviceName}_${m.name.name}"
+        val schema   = schemaEmitter.emitInputSchema(m.sig, schemaContext)
         // Embed schema as a Java string literal via javaString which handles
         // all escaping (`\` → `\\`, `"` → `\"`). `$` is literal in Java.
-        val schemaJson   = schema.noSpaces
-        val descArg      = McpDocs.flatten(m.docs).map(d => s", ${jsonString(d)}").getOrElse("")
-        s"""            new McpToolEntry(${javaString(toolName)}, new BaboonMethodId(${javaString(serviceName)}, ${javaString(m.name.name)}), parseSchema(${javaString(schemaJson)})$descArg)"""
+        val schemaJson = schema.noSpaces
+        val descArg    = McpDocs.flatten(m.docs).map(d => s", ${jsonString(d)}").getOrElse("")
+        s"""            new McpToolEntry(${javaString(toolName)}, new BaboonMethodId(${javaString(serviceName)}, ${javaString(m.name.name)}), parseSchema(${javaString(
+            schemaJson
+          )})$descArg)"""
     }
 
     val content =
@@ -142,6 +147,9 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
          |import com.fasterxml.jackson.databind.JsonNode;
          |
          |import java.util.List;
+         |import java.util.Map;
+         |import java.util.HashMap;
+         |import java.util.Collections;
          |
          |// Generated MCP server for service `$serviceName` (model `${domain.id.path.mkString(".")}` v$modelVer).
          |// Transport-abstract: `handle` is inherited from AbstractBaboonMcpServer and
@@ -151,9 +159,18 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
          |// per-request `Ctx`.
          |public final class $className<Ctx> extends AbstractBaboonMcpServer<Ctx> {
          |    private final McpJsonInvoke<Ctx> _invokeJson;
+         |    private final List<McpToolEntry> _tools;
+         |    private final Map<String, BaboonMethodId> _toolMethods;
+         |    private final McpServerInfo _serverInfo = new McpServerInfo(${javaString(serviceName)}, ${javaString(modelVer)});
          |
          |    public $className(McpJsonInvoke<Ctx> invokeJson) {
          |        this._invokeJson = invokeJson;
+         |        this._tools = List.of(
+         |${toolEntries.mkString(",\n")}
+         |        );
+         |        Map<String, BaboonMethodId> methods = new HashMap<>();
+         |        for (McpToolEntry tool : _tools) methods.put(tool.name, tool.method);
+         |        this._toolMethods = Collections.unmodifiableMap(methods);
          |    }
          |
          |    private static JsonNode parseSchema(String json) {
@@ -166,14 +183,19 @@ class JvMcpServerGenerator[F[+_, +_]: Error2](
          |
          |    @Override
          |    public McpServerInfo serverInfo() {
-         |        return new McpServerInfo(${javaString(serviceName)}, ${javaString(modelVer)});
+         |        return _serverInfo;
          |    }
          |
          |    @Override
          |    public List<McpToolEntry> tools() {
-         |        return List.of(
-         |${toolEntries.mkString(",\n")}
-         |        );
+         |        return _tools.stream().map(tool -> new McpToolEntry(
+         |            tool.name, tool.method, tool.inputSchema.deepCopy(), tool.description
+         |        )).toList();
+         |    }
+         |
+         |    @Override
+         |    protected Map<String, BaboonMethodId> toolMethods() {
+         |        return _toolMethods;
          |    }
          |
          |    @Override

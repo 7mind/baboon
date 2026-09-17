@@ -54,9 +54,10 @@ class CsMcpServerGenerator[F[+_, +_]: Error2](
   override def generateMcpServer(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
       lineage =>
-        val evo          = lineage.evolution
-        val latestDomain = lineage.versions(evo.latest)
-        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
+        val evo           = lineage.evolution
+        val latestDomain  = lineage.versions(evo.latest)
+        val schemaContext = schemaEmitter.prepare(latestDomain)
+        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo, schemaContext))
     }
 
     val runtimeFile =
@@ -85,23 +86,26 @@ class CsMcpServerGenerator[F[+_, +_]: Error2](
     }
   }
 
-  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution): (String, OutputFile) = {
+  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution, schemaContext: McpInputSchemaEmitter.PreparedDomain)
+    : (String, OutputFile) = {
     val path = serverPath(svc, domain, evo)
 
     val serviceName = svc.id.name.name
-    val className    = s"${serviceName.capitalize}McpServer"
-    val modelVer     = domain.version.v.toString
-    val ns           = typeTranslator.toCsPkg(domain.id, domain.version, evo).parts.mkString(".")
+    val className   = s"${serviceName.capitalize}McpServer"
+    val modelVer    = domain.version.v.toString
+    val ns          = typeTranslator.toCsPkg(domain.id, domain.version, evo).parts.mkString(".")
 
     // Declaration-ordered tool entries (K4 §2.3): one per method. The wire
     // tool.name and the BaboonMethodId service/method strings stay verbatim
     // lowercase model names; only C# symbols are PascalCase.
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
-        val toolName    = s"${serviceName}_${m.name.name}"
-        val schema      = schemaEmitter.emitInputSchema(m.sig, domain)
-        val descArg     = McpDocs.flatten(m.docs).map(d => s", ${jsonString(d)}").getOrElse("")
-        s"""        new Baboon.Runtime.Shared.McpToolEntry(${csString(toolName)}, new Baboon.Runtime.Shared.BaboonMethodId(${csString(serviceName)}, ${csString(m.name.name)}), Newtonsoft.Json.Linq.JToken.Parse(${csVerbatimJson(schema)})$descArg),"""
+        val toolName = s"${serviceName}_${m.name.name}"
+        val schema   = schemaEmitter.emitInputSchema(m.sig, schemaContext)
+        val descArg  = McpDocs.flatten(m.docs).map(d => s", ${jsonString(d)}").getOrElse("")
+        s"""        new Baboon.Runtime.Shared.McpToolEntry(${csString(toolName)}, new Baboon.Runtime.Shared.BaboonMethodId(${csString(serviceName)}, ${csString(
+            m.name.name
+          )}), Newtonsoft.Json.Linq.JToken.Parse(${csVerbatimJson(schema)})$descArg),"""
     }
 
     // Async axis (`--cs-async-services=true`): the errors-mode wiring entry
@@ -132,12 +136,18 @@ class CsMcpServerGenerator[F[+_, +_]: Error2](
          |// per-request `Ctx`.
          |public sealed class $className<Ctx> : Baboon.Runtime.Shared.$baseClass<Ctx>
          |{
-         |    public override Baboon.Runtime.Shared.McpServerInfo ServerInfo { get; } = new Baboon.Runtime.Shared.McpServerInfo(${csString(serviceName)}, ${csString(modelVer)});
+         |    public override Baboon.Runtime.Shared.McpServerInfo ServerInfo { get; } = new Baboon.Runtime.Shared.McpServerInfo(${csString(serviceName)}, ${csString(
+          modelVer
+        )});
          |
-         |    public override System.Collections.Generic.IReadOnlyList<Baboon.Runtime.Shared.McpToolEntry> Tools { get; } = new System.Collections.Generic.List<Baboon.Runtime.Shared.McpToolEntry>
+         |    private readonly Baboon.Runtime.Shared.McpToolRegistry _tools = new Baboon.Runtime.Shared.McpToolRegistry(new System.Collections.Generic.List<Baboon.Runtime.Shared.McpToolEntry>
          |    {
          |${toolEntries.mkString("\n")}
-         |    };
+         |    });
+         |
+         |    public override System.Collections.Generic.IReadOnlyList<Baboon.Runtime.Shared.McpToolEntry> Tools => _tools.Snapshot();
+         |
+         |    protected override bool TryFindTool(string name, out Baboon.Runtime.Shared.BaboonMethodId method) => _tools.TryFind(name, out method);
          |
          |    private readonly Baboon.Runtime.Shared.$delegateType<Ctx> _invokeJson;
          |

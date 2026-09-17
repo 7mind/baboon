@@ -207,28 +207,29 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     val className      = s"Domain${pascalDomainId}Facade"
 
     // Emit one Register call per known version, in ascending order.
-    val registers = lineage.versions.toSeq.sortBy(_._1).map {
-      case (version, domain) =>
-        val versionPkg = trans.toCsPkg(domain.id, version, evo)
-        val codecsJson = CSValue.CSType(versionPkg, "BaboonCodecsJson", fq = false, CSValue.CSTypeOrigin.Other)
-        val codecsUeba = CSValue.CSType(versionPkg, "BaboonCodecsUeba", fq = false, CSValue.CSTypeOrigin.Other)
-        val metaFac    = CSValue.CSType(versionPkg, "BaboonMeta", fq = false, CSValue.CSTypeOrigin.Other)
-        val domainId   = domain.id.toString
-        val versionStr = version.v.toString
+    val registers = lineage.versions.toSeq
+      .sortBy(_._1).map {
+        case (version, domain) =>
+          val versionPkg = trans.toCsPkg(domain.id, version, evo)
+          val codecsJson = CSValue.CSType(versionPkg, "BaboonCodecsJson", fq = false, CSValue.CSTypeOrigin.Other)
+          val codecsUeba = CSValue.CSType(versionPkg, "BaboonCodecsUeba", fq = false, CSValue.CSTypeOrigin.Other)
+          val metaFac    = CSValue.CSType(versionPkg, "BaboonMeta", fq = false, CSValue.CSTypeOrigin.Other)
+          val domainId   = domain.id.toString
+          val versionStr = version.v.toString
 
-        if (withMeta) {
-          q"""Register(
-             |    new $baboonDomainVersion("$domainId", "$versionStr"),
-             |    () => $codecsJson.Instance,
-             |    () => $codecsUeba.Instance,
-             |    () => $metaFac.Instance);""".stripMargin
-        } else {
-          q"""Register(
-             |    new $baboonDomainVersion("$domainId", "$versionStr"),
-             |    () => $codecsJson.Instance,
-             |    () => $codecsUeba.Instance);""".stripMargin
-        }
-    }.toList
+          if (withMeta) {
+            q"""Register(
+               |    new $baboonDomainVersion("$domainId", "$versionStr"),
+               |    () => $codecsJson.Instance,
+               |    () => $codecsUeba.Instance,
+               |    () => $metaFac.Instance);""".stripMargin
+          } else {
+            q"""Register(
+               |    new $baboonDomainVersion("$domainId", "$versionStr"),
+               |    () => $codecsJson.Instance,
+               |    () => $codecsUeba.Instance);""".stripMargin
+          }
+      }.toList
 
     val classTree =
       q"""public sealed class $className : $baboonCodecsFacade
@@ -493,6 +494,8 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           rt(s"BaboonExceptions.cs", "baboon-runtime/cs/BaboonExceptions.cs"),
           rt(s"BaboonTypeMeta.cs", "baboon-runtime/cs/BaboonTypeMeta.cs"),
           rt(s"AnyOpaque.cs", "baboon-runtime/cs/AnyOpaque.cs"),
+          rt(s"BaboonAnyJsonCodec.cs", "baboon-runtime/cs/BaboonAnyJsonCodec.cs"),
+          rt(s"BaboonAnyBinCodec.cs", "baboon-runtime/cs/BaboonAnyBinCodec.cs"),
           rt(s"BaboonTools.cs", "baboon-runtime/cs/BaboonTools.cs"),
           rt(s"BaboonTime.cs", "baboon-runtime/cs/BaboonTime.cs"),
           rt(s"BaboonByteString.cs", "baboon-runtime/cs/BaboonByteString.cs"),

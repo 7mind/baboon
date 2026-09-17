@@ -25,6 +25,9 @@ pub trait BaboonGeneratedDyn: std::any::Any + Send + Sync {
     /// Codegen invariant: the slice is never empty (`first()` is called for `domainVersionMinCompat`
     /// in `BaboonTypeMeta::from`); a violation panics with a fail-fast message.
     fn baboon_same_in_versions_dyn(&self) -> Vec<String>;
+    fn baboon_first_same_in_version_dyn(&self) -> Option<std::borrow::Cow<'_, str>> {
+        self.baboon_same_in_versions_dyn().into_iter().next().map(std::borrow::Cow::Owned)
+    }
     /// Forward-readability: newer domain versions whose encoded data THIS version's codec can
     /// decode, as `(version, tier)` pairs with tier one of
     /// "identical" | "prefix-any-mode" | "prefix-compact" | "json-additive".
@@ -39,6 +42,10 @@ pub trait BaboonGeneratedDyn: std::any::Any + Send + Sync {
     /// as `$rv`, the prefix-* bounds feed the binary envelope. No default: the envelope writer
     /// fails fast when a tier is missing, so every impl must provide all four (generated impls do).
     fn baboon_min_reader_versions_dyn(&self) -> Vec<(String, String)>;
+    fn baboon_min_reader_version_dyn(&self, tier: &str) -> Option<std::borrow::Cow<'_, str>> {
+        self.baboon_min_reader_versions_dyn().into_iter()
+            .find(|(t, _)| t == tier).map(|(_, v)| std::borrow::Cow::Owned(v))
+    }
     fn as_any(&self) -> &dyn std::any::Any;
     /// Consume the box and recover an `Any` for downcasting via `Box::downcast`. Mirrors
     /// the C# `if (current is TTo result)` pattern used in `Convert<TFrom, TTo>`.
@@ -230,41 +237,61 @@ pub use crate::baboon_type_meta::{baboon_type_meta_codec, BaboonTypeMeta};
 // access only. A registered codec table can call into lots of types' registrations during
 // construction; lazy is what avoids paying that cost up front.
 
-pub struct LazyCodec<T> {
-    cell: OnceLock<Arc<T>>,
+struct LazyValue<T> {
+    cell: OnceLock<T>,
     init: Mutex<Option<Box<dyn FnOnce() -> T + Send>>>,
+}
+
+impl<T> LazyValue<T> {
+    fn new<F: FnOnce() -> T + Send + 'static>(init: F) -> Self {
+        Self { cell: OnceLock::new(), init: Mutex::new(Some(Box::new(init))) }
+    }
+
+    fn from_value(value: T) -> Self {
+        let cell = OnceLock::new();
+        let _ = cell.set(value);
+        Self { cell, init: Mutex::new(None) }
+    }
+
+    fn get(&self) -> &T {
+        self.cell.get_or_init(|| {
+            let mut guard = self.init.lock().expect("LazyCodec mutex poisoned");
+            guard.take().expect("LazyCodec missing both init and value")()
+        })
+    }
+}
+
+pub struct LazyCodec<T> {
+    value: LazyValue<Arc<T>>,
 }
 
 impl<T> LazyCodec<T> {
     pub fn new<F: FnOnce() -> T + Send + 'static>(init: F) -> Self {
-        LazyCodec { cell: OnceLock::new(), init: Mutex::new(Some(Box::new(init))) }
+        Self { value: LazyValue::new(move || Arc::new(init())) }
     }
 
     pub fn from_value(value: T) -> Self {
-        let cell = OnceLock::new();
-        let _ = cell.set(Arc::new(value));
-        LazyCodec { cell, init: Mutex::new(None) }
+        Self { value: LazyValue::from_value(Arc::new(value)) }
     }
 
     pub fn get(&self) -> Arc<T> {
-        if let Some(v) = self.cell.get() {
-            return Arc::clone(v);
-        }
-        let value = {
-            let mut guard = self.init.lock().expect("LazyCodec mutex poisoned");
-            match guard.take() {
-                Some(thunk) => thunk(),
-                None => {
-                    drop(guard);
-                    return Arc::clone(self.cell.get().expect("LazyCodec missing both init and value"));
-                }
-            }
-        };
-        let arc = Arc::new(value);
-        match self.cell.set(Arc::clone(&arc)) {
-            Ok(()) => arc,
-            Err(_) => Arc::clone(self.cell.get().expect("LazyCodec set failed but cell empty")),
-        }
+        Arc::clone(self.value.get())
+    }
+}
+
+struct CodecRegistry<C: ?Sized> {
+    codecs: HashMap<String, LazyValue<Arc<C>>>,
+}
+
+impl<C: ?Sized> CodecRegistry<C> {
+    fn new() -> Self { Self { codecs: HashMap::new() } }
+
+    fn register<F: FnOnce() -> Arc<C> + Send + 'static>(&mut self, id: &str, thunk: F) {
+        self.codecs.insert(id.to_string(), LazyValue::new(thunk));
+    }
+
+    fn try_find(&self, id: &str) -> Option<Arc<C>> {
+        self.codecs.get(id).map(|lazy| Arc::clone(lazy.get()))
     }
 }
 
@@ -280,7 +307,7 @@ pub trait AbstractBaboonCodecs: Send + Sync {
 }
 
 pub struct AbstractBaboonJsonCodecsImpl {
-    codecs: HashMap<String, LazyCodec<Arc<dyn BaboonAnyJsonCodec>>>,
+    codecs: CodecRegistry<dyn BaboonAnyJsonCodec>,
 }
 
 impl Default for AbstractBaboonJsonCodecsImpl {
@@ -291,7 +318,7 @@ impl Default for AbstractBaboonJsonCodecsImpl {
 
 impl AbstractBaboonJsonCodecsImpl {
     pub fn new() -> Self {
-        AbstractBaboonJsonCodecsImpl { codecs: HashMap::new() }
+        AbstractBaboonJsonCodecsImpl { codecs: CodecRegistry::new() }
     }
 
     pub fn register<F: FnOnce() -> Arc<dyn BaboonAnyJsonCodec> + Send + 'static>(
@@ -299,16 +326,16 @@ impl AbstractBaboonJsonCodecsImpl {
         id: &str,
         thunk: F,
     ) {
-        self.codecs.insert(id.to_string(), LazyCodec::new(thunk));
+        self.codecs.register(id, thunk);
     }
 
     pub fn try_find(&self, id: &str) -> Option<Arc<dyn BaboonAnyJsonCodec>> {
-        self.codecs.get(id).map(|lazy| (*lazy.get()).clone())
+        self.codecs.try_find(id)
     }
 }
 
 pub struct AbstractBaboonUebaCodecsImpl {
-    codecs: HashMap<String, LazyCodec<Arc<dyn BaboonAnyBinCodec>>>,
+    codecs: CodecRegistry<dyn BaboonAnyBinCodec>,
 }
 
 impl Default for AbstractBaboonUebaCodecsImpl {
@@ -319,7 +346,7 @@ impl Default for AbstractBaboonUebaCodecsImpl {
 
 impl AbstractBaboonUebaCodecsImpl {
     pub fn new() -> Self {
-        AbstractBaboonUebaCodecsImpl { codecs: HashMap::new() }
+        AbstractBaboonUebaCodecsImpl { codecs: CodecRegistry::new() }
     }
 
     pub fn register<F: FnOnce() -> Arc<dyn BaboonAnyBinCodec> + Send + 'static>(
@@ -327,11 +354,11 @@ impl AbstractBaboonUebaCodecsImpl {
         id: &str,
         thunk: F,
     ) {
-        self.codecs.insert(id.to_string(), LazyCodec::new(thunk));
+        self.codecs.register(id, thunk);
     }
 
     pub fn try_find(&self, id: &str) -> Option<Arc<dyn BaboonAnyBinCodec>> {
-        self.codecs.get(id).map(|lazy| (*lazy.get()).clone())
+        self.codecs.try_find(id)
     }
 }
 
@@ -731,19 +758,18 @@ impl BaboonCodecsFacade {
         exact: bool,
         tolerant: bool,
     ) -> Result<BaboonDomainVersion, BaboonCodecError> {
-        let versions = {
+        let bounds = {
             let map = self.domain_versions.lock().expect("mutex poisoned");
-            map.get(&type_meta.domain_identifier).cloned()
+            map.get(&type_meta.domain_identifier).and_then(|versions| {
+                Some((versions.first()?.clone(), versions.last()?.clone()))
+            })
         };
-        let versions = versions.filter(|v| !v.is_empty()).ok_or_else(|| {
+        let (min_version, max_version) = bounds.ok_or_else(|| {
             BaboonCodecError::codec_not_found(format!(
                 "Unknown domain {}.",
                 type_meta.domain_identifier
             ))
         })?;
-
-        let min_version = &versions[0];
-        let max_version = &versions[versions.len() - 1];
 
         let lookup_version = type_meta.version_ref();
         let lookup_v = lookup_version.version()?;
@@ -782,10 +808,10 @@ impl BaboonCodecsFacade {
             return Ok(model_version);
         }
         if model_v >= min_v && model_v < max_v {
-            return self.resolve_max_compat(&model_version, max_version, &type_meta.type_identifier);
+            return self.resolve_max_compat(&model_version, &max_version, &type_meta.type_identifier);
         }
         if model_v < min_v {
-            return self.resolve_max_compat(min_version, max_version, &type_meta.type_identifier);
+            return self.resolve_max_compat(&min_version, &max_version, &type_meta.type_identifier);
         }
         Err(BaboonCodecError::codec_not_found(format!(
             "Unsupported domain version '{}'.",
@@ -873,10 +899,8 @@ impl BaboonCodecsFacade {
 
     fn min_reader_bound(value: &dyn BaboonGeneratedDyn, tier: &str) -> Result<String, BaboonCodecError> {
         value
-            .baboon_min_reader_versions_dyn()
-            .into_iter()
-            .find(|(t, _)| t == tier)
-            .map(|(_, v)| v)
+            .baboon_min_reader_version_dyn(tier)
+            .map(std::borrow::Cow::into_owned)
             .ok_or_else(|| {
                 BaboonCodecError::encoder_failure(format!(
                     "baboon_min_reader_versions_dyn lacks '{}' for type [{}.{}]",
@@ -896,16 +920,16 @@ impl BaboonCodecsFacade {
         } else {
             value.baboon_type_identifier_dyn().to_string()
         };
-        let same_in = value.baboon_same_in_versions_dyn();
+        let same_in = value.baboon_first_same_in_version_dyn();
         // PR-08-D02 fail-fast invariant: codegen must always emit a non-empty same-in-versions
         // list. A panic here surfaces a generator regression (not a recoverable user error).
         assert!(
-            !same_in.is_empty(),
+            same_in.is_some(),
             "BaboonGeneratedDyn::baboon_same_in_versions_dyn returned empty; codegen invariant violated for [{}.{}]",
             value.baboon_domain_identifier_dyn(),
             value.baboon_type_identifier_dyn()
         );
-        let min_compat = same_in[0].clone();
+        let min_compat = same_in.expect("checked above").into_owned();
         let readable_min = Self::min_reader_bound(value, BaboonTypeMeta::JSON_READABLE_TIER)?;
         Ok(BaboonTypeMeta::new(
             BaboonTypeMeta::META_VERSION,
@@ -1281,4 +1305,3 @@ impl BaboonCodecsFacade {
         }
     }
 }
-

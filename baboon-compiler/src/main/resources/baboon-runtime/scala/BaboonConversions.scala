@@ -23,22 +23,25 @@ package baboon.runtime.shared {
   ) extends BaboonGeneratedConversion {
     protected def doConvert[Ctx](context: Option[Ctx], conversions: AbstractBaboonConversions, from: From): To
 
-    private def validateBaboonType(obj: Any): Unit = {
+    protected def targetTypeId: String = typeId
+
+    private def validateBaboonType(obj: Any, target: Boolean): Unit = {
+      def expectedTypeId: String = if (target) targetTypeId else typeId
       obj match {
         case bg: BaboonGenerated =>
-          val conversionTypeIsExactType = typeId == bg.baboonTypeIdentifier
+          val conversionTypeIsExactType = expectedTypeId == bg.baboonTypeIdentifier
           bg match {
             case bga: BaboonAdtMemberMeta =>
-              val conversionTypeIsAdtType = typeId == bga.baboonAdtTypeIdentifier
+              val conversionTypeIsAdtType = expectedTypeId == bga.baboonAdtTypeIdentifier
               if (!conversionTypeIsAdtType && !conversionTypeIsExactType) {
                 throw new IllegalArgumentException(
-                  s"Provided instance is adt=${bga.baboonAdtTypeIdentifier} exact=${bg.baboonTypeIdentifier}, one of which must be $typeId"
+                  s"Provided instance is adt=${bga.baboonAdtTypeIdentifier} exact=${bg.baboonTypeIdentifier}, one of which must be $expectedTypeId"
                 )
               }
             case _ =>
               if (!conversionTypeIsExactType) {
                 throw new IllegalArgumentException(
-                  s"Provided instance is ${bg.baboonTypeIdentifier} but must be $typeId"
+                  s"Provided instance is ${bg.baboonTypeIdentifier} but must be $expectedTypeId"
                 )
               }
           }
@@ -47,9 +50,9 @@ package baboon.runtime.shared {
     }
 
     def convert[Ctx](context: Option[Ctx], conversions: AbstractBaboonConversions, from: From): To = {
-      validateBaboonType(from)
-      val result = doConvert(context, conversions, from)
-      validateBaboonType(result)
+      validateBaboonType(from, target   = false)
+      val result   = doConvert(context, conversions, from)
+      validateBaboonType(result, target = true)
       result
     }
 

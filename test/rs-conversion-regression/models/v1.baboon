@@ -1,0 +1,27 @@
+model rust.conversion
+version "1.0.0"
+
+root data Holder {
+  values: opt[i32]
+}
+
+root data Collections {
+  byName: map[str, opt[i16]]
+  unique: lst[i16]
+  wrapped: i32
+}
+
+data Child {
+  values: opt[i32]
+}
+
+root data Nested {
+  child: Child
+  children: lst[Child]
+}
+
+root adt Event {
+  data Payload {
+    values: opt[i32]
+  }
+}

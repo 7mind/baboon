@@ -87,8 +87,14 @@ object RsServiceWiringTranslator {
           q"""pub trait IBaboonServiceRt {
              |    fn pure<L: 'static, R>(&self, value: R) -> ${ct("L", "R")};
              |    fn fail<L: 'static, R>(&self, error: L) -> ${ct("L", "R")};
-             |    async fn left_map<A: 'static, B, C: 'static, Fut: std::future::Future<Output = C>, F: FnOnce(A) -> Fut>(&self, value: ${ct("A", "B")}, f: F) -> ${ct("C", "B")};
-             |    async fn flat_map<A: 'static, B, C, Fut: std::future::Future<Output = ${ct("A", "C")}>, F: FnOnce(B) -> Fut>(&self, value: ${ct("A", "B")}, f: F) -> ${ct("A", "C")};
+             |    async fn left_map<A: 'static, B, C: 'static, Fut: std::future::Future<Output = C>, F: FnOnce(A) -> Fut>(&self, value: ${ct("A", "B")}, f: F) -> ${ct(
+              "C",
+              "B",
+            )};
+             |    async fn flat_map<A: 'static, B, C, Fut: std::future::Future<Output = ${ct("A", "C")}>, F: FnOnce(B) -> Fut>(&self, value: ${ct(
+              "A",
+              "B",
+            )}, f: F) -> ${ct("A", "C")};
              |}""".stripMargin
         } else {
           q"""pub trait IBaboonServiceRt {
@@ -109,13 +115,19 @@ object RsServiceWiringTranslator {
                |impl IBaboonServiceRt for BaboonServiceRtDefault {
                |    fn pure<L: 'static, R>(&self, value: R) -> ${ct("L", "R")} { Ok(value) }
                |    fn fail<L: 'static, R>(&self, error: L) -> ${ct("L", "R")} { Err(error) }
-               |    async fn left_map<A: 'static, B, C: 'static, Fut: std::future::Future<Output = C>, F: FnOnce(A) -> Fut>(&self, value: ${ct("A", "B")}, f: F) -> ${ct("C", "B")} {
+               |    async fn left_map<A: 'static, B, C: 'static, Fut: std::future::Future<Output = C>, F: FnOnce(A) -> Fut>(&self, value: ${ct("A", "B")}, f: F) -> ${ct(
+                "C",
+                "B",
+              )} {
                |        match value {
                |            Err(a) => Err(f(a).await),
                |            Ok(b) => Ok(b),
                |        }
                |    }
-               |    async fn flat_map<A: 'static, B, C, Fut: std::future::Future<Output = ${ct("A", "C")}>, F: FnOnce(B) -> Fut>(&self, value: ${ct("A", "B")}, f: F) -> ${ct("A", "C")} {
+               |    async fn flat_map<A: 'static, B, C, Fut: std::future::Future<Output = ${ct("A", "C")}>, F: FnOnce(B) -> Fut>(&self, value: ${ct(
+                "A",
+                "B",
+              )}, f: F) -> ${ct("A", "C")} {
                |        match value {
                |            Err(a) => Err(a),
                |            Ok(b) => f(b).await,
@@ -198,7 +210,7 @@ object RsServiceWiringTranslator {
                   q"""pub ${asyncKw}fn ${toSnakeCase(m.name.name)}(&self, ${ctxParamDecl}arg: $inFq) -> Result<$outFq, Box<dyn std::error::Error>> {
                      |    let mut buf = Vec::new();
                      |    $baboonBinEncode::encode_ueba(&arg, &self.$clientCodecField, &mut buf)?;
-                     |    let resp = (self.transport_ueba)(${transportCtxArg}"$svcName", "${m.name.name}", &buf)$awaitSuffix$transportErrMap?;
+                     |    let resp = (self.transport_ueba)($transportCtxArg"$svcName", "${m.name.name}", &buf)$awaitSuffix$transportErrMap?;
                      |    ${decodeResult.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -214,7 +226,7 @@ object RsServiceWiringTranslator {
                 Some(
                   q"""pub ${asyncKw}fn ${toSnakeCase(m.name.name)}_json(&self, ${ctxParamDecl}arg: $inFq) -> Result<$outFq, Box<dyn std::error::Error>> {
                      |    let encoded = serde_json::to_string(&arg)?;
-                     |    let resp = (self.transport_json)(${transportCtxArg}"$svcName", "${m.name.name}", &encoded)$awaitSuffix$transportErrMap?;
+                     |    let resp = (self.transport_json)($transportCtxArg"$svcName", "${m.name.name}", &encoded)$awaitSuffix$transportErrMap?;
                      |    ${decodeResult.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -241,10 +253,10 @@ object RsServiceWiringTranslator {
           if (hasUeba) {
             if (isAsync) {
               typeParams += "TU"
-              whereClauses += s"TU: Fn(${transportCtxType}&str, &str, &[u8]) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
+              whereClauses += s"TU: Fn($transportCtxType&str, &str, &[u8]) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
             } else {
               typeParams += "TU"
-              whereClauses += s"TU: Fn(${transportCtxType}&str, &str, &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>>"
+              whereClauses += s"TU: Fn($transportCtxType&str, &str, &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>>"
             }
             fields += q"transport_ueba: TU,"
             ctorParams += q"transport_ueba: TU"
@@ -253,10 +265,10 @@ object RsServiceWiringTranslator {
           if (hasJson) {
             if (isAsync) {
               typeParams += "TJ"
-              whereClauses += s"TJ: Fn(${transportCtxType}&str, &str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
+              whereClauses += s"TJ: Fn($transportCtxType&str, &str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
             } else {
               typeParams += "TJ"
-              whereClauses += s"TJ: Fn(${transportCtxType}&str, &str, &str) -> Result<String, Box<dyn std::error::Error>>"
+              whereClauses += s"TJ: Fn($transportCtxType&str, &str, &str) -> Result<String, Box<dyn std::error::Error>>"
             }
             fields += q"transport_json: TJ,"
             ctorParams += q"transport_json: TJ"
@@ -274,10 +286,11 @@ object RsServiceWiringTranslator {
           // variance-neutral `PhantomData<fn() -> Ctx>` marker is added to
           // satisfy Rust's E0392 (unused type parameter) — it stays Send+Sync
           // and Clone regardless of `Ctx`.
-          absCtxTypeParam.foreach { tp =>
-            typeParams += tp
-            fields += q"_ctx_marker: std::marker::PhantomData<fn() -> $tp>,"
-            ctorAssigns += q"_ctx_marker: std::marker::PhantomData,"
+          absCtxTypeParam.foreach {
+            tp =>
+              typeParams += tp
+              fields += q"_ctx_marker: std::marker::PhantomData<fn() -> $tp>,"
+              ctorAssigns += q"_ctx_marker: std::marker::PhantomData,"
           }
 
           val typeParamStr = typeParams.mkString(", ")
@@ -382,7 +395,7 @@ object RsServiceWiringTranslator {
     // sync emission byte-identical.
     private val combinatorClosureOpen: String  = if (isAsync) "async move {" else "{"
     private val combinatorClosureClose: String = "}"
-    private val combinatorAwait: String         = if (isAsync) ".await" else ""
+    private val combinatorAwait: String        = if (isAsync) ".await" else ""
 
     // The ASYNC client transport closures return
     // `Result<_, Box<dyn std::error::Error + Send + Sync>>` (the future must be
@@ -472,9 +485,10 @@ object RsServiceWiringTranslator {
     private def generateOneWrapper(spec: WrapperSpec): TextTree[RsValue] = {
       val wrapperName = s"${spec.svcName}${if (spec.isJson) "JsonService" else "UebaService"}"
       val wireTypeStr = if (spec.isJson) "&str" else "&[u8]"
-      val invokerFn   = if (spec.isJson) s"invoke_json_${toSnakeCase(spec.svcName)}"
-                        else s"invoke_ueba_${toSnakeCase(spec.svcName)}"
-      val retTypeStr  = wrapperRetType(spec.isJson)
+      val invokerFn =
+        if (spec.isJson) s"invoke_json_${toSnakeCase(spec.svcName)}"
+        else s"invoke_ueba_${toSnakeCase(spec.svcName)}"
+      val retTypeStr = wrapperRetType(spec.isJson)
 
       // `none` mode keeps the historical context-free trait (`IBaboon*Service`),
       // baking any dependency at construction; the service context (when active)
@@ -509,13 +523,14 @@ object RsServiceWiringTranslator {
       // must be bound on `Clone` (E0599 `no method named 'clone'` otherwise).
       // SYNC mode forwards `&self.impl_`/`&self.rt` by reference, so no `Clone`
       // bound is added — keeping the sync bounds byte-identical.
-      val sendSync   = if (isAsync) " + Clone + Send + Sync + 'static" else " + 'static"
-      val implBound: TextTree[RsValue]               = q"Impl: $svcTraitRef$sendSync"
-      val rtBound: Option[TextTree[RsValue]]         =
+      val sendSync                     = if (isAsync) " + Clone + Send + Sync + 'static" else " + 'static"
+      val implBound: TextTree[RsValue] = q"Impl: $svcTraitRef$sendSync"
+      val rtBound: Option[TextTree[RsValue]] =
         if (resolved.noErrors) None else Some(q"Rt: $ibaboonServiceRt$sendSync")
-      val absCtxBound: Option[TextTree[RsValue]] = absCtxTypeParam.map { p =>
-        val tail = if (isAsync) ": Clone + Send + Sync + 'static" else ": Clone + 'static"
-        q"$p$tail"
+      val absCtxBound: Option[TextTree[RsValue]] = absCtxTypeParam.map {
+        p =>
+          val tail = if (isAsync) ": Clone + Send + Sync + 'static" else ": Clone + 'static"
+          q"$p$tail"
       }
 
       val whereLines: List[TextTree[RsValue]] =
@@ -551,26 +566,27 @@ object RsServiceWiringTranslator {
       val ctxCtorAssignOpt: Option[String] = storedCtxField.map { case (pn, _) => s"$pn," }
       val markerCtorAssignOpt: Option[String] =
         if (ctxActive && absCtxTypeParam.isDefined) Some("_ctx_marker: std::marker::PhantomData,") else None
-      val ctorAssignsList: List[String]    = "impl_," :: rtCtorAssignOpt.toList ++ ctxCtorAssignOpt.toList ++ markerCtorAssignOpt.toList
-      val ctorAssigns: String              = ctorAssignsList.mkString(" ")
+      val ctorAssignsList: List[String] = "impl_," :: rtCtorAssignOpt.toList ++ ctxCtorAssignOpt.toList ++ markerCtorAssignOpt.toList
+      val ctorAssigns: String           = ctorAssignsList.mkString(" ")
 
       // ---- invoke() signature + body ----
       // Context-active adds a per-invoke `ctx: <SvcCtx>` param and renames the
       // codec ctx to `codec_ctx`. Context-free keeps the historical signature
       // (`invoke(&self, method, data, ctx: &BaboonCodecContext)`), byte-identical.
-      val codecCtxParam: String = if (ctxActive) "codec_ctx" else "ctx"
+      val codecCtxParam: String      = if (ctxActive) "codec_ctx" else "ctx"
       val invokeCtxParamDecl: String = svcCtxTypeName.fold("")(tn => s"ctx: $tn, ")
 
       val body: TextTree[RsValue] = if (isAsync) {
         // Async path: clone everything the future captures into owned
         // bindings, then return a `Pin<Box<Future + Send>>`. Requires
         // Impl/Rt/SvcCtx: Clone + Send + Sync + 'static.
-        val cloneRt   = if (resolved.noErrors) "" else "let rt_clone = self.rt.clone();\n"
+        val cloneRt        = if (resolved.noErrors) "" else "let rt_clone = self.rt.clone();\n"
         val cloneStoredCtx = storedCtxField.fold("")(f => s"let svc_ctx_clone = self.${f._1}.clone();\n")
         val cloneInvokeCtx = if (ctxActive) "let svc_ctx_clone = ctx.clone();\n" else ""
-        val dataOwn   = if (spec.isJson) "let data_owned: String = data.to_string();"
-                        else "let data_owned: Vec<u8> = data.to_vec();"
-        val dataRef   = if (spec.isJson) "data_owned.as_str()" else "data_owned.as_slice()"
+        val dataOwn =
+          if (spec.isJson) "let data_owned: String = data.to_string();"
+          else "let data_owned: Vec<u8> = data.to_vec();"
+        val dataRef = if (spec.isJson) "data_owned.as_str()" else "data_owned.as_slice()"
 
         val futArgs: List[String] = {
           val base    = List("&method_owned", dataRef, "&impl_clone")
@@ -588,8 +604,8 @@ object RsServiceWiringTranslator {
            |})""".stripMargin
       } else {
         val syncArgs: List[String] = {
-          val base    = List("method", "data", "&self.impl_")
-          val withRt  = if (resolved.noErrors) base else base :+ "&self.rt"
+          val base   = List("method", "data", "&self.impl_")
+          val withRt = if (resolved.noErrors) base else base :+ "&self.rt"
           val withCtx =
             if (ctxActive) withRt :+ "ctx"
             else storedCtxField.fold(withRt)(f => withRt :+ s"self.${f._1}.clone()")
@@ -619,7 +635,7 @@ object RsServiceWiringTranslator {
          |${whereBlock.shift(0).trim}
          |{
          |    fn service_name(&self) -> &str { "${spec.svcName}" }
-         |    fn invoke(&self, method: &$baboonMethodId, data: $wireTypeStr, ${invokeCtxParamDecl}$codecCtxParam: &$baboonCodecContext) -> $retTypeStr {
+         |    fn invoke(&self, method: &$baboonMethodId, data: $wireTypeStr, $invokeCtxParamDecl$codecCtxParam: &$baboonCodecContext) -> $retTypeStr {
          |        ${body.shift(8).trim}
          |    }
          |}""".stripMargin
@@ -686,7 +702,7 @@ object RsServiceWiringTranslator {
          |    method: &$baboonMethodId,
          |    data: &str,
          |    ${implParam(svcType)},
-         |    ${ctxParamDecl}${codecCtxName(isJson = true)}: &$baboonCodecContext,
+         |    $ctxParamDecl${codecCtxName(isJson = true)}: &$baboonCodecContext,
          |) -> Result<String, $baboonWiringError> {
          |    match method.method_name.as_str() {
          |        ${cases.shift(8).trim}
@@ -704,7 +720,9 @@ object RsServiceWiringTranslator {
             case Some(_) =>
               q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
                  |let mut out_buf = Vec::new();
-                 |$baboonBinEncode::encode_ueba(&result, ${codecCtxName(isJson = false)}, &mut out_buf).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))?;
+                 |$baboonBinEncode::encode_ueba(&result, ${codecCtxName(isJson =
+                  false
+                )}, &mut out_buf).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))?;
                  |Ok(out_buf)""".stripMargin
             case None =>
               q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
@@ -713,7 +731,9 @@ object RsServiceWiringTranslator {
 
           q""""${m.name.name}" => {
              |    let mut cursor = std::io::Cursor::new(data);
-             |    let decoded: $inFq = $baboonBinDecode::decode_ueba(${codecCtxName(isJson = false)}, &mut cursor).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), e))?;
+             |    let decoded: $inFq = $baboonBinDecode::decode_ueba(${codecCtxName(isJson =
+              false
+            )}, &mut cursor).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), e))?;
              |    ${encodeAndReturn.shift(4).trim}
              |}""".stripMargin
       }.join("\n")
@@ -722,7 +742,7 @@ object RsServiceWiringTranslator {
          |    method: &$baboonMethodId,
          |    data: &[u8],
          |    ${implParam(svcType)},
-         |    ${ctxParamDecl}${codecCtxName(isJson = false)}: &$baboonCodecContext,
+         |    $ctxParamDecl${codecCtxName(isJson = false)}: &$baboonCodecContext,
          |) -> Result<Vec<u8>, $baboonWiringError> {
          |    match method.method_name.as_str() {
          |        ${cases.shift(8).trim}
@@ -767,13 +787,41 @@ object RsServiceWiringTranslator {
       (Seq(jsonFn, uebaFn).flatten :+ wrappers).joinNN()
     }
 
+    private def renderErrorsCall(m: Typedef.MethodDef, emptyOutput: TextTree[RsValue]): TextTree[RsValue] = {
+      val lmHint     = leftMapHint(m)
+      val hasErrType = m.err.isDefined && !resolved.noErrors
+      if (isAsync) {
+        if (hasErrType) {
+          q"""let call_result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+             |rt.left_map$lmHint(call_result, |err| async move { $bweFq::CallFailed(method.clone(), Box::new(err)) }).await""".stripMargin
+        } else if (m.out.isDefined) {
+          q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+             |rt.pure$pureHint(result)""".stripMargin
+        } else {
+          q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+             |rt.pure$pureHint($emptyOutput)""".stripMargin
+        }
+      } else {
+        val success = if (hasErrType) {
+          q"Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),"
+        } else if (m.out.isDefined) {
+          q"Ok(result) => rt.pure$pureHint(result),"
+        } else {
+          q"Ok(_) => rt.pure$pureHint($emptyOutput),"
+        }
+        q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+           |    $success
+           |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+           |}""".stripMargin
+      }
+    }
+
     private def generateErrorsJsonFn(service: Typedef.Service, svcName: String, svcType: RsValue.RsType): TextTree[RsValue] = {
       val wiringRetType = ct(bweFq, "String")
 
       val cases = service.methods.map {
         m =>
-          val inFq   = inTypeFq(m)
-          val lmHint = leftMapHint(m)
+          val inFq = inTypeFq(m)
 
           val decodeStep =
             q"""let input: ${ct(bweFq, inFq)} = match serde_json::from_str::<$inFq>(data) {
@@ -781,31 +829,9 @@ object RsServiceWiringTranslator {
                |    Err(e) => rt.fail($bweFq::DecoderFailed(method.clone(), Box::new(e))),
                |};""".stripMargin
 
-          val hasErrType = m.err.isDefined && !resolved.noErrors
-
           val callAndEncodeStep = m.out match {
             case Some(_) =>
-              val callBody = if (isAsync) {
-                if (hasErrType) {
-                  q"""let call_result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
-                     |rt.left_map$lmHint(call_result, |err| async move { $bweFq::CallFailed(method.clone(), Box::new(err)) }).await""".stripMargin
-                } else {
-                  q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
-                     |rt.pure$pureHint(result)""".stripMargin
-                }
-              } else {
-                if (hasErrType) {
-                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                     |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                     |}""".stripMargin
-                } else {
-                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                     |    Ok(result) => rt.pure$pureHint(result),
-                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                     |}""".stripMargin
-                }
-              }
+              val callBody = renderErrorsCall(m, q""""null".to_string()""")
 
               q"""let output = rt.flat_map$flatMapHint(input, |v| $combinatorClosureOpen
                  |    ${callBody.shift(4).trim}
@@ -818,27 +844,7 @@ object RsServiceWiringTranslator {
                  |$combinatorClosureClose)$combinatorAwait""".stripMargin
 
             case None =>
-              val callBody = if (isAsync) {
-                if (hasErrType) {
-                  q"""let call_result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
-                     |rt.left_map$lmHint(call_result, |err| async move { $bweFq::CallFailed(method.clone(), Box::new(err)) }).await""".stripMargin
-                } else {
-                  q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
-                     |rt.pure$pureHint("null".to_string())""".stripMargin
-                }
-              } else {
-                if (hasErrType) {
-                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                     |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                     |}""".stripMargin
-                } else {
-                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                     |    Ok(_) => rt.pure$pureHint("null".to_string()),
-                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                     |}""".stripMargin
-                }
-              }
+              val callBody = renderErrorsCall(m, q""""null".to_string()""")
 
               q"""rt.flat_map$flatMapHint(input, |v| $combinatorClosureOpen
                  |    ${callBody.shift(4).trim}
@@ -856,7 +862,7 @@ object RsServiceWiringTranslator {
          |    data: &str,
          |    ${implParam(svcType)},
          |    rt: &Rt,
-         |    ${ctxParamDecl}${codecCtxName(isJson = true)}: &$baboonCodecContext,
+         |    $ctxParamDecl${codecCtxName(isJson = true)}: &$baboonCodecContext,
          |) -> $wiringRetType {
          |    match method.method_name.as_str() {
          |        ${cases.shift(8).trim}
@@ -870,8 +876,7 @@ object RsServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inFq   = inTypeFq(m)
-          val lmHint = leftMapHint(m)
+          val inFq = inTypeFq(m)
 
           val decodeStep =
             q"""let input: ${ct(bweFq, inFq)} = {
@@ -882,31 +887,9 @@ object RsServiceWiringTranslator {
                |    }
                |};""".stripMargin
 
-          val hasErrType = m.err.isDefined && !resolved.noErrors
-
           val callAndEncodeStep = m.out match {
             case Some(_) =>
-              val callBody = if (isAsync) {
-                if (hasErrType) {
-                  q"""let call_result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
-                     |rt.left_map$lmHint(call_result, |err| async move { $bweFq::CallFailed(method.clone(), Box::new(err)) }).await""".stripMargin
-                } else {
-                  q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
-                     |rt.pure$pureHint(result)""".stripMargin
-                }
-              } else {
-                if (hasErrType) {
-                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                     |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                     |}""".stripMargin
-                } else {
-                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                     |    Ok(result) => rt.pure$pureHint(result),
-                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                     |}""".stripMargin
-                }
-              }
+              val callBody = renderErrorsCall(m, q"Vec::new()")
 
               q"""let output = rt.flat_map$flatMapHint(input, |v| $combinatorClosureOpen
                  |    ${callBody.shift(4).trim}
@@ -920,27 +903,7 @@ object RsServiceWiringTranslator {
                  |$combinatorClosureClose)$combinatorAwait""".stripMargin
 
             case None =>
-              val callBody = if (isAsync) {
-                if (hasErrType) {
-                  q"""let call_result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
-                     |rt.left_map$lmHint(call_result, |err| async move { $bweFq::CallFailed(method.clone(), Box::new(err)) }).await""".stripMargin
-                } else {
-                  q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
-                     |rt.pure$pureHint(Vec::new())""".stripMargin
-                }
-              } else {
-                if (hasErrType) {
-                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                     |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                     |}""".stripMargin
-                } else {
-                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                     |    Ok(_) => rt.pure$pureHint(Vec::new()),
-                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                     |}""".stripMargin
-                }
-              }
+              val callBody = renderErrorsCall(m, q"Vec::new()")
 
               q"""rt.flat_map$flatMapHint(input, |v| $combinatorClosureOpen
                  |    ${callBody.shift(4).trim}
@@ -958,7 +921,7 @@ object RsServiceWiringTranslator {
          |    data: &[u8],
          |    ${implParam(svcType)},
          |    rt: &Rt,
-         |    ${ctxParamDecl}${codecCtxName(isJson = false)}: &$baboonCodecContext,
+         |    $ctxParamDecl${codecCtxName(isJson = false)}: &$baboonCodecContext,
          |) -> $wiringRetType {
          |    match method.method_name.as_str() {
          |        ${cases.shift(8).trim}

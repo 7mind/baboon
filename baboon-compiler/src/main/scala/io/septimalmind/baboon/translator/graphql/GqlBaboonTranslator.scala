@@ -96,17 +96,22 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
       case u: DomainMember.User => u
     }.toList.sortBy(_.id.toString)
 
-    // Resolve all field type refs through foreign type mappings
-    def resolvedFields(fields: List[Field]): List[Field] = {
-      fields.map(f => f.copy(tpe = typeTranslator.resolveTypeRef(f.tpe, foreignResolutions)))
-    }
+    val resolvedFields = members.map {
+      m =>
+        val fields = m.defn match {
+          case dto: Typedef.Dto => dto.fields
+          case adt: Typedef.Adt => adt.fields
+          case _                => Nil
+        }
+        m.id -> fields.map(f => f.copy(tpe = typeTranslator.resolveTypeRef(f.tpe, foreignResolutions)))
+    }.toMap
 
     // Collect all map types used in fields (after resolution) so we can emit helper types
     val allMapTypes = members.flatMap {
       m =>
         m.defn match {
           case dto: Typedef.Dto =>
-            resolvedFields(dto.fields).flatMap(f => typeTranslator.collectMapTypes(f.tpe))
+            resolvedFields(dto.id).flatMap(f => typeTranslator.collectMapTypes(f.tpe))
           case _ => Nil
         }
     }.toSet
@@ -135,7 +140,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
       "BaboonAny",
     )
 
-    val usedScalars   = collectUsedCustomScalars(members, foreignResolutions)
+    val usedScalars   = resolvedFields.valuesIterator.flatten.flatMap(f => collectScalarsFromRef(f.tpe)).toSet
     val scalarsToEmit = (builtinCustomScalars.intersect(usedScalars).toList ++ foreignScalars).sorted
 
     val scalars: List[GqlTree] = scalarsToEmit.map {
@@ -163,7 +168,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
           case _: Typedef.NonDataTypedef => None // skip services, contracts
           case _: Typedef.Foreign        => None // skip — handled as scalars or resolved via runtimeMapping
           case _ if m.ownedByAdt         => None // skip — emitted by parent ADT
-          case defn                      => renderTypedef(defn, m, domain, foreignResolutions)
+          case defn                      => renderTypedef(defn, m, domain, resolvedFields)
         }
     }
 
@@ -181,39 +186,35 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
     defn: Typedef.User,
     member: DomainMember.User,
     domain: Domain,
-    foreignResolutions: Map[TypeId.User, Option[TypeRef]],
+    resolvedFields: Map[TypeId.User, List[Field]],
   ): Option[GqlTree] = {
     defn match {
       case dto: Typedef.Dto =>
-        Some(renderDto(dto, member.docs, foreignResolutions))
+        Some(renderDto(dto, member.docs, resolvedFields))
 
       case e: Typedef.Enum =>
         Some(renderEnum(e, member.docs))
 
       case adt: Typedef.Adt =>
-        Some(renderAdt(adt, member.docs, domain, foreignResolutions))
+        Some(renderAdt(adt, member.docs, domain, resolvedFields))
 
       case _ => None
     }
-  }
-
-  private def resolveFieldType(ref: TypeRef, foreignResolutions: Map[TypeId.User, Option[TypeRef]]): String = {
-    typeTranslator.fieldTypeStr(typeTranslator.resolveTypeRef(ref, foreignResolutions))
   }
 
   /** Doc comments are user text: interpolated verbatim so backslashes survive and `|` margins are never stripped. */
   private def description(docs: Docs, indent: String): GqlTree =
     TextTree.verbatim[Nothing](typeTranslator.renderGqlDescription(docs, indent))
 
-  private def renderDto(dto: Typedef.Dto, docs: Docs, foreignResolutions: Map[TypeId.User, Option[TypeRef]]): GqlTree = {
+  private def renderDto(dto: Typedef.Dto, docs: Docs, resolvedFields: Map[TypeId.User, List[Field]]): GqlTree = {
     val name = typeTranslator.typeName(dto.id)
     // GraphQL forbids empty object types: emit a placeholder field
     val fields: List[GqlTree] =
       if (dto.fields.isEmpty) List(q"  _empty: Boolean")
       else
-        dto.fields.map {
+        resolvedFields(dto.id).map {
           f =>
-            q"${description(f.docs, "  ")}  ${typeTranslator.sanitizeName(f.name.name)}: ${resolveFieldType(f.tpe, foreignResolutions)}"
+            q"${description(f.docs, "  ")}  ${typeTranslator.sanitizeName(f.name.name)}: ${typeTranslator.fieldTypeStr(f.tpe)}"
         }
     val body: GqlTree =
       q"""type $name {
@@ -236,7 +237,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
     adt: Typedef.Adt,
     docs: Docs,
     domain: Domain,
-    foreignResolutions: Map[TypeId.User, Option[TypeRef]],
+    resolvedFields: Map[TypeId.User, List[Field]],
   ): GqlTree = {
     import Typedef.Adt.AdtSyntax
     val name = typeTranslator.typeName(adt.id)
@@ -250,7 +251,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
         domain.defs.meta.nodes.get(memberId).toList.flatMap {
           case u: DomainMember.User =>
             u.defn match {
-              case dto: Typedef.Dto => List(renderDto(dto, u.docs, foreignResolutions))
+              case dto: Typedef.Dto => List(renderDto(dto, u.docs, resolvedFields))
               case _                => Nil // skip non-DTO members (shouldn't happen per grammar)
             }
           case _ => Nil
@@ -262,22 +263,6 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
     (branches :+ union).joinNN()
   }
 
-  private def collectUsedCustomScalars(
-    members: List[DomainMember.User],
-    foreignResolutions: Map[TypeId.User, Option[TypeRef]],
-  ): Set[String] = {
-    members.flatMap {
-      m =>
-        m.defn match {
-          case dto: Typedef.Dto =>
-            dto.fields.flatMap(f => collectScalarsFromRef(typeTranslator.resolveTypeRef(f.tpe, foreignResolutions)))
-          case adt: Typedef.Adt =>
-            adt.fields.flatMap(f => collectScalarsFromRef(typeTranslator.resolveTypeRef(f.tpe, foreignResolutions)))
-          case _ => Nil
-        }
-    }.toSet
-  }
-
   /** GraphQL block-string description for a custom scalar.
     *
     * Returns a complete `"""..."""` block (with trailing newline) ready to be
@@ -287,9 +272,6 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
   private def scalarDescription(name: String): Option[String] = {
     name match {
       case "BaboonAny" =>
-        // Triple-quote sequences are produced via concatenation since Scala
-        // triple-quoted strings cannot contain `"""` directly.
-        val tq = "\"\"\""
         val body =
           """Opaque any-envelope. JSON serialization of a baboon AnyOpaque value.
             |
@@ -307,7 +289,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
             |  0x06 — variant D1 (`any[T]`)                      — domain + version (typeid static)
             |  0x02 — variant D2 (`any[domain:this, T]`)         — version (typeid static)
             |  0x00 — variant D3 (`any[domain:current, T]`)      — none on the wire""".stripMargin
-        Some(s"$tq\n$body\n$tq\n")
+        Some(typeTranslator.descriptionLiteral(body.split("\n", -1).toList, ""))
       case _ => None
     }
   }

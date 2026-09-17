@@ -216,21 +216,25 @@ class BaboonIndexEntry {
 class BaboonBinWriter {
   static const int _dotnetEpochOffsetMs = 62135596800000;
   Uint8List _buf;
+  late ByteData _view;
   int _pos;
 
   BaboonBinWriter([int initialCapacity = 256])
       : _buf = Uint8List(initialCapacity),
-        _pos = 0;
+        _pos = 0 {
+    _view = ByteData.sublistView(_buf);
+  }
 
   void _ensureCapacity(int needed) {
     if (_pos + needed > _buf.length) {
-      var newCap = _buf.length * 2;
+      var newCap = _buf.isEmpty ? 1 : _buf.length * 2;
       while (newCap < _pos + needed) {
         newCap *= 2;
       }
       final newBuf = Uint8List(newCap);
       newBuf.setRange(0, _pos, _buf);
       _buf = newBuf;
+      _view = ByteData.sublistView(newBuf);
     }
   }
 
@@ -243,72 +247,55 @@ class BaboonBinWriter {
 
   void writeI8(int value) {
     _ensureCapacity(1);
-    final bd = ByteData(1);
-    bd.setInt8(0, value);
-    _buf[_pos++] = bd.getUint8(0);
+    _view.setInt8(_pos, value);
+    _pos += 1;
   }
 
   void writeU16(int value) {
     _ensureCapacity(2);
-    final bd = ByteData(2);
-    bd.setUint16(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 2, bd.buffer.asUint8List());
+    _view.setUint16(_pos, value, Endian.little);
     _pos += 2;
   }
 
   void writeI16(int value) {
     _ensureCapacity(2);
-    final bd = ByteData(2);
-    bd.setInt16(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 2, bd.buffer.asUint8List());
+    _view.setInt16(_pos, value, Endian.little);
     _pos += 2;
   }
 
   void writeU32(int value) {
     _ensureCapacity(4);
-    final bd = ByteData(4);
-    bd.setUint32(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 4, bd.buffer.asUint8List());
+    _view.setUint32(_pos, value, Endian.little);
     _pos += 4;
   }
 
   void writeI32(int value) {
     _ensureCapacity(4);
-    final bd = ByteData(4);
-    bd.setInt32(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 4, bd.buffer.asUint8List());
+    _view.setInt32(_pos, value, Endian.little);
     _pos += 4;
   }
 
   void writeU64(int value) {
     _ensureCapacity(8);
-    final bd = ByteData(8);
-    bd.setUint64(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 8, bd.buffer.asUint8List());
+    _view.setUint64(_pos, value, Endian.little);
     _pos += 8;
   }
 
   void writeI64(int value) {
     _ensureCapacity(8);
-    final bd = ByteData(8);
-    bd.setInt64(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 8, bd.buffer.asUint8List());
+    _view.setInt64(_pos, value, Endian.little);
     _pos += 8;
   }
 
   void writeF32(double value) {
     _ensureCapacity(4);
-    final bd = ByteData(4);
-    bd.setFloat32(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 4, bd.buffer.asUint8List());
+    _view.setFloat32(_pos, value, Endian.little);
     _pos += 4;
   }
 
   void writeF64(double value) {
     _ensureCapacity(8);
-    final bd = ByteData(8);
-    bd.setFloat64(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 8, bd.buffer.asUint8List());
+    _view.setFloat64(_pos, value, Endian.little);
     _pos += 8;
   }
 
@@ -362,9 +349,7 @@ class BaboonBinWriter {
 
   void _writeRawI32(int value) {
     _ensureCapacity(4);
-    final bd = ByteData(4);
-    bd.setUint32(0, value & 0xFFFFFFFF, Endian.little);
-    _buf.setRange(_pos, _pos + 4, bd.buffer.asUint8List());
+    _view.setUint32(_pos, value & 0xFFFFFFFF, Endian.little);
     _pos += 4;
   }
 
@@ -415,7 +400,14 @@ class BaboonBinWriter {
   }
 
   Uint8List toBytes() {
-    return Uint8List.fromList(_buf.sublist(0, _pos));
+    return _buf.sublist(0, _pos);
+  }
+
+  void writeBuffer(BaboonBinWriter source) {
+    final length = source._pos;
+    _ensureCapacity(length);
+    _buf.setRange(_pos, _pos + length, source._buf);
+    _pos += length;
   }
 }
 
@@ -516,7 +508,7 @@ class BaboonBinReader {
     final length = readI32();
     final bytes = _buf.sublist(_pos, _pos + length);
     _pos += length;
-    return Uint8List.fromList(bytes);
+    return bytes;
   }
 
   /// Read exactly [count] raw bytes from the wire (no length prefix). Used by the `any`-field
@@ -526,7 +518,7 @@ class BaboonBinReader {
   Uint8List readNBytes(int count) {
     final bytes = _buf.sublist(_pos, _pos + count);
     _pos += count;
-    return Uint8List.fromList(bytes);
+    return bytes;
   }
 
   /// Skip [count] raw bytes without materialising them. Used by the `any`-field decoder helper to
@@ -777,7 +769,7 @@ class BaboonDateTimeOffset {
           offsetMillis == other.offsetMillis;
 
   @override
-  int get hashCode => Object.hashAll([epochMillis, offsetMillis]);
+  int get hashCode => Object.hash(epochMillis, offsetMillis);
 
   @override
   String toString() => BaboonTimeFormats.formatOffset(this);
@@ -876,7 +868,7 @@ class BaboonMethodId {
       other is BaboonMethodId && serviceId == other.serviceId && methodName == other.methodName;
 
   @override
-  int get hashCode => Object.hashAll([serviceId, methodName]);
+  int get hashCode => Object.hash(serviceId, methodName);
 
   @override
   String toString() => '$serviceId.$methodName';
@@ -1624,7 +1616,7 @@ int baboonDeepHashCode(dynamic value) {
   if (value == null) return 0;
   if (value is Map) {
     return Object.hashAllUnordered(
-      value.entries.map((e) => Object.hashAll([baboonDeepHashCode(e.key), baboonDeepHashCode(e.value)])),
+      value.entries.map((e) => Object.hash(baboonDeepHashCode(e.key), baboonDeepHashCode(e.value))),
     );
   }
   if (value is Set) {

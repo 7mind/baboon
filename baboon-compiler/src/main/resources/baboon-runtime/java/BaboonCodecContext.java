@@ -1,5 +1,10 @@
 package baboon.runtime.shared;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
+
 /**
  * Codec context: pairs a `useIndices` flag with an optional `BaboonCodecsFacade` reference. The
  * facade is threaded through generated codec calls so the `any`-feature cross-format conversion
@@ -39,6 +44,7 @@ public final class BaboonCodecContext {
     private final ForwardWritePolicy forwardWritePolicy;
     private final BaboonEnvelopeVersion envelopeVersion;
     private final BaboonCodecsFacade facade;
+    private final Lazy<ObjectReader> jsonReader = new Lazy<>(() -> new ObjectMapper().reader());
 
     private BaboonCodecContext(boolean useIndices, ForwardWritePolicy forwardWritePolicy, BaboonEnvelopeVersion envelopeVersion, BaboonCodecsFacade facade) {
         this.useIndices = useIndices;
@@ -61,6 +67,10 @@ public final class BaboonCodecContext {
 
     public BaboonCodecsFacade facade() {
         return facade;
+    }
+
+    public JsonNode parseJson(String value) throws JsonProcessingException {
+        return jsonReader.get().readTree(value);
     }
 
     public static final BaboonCodecContext Indexed = new BaboonCodecContext(true, ForwardWritePolicy.STRICT, BaboonEnvelopeVersion.V1, null);

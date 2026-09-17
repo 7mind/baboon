@@ -109,6 +109,8 @@ Not available on `:graphql` / `:openapi` (schema-only targets).
 | `--<prefix>-wrapped-adt-branch-codecs` | `false` | Every ADT branch codec embeds the ADT discriminator metadata and expects it when decoding, so a branch value can be decoded without knowing the enclosing ADT. `<prefix>` is the per-language flag prefix (see table below). |
 | `--<prefix>-write-evolution-dict` | `false` (`true` for Python) | Emit evolution metadata (version/type dictionaries) as a language-native structure for runtime introspection. |
 
+Generated definitions and their shared runtime must come from the same compiler release (the same revision for snapshot builds). `--runtime=without` changes which files are emitted; it does not make newly generated definitions compatible with an older runtime. When sharing a runtime across invocations, generate it with `--runtime=only` using the same compiler and language/platform options, and update the runtime together with the definitions. This source/runtime requirement is separate from model-version and wire-format compatibility.
+
 ### Service generation
 
 Ignored by `:graphql` / `:openapi`. The same settings can be expressed as

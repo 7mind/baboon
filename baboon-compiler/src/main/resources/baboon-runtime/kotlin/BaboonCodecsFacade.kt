@@ -249,36 +249,15 @@ open class BaboonCodecsFacade {
         val minVersion = versions.first()
         val maxVersion = versions.last()
 
-        val modelVersion = typeMeta.version()
-        if (!exact && modelVersion.version > maxVersion.version) {
-            // a payload from a NEWER version than we register. The oldest version whose codec may
-            // decode it is the bound the writer published (byte-identical or, under its Tolerant
-            // policy, prefix-readable), or — for tolerant JSON reads — the json-additive bound.
-            // Forward-readability is monotone along the version chain, so once the bound reaches a
-            // registered version our newest codec reads the payload (losing at most the fields
-            // appended after our version).
-            val lowerBound = if (tolerant) typeMeta.versionReadableMin() else typeMeta.versionMinCompat()
-            if (lowerBound != null && lowerBound.version <= maxVersion.version) {
-                return getCodecExact(versionsCodecs, maxVersion, typeMeta.typeIdentifier)
-            }
-            throw BaboonCodecException.CodecNotFound("Unsupported domain version '$modelVersion'.")
-        }
-
-        return when {
-            exact && modelVersion.version == maxVersion.version ->
-                getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier)
-            // PR-07-D02 fix: non-exact lookup at the latest registered version routes to exact
-            // lookup. Without this arm a single-version domain (min == max == model) falls through
-            // every other arm because the next one's strict `<` excludes equality, producing a
-            // misleading "Unsupported domain version" error. Mirrors Scala/C# fix.
-            !exact && modelVersion.version == maxVersion.version ->
-                getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier)
-            modelVersion.version >= minVersion.version && modelVersion.version < maxVersion.version ->
-                getCodecMaxCompat(versionsCodecs, modelVersion, maxVersion, typeMeta.typeIdentifier)
-            modelVersion.version < minVersion.version ->
-                getCodecMaxCompat(versionsCodecs, minVersion, maxVersion, typeMeta.typeIdentifier)
-            else ->
-                throw BaboonCodecException.CodecNotFound("Unsupported domain version '$modelVersion'.")
+        return when (val selection = BaboonCodecVersionSelection.select(typeMeta, minVersion, maxVersion, exact, tolerant)) {
+            is BaboonCodecVersionSelection.Exact ->
+                getCodecExact(versionsCodecs, selection.version, typeMeta.typeIdentifier)
+            is BaboonCodecVersionSelection.Compatible ->
+                getCodecMaxCompat(versionsCodecs, selection.version, maxVersion, typeMeta.typeIdentifier)
+            is BaboonCodecVersionSelection.UnsupportedForward ->
+                throw BaboonCodecException.CodecNotFound("Unsupported domain version '${selection.version}'.")
+            is BaboonCodecVersionSelection.Unsupported ->
+                throw BaboonCodecException.CodecNotFound("Unsupported domain version '${selection.version}'.")
         }
     }
 
@@ -328,7 +307,9 @@ open class BaboonCodecsFacade {
     fun preload() {
         Thread {
             try {
+                // @baboon:json-start
                 versionsCodecsJson.values.forEach { it.value }
+                // @baboon:json-end
                 versionsCodecsBin.values.forEach { it.value }
             } catch (_: Throwable) {}
         }.start()

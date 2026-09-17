@@ -47,21 +47,41 @@ class AbstractConversion(BaboonGeneratedConversion, Generic[From, To]):
         self._type_from = from_type
         self._type_to = to_type
 
+    @property
+    def _target_type_id(self) -> str | None:
+        # An absent target retains the public source validator, including overrides.
+        return None
+
     def validate_baboon_type(self, obj):
         if isinstance(obj, BaboonGenerated):
-            tid = self.type_id
-            conversion_type_is_exact = tid == obj.baboon_type_identifier
-            if isinstance(obj, BaboonAdtMemberMeta):
-                conversion_type_is_adt_type = tid == obj.baboon_adt_type_identifier
-                if not conversion_type_is_exact and not conversion_type_is_adt_type:
-                    raise ValueError(
-                        f"Provided instance is adt={obj.baboon_adt_type_identifier} "
-                        f"exact={obj.baboon_adt_type} one of which must be {tid}"
-                    )
+            # Public overrides validate either endpoint; convert enforces direction.
+            target_id = self._target_type_id
+            if target_id is not None and (
+                target_id == obj.baboon_type_identifier
+                or isinstance(obj, BaboonAdtMemberMeta) and target_id == obj.baboon_adt_type_identifier
+            ):
+                return
+            self._validate_baboon_type_id(obj, self.type_id)
+
+    def _validate_baboon_type_id(self, obj, tid: str):
+        conversion_type_is_exact = tid == obj.baboon_type_identifier
+        if isinstance(obj, BaboonAdtMemberMeta):
+            conversion_type_is_adt_type = tid == obj.baboon_adt_type_identifier
+            if not conversion_type_is_exact and not conversion_type_is_adt_type:
+                raise ValueError(
+                    f"Provided instance is adt={obj.baboon_adt_type_identifier} "
+                    f"exact={obj.baboon_adt_type} one of which must be {tid}"
+                )
 
     def convert(self, context, conversions: 'AbstractBaboonConversions', convert_from: From) -> To:
+        if isinstance(convert_from, BaboonGenerated) and self._target_type_id is not None:
+            self._validate_baboon_type_id(convert_from, self.type_id)
         self.validate_baboon_type(convert_from)
         result = self.do_convert(context, conversions, convert_from)
+        if isinstance(result, BaboonGenerated):
+            target_id = self._target_type_id
+            if target_id is not None:
+                self._validate_baboon_type_id(result, target_id)
         self.validate_baboon_type(result)
         return result
 

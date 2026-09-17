@@ -36,14 +36,10 @@ object SwServiceWiringTranslator {
     // identical to the prior output).
     private val implCallPrefix: String = if (isAsync) "try await " else ""
 
-    // Effect keywords for the noErrors invoke dispatchers and their per-method
-    // handler closures. Sync: `throws `; async: `async throws `. The trailing
+    // Effect keywords for the noErrors invoke dispatchers. Sync: `throws `; async: `async throws `. The trailing
     // space keeps the sync rendering identical to the prior output
     // (`) throws -> String {`).
     private val dispatcherEffects: String = if (isAsync) "async throws " else "throws "
-    private val closureEffects: String    = dispatcherEffects
-    // Prefix for invoking the resolved handler closure (`return <prefix> handler()`).
-    private val handlerCallPrefix: String = if (isAsync) "try await" else "try"
 
     // Client method effects (`public func ...(...) <clientEffects><retDecl>`),
     // the transport closure type effects, and the prefix used when invoking the
@@ -144,103 +140,27 @@ object SwServiceWiringTranslator {
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     // Swift wiring JSON: wire is Any (from JSONSerialization.jsonObject), encode returns Any.
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[SwValue]): TextTree[SwValue] = id match {
-      case u: TypeId.User => q"try ${jsonCodecName(u)}.instance.decode($codecCtxRef, $wire)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit   => q"$wire as! Bool"
-          case TypeId.Builtins.i08   => q"Int8(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
-          case TypeId.Builtins.i16   => q"Int16(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
-          case TypeId.Builtins.i32   => q"Int32(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
-          case TypeId.Builtins.i64   => q"($wire is String ? Int64($wire as! String)! : Int64(truncatingIfNeeded: ($wire as! NSNumber).int64Value))"
-          case TypeId.Builtins.u08   => q"UInt8(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
-          case TypeId.Builtins.u16   => q"UInt16(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
-          case TypeId.Builtins.u32   => q"UInt32(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
-          case TypeId.Builtins.u64   => q"($wire is String ? UInt64($wire as! String)! : UInt64(truncatingIfNeeded: ($wire as! NSNumber).uint64Value))"
-          case TypeId.Builtins.f32   => q"Float(($wire as! NSNumber).doubleValue)"
-          case TypeId.Builtins.f64   => q"($wire as! NSNumber).doubleValue"
-          case TypeId.Builtins.f128  => q"$baboonDecimal($wire is String ? $wire as! String : String(describing: $wire))"
-          case TypeId.Builtins.str   => q"($wire as! String)"
-          case TypeId.Builtins.uid   => q"UUID(uuidString: $wire as! String)!"
-          case TypeId.Builtins.bytes => q"$baboonByteStringTools.fromHexString($wire as! String)"
-          case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseUtc($wire as! String)"
-          case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseOffset($wire as! String)"
-          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"try ${jsonCodecName(u)}.instance.decode($codecCtxRef, $wire)"
+      case b: TypeId.BuiltinScalar => SwScalarCodecs.jsonDecode(b, wire).withTry
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[SwValue]): TextTree[SwValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode($codecCtxRef, $value)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit                                             => q"$value"
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"Int($value)"
-          case TypeId.Builtins.i64                                             => q"String($value)"
-          case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"Int($value)"
-          case TypeId.Builtins.u64                                             => q"String($value)"
-          case TypeId.Builtins.f32                                             => q"Double($value)"
-          case TypeId.Builtins.f64                                             => q"$value"
-          case TypeId.Builtins.f128                                            => q"$value.stringValue"
-          case TypeId.Builtins.str                                             => q"$value"
-          case TypeId.Builtins.uid                                             => q"$value.uuidString"
-          case TypeId.Builtins.bytes                                           => q"$baboonByteStringTools.toHexString($value)"
-          case TypeId.Builtins.tsu                                             => q"$baboonTimeFormats.formatUtc($value)"
-          case TypeId.Builtins.tso                                             => q"$baboonTimeFormats.formatOffset($value)"
-          case other                                                           => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${jsonCodecName(u)}.instance.encode($codecCtxRef, $value)"
+      case b: TypeId.BuiltinScalar => SwScalarCodecs.jsonEncode(b, value)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaDecodeExpr(id: TypeId, reader: TextTree[SwValue]): TextTree[SwValue] = id match {
-      case u: TypeId.User => q"try ${uebaCodecName(u)}.instance.decode($codecCtxRef, $reader)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit   => q"$reader.readBool()"
-          case TypeId.Builtins.i08   => q"$reader.readI8()"
-          case TypeId.Builtins.i16   => q"$reader.readI16()"
-          case TypeId.Builtins.i32   => q"$reader.readI32()"
-          case TypeId.Builtins.i64   => q"$reader.readI64()"
-          case TypeId.Builtins.u08   => q"$reader.readU8()"
-          case TypeId.Builtins.u16   => q"$reader.readU16()"
-          case TypeId.Builtins.u32   => q"$reader.readU32()"
-          case TypeId.Builtins.u64   => q"$reader.readU64()"
-          case TypeId.Builtins.f32   => q"$reader.readF32()"
-          case TypeId.Builtins.f64   => q"$reader.readF64()"
-          case TypeId.Builtins.f128  => q"$reader.readDecimal()"
-          case TypeId.Builtins.str   => q"try $reader.readString()"
-          case TypeId.Builtins.bytes => q"try $reader.readBytes()"
-          case TypeId.Builtins.uid   => q"try $reader.readUuid()"
-          case TypeId.Builtins.tsu   => q"$reader.readTsu()"
-          case TypeId.Builtins.tso   => q"$reader.readTso()"
-          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"try ${uebaCodecName(u)}.instance.decode($codecCtxRef, $reader)"
+      case b: TypeId.BuiltinScalar => SwScalarCodecs.uebaDecode(b, reader).withTry
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaEncodeStmt(id: TypeId, writer: TextTree[SwValue], value: TextTree[SwValue]): TextTree[SwValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode($codecCtxRef, $writer, $value)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit   => q"$writer.writeBool($value)"
-          case TypeId.Builtins.i08   => q"$writer.writeI8($value)"
-          case TypeId.Builtins.i16   => q"$writer.writeI16($value)"
-          case TypeId.Builtins.i32   => q"$writer.writeI32($value)"
-          case TypeId.Builtins.i64   => q"$writer.writeI64($value)"
-          case TypeId.Builtins.u08   => q"$writer.writeU8($value)"
-          case TypeId.Builtins.u16   => q"$writer.writeU16($value)"
-          case TypeId.Builtins.u32   => q"$writer.writeU32($value)"
-          case TypeId.Builtins.u64   => q"$writer.writeU64($value)"
-          case TypeId.Builtins.f32   => q"$writer.writeF32($value)"
-          case TypeId.Builtins.f64   => q"$writer.writeF64($value)"
-          case TypeId.Builtins.f128  => q"$writer.writeDecimal($value)"
-          case TypeId.Builtins.str   => q"$writer.writeString($value)"
-          case TypeId.Builtins.bytes => q"$writer.writeBytes($value)"
-          case TypeId.Builtins.uid   => q"$writer.writeUuid($value)"
-          case TypeId.Builtins.tsu   => q"$writer.writeTsu($value)"
-          case TypeId.Builtins.tso   => q"$writer.writeTso($value)"
-          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${uebaCodecName(u)}.instance.encode($codecCtxRef, $writer, $value)"
+      case b: TypeId.BuiltinScalar => SwScalarCodecs.uebaEncode(b, writer, value)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def renderContainer(error: String, success: String): String = {
@@ -354,7 +274,7 @@ object SwServiceWiringTranslator {
                   q"""public func ${m.name.name}(${clientCtxParamDecl}arg: $inRef, $codecCtxName: $baboonCodecContext = $baboonCodecContext.defaultCtx) $clientEffects$retDecl {
                      |    let writer = $baboonBinTools.createWriter()
                      |    $encodeIn
-                     |    let resp = $transportCallPrefix self.transportUeba(${clientCtxArg}"$svcName", "${m.name.name}", writer.toData())
+                     |    let resp = $transportCallPrefix self.transportUeba($clientCtxArg"$svcName", "${m.name.name}", writer.toData())
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -375,7 +295,7 @@ object SwServiceWiringTranslator {
                      |    let encoded = $encodeIn
                      |    let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
                      |    let encodedStr = String(data: jsonData, encoding: .utf8)!
-                     |    let resp = $transportCallPrefix self.transportJson(${clientCtxArg}"$svcName", "${m.name.name}", encodedStr)
+                     |    let resp = $transportCallPrefix self.transportJson($clientCtxArg"$svcName", "${m.name.name}", encodedStr)
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -431,9 +351,9 @@ object SwServiceWiringTranslator {
       q"${trans.toSwTypeRefKeepForeigns(service.id, domain, evo)}"
 
     private def svcCtxParamName: Option[String] = resolvedCtx match {
-      case ResolvedServiceContext.NoContext               => None
-      case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
-      case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+      case ResolvedServiceContext.NoContext              => None
+      case ResolvedServiceContext.AbstractContext(_, pn) => Some(pn)
+      case ResolvedServiceContext.ConcreteContext(_, pn) => Some(pn)
     }
 
     // Leading labeled context argument forwarded to `impl.<method>(...)`. The
@@ -476,7 +396,7 @@ object SwServiceWiringTranslator {
     }
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[SwValue] = {
-      val implType   = implParamType(service)
+      val implType    = implParamType(service)
       val genericDecl = implGenericDecl(service)
       val cases = service.methods.map {
         m =>
@@ -497,12 +417,12 @@ object SwServiceWiringTranslator {
             case None    => q"${implCallPrefix}impl.${m.name.name}(${ctxImplCallArg}arg: decoded)"
           }
 
-          q""""${m.name.name}": {
+          q"""case "${m.name.name}":
              |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
              |    let decoded = $decodeIn
              |    $callExpr
              |    ${encodeOutput.shift(4).trim}
-             |},""".stripMargin
+             |""".stripMargin
       }.join("\n")
 
       q"""public static func invokeJson$genericDecl(
@@ -511,18 +431,16 @@ object SwServiceWiringTranslator {
          |    _ impl: $implType,
          |    ${ctxWiringParamDecl}_ $codecCtxName: $baboonCodecContext
          |) $dispatcherEffects-> String {
-         |    let handlers: [String: () $closureEffects-> String] = [
+         |    switch method.methodName {
          |        ${cases.shift(8).trim}
-         |    ]
-         |    guard let handler = handlers[method.methodName] else {
+         |    default:
          |        throw $baboonWiringException($baboonWiringError.noMatchingMethod(method))
          |    }
-         |    return $handlerCallPrefix handler()
          |}""".stripMargin
     }
 
     private def generateNoErrorsUebaMethod(service: Typedef.Service): TextTree[SwValue] = {
-      val implType   = implParamType(service)
+      val implType    = implParamType(service)
       val genericDecl = implGenericDecl(service)
       val cases = service.methods.map {
         m =>
@@ -543,12 +461,12 @@ object SwServiceWiringTranslator {
             case None    => q"${implCallPrefix}impl.${m.name.name}(${ctxImplCallArg}arg: decoded)"
           }
 
-          q""""${m.name.name}": {
+          q"""case "${m.name.name}":
              |    let reader = $baboonBinTools.createReader(data)
              |    let decoded = $decodeIn
              |    $callExpr
              |    ${encodeOutput.shift(4).trim}
-             |},""".stripMargin
+             |""".stripMargin
       }.join("\n")
 
       q"""public static func invokeUeba$genericDecl(
@@ -557,13 +475,11 @@ object SwServiceWiringTranslator {
          |    _ impl: $implType,
          |    ${ctxWiringParamDecl}_ $codecCtxName: $baboonCodecContext
          |) $dispatcherEffects-> Data {
-         |    let handlers: [String: () $closureEffects-> Data] = [
+         |    switch method.methodName {
          |        ${cases.shift(8).trim}
-         |    ]
-         |    guard let handler = handlers[method.methodName] else {
+         |    default:
          |        throw $baboonWiringException($baboonWiringError.noMatchingMethod(method))
          |    }
-         |    return $handlerCallPrefix handler()
          |}""".stripMargin
     }
 
@@ -617,8 +533,8 @@ object SwServiceWiringTranslator {
       // The pattern is a string like "<$error, $success>"; split on the two
       // placeholders so the surrounding literal punctuation stays text and the
       // error/success types become real SwValue subtrees.
-      val errIdx  = p.indexOf("$error")
-      val sucIdx  = p.indexOf("$success")
+      val errIdx = p.indexOf("$error")
+      val sucIdx = p.indexOf("$success")
       require(errIdx >= 0 && sucIdx >= 0, s"BUG: service result pattern must contain both \\$$error and \\$$success: $p")
       // $error always precedes $success in every supported pattern (e.g.
       // "<$error, $success>"); assert it to fail fast if a future pattern
@@ -643,13 +559,7 @@ object SwServiceWiringTranslator {
           else generateErrorsJsonCaseSync(m, inRef, decodeIn)
       }.join("\n")
 
-      // Sync: handler closures are plain `() -> container` and the dispatcher
-      // forwards directly. Async: the impl hop is awaited inside each handler,
-      // so handler closures are `() async throws -> container` and the
-      // dispatcher (itself `async throws`) calls `try await handler()`.
-      val handlerType        = if (isAsync) q"() async throws -> $wiringRetType" else q"() -> $wiringRetType"
       val dispatcherEffects0 = if (isAsync) q" async throws" else q""
-      val handlerInvoke      = if (isAsync) q"return try await handler()" else q"return handler()"
 
       q"""public static func invokeJson$genericDecl(
          |    _ method: $baboonMethodId,
@@ -658,17 +568,15 @@ object SwServiceWiringTranslator {
          |    _ rt: IBaboonServiceRt,
          |    ${ctxWiringParamDecl}_ $codecCtxName: $baboonCodecContext
          |)$dispatcherEffects0 -> $wiringRetType {
-         |    let handlers: [String: $handlerType] = [
+         |    switch method.methodName {
          |        ${cases.shift(8).trim}
-         |    ]
-         |    guard let handler = handlers[method.methodName] else {
+         |    default:
          |        return rt.fail($baboonWiringError.noMatchingMethod(method))
          |    }
-         |    $handlerInvoke
          |}""".stripMargin
     }
 
-    /** Sync errors-mode JSON handler arm. Byte-identical to the prior output:
+    /** Sync errors-mode JSON handler arm:
       * decode wraps into the container via `rt.pure`/`rt.fail`, the impl hop is
       * threaded through `rt.flatMap`, and the encode step is a second
       * `rt.flatMap`.
@@ -745,10 +653,10 @@ object SwServiceWiringTranslator {
              |}""".stripMargin
       }
 
-      q""""${m.name.name}": {
+      q"""case "${m.name.name}":
          |    ${decodeStep.shift(4).trim}
          |    ${callAndEncodeStep.shift(4).trim}
-         |},""".stripMargin
+         |""".stripMargin
     }
 
     /** Async errors-mode JSON handler arm. Mirrors the C# reference
@@ -832,10 +740,10 @@ object SwServiceWiringTranslator {
           }
       }
 
-      q""""${m.name.name}": {
+      q"""case "${m.name.name}":
          |    ${decodeStep.shift(4).trim}
          |    ${callAndEncodeStep.shift(4).trim}
-         |},""".stripMargin
+         |""".stripMargin
     }
 
     private def generateErrorsUebaMethod(service: Typedef.Service): TextTree[SwValue] = {
@@ -851,9 +759,7 @@ object SwServiceWiringTranslator {
           else generateErrorsUebaCaseSync(m, inRef, decodeIn)
       }.join("\n")
 
-      val handlerType        = if (isAsync) q"() async throws -> $wiringRetType" else q"() -> $wiringRetType"
       val dispatcherEffects0 = if (isAsync) q" async throws" else q""
-      val handlerInvoke      = if (isAsync) q"return try await handler()" else q"return handler()"
 
       q"""public static func invokeUeba$genericDecl(
          |    _ method: $baboonMethodId,
@@ -862,17 +768,15 @@ object SwServiceWiringTranslator {
          |    _ rt: IBaboonServiceRt,
          |    ${ctxWiringParamDecl}_ $codecCtxName: $baboonCodecContext
          |)$dispatcherEffects0 -> $wiringRetType {
-         |    let handlers: [String: $handlerType] = [
+         |    switch method.methodName {
          |        ${cases.shift(8).trim}
-         |    ]
-         |    guard let handler = handlers[method.methodName] else {
+         |    default:
          |        return rt.fail($baboonWiringError.noMatchingMethod(method))
          |    }
-         |    $handlerInvoke
          |}""".stripMargin
     }
 
-    /** Sync errors-mode UEBA handler arm. Byte-identical to the prior output. */
+    /** Sync errors-mode UEBA handler arm. */
     private def generateErrorsUebaCaseSync(
       m: Typedef.MethodDef,
       inRef: TextTree[SwValue],
@@ -945,10 +849,10 @@ object SwServiceWiringTranslator {
              |}""".stripMargin
       }
 
-      q""""${m.name.name}": {
+      q"""case "${m.name.name}":
          |    ${decodeStep.shift(4).trim}
          |    ${callAndEncodeStep.shift(4).trim}
-         |},""".stripMargin
+         |""".stripMargin
     }
 
     /** Async errors-mode UEBA handler arm. See [[generateErrorsJsonCaseAsync]]
@@ -1024,10 +928,10 @@ object SwServiceWiringTranslator {
           }
       }
 
-      q""""${m.name.name}": {
+      q"""case "${m.name.name}":
          |    ${decodeStep.shift(4).trim}
          |    ${callAndEncodeStep.shift(4).trim}
-         |},""".stripMargin
+         |""".stripMargin
     }
 
     /** Emits the cross-domain Muxer-entry wrapper classes for a service.
@@ -1117,7 +1021,7 @@ object SwServiceWiringTranslator {
           val genericDecl = implGenericDecl(service)
           val implType    = implParamType(service)
           val ifaceCtx    = if (isJson) ibaboonJsonServiceCtx else ibaboonUebaServiceCtx
-          val ctxTypeStr  = resolvedCtx match {
+          val ctxTypeStr = resolvedCtx match {
             case ResolvedServiceContext.ConcreteContext(tn, _) => tn
             case _                                             => "Impl.Ctx"
           }

@@ -10,6 +10,19 @@ from Generated.convtest.testpkg.v1_0_0.EnumMemberRename import EnumMemberRename 
 from Generated.convtest.testpkg.from_1_0_0__EnumMemberRename import Convert__EnumMemberRename__From__1_0_0
 
 class TestConversions(TestCase):
+    def test_renamed_adt_owner_converts_unchanged_branch(self):
+        from Generated.convtest.testpkg.v1_0_0.OldAdtName import OldAdtName, Branch1 as OldBranch
+        from Generated.convtest.testpkg.NewAdtName import NewAdtName, Branch1 as NewBranch
+
+        source = OldBranch(f="retained")
+        conversions = BaboonConversions(required=RequiredConversions())
+        direct = conversions.convert_by_type(None, source, OldBranch, NewBranch)
+        through_parent = conversions.convert_by_type(None, source, OldAdtName, NewAdtName)
+        self.assertIs(type(direct), NewBranch)
+        self.assertIs(type(through_parent), NewBranch)
+        self.assertEqual("retained", through_parent.f)
+        self.assertEqual(direct, through_parent)
+
     def test_derived_conversion_adt_autoupgrade(self):
         b1 = v1_0_0.Adt0.B1(f="value")
         conv = BaboonConversions(required=RequiredConversions())

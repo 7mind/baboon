@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.kotlin
 
 import distage.Id
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.kotlin.KtBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
 import io.septimalmind.baboon.translator.kotlin.KtValue.KtPackageId
@@ -176,10 +176,12 @@ class KtConversionTranslator[F[+_, +_]: Error2](
         val tin  = trans.asKtType(conv.sourceTpe, srcDom, evo).fullyQualified
         def tout = trans.asKtType(conv.targetTpe, domain, evo)
 
-        val meta = q"""override val versionFrom: String = "${srcVer.v.toString}"
-                      |override val versionTo: String = "${domain.version.v.toString}"
-                      |override val typeId: String = "${conv.sourceTpe.toString}"
+        val targetMeta = if (conv.sourceTpe == conv.targetTpe) q"" else q"""override val targetTypeId: String = "${conv.targetTpe.toString}""""
+        val sourceMeta = q"""override val versionFrom: String = "${srcVer.v.toString}"
+                            |override val versionTo: String = "${domain.version.v.toString}"
+                            |override val typeId: String = "${conv.sourceTpe.toString}"
                       """.stripMargin.trim
+        val meta = if (conv.sourceTpe == conv.targetTpe) sourceMeta else Seq(sourceMeta, targetMeta).join("\n")
 
         val rendered = conv match {
           case _: Conversion.CustomConversionRequired =>
@@ -331,11 +333,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
             List(RenderedConversion(fname, tools.inPkg(pkg.parts.toSeq, classDef), Some(regtree), None))
         }
 
-        if (false) {
-          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
-        } else {
-          F.pure(rendered)
-        }
+        F.pure(rendered): Out[List[RenderedConversion]]
     }
 
   }

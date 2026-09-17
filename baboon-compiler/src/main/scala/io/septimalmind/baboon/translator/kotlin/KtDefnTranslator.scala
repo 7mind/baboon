@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.kotlin
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.KtTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.IdentifierFieldKind
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.kotlin.KtValue.KtType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -246,7 +247,7 @@ object KtDefnTranslator {
       */
     private def prependDocs(docs: Docs, tree: TextTree[KtValue]): TextTree[KtValue] = {
       val block = ktTrees.renderDocs(docs, "")
-      if (block.isEmpty) tree else q"${block}$tree"
+      if (block.isEmpty) tree else q"$block$tree"
     }
 
     private def makeRepr(
@@ -265,9 +266,9 @@ object KtDefnTranslator {
           val contractFieldNames = collectContractFieldNames(dto.contracts)
           val params = dto.fields.map {
             f =>
-              val t        = trans.asKtNullableRef(f.tpe, domain, evo)
-              val prefix   = if (contractFieldNames.contains(f.name.name)) "override val" else "val"
-              val ktName   = KtTypeTranslator.escapeKtKeyword(f.name.name)
+              val t         = trans.asKtNullableRef(f.tpe, domain, evo)
+              val prefix    = if (contractFieldNames.contains(f.name.name)) "override val" else "val"
+              val ktName    = KtTypeTranslator.escapeKtKeyword(f.name.name)
               val fieldTree = q"$prefix $ktName: $t"
               prependDocs(f.docs, fieldTree)
           }
@@ -406,8 +407,8 @@ object KtDefnTranslator {
         case contract: Typedef.Contract =>
           val methods = contract.fields.map {
             f =>
-              val t         = trans.asKtNullableRef(f.tpe, domain, evo)
-              val ktName    = KtTypeTranslator.escapeKtKeyword(f.name.name)
+              val t          = trans.asKtNullableRef(f.tpe, domain, evo)
+              val ktName     = KtTypeTranslator.escapeKtKeyword(f.name.name)
               val methodTree = q"val $ktName: $t"
               prependDocs(f.docs, methodTree)
           }
@@ -432,17 +433,18 @@ object KtDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val in  = trans.asKtRef(m.sig, domain, evo)
-              val out = m.out.map(trans.asKtRef(_, domain, evo))
-              val err = m.err.map(trans.asKtRef(_, domain, evo))
+              val plan = new KtServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved)
+              val in   = plan.input
+              val out  = plan.output
+              val err  = plan.error
               val ktFqName: KtValue => String = {
                 case t: KtValue.KtType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
                 case t: KtValue.KtTypeName => t.name
               }
-              val outStr = out.map(_.mapRender(ktFqName)).getOrElse("")
-              val errStr = err.map(_.mapRender(ktFqName))
-              val retStr    = resolved.renderReturnType(outStr, errStr, "Unit")
-              val ktMName   = KtTypeTranslator.escapeKtKeyword(m.name.name)
+              val outStr     = out.map(_.mapRender(ktFqName)).getOrElse("")
+              val errStr     = err.map(_.mapRender(ktFqName))
+              val retStr     = resolved.renderReturnType(outStr, errStr, "Unit")
+              val ktMName    = plan.methodName
               val suspendKw  = if (target.language.asyncServices) "suspend " else ""
               val methodTree = q"${suspendKw}fun $ktMName(${ctxParam}arg: $in): $retStr"
               prependDocs(m.docs, methodTree)
@@ -563,53 +565,15 @@ object KtDefnTranslator {
     // JvDefnTranslator but uses Kotlin idiom (top-level objects, ULong unsigned
     // arithmetic, Either with Left/Right subclasses).
 
-    private sealed trait IdentifierFieldKind
-    private object IdentifierFieldKind {
-      case object Bit extends IdentifierFieldKind
-      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
-      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong extends IdentifierFieldKind /* u64 */
-      case object Str extends IdentifierFieldKind
-      case object Uid extends IdentifierFieldKind
-      case object Tsu extends IdentifierFieldKind
-      case object Tso extends IdentifierFieldKind
-      case object Bytes extends IdentifierFieldKind
-      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
-    }
-
-    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
-      tpe match {
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          import TypeId.Builtins.*
-          b match {
-            case `bit`                         => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
-            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                         => IdentifierFieldKind.UnsignedLong
-            case `str`                         => IdentifierFieldKind.Str
-            case `uid`                         => IdentifierFieldKind.Uid
-            case `tsu`                         => IdentifierFieldKind.Tsu
-            case `tso`                         => IdentifierFieldKind.Tso
-            case `bytes`                       => IdentifierFieldKind.Bytes
-            case other =>
-              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
-          }
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          IdentifierFieldKind.NestedId(uid)
-        case other =>
-          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
-      }
-    }
-
     private def renderFieldValueExpr(ktFieldName: String, kind: IdentifierFieldKind): TextTree[KtValue] = {
       kind match {
         case IdentifierFieldKind.Bit => q"$baboonIdRepr.bitToString(this.$ktFieldName)"
         // Kotlin's signed and unsigned-small primitive toString already produces
         // canonical decimal (no locale, unsigned-small types render as unsigned).
-        case IdentifierFieldKind.SignedInt        => q"this.$ktFieldName.toString()"
-        case IdentifierFieldKind.UnsignedSmallInt => q"this.$ktFieldName.toString()"
-        case IdentifierFieldKind.UnsignedLong     => q"$baboonIdRepr.u64ToString(this.$ktFieldName)"
-        case IdentifierFieldKind.Str              => q"$baboonIdRepr.escapeStr(this.$ktFieldName)"
+        case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong => q"this.$ktFieldName.toString()"
+        case IdentifierFieldKind.UnsignedSmallInt                           => q"this.$ktFieldName.toString()"
+        case IdentifierFieldKind.UnsignedLong                               => q"$baboonIdRepr.u64ToString(this.$ktFieldName)"
+        case IdentifierFieldKind.Str                                        => q"$baboonIdRepr.escapeStr(this.$ktFieldName)"
         // UUID.toString() (java.util.UUID) and kotlin.uuid.Uuid.toString() both
         // emit the canonical lowercase 36-char hyphenated form per RFC 4122.
         case IdentifierFieldKind.Uid         => q"this.$ktFieldName.toString()"
@@ -629,7 +593,7 @@ object KtDefnTranslator {
         f =>
           val srcFieldName = f.name.name
           val ktFieldName  = KtTypeTranslator.escapeKtKeyword(srcFieldName)
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val valueExpr    = renderFieldValueExpr(ktFieldName, kind)
           // The string label in the repr always uses the original model name (wire key).
           q""""$srcFieldName:" + ($valueExpr)"""
@@ -712,7 +676,7 @@ object KtDefnTranslator {
           val rawVar       = s"${srcFieldName}_raw"
           val valVar       = s"${srcFieldName}_v"
           val isLast       = idx == dto.fields.length - 1
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val tpe          = trans.asKtRef(f.tpe, domain, evo)
 
           // All locals beyond `valVar` (which the constructor consumes) are scoped
@@ -738,7 +702,7 @@ object KtDefnTranslator {
                  |val $rNb = $baboonIdRepr.parseBit($rawVar)
                  |if ($rNb is $baboonEither.Left) return $baboonEither.Left($rNb.value)
                  |val $valVar: $tpe = ($rNb as $baboonEither.Right).value""".stripMargin
-            case IdentifierFieldKind.SignedInt =>
+            case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong =>
               val rangeCheck = signedRangeCheck(f.tpe)
               val typeName   = signedTypeName(f.tpe)
               val narrow     = signedNarrow(f.tpe)

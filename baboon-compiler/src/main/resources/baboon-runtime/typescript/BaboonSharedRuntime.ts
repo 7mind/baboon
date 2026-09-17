@@ -92,10 +92,12 @@ export class BaboonCodecContext {
 
 export class BaboonBinWriter {
     private buf: Uint8Array;
+    private view: DataView;
     private pos: number;
 
     constructor(initialCapacity: number = 256) {
         this.buf = new Uint8Array(initialCapacity);
+        this.view = new DataView(this.buf.buffer);
         this.pos = 0;
     }
 
@@ -108,12 +110,67 @@ export class BaboonBinWriter {
             const newBuf = new Uint8Array(newCap);
             newBuf.set(this.buf.subarray(0, this.pos));
             this.buf = newBuf;
+            this.view = new DataView(newBuf.buffer);
         }
     }
 
     writeByte(value: number): void {
         this.ensureCapacity(1);
         this.buf[this.pos++] = value & 0xFF;
+    }
+
+    writeI8(value: number): void {
+        this.ensureCapacity(1);
+        this.view.setInt8(this.pos, value);
+        this.pos += 1;
+    }
+
+    writeI16(value: number): void {
+        this.ensureCapacity(2);
+        this.view.setInt16(this.pos, value, true);
+        this.pos += 2;
+    }
+
+    writeI32(value: number): void {
+        this.ensureCapacity(4);
+        this.view.setInt32(this.pos, value, true);
+        this.pos += 4;
+    }
+
+    writeI64(value: bigint): void {
+        this.ensureCapacity(8);
+        this.view.setBigInt64(this.pos, value, true);
+        this.pos += 8;
+    }
+
+    writeU16(value: number): void {
+        this.ensureCapacity(2);
+        this.view.setUint16(this.pos, value, true);
+        this.pos += 2;
+    }
+
+    writeU32(value: number): void {
+        this.ensureCapacity(4);
+        this.view.setUint32(this.pos, value, true);
+        this.pos += 4;
+    }
+
+    writeU64(value: bigint): void {
+        this.ensureCapacity(8);
+        this.view.setBigUint64(this.pos, value, true);
+        this.pos += 8;
+    }
+
+    writeF32(value: number): void {
+        this.ensureCapacity(4);
+        this.view.setFloat32(this.pos, value, true);
+        this.pos += 4;
+    }
+
+    writeF64(value: number): void {
+        this.ensureCapacity(8);
+        this.view.setFloat64(this.pos, value, true);
+        this.pos += 8;
     }
 
     writeBytes(data: Uint8Array): void {
@@ -160,6 +217,9 @@ export class BaboonBinReader {
     readBytes(length: number): Uint8Array {
         const slice = this.buf.slice(this.pos, this.pos + length);
         this.pos += length;
+        if (Object.getPrototypeOf(this.buf) === Uint8Array.prototype && this.buf.slice === Uint8Array.prototype.slice) {
+            return slice;
+        }
         return new Uint8Array(slice);
     }
 
@@ -382,27 +442,19 @@ export class BinTools {
     }
 
     static writeI8(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(1);
-        new DataView(buf).setInt8(0, value);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeI8(value);
     }
 
     static writeI16(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(2);
-        new DataView(buf).setInt16(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeI16(value);
     }
 
     static writeI32(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(4);
-        new DataView(buf).setInt32(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeI32(value);
     }
 
     static writeI64(writer: BaboonBinWriter, value: bigint): void {
-        const buf = new ArrayBuffer(8);
-        new DataView(buf).setBigInt64(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeI64(value);
     }
 
     static writeU8(writer: BaboonBinWriter, value: number): void {
@@ -410,33 +462,23 @@ export class BinTools {
     }
 
     static writeU16(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(2);
-        new DataView(buf).setUint16(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeU16(value);
     }
 
     static writeU32(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(4);
-        new DataView(buf).setUint32(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeU32(value);
     }
 
     static writeU64(writer: BaboonBinWriter, value: bigint): void {
-        const buf = new ArrayBuffer(8);
-        new DataView(buf).setBigUint64(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeU64(value);
     }
 
     static writeF32(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(4);
-        new DataView(buf).setFloat32(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeF32(value);
     }
 
     static writeF64(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(8);
-        new DataView(buf).setFloat64(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeF64(value);
     }
 
     static writeDecimal(writer: BaboonBinWriter, value: BaboonDecimal): void {
@@ -756,49 +798,52 @@ export interface IBaboonUebaService<R = Promise<Uint8Array>> {
     invoke(method: BaboonMethodId, data: Uint8Array, ctx: BaboonCodecContext): R;
 }
 
-export class JsonMuxer<R = Promise<string>> {
-    private readonly table = new Map<string, IBaboonJsonService<R>>();
-    constructor(...services: IBaboonJsonService<R>[]) {
-        for (const s of services) this.register(s);
-    }
-    register(service: IBaboonJsonService<R>): void {
+class ServiceRegistry<S extends { readonly serviceName: string }> {
+    private readonly table = new Map<string, S>();
+
+    register(service: S): void {
         if (this.table.has(service.serviceName)) {
             throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
         }
         this.table.set(service.serviceName, service);
     }
-    invoke(method: BaboonMethodId, data: string, ctx: BaboonCodecContext): R {
+
+    resolve(method: BaboonMethodId): S {
         const service = this.table.get(method.serviceName);
-        if (service === undefined) {
-            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
-        }
+        if (service === undefined) throw new BaboonWiringException({ tag: 'NoMatchingService', method });
+        return service;
+    }
+
+    names(): readonly string[] { return Array.from(this.table.keys()); }
+}
+
+export class JsonMuxer<R = Promise<string>> {
+    private readonly table = new ServiceRegistry<IBaboonJsonService<R>>();
+    constructor(...services: IBaboonJsonService<R>[]) {
+        for (const s of services) this.register(s);
+    }
+    register(service: IBaboonJsonService<R>): void { this.table.register(service); }
+    invoke(method: BaboonMethodId, data: string, ctx: BaboonCodecContext): R {
+        const service = this.table.resolve(method);
         return service.invoke(method, data, ctx);
     }
     serviceNames(): readonly string[] {
-        return Array.from(this.table.keys());
+        return this.table.names();
     }
 }
 
 export class UebaMuxer<R = Promise<Uint8Array>> {
-    private readonly table = new Map<string, IBaboonUebaService<R>>();
+    private readonly table = new ServiceRegistry<IBaboonUebaService<R>>();
     constructor(...services: IBaboonUebaService<R>[]) {
         for (const s of services) this.register(s);
     }
-    register(service: IBaboonUebaService<R>): void {
-        if (this.table.has(service.serviceName)) {
-            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
-        }
-        this.table.set(service.serviceName, service);
-    }
+    register(service: IBaboonUebaService<R>): void { this.table.register(service); }
     invoke(method: BaboonMethodId, data: Uint8Array, ctx: BaboonCodecContext): R {
-        const service = this.table.get(method.serviceName);
-        if (service === undefined) {
-            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
-        }
+        const service = this.table.resolve(method);
         return service.invoke(method, data, ctx);
     }
     serviceNames(): readonly string[] {
-        return Array.from(this.table.keys());
+        return this.table.names();
     }
 }
 
@@ -819,48 +864,32 @@ export interface IBaboonUebaServiceCtx<Ctx, R = Promise<Uint8Array>> {
 }
 
 export class JsonMuxerCtx<Ctx, R = Promise<string>> {
-    private readonly table = new Map<string, IBaboonJsonServiceCtx<Ctx, R>>();
+    private readonly table = new ServiceRegistry<IBaboonJsonServiceCtx<Ctx, R>>();
     constructor(...services: IBaboonJsonServiceCtx<Ctx, R>[]) {
         for (const s of services) this.register(s);
     }
-    register(service: IBaboonJsonServiceCtx<Ctx, R>): void {
-        if (this.table.has(service.serviceName)) {
-            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
-        }
-        this.table.set(service.serviceName, service);
-    }
+    register(service: IBaboonJsonServiceCtx<Ctx, R>): void { this.table.register(service); }
     invoke(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): R {
-        const service = this.table.get(method.serviceName);
-        if (service === undefined) {
-            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
-        }
+        const service = this.table.resolve(method);
         return service.invoke(method, data, ctx, codecCtx);
     }
     serviceNames(): readonly string[] {
-        return Array.from(this.table.keys());
+        return this.table.names();
     }
 }
 
 export class UebaMuxerCtx<Ctx, R = Promise<Uint8Array>> {
-    private readonly table = new Map<string, IBaboonUebaServiceCtx<Ctx, R>>();
+    private readonly table = new ServiceRegistry<IBaboonUebaServiceCtx<Ctx, R>>();
     constructor(...services: IBaboonUebaServiceCtx<Ctx, R>[]) {
         for (const s of services) this.register(s);
     }
-    register(service: IBaboonUebaServiceCtx<Ctx, R>): void {
-        if (this.table.has(service.serviceName)) {
-            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
-        }
-        this.table.set(service.serviceName, service);
-    }
+    register(service: IBaboonUebaServiceCtx<Ctx, R>): void { this.table.register(service); }
     invoke(method: BaboonMethodId, data: Uint8Array, ctx: Ctx, codecCtx: BaboonCodecContext): R {
-        const service = this.table.get(method.serviceName);
-        if (service === undefined) {
-            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
-        }
+        const service = this.table.resolve(method);
         return service.invoke(method, data, ctx, codecCtx);
     }
     serviceNames(): readonly string[] {
-        return Array.from(this.table.keys());
+        return this.table.names();
     }
 }
 

@@ -6,7 +6,7 @@ import io.septimalmind.baboon.translator.dart.DtCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.dart.DtDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.dart.DtTypes.*
 import io.septimalmind.baboon.translator.dart.DtValue.DtType
-import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
+import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -41,13 +41,9 @@ class DtUEBACodecGenerator(
         // throwing-stub codec class — no underlying primitive is declared, and the value-
         // position call site references this class. Closes PR-I.1d-N03 / PR-26.7-D01.
         case f: Typedef.Foreign =>
-          f.bindings.get(BaboonLang.Dart) match {
-            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) if decl == "dart.core.String" || decl == "String" =>
-              None
-            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) if f.runtimeMapping.isDefined =>
-              None
-            case _ => Some(genForeignBodies(dtRef))
+          DtForeignWirePlan.ueba(f) match {
+            case _: DtForeignWirePlan.Inline => None
+            case DtForeignWirePlan.Codec     => Some(genForeignBodies(dtRef))
           }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
@@ -289,7 +285,7 @@ class DtUEBACodecGenerator(
          |  writer.writeU8(header);
          |  final buffer = $baboonBinWriter();
          |  ${fields.map(_._3).joinN().shift(2).trim}
-         |  writer.writeAll(buffer.toBytes());
+         |  writer.writeBuffer(buffer);
          |} else {
          |  ${noIndex.shift(2).trim}
          |}
@@ -401,50 +397,13 @@ class DtUEBACodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit => q"reader.readBool()"
-              case TypeId.Builtins.i08 => q"reader.readI8()"
-              case TypeId.Builtins.i16 => q"reader.readI16()"
-              case TypeId.Builtins.i32 => q"reader.readI32()"
-              case TypeId.Builtins.i64 => q"reader.readI64()"
-              case TypeId.Builtins.u08 => q"reader.readU8()"
-              case TypeId.Builtins.u16 => q"reader.readU16()"
-              case TypeId.Builtins.u32 => q"reader.readU32()"
-              case TypeId.Builtins.u64 => q"reader.readU64()"
-              case TypeId.Builtins.f32 => q"reader.readF32()"
-              case TypeId.Builtins.f64 => q"reader.readF64()"
-
-              case TypeId.Builtins.f128  => q"reader.readDecimal()"
-              case TypeId.Builtins.str   => q"reader.readString()"
-              case TypeId.Builtins.bytes => q"reader.readBytes()"
-
-              case TypeId.Builtins.uid => q"reader.readUuid()"
-              case TypeId.Builtins.tsu => q"reader.readTsu()"
-              case TypeId.Builtins.tso => q"reader.readTso()"
-
-              case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+          case s: TypeId.BuiltinScalar => DtScalarCodecOps.decodeUeba(s, q"reader")
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
-                f.bindings.get(BaboonLang.Dart) match {
-                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
-                    mkDecoder(aliasedRef)
-                  // PR-26.7 (M26): stringy Custom-mapped foreigns in value position — read as
-                  // a UEBA string. The `<F>_UebaCodec` class is no longer emitted for stringy
-                  // customs (closes PR-I.1d-N03 stringy case).
-                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) if decl == "dart.core.String" || decl == "String" =>
-                    q"reader.readString()"
-                  // PR-26.7 round-2 (M26): non-stringy Custom-mapped foreigns with a declared
-                  // `runtimeMapping` (e.g. `ObscureInt` with `rt = i32`) deref to the
-                  // underlying primitive's UEBA decoder. The `<F>_UebaCodec` class is no
-                  // longer emitted for these customs (closes PR-26.7-D01).
-                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) if f.runtimeMapping.isDefined =>
-                    mkDecoder(f.runtimeMapping.get)
-                  // Non-stringy Custom foreigns without `runtimeMapping` retain the throwing-
-                  // stub `<F>_UebaCodec` — see `translate` foreign branch.
-                  case _ =>
+                DtForeignWirePlan.ueba(f) match {
+                  case DtForeignWirePlan.Inline(ref) => mkDecoder(ref)
+                  case DtForeignWirePlan.Codec =>
                     val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
                     q"""$targetTpe.instance.decode(ctx, reader)"""
                 }
@@ -477,41 +436,13 @@ class DtUEBACodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit   => q"$wref.writeBool($ref);"
-              case TypeId.Builtins.i08   => q"$wref.writeI8($ref);"
-              case TypeId.Builtins.i16   => q"$wref.writeI16($ref);"
-              case TypeId.Builtins.i32   => q"$wref.writeI32($ref);"
-              case TypeId.Builtins.i64   => q"$wref.writeI64($ref);"
-              case TypeId.Builtins.u08   => q"$wref.writeU8($ref);"
-              case TypeId.Builtins.u16   => q"$wref.writeU16($ref);"
-              case TypeId.Builtins.u32   => q"$wref.writeU32($ref);"
-              case TypeId.Builtins.u64   => q"$wref.writeU64($ref);"
-              case TypeId.Builtins.f32   => q"$wref.writeF32($ref);"
-              case TypeId.Builtins.f64   => q"$wref.writeF64($ref);"
-              case TypeId.Builtins.f128  => q"$wref.writeDecimal($ref);"
-              case TypeId.Builtins.str   => q"$wref.writeString($ref);"
-              case TypeId.Builtins.bytes => q"$wref.writeBytes($ref);"
-              case TypeId.Builtins.uid   => q"$wref.writeUuid($ref);"
-              case TypeId.Builtins.tsu   => q"$wref.writeTsu($ref);"
-              case TypeId.Builtins.tso   => q"$wref.writeTso($ref);"
-              case o =>
-                throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+          case s: TypeId.BuiltinScalar => DtScalarCodecOps.encodeUeba(s, wref, ref)
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
-                f.bindings.get(BaboonLang.Dart) match {
-                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
-                    mkEncoder(aliasedRef, ref, wref, depth)
-                  // PR-26.7 (M26): see `mkDecoder` analog.
-                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) if decl == "dart.core.String" || decl == "String" =>
-                    q"$wref.writeString($ref);"
-                  // PR-26.7 round-2 (M26): see `mkDecoder` analog.
-                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) if f.runtimeMapping.isDefined =>
-                    mkEncoder(f.runtimeMapping.get, ref, wref, depth)
-                  case _ =>
+                DtForeignWirePlan.ueba(f) match {
+                  case DtForeignWirePlan.Inline(wireRef) => mkEncoder(wireRef, ref, wref, depth)
+                  case DtForeignWirePlan.Codec =>
                     val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
                     q"""$targetTpe.instance.encode(ctx, $wref, $ref);"""
                 }
@@ -573,11 +504,10 @@ class DtUEBACodecGenerator(
 
   // Encode delegates to the per-codec-class `encodeAnyField` helper. This site wires the expected
   // kind byte and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
-  // See `anyStaticFallbacks` for the per-variant table.
   private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[DtValue], wref: TextTree[DtValue]): TextTree[DtValue] = {
     val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
     val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
-    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    val (staticDom, staticVer, staticTid) = DtAnyFieldPlan.fallbacks(a, domain)
     q"encodeAnyField(ctx, $wref, $expectedHex, $staticDom, $staticVer, $staticTid, $ref);"
   }
 
@@ -590,47 +520,7 @@ class DtUEBACodecGenerator(
     q"decodeAnyField(reader, $expectedHex)"
   }
 
-  // Static fallbacks for the cross-format facade helpers (`jsonToUebaBytes`/`uebaToJson`). The
-  // wire `meta` may omit components that are pinned by the field's static declaration; the codec
-  // emits whatever is statically known so the facade can fill the gaps. See
-  // `BaboonCodecsFacade._buildSyntheticTypeMeta` for the merge semantics. Per spec table:
-  //   A=(null,null,null), B=(currentDomain,null,null), C=(currentDomain,currentVersion,null),
-  //   D1=(null,null,underlyingFqid), D2=(currentDomain,null,underlyingFqid),
-  //   D3=(currentDomain,currentVersion,underlyingFqid).
-  // Duplicated across Scala/C#/Rust/Kotlin/Java/TS/Dart — extraction deferred (textual emission
-  // diverges by language flavor; see PR 4.2 ledger entry's DRY analysis).
-  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[DtValue], TextTree[DtValue], TextTree[DtValue]) = {
-    val none                     = q"null"
-    def some(s: String)          = q""""$s""""
-    val currentDomain: String    = domain.id.toString
-    val currentDomainVer: String = domain.version.v.toString
-    val typeidStatic = a.underlying match {
-      case Some(u) => some(u.id.toString)
-      case None    => none
-    }
-    val (domainStatic, versionStatic) = a.variant match {
-      case AnyVariant.Global  => (none, none)
-      case AnyVariant.ThisDom => (some(currentDomain), none)
-      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
-    }
-    (domainStatic, versionStatic, typeidStatic)
-  }
-
-  // Per-codec-class helpers consolidating the any-field framing, kind-check, and
-  // buffer-then-write / read-then-skip paths — emitted at most once per codec class that has any
-  // any-bearing field. Mirrors `JvUEBACodecGenerator.anyFieldHelpers` and
-  // `TsUEBACodecGenerator.anyFieldHelpers`. Wire layout (locked, see
-  // docs/drafts/20260424-1738-any-opaque-fields.md §"Wire format"):
-  //   length:i32 | meta-length:i32 | meta-kind:u8 | meta-strings | blob
-  //
-  // PR-12-D01 lesson applied (Dart): Dart `int` is 64-bit so the failure mode differs from JVM
-  // wraparound, but explicit negative-i32 sanity guards on the on-wire lengths keep the error
-  // message specific (rather than letting the sublist call throw a generic RangeError).
-  //
-  // Cast-via-`as`: `ctx.facade` returns the `BaboonCodecsFacadeBase` opaque base (chosen by PR 8.1
-  // to break the `baboon_runtime.dart` <-> `baboon_codecs_facade.dart` import cycle). The concrete
-  // facade class carries `jsonToUebaBytes`; the cast is safe because `BaboonCodecContext.withFacade`
-  // is the only construction path and accepts the same hierarchy.
+  // Public generated helpers remain forwarding methods for source compatibility.
   private def anyFieldHelpers: TextTree[DtValue] = {
     q"""void encodeAnyField(
        |    $baboonCodecContext ctx,
@@ -640,95 +530,10 @@ class DtUEBACodecGenerator(
        |    String? staticVersion,
        |    String? staticTypeid,
        |    $baboonAnyOpaque value,
-       |) {
-       |  if (value.meta.kind != expectedKind) {
-       |    throw $baboonEncoderFailure(
-       |      'any: meta-kind 0x' + (value.meta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
-       |      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
-       |    );
-       |  }
-       |  $dtUint8List anyBlob;
-       |  switch (value) {
-       |    case $baboonAnyOpaqueUeba(:final bytes):
-       |      anyBlob = bytes;
-       |    case $baboonAnyOpaqueJson(:final meta, :final json):
-       |      final anyFacadeBase = ctx.facade;
-       |      if (anyFacadeBase == null) {
-       |        throw $baboonEncoderFailure(
-       |          'Cannot encode AnyOpaqueJson into UEBA without a facade reference. '
-       |          'Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), '
-       |          'or supply AnyOpaqueUeba directly.',
-       |        );
-       |      }
-       |      // Downcast to the concrete facade — the marker base is empty by design (PR 8.1
-       |      // import-cycle break). Construction goes through BaboonCodecContext.withFacade
-       |      // which only accepts BaboonCodecsFacadeBase, but real callers pass BaboonCodecsFacade.
-       |      final anyFacade = anyFacadeBase as $baboonCodecsFacade;
-       |      final anyConvResult = anyFacade.jsonToUebaBytes(
-       |        meta,
-       |        json,
-       |        staticDomain: staticDomain,
-       |        staticVersion: staticVersion,
-       |        staticTypeid: staticTypeid,
-       |      );
-       |      switch (anyConvResult) {
-       |        case $baboonLeft(:final value):
-       |          throw value;
-       |        case $baboonRight(:final value):
-       |          anyBlob = value;
-       |      }
-       |  }
-       |  // Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
-       |  final anyMetaBuf = $baboonBinWriter();
-       |  $baboonAnyMetaCodec.writeBin(value.meta, anyMetaBuf);
-       |  final anyMetaBytes = anyMetaBuf.toBytes();
-       |  final anyTotalLength = 4 + anyMetaBytes.length + anyBlob.length;
-       |  writer.writeI32(anyTotalLength);
-       |  writer.writeI32(anyMetaBytes.length);
-       |  writer.writeAll(anyMetaBytes);
-       |  writer.writeAll(anyBlob);
-       |}
+       |) => $baboonEncodeAnyUebaField(ctx, writer, expectedKind, staticDomain, staticVersion, staticTypeid, value);
        |
-       |$baboonAnyOpaque decodeAnyField($baboonBinReader wire, int expectedKind) {
-       |  final anyTotalLength = wire.readI32();
-       |  if (anyTotalLength < 0) {
-       |    throw $baboonDecoderFailure(
-       |      'any: negative total-length $$anyTotalLength',
-       |    );
-       |  }
-       |  final anyMetaLength = wire.readI32();
-       |  if (anyMetaLength < 0) {
-       |    throw $baboonDecoderFailure(
-       |      'any: negative meta-length $$anyMetaLength',
-       |    );
-       |  }
-       |  if (anyTotalLength < 4 + anyMetaLength) {
-       |    throw $baboonDecoderFailure(
-       |      'any: total-length $$anyTotalLength smaller than 4 + meta-length $$anyMetaLength',
-       |    );
-       |  }
-       |  final anyReadResult = $baboonAnyMetaCodec.readBinWithLength(wire);
-       |  final anyMeta = anyReadResult.$$1;
-       |  final anyBytesRead = anyReadResult.$$2;
-       |  if (anyBytesRead > anyMetaLength) {
-       |    throw $baboonDecoderFailure(
-       |      'any: meta bytes-read $$anyBytesRead exceeded meta-length window $$anyMetaLength',
-       |    );
-       |  }
-       |  if (anyBytesRead < anyMetaLength) {
-       |    // Forward-compat: skip future meta-extension bytes within the meta-length window.
-       |    wire.skipBytes(anyMetaLength - anyBytesRead);
-       |  }
-       |  if (anyMeta.kind != expectedKind) {
-       |    throw $baboonDecoderFailure(
-       |      'any: wire kind 0x' + (anyMeta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
-       |      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
-       |    );
-       |  }
-       |  final anyBlobLen = anyTotalLength - 4 - anyMetaLength;
-       |  final anyBlob = wire.readNBytes(anyBlobLen);
-       |  return $baboonAnyOpaqueUeba(anyMeta, anyBlob);
-       |}""".stripMargin
+       |$baboonAnyOpaque decodeAnyField($baboonBinReader wire, int expectedKind) =>
+       |    $baboonDecodeAnyUebaField(wire, expectedKind);""".stripMargin
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[DtValue]] = {
@@ -768,17 +573,11 @@ class DtUEBACodecGenerator(
     //     round-2 (closes PR-26.7-D01).
     // BaboonRef-aliased foreigns are also suppressed via `isBaboonRefForeign`. Non-stringy
     // Custom WITHOUT `runtimeMapping` still register a throwing-stub class.
-    val isInlineableCustomForeign = domain.defs.meta.nodes.get(id).exists {
-      case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
-        f.bindings.get(BaboonLang.Dart) match {
-          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-            decl == "dart.core.String" || decl == "String" || f.runtimeMapping.isDefined
-          case _ => false
-        }
-      case _ => false
+    val isInlineForeign = domain.defs.meta.nodes.get(id).exists {
+      case DomainMember.User(_, f: Typedef.Foreign, _, _) => DtForeignWirePlan.ueba(f).isInstanceOf[DtForeignWirePlan.Inline]
+      case _                                              => false
     }
-    !isInlineableCustomForeign &&
-    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Dart) &&
+    !isInlineForeign &&
     target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }

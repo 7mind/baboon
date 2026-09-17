@@ -7,9 +7,30 @@ import unittest
 from BaboonDefinitions.Generated.baboon_codecs import BaboonCodecContext
 from BaboonDefinitions.Generated.my.ok.Inner import Inner
 from BaboonDefinitions.Generated.my.ok.domain_facade import DomainMyOkFacade
+from BaboonDefinitions.Generated.my.ok.baboon_metadata import BaboonMetadata
+from BaboonDefinitions.Generated.baboon_any_opaque import AnyMeta, AnyOpaqueJson
+from BaboonDefinitions.Generated.baboon_service_wiring import BaboonRight
 
 
 class DomainFacadeTest(unittest.TestCase):
+    def test_generated_metadata_contract(self):
+        sample = Inner(x=42)
+        meta = BaboonMetadata()
+        self.assertEqual(sample.baboon_same_in_versions, meta.same_in_versions(sample.baboon_type_identifier))
+        self.assertEqual(meta.unmodified_since(sample.baboon_type_identifier), meta.same_in_versions(sample.baboon_type_identifier))
+
+    def test_latest_json_round_trip(self):
+        facade = DomainMyOkFacade()
+        sample = Inner(x=42)
+        self.assertEqual(sample, facade.decode_from_json_latest(facade.encode_to_json(sample), Inner))
+
+    def test_decode_any_native_json(self):
+        sample = Inner(x=42)
+        meta = AnyMeta(7, sample.baboon_domain_identifier, sample.baboon_domain_version, sample.baboon_type_identifier)
+        result = DomainMyOkFacade().decode_any(AnyOpaqueJson(meta, {"x": 42}))
+        self.assertIsInstance(result, BaboonRight)
+        self.assertEqual(sample, result.value)
+
     def test_round_trips_inner(self):
         facade = DomainMyOkFacade()
         sample = Inner(x=42)

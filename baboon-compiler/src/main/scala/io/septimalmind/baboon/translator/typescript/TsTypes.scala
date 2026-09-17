@@ -35,6 +35,10 @@ object TsTypes {
   val tsBaboonAnyOpaqueUebaCtor: TsType = TsType(tsBaboonAnyOpaqueModule, "anyOpaqueUeba")
   val tsBaboonAnyOpaqueJsonCtor: TsType = TsType(tsBaboonAnyOpaqueModule, "anyOpaqueJson")
   val tsBaboonAnyMetaCodec: TsType      = TsType(tsBaboonAnyOpaqueModule, "AnyMetaCodec")
+  val tsEncodeAnyJsonField: TsType      = TsType(tsBaboonAnyOpaqueModule, "encodeAnyJsonField")
+  val tsDecodeAnyJsonField: TsType      = TsType(tsBaboonAnyOpaqueModule, "decodeAnyJsonField")
+  val tsEncodeAnyUebaField: TsType      = TsType(tsBaboonAnyOpaqueModule, "encodeAnyUebaField")
+  val tsDecodeAnyUebaField: TsType      = TsType(tsBaboonAnyOpaqueModule, "decodeAnyUebaField")
 
   // any-feature failures (BaboonSharedRuntime module)
   val tsBaboonEncoderFailure: TsType = TsType(tsBaboonRuntimeShared, "BaboonEncoderFailure")

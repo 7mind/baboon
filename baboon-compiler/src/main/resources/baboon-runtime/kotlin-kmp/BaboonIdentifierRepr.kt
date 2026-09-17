@@ -145,16 +145,7 @@ object BaboonIdentifierRepr {
         val seconds = timeOfDay % 60
 
         // Gregorian calendar from days since epoch (1970-01-01).
-        val z = days + 719468
-        val era = (if (z >= 0) z else z - 146096) / 146097
-        val doe = z - era * 146097
-        val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
-        val y = yoe + era * 400
-        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
-        val mp = (5 * doy + 2) / 153
-        val d = doy - (153 * mp + 2) / 5 + 1
-        val m = mp + (if (mp < 10) 3 else -9)
-        val year = y + (if (m <= 2) 1 else 0)
+        val (year, m, d) = BaboonCivilDate.fromEpochDays(days)
 
         return "${pad(year, 4)}-${pad(m, 2)}-${pad(d, 2)}T${pad(hours, 2)}:${pad(minutes, 2)}:${pad(seconds, 2)}.${pad(millis, 3)}Z"
     }

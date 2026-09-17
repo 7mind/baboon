@@ -199,7 +199,7 @@ class BaboonCodecsFacade:
         except Exception as e:
             raise BaboonCodecException.EncoderFailure(
                 f"Can not encode to json form type [{value.baboon_type_identifier}] "
-                f"of version '{value.domain_version}'.",
+                f"of version '{value.baboon_domain_version}'.",
                 e
             )
 
@@ -219,14 +219,14 @@ class BaboonCodecsFacade:
             )
 
     def decode_from_json_latest(self, value: str, target_type: Type[TO]) -> TO:
-        baboon = self.decode_from_json_string(value)
+        baboon = self.decode_from_json(value)
         return self.convert(baboon, target_type)
 
     def convert(self, value: BaboonGenerated, target_type: Type[TO]) -> TO:
         if type(value) is target_type:
             return value
 
-        domain_version = value.domain_version
+        domain_version = BaboonDomainVersion(value.baboon_domain_identifier, value.baboon_domain_version)
 
         versions = self.domain_versions.get(domain_version.domain_identifier, [])
         if not versions:
@@ -253,7 +253,8 @@ class BaboonCodecsFacade:
         from_model = value
 
         for to_version in versions:
-            if from_model.domain_version.version >= to_version.version:
+            from_version = BaboonDomainVersion(from_model.baboon_domain_identifier, from_model.baboon_domain_version)
+            if from_version.version >= to_version.version:
                 continue
 
             conversions = self.versions_conversions.get(to_version)
@@ -283,7 +284,7 @@ class BaboonCodecsFacade:
             except Exception as e:
                 raise BaboonCodecException.ConverterFailure(
                     f"Exception while converting type [{type(from_model).__name__}] "
-                    f"of version '{from_model.domain_version}' to version '{to_version}'.",
+                    f"of version '{from_version}' to version '{to_version}'.",
                     e
                 )
 
@@ -419,6 +420,13 @@ class BaboonCodecsFacade:
         (`json_to_ueba_bytes` / `ueba_to_json`) which accept static fallbacks. PR-04-D02:
         errors thread through `BaboonEither` rather than raising.
         """
+        return self._decode_any(opaque, False)
+
+    def decode_any_value(self, opaque: AnyOpaque) -> BaboonEither:
+        """Decode native JSON content without interpreting string values as JSON text."""
+        return self._decode_any(opaque, True)
+
+    def _decode_any(self, opaque: AnyOpaque, native_json: bool) -> BaboonEither:
         meta = opaque.meta
         type_meta_result = self._build_synthetic_type_meta(meta, None, None, None)
         if isinstance(type_meta_result, BaboonLeft):
@@ -443,7 +451,11 @@ class BaboonCodecsFacade:
             elif isinstance(opaque, AnyOpaqueJson):
                 codec = self._get_json_codec(type_meta, exact=False)
                 try:
-                    return BaboonRight(codec.decode(BaboonCodecContext.Compact, opaque.json))
+                    # Preserve the legacy facade's JSON-text string input. The value API
+                    # is unambiguous for payloads whose native JSON value is itself a string.
+                    if not native_json and isinstance(opaque.json, str):
+                        return BaboonRight(codec.decode(BaboonCodecContext.Compact, opaque.json))
+                    return BaboonRight(codec.decode_value(BaboonCodecContext.Compact, opaque.json))
                 except Exception as e:
                     return BaboonLeft(
                         BaboonCodecException.DecoderFailure(

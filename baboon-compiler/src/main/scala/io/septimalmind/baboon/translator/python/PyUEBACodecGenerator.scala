@@ -223,15 +223,16 @@ class PyUEBACodecGenerator(
   private def genDtoDecoder(name: PyValue.PyType, fields: List[(TextTree[PyValue], TextTree[PyValue])], dto: Typedef.Dto): TextTree[PyValue] = {
     // Use the keyword-escaped attribute name for constructor kwargs.
     // Keyword fields use `class_=decoder` (requires populate_by_name=True in model_config).
+    val fieldPlans = PyFieldPlan.forDto(domain, dto)
     val fieldsDecoders = dto.fields.zip(fields.map(_._2)).map {
       case (field, decoder) =>
-        val attrName = if (PyKeywords.isKeyword(field.name.name)) s"${field.name.name}_" else field.name.name
+        val attrName = fieldPlans(field).constructorName
         q"$attrName=$decoder"
     }
-    q"""index = self.read_index(ctx, wire)
+    q"""index_count = self.consume_index(ctx, wire)
        |
        |if ctx.use_indices:
-       |    assert len(index) == self.index_elements_count(ctx)
+       |    assert index_count == self.index_elements_count(ctx)
        |
        |return ${name.name}(
        |    ${fieldsDecoders.join(",\n").shift(4).trim}
@@ -344,30 +345,7 @@ class PyUEBACodecGenerator(
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit => q"$writerRef.write_bool($ref)"
-              case TypeId.Builtins.i08 => q"$writerRef.write_byte($ref)"
-              case TypeId.Builtins.i16 => q"$writerRef.write_i16($ref)"
-              case TypeId.Builtins.i32 => q"$writerRef.write_i32($ref)"
-              case TypeId.Builtins.i64 => q"$writerRef.write_i64($ref)"
-              case TypeId.Builtins.u08 => q"$writerRef.write_ubyte($ref)"
-              case TypeId.Builtins.u16 => q"$writerRef.write_u16($ref)"
-              case TypeId.Builtins.u32 => q"$writerRef.write_u32($ref)"
-              case TypeId.Builtins.u64 => q"$writerRef.write_u64($ref)"
-              case TypeId.Builtins.f32 => q"$writerRef.write_f32($ref)"
-              case TypeId.Builtins.f64 => q"$writerRef.write_f64($ref)"
-
-              case TypeId.Builtins.f128 => q"$writerRef.write_f128($ref)"
-              case TypeId.Builtins.str  => q"$writerRef.write_str($ref)"
-
-              case TypeId.Builtins.uid => q"$writerRef.write_uuid($ref)"
-              case TypeId.Builtins.tsu => q"$writerRef.write_datetime($ref)"
-              case TypeId.Builtins.tso => q"$writerRef.write_datetime($ref)"
-
-              case TypeId.Builtins.bytes => q"$writerRef.write_bytes($ref)"
-
-              case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+            PyScalarCodecOps.encode(s, writerRef, ref)
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -407,30 +385,7 @@ class PyUEBACodecGenerator(
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit => q"wire.read_bool()"
-              case TypeId.Builtins.i08 => q"wire.read_byte()"
-              case TypeId.Builtins.i16 => q"wire.read_i16()"
-              case TypeId.Builtins.i32 => q"wire.read_i32()"
-              case TypeId.Builtins.i64 => q"wire.read_i64()"
-              case TypeId.Builtins.u08 => q"wire.read_ubyte()"
-              case TypeId.Builtins.u16 => q"wire.read_u16()"
-              case TypeId.Builtins.u32 => q"wire.read_u32()"
-              case TypeId.Builtins.u64 => q"wire.read_u64()"
-              case TypeId.Builtins.f32 => q"wire.read_f32()"
-              case TypeId.Builtins.f64 => q"wire.read_f64()"
-
-              case TypeId.Builtins.f128 => q"wire.read_f128()"
-              case TypeId.Builtins.str  => q"wire.read_string()"
-
-              case TypeId.Builtins.uid => q"wire.read_uuid()"
-              case TypeId.Builtins.tsu => q"wire.read_datetime()"
-              case TypeId.Builtins.tso => q"wire.read_datetime()"
-
-              case TypeId.Builtins.bytes => q"wire.read_bytes()"
-
-              case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+            PyScalarCodecOps.decode(s, q"wire")
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -464,13 +419,8 @@ class PyUEBACodecGenerator(
   // Deep walk (mirrors Scala/C#/Rust/Kotlin/Java/TS/Dart/Swift `hasAnyField`): a codec class
   // needs the any-field helpers if any direct or nested-via-Constructor-arg field has type `any`.
   private def hasAnyField(defn: DomainMember.User): Boolean = {
-    def hasAny(tpe: TypeRef): Boolean = tpe match {
-      case _: TypeRef.Any         => true
-      case _: TypeRef.Scalar      => false
-      case c: TypeRef.Constructor => c.args.exists(hasAny)
-    }
     defn.defn match {
-      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case d: Typedef.Dto => d.fields.exists(f => PyFieldPlan.containsAny(f.tpe))
       case _              => false
     }
   }

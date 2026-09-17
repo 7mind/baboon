@@ -46,8 +46,8 @@ object JvTypes {
   val baboonRandomFactory: JvType             = JvType(baboonFixturePkg, "BaboonRandomFactory")
 
   // baboon facade types
-  val baboonCodecsFacade: JvType    = JvType(baboonRuntimePkg, "BaboonCodecsFacade")
-  val baboonDomainVersion: JvType   = JvType(baboonRuntimePkg, "BaboonDomainVersion")
+  val baboonCodecsFacade: JvType  = JvType(baboonRuntimePkg, "BaboonCodecsFacade")
+  val baboonDomainVersion: JvType = JvType(baboonRuntimePkg, "BaboonDomainVersion")
 
   // baboon service wiring types
   val baboonMethodId: JvType        = JvType(baboonRuntimePkg, "BaboonMethodId")
@@ -68,7 +68,7 @@ object JvTypes {
   val baboonClientTransportUebaSyncCtx: JvType  = JvType(baboonRuntimePkg, "BaboonClientTransport.UebaSyncCtx")
   val baboonClientTransportJsonAsyncCtx: JvType = JvType(baboonRuntimePkg, "BaboonClientTransport.JsonAsyncCtx")
   val baboonClientTransportUebaAsyncCtx: JvType = JvType(baboonRuntimePkg, "BaboonClientTransport.UebaAsyncCtx")
-  val completableFuture: JvType              = JvType(parseJvPkg("java.util.concurrent"), "CompletableFuture")
+  val completableFuture: JvType                 = JvType(parseJvPkg("java.util.concurrent"), "CompletableFuture")
 
   // baboon conversions
   val baboonAbstractConversion: JvType  = JvType(baboonRuntimePkg, "AbstractConversion")
@@ -81,6 +81,8 @@ object JvTypes {
   val baboonAnyOpaqueJson: JvType  = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaqueJson")
   val baboonAnyMeta: JvType        = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyMeta")
   val baboonAnyMetaCodec: JvType   = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyMetaCodec")
+  val baboonAnyJsonCodec: JvType   = JvType(baboonRuntimePkg, "BaboonAnyJsonCodec")
+  val baboonAnyBinCodec: JvType    = JvType(baboonRuntimePkg, "BaboonAnyBinCodec")
   val baboonCodecException: JvType = JvType(baboonRuntimePkg, "BaboonCodecException")
   val baboonEither: JvType         = JvType(baboonRuntimePkg, "BaboonEither")
 

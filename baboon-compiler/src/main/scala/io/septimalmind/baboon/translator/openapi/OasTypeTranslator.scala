@@ -1,13 +1,14 @@
 package io.septimalmind.baboon.translator.openapi
 
+import io.circe.{Json, Printer}
+import io.septimalmind.baboon.translator.schema.{JsonSchema, SchemaReferences}
 import io.septimalmind.baboon.typer.model.*
 
 class OasTypeTranslator {
 
   /** Return the cleaned description text for a `Docs` value, or `None` for
     * empty docs. Combines prefix and suffix with a newline separator when both
-    * are present. The caller is responsible for JSON-escaping the result with
-    * `escapeJson` before embedding it in a JSON string literal.
+    * are present. The caller embeds this raw text with `Json.fromString`.
     */
   def renderOasDescription(docs: Docs): Option[String] = {
     val prefixText = docs.prefix.map(_.cleaned)
@@ -21,26 +22,11 @@ class OasTypeTranslator {
   }
 
   def foreignTypeResolution(domain: Domain): Map[TypeId.User, Option[TypeRef]] = {
-    domain.defs.meta.nodes.values.collect {
-      case u: DomainMember.User =>
-        u.defn match {
-          case f: Typedef.Foreign => Some(f.id -> f.runtimeMapping)
-          case _                  => None
-        }
-    }.flatten.toMap
+    SchemaReferences.prepare(domain).resolutions
   }
 
   def resolveTypeRef(ref: TypeRef, foreignResolutions: Map[TypeId.User, Option[TypeRef]]): TypeRef = {
-    ref match {
-      case TypeRef.Scalar(id: TypeId.User) =>
-        foreignResolutions.get(id) match {
-          case Some(Some(resolved)) => resolveTypeRef(resolved, foreignResolutions)
-          case _                    => ref
-        }
-      case TypeRef.Constructor(id, args) =>
-        TypeRef.Constructor(id, args.map(a => resolveTypeRef(a, foreignResolutions)))
-      case _ => ref
-    }
+    SchemaReferences.resolve(ref, foreignResolutions)
   }
 
   /** JSON Schema representation of a scalar Baboon type.
@@ -48,7 +34,7 @@ class OasTypeTranslator {
     * Returns `(type, format, extra)` where `extra` may contain additional
     * properties like `"minimum": 0` for unsigned integers.
     */
-  def scalarSchema(id: TypeId.BuiltinScalar): (String, Option[String], Map[String, String]) = {
+  private def scalarSchema(id: TypeId.BuiltinScalar): (String, Option[String], Map[String, Json]) = {
     id match {
       case TypeId.Builtins.bit   => ("boolean", None, Map.empty)
       case TypeId.Builtins.str   => ("string", None, Map.empty)
@@ -56,10 +42,10 @@ class OasTypeTranslator {
       case TypeId.Builtins.i16   => ("integer", Some("int32"), Map.empty)
       case TypeId.Builtins.i32   => ("integer", Some("int32"), Map.empty)
       case TypeId.Builtins.i64   => ("integer", Some("int64"), Map.empty)
-      case TypeId.Builtins.u08   => ("integer", Some("int32"), Map("minimum" -> "0"))
-      case TypeId.Builtins.u16   => ("integer", Some("int32"), Map("minimum" -> "0"))
-      case TypeId.Builtins.u32   => ("integer", Some("int32"), Map("minimum" -> "0"))
-      case TypeId.Builtins.u64   => ("integer", Some("int64"), Map("minimum" -> "0"))
+      case TypeId.Builtins.u08   => ("integer", Some("int32"), Map("minimum" -> Json.fromInt(0)))
+      case TypeId.Builtins.u16   => ("integer", Some("int32"), Map("minimum" -> Json.fromInt(0)))
+      case TypeId.Builtins.u32   => ("integer", Some("int32"), Map("minimum" -> Json.fromInt(0)))
+      case TypeId.Builtins.u64   => ("integer", Some("int64"), Map("minimum" -> Json.fromInt(0)))
       case TypeId.Builtins.f32   => ("number", Some("float"), Map.empty)
       case TypeId.Builtins.f64   => ("number", Some("double"), Map.empty)
       case TypeId.Builtins.f128  => ("string", Some("decimal"), Map.empty)
@@ -78,20 +64,27 @@ class OasTypeTranslator {
     * as optional (kind-byte conditional `if`/`then` constraints are intentionally
     * omitted for readability — see the `description` for the kind-byte table).
     */
-  val baboonAnySchema: String = {
-    """{"type": "object", "title": "BaboonAny", """ +
-    """"description": "Opaque any-envelope. JSON serialization of a baboon AnyOpaque value: """ +
-    """{\"$ak\":<int>, \"$ad\"?:str, \"$av\"?:str, \"$at\"?:str, \"$c\":<inner>}. """ +
-    """$ak kind byte: 0x07=A(any), 0x03=B(any[domain:this]), 0x01=C(any[domain:current]), """ +
-    """0x06=D1(any[T]), 0x02=D2(any[domain:this,T]), 0x00=D3(any[domain:current,T]).", """ +
-    """"properties": {""" +
-    """"$ak": {"type": "integer", "minimum": 0, "maximum": 7}, """ +
-    """"$ad": {"type": "string"}, """ +
-    """"$av": {"type": "string"}, """ +
-    """"$at": {"type": "string"}, """ +
-    """"$c": {}""" +
-    """}, "required": ["$ak", "$c"]}"""
-  }
+  val baboonAnySchemaValue: Json = Json.obj(
+    "type"  -> Json.fromString("object"),
+    "title" -> Json.fromString("BaboonAny"),
+    "description" -> Json.fromString(
+      "Opaque any-envelope. JSON serialization of a baboon AnyOpaque value: " +
+      """{"$ak":<int>, "$ad"?:str, "$av"?:str, "$at"?:str, "$c":<inner>}. """ +
+      "$ak kind byte: 0x07=A(any), 0x03=B(any[domain:this]), 0x01=C(any[domain:current]), " +
+      "0x06=D1(any[T]), 0x02=D2(any[domain:this,T]), 0x00=D3(any[domain:current,T])."
+    ),
+    "properties" -> Json.obj(
+      "$ak" -> Json.obj("type" -> Json.fromString("integer"), "minimum" -> Json.fromInt(0), "maximum" -> Json.fromInt(7)),
+      "$ad" -> Json.obj("type" -> Json.fromString("string")),
+      "$av" -> Json.obj("type" -> Json.fromString("string")),
+      "$at" -> Json.obj("type" -> Json.fromString("string")),
+      "$c"  -> Json.obj(),
+    ),
+    "required" -> Json.arr(Json.fromString("$ak"), Json.fromString("$c")),
+  )
+
+  private val fragmentPrinter = Printer.noSpaces.copy(colonRight = " ", objectCommaRight = " ", arrayCommaRight = " ")
+  val baboonAnySchema: String = fragmentPrinter.print(baboonAnySchemaValue)
 
   /** Inline JSON Schema fragment for a type reference.
     *
@@ -99,25 +92,26 @@ class OasTypeTranslator {
     * embedded as a property schema or array items schema.
     */
   def typeRefSchema(ref: TypeRef, enumKeys: Set[TypeId.User] = Set.empty): String = {
+    fragmentPrinter.print(typeRefSchemaValue(ref, enumKeys))
+  }
+
+  def typeRefSchemaValue(ref: TypeRef, enumKeys: Set[TypeId.User]): Json = {
     ref match {
       case TypeRef.Scalar(id: TypeId.BuiltinScalar) =>
-        scalarSchemaJson(id)
+        scalarSchemaValue(id)
 
       case TypeRef.Scalar(id: TypeId.User) =>
-        s"""{"$$ref": "#/components/schemas/${escapeJson(schemaName(id))}"}"""
+        componentRef(id)
 
       case TypeRef.Constructor(TypeId.Builtins.opt, args) =>
         // nullable via oneOf [schema, null] (OpenAPI 3.1 / JSON Schema 2020-12)
-        val inner = typeRefSchema(args.head, enumKeys)
-        s"""{"oneOf": [$inner, {"type": "null"}]}"""
+        JsonSchema.nullable(typeRefSchemaValue(args.head, enumKeys))
 
       case TypeRef.Constructor(TypeId.Builtins.lst, args) =>
-        val items = typeRefSchema(args.head, enumKeys)
-        s"""{"type": "array", "items": $items}"""
+        JsonSchema.array(typeRefSchemaValue(args.head, enumKeys))
 
       case TypeRef.Constructor(TypeId.Builtins.set, args) =>
-        val items = typeRefSchema(args.head, enumKeys)
-        s"""{"type": "array", "items": $items, "uniqueItems": true}"""
+        JsonSchema.uniqueArray(typeRefSchemaValue(args.head, enumKeys))
 
       case TypeRef.Constructor(TypeId.Builtins.map, args) =>
         mapSchema(args.head, args.tail.head, enumKeys)
@@ -127,7 +121,7 @@ class OasTypeTranslator {
         // (0x00..0x07, see GraphQL `BaboonAny` description for the kind table).
         // Inlined directly rather than `$ref`-ed because OpenAPI emission is
         // schema-only (no shared component registry) and this fragment is small.
-        baboonAnySchema
+        baboonAnySchemaValue
       case other =>
         throw new IllegalArgumentException(s"Unexpected type reference in OpenAPI backend: ${other.id.name.name}")
     }
@@ -143,19 +137,15 @@ class OasTypeTranslator {
     * to the enum component. Other non-string-keyed maps become arrays of
     * `{key, value}` entry objects.
     */
-  private def mapSchema(keyRef: TypeRef, valRef: TypeRef, enumKeys: Set[TypeId.User]): String = {
-    val valSchema = typeRefSchema(valRef, enumKeys)
+  private def mapSchema(keyRef: TypeRef, valRef: TypeRef, enumKeys: Set[TypeId.User]): Json = {
+    val valSchema = typeRefSchemaValue(valRef, enumKeys)
     keyRef match {
       case TypeRef.Scalar(id: TypeId.User) if enumKeys.contains(id) =>
-        val propertyNames = s"""{"$$ref": "#/components/schemas/${escapeJson(schemaName(id))}"}"""
-        s"""{"type": "object", "additionalProperties": $valSchema, "propertyNames": $propertyNames}"""
+        JsonSchema.objectMap(valSchema, Some(componentRef(id)))
       case _ if isStringKey(keyRef) =>
-        s"""{"type": "object", "additionalProperties": $valSchema}"""
+        JsonSchema.objectMap(valSchema, None)
       case _ =>
-        val keySchema = typeRefSchema(keyRef, enumKeys)
-        val entrySchema =
-          s"""{"type": "object", "required": ["key", "value"], "properties": {"key": $keySchema, "value": $valSchema}}"""
-        s"""{"type": "array", "items": $entrySchema}"""
+        JsonSchema.entryMap(typeRefSchemaValue(keyRef, enumKeys), valSchema)
     }
   }
 
@@ -163,13 +153,7 @@ class OasTypeTranslator {
     * map keys can be reconciled to the string-keyed-object wire form (D6/T30).
     */
   def enumKeysOf(domain: Domain): Set[TypeId.User] =
-    domain.defs.meta.nodes.values.collect {
-      case u: DomainMember.User =>
-        u.defn match {
-          case e: Typedef.Enum => Some(e.id)
-          case _               => None
-        }
-    }.flatten.toSet
+    SchemaReferences.prepare(domain).enums.keySet
 
   private def isStringKey(ref: TypeRef): Boolean = {
     ref match {
@@ -180,36 +164,29 @@ class OasTypeTranslator {
   }
 
   def scalarSchemaJson(id: TypeId.BuiltinScalar): String = {
-    val (tpe, fmt, extra) = scalarSchema(id)
-    val parts = List(s""""type": "$tpe"""") ++
-      fmt.map(f => s""""format": "$f"""").toList ++
-      extra.map { case (k, v) => s""""$k": $v""" }
-    s"{${parts.mkString(", ")}}"
+    fragmentPrinter.print(scalarSchemaValue(id))
   }
+
+  def scalarSchemaValue(id: TypeId.BuiltinScalar): Json = {
+    val (tpe, fmt, extra) = scalarSchema(id)
+    val parts = List("type" -> Json.fromString(tpe)) ++
+      fmt.map(f => "format" -> Json.fromString(f)).toList ++
+      extra.toList.sortBy(_._1)
+    Json.obj(parts*)
+  }
+
+  def componentRef(id: TypeId.User): Json = Json.obj("$ref" -> Json.fromString(s"#/components/schemas/${schemaName(id)}"))
 
   /** Generate the schema name for a user-defined type, following the same
     * conventions as the GraphQL backend: package path + owner path + type name,
     * joined with underscores.
     */
   def schemaName(id: TypeId.User): String = {
-    val parts = id.pkg.path.toList ++ id.owner.asPseudoPkg :+ id.name.name
-    parts.map(sanitize).mkString("_")
+    SchemaReferences.name(id)
   }
 
   def sanitize(s: String): String = {
-    s.replace("-", "_").replace(".", "_")
-  }
-
-  def escapeJson(s: String): String = {
-    s.flatMap {
-      case '"'           => "\\\""
-      case '\\'          => "\\\\"
-      case '\n'          => "\\n"
-      case '\r'          => "\\r"
-      case '\t'          => "\\t"
-      case c if c < 0x20 => f"\\u${c.toInt}%04x"
-      case c             => c.toString
-    }
+    SchemaReferences.sanitize(s)
   }
 
   /** Return the canonical human-readable description of the ADT
@@ -224,8 +201,7 @@ class OasTypeTranslator {
     * sentence is returned.
     *
     * The returned string is RAW (unescaped). Callers are responsible for
-    * JSON-escaping with `escapeJson` before embedding in a JSON string literal,
-    * or via `Json.fromString` in circe contexts.
+    * embedding it via `Json.fromString`.
     */
   def adtWrapperDoc(branchShortNames: List[String]): String = {
     val generic =

@@ -78,80 +78,27 @@ object CSServiceWiringTranslator {
 
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[CSValue]): TextTree[CSValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.Instance.Decode($codecCtxName, $wire)"
-      case b: TypeId.BuiltinScalar =>
-        val fref = q"$wire!"
-        b match {
-          case TypeId.Builtins.bit                       => q"$fref.Value<$csBoolean>()!"
-          case TypeId.Builtins.i08                       => q"$fref.Value<$csSByte>()!"
-          case TypeId.Builtins.i16                       => q"$fref.Value<$csInt16>()!"
-          case TypeId.Builtins.i32                       => q"$fref.Value<$csInt32>()!"
-          case TypeId.Builtins.i64                       => q"$fref.Value<$csInt64>()!"
-          case TypeId.Builtins.u08                       => q"$fref.Value<$csByte>()!"
-          case TypeId.Builtins.u16                       => q"$fref.Value<$csUInt16>()!"
-          case TypeId.Builtins.u32                       => q"$fref.Value<$csUInt32>()!"
-          case TypeId.Builtins.u64                       => q"$fref.Value<$csUInt64>()!"
-          case TypeId.Builtins.f32                       => q"$fref.Value<$csSingle>()!"
-          case TypeId.Builtins.f64                       => q"$fref.Value<$csDouble>()!"
-          case TypeId.Builtins.f128                      => q"$BaboonTools.ReadDecimalLenient($fref)"
-          case TypeId.Builtins.str                       => q"$fref.Value<$csString>()!"
-          case TypeId.Builtins.bytes                     => q"$csByteString.Parse($fref.Value<$csString>()!)"
-          case TypeId.Builtins.uid                       => q"$csGuid.Parse($fref.Value<$csString>()!)"
-          case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.FromString($fref.Value<$csString>()!)"
-          case other                                     => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${jsonCodecName(u)}.Instance.Decode($codecCtxName, $wire)"
+      case b: TypeId.BuiltinScalar => CSScalarCodecEmitter.jsonDecode(b, wire)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[CSValue]): TextTree[CSValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.Instance.Encode($codecCtxName, $value)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bytes   => q"new $nsJValue($value.Encode())"
-          case TypeId.Builtins.uid     => q"new $nsJValue($value.ToString())"
-          case TypeId.Builtins.tsu     => q"new $nsJValue($baboonTimeFormats.TsuToString($value))"
-          case TypeId.Builtins.tso     => q"new $nsJValue($baboonTimeFormats.TsoToString($value))"
-          case TypeId.Builtins.bit     => q"new $nsJValue($value.ToString().ToLowerInvariant())"
-          case _: TypeId.BuiltinScalar => q"new $nsJValue($value)"
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${jsonCodecName(u)}.Instance.Encode($codecCtxName, $value)"
+      case b: TypeId.BuiltinScalar => CSScalarCodecEmitter.jsonEncode(b, value, CSScalarCodecEmitter.JsonBooleanFormat.LowercaseString)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaDecodeExpr(id: TypeId, br: TextTree[CSValue]): TextTree[CSValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.Instance.Decode($codecCtxName, $br)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit                       => q"$br.ReadBoolean()"
-          case TypeId.Builtins.i08                       => q"$br.ReadSByte()"
-          case TypeId.Builtins.i16                       => q"$br.ReadInt16()"
-          case TypeId.Builtins.i32                       => q"$br.ReadInt32()"
-          case TypeId.Builtins.i64                       => q"$br.ReadInt64()"
-          case TypeId.Builtins.u08                       => q"$br.ReadByte()"
-          case TypeId.Builtins.u16                       => q"$br.ReadUInt16()"
-          case TypeId.Builtins.u32                       => q"$br.ReadUInt32()"
-          case TypeId.Builtins.u64                       => q"$br.ReadUInt64()"
-          case TypeId.Builtins.f32                       => q"$br.ReadSingle()"
-          case TypeId.Builtins.f64                       => q"$br.ReadDouble()"
-          case TypeId.Builtins.f128                      => q"$br.ReadDecimal()"
-          case TypeId.Builtins.str                       => q"$br.ReadString()"
-          case TypeId.Builtins.bytes                     => q"$csByteString.ReadBytes($br)"
-          case TypeId.Builtins.uid                       => q"new $csGuid($br.ReadBytes(16))"
-          case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.DecodeFromBin($br)"
-          case other                                     => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${uebaCodecName(u)}.Instance.Decode($codecCtxName, $br)"
+      case b: TypeId.BuiltinScalar => CSScalarCodecEmitter.uebaDecode(b, br)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaEncodeStmt(id: TypeId, bw: TextTree[CSValue], value: TextTree[CSValue]): TextTree[CSValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.Instance.Encode($codecCtxName, $bw, $value);"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bytes                     => q"$csByteString.WriteBytes($value, $bw);"
-          case TypeId.Builtins.uid                       => q"$bw.Write($value.ToByteArray());"
-          case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.EncodeToBin($value, $bw);"
-          case _: TypeId.BuiltinScalar                   => q"$bw.Write($value);"
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${uebaCodecName(u)}.Instance.Encode($codecCtxName, $bw, $value);"
+      case b: TypeId.BuiltinScalar => q"${CSScalarCodecEmitter.uebaEncode(b, bw, value)};"
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def renderContainer(error: String, success: String): String = {
@@ -273,15 +220,16 @@ object CSServiceWiringTranslator {
           // under async. The transport callback becomes a `Task`-returning
           // delegate so the client `await`s it.
           val awaitTransport = if (isAsync) "await " else ""
-          def clientRet(out: Option[TypeRef]): TextTree[CSValue] = out match {
-            case Some(o) => taskWrap(trans.asCsRef(o, domain, evo))
+          def clientRet(out: Option[TextTree[CSValue]]): TextTree[CSValue] = out match {
+            case Some(o) => taskWrap(o)
             case None    => if (isAsync) q"System.Threading.Tasks.Task" else q"void"
           }
 
           val clientMethods = service.methods.flatMap {
             m =>
-              val inRef   = trans.asCsRef(m.sig, domain, evo)
-              val retType = clientRet(m.out)
+              val plan    = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+              val inRef   = plan.input
+              val retType = clientRet(plan.output)
 
               val uebaMethod = if (hasUeba) {
                 val encodeIn = uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"bw", q"arg")
@@ -294,13 +242,13 @@ object CSServiceWiringTranslator {
                   case None => q"return;"
                 }
                 Some(
-                  q"""public $asyncKw$retType ${escapeCsKeyword(m.name.name.capitalize)}($ctxParamDecl$inRef arg, $baboonCodecContext $codecCtxName)
+                  q"""public $asyncKw$retType ${plan.methodName}($ctxParamDecl$inRef arg, $baboonCodecContext $codecCtxName)
                      |{
                      |    var oms = new $memoryStream();
                      |    var bw = new $binaryWriter(oms);
                      |    $encodeIn
                      |    bw.Flush();
-                     |    var resp = ${awaitTransport}_transportUeba(${ctxArgPass}"$svcName", "${m.name.name}", oms.ToArray());
+                     |    var resp = ${awaitTransport}_transportUeba($ctxArgPass"$svcName", "${m.name.name}", oms.ToArray());
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -315,10 +263,10 @@ object CSServiceWiringTranslator {
                   case None => q"return;"
                 }
                 Some(
-                  q"""public $asyncKw$retType ${escapeCsKeyword(m.name.name.capitalize)}Json($ctxParamDecl$inRef arg, $baboonCodecContext $codecCtxName)
+                  q"""public $asyncKw$retType ${plan.methodName}Json($ctxParamDecl$inRef arg, $baboonCodecContext $codecCtxName)
                      |{
                      |    var encoded = $encodeIn;
-                     |    var resp = ${awaitTransport}_transportJson(${ctxArgPass}"$svcName", "${m.name.name}", encoded.ToString($nsFormatting.None));
+                     |    var resp = ${awaitTransport}_transportJson($ctxArgPass"$svcName", "${m.name.name}", encoded.ToString($nsFormatting.None));
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
                 )
@@ -394,14 +342,14 @@ object CSServiceWiringTranslator {
     // to avoid the duplicate-parameter collision; in `none` mode it stays
     // `ctx`, keeping that output byte-identical.
     private def svcCtxTypeName: Option[String] = resolvedCtx match {
-      case ResolvedServiceContext.NoContext               => None
-      case ResolvedServiceContext.AbstractContext(tn, _)  => Some(tn)
-      case ResolvedServiceContext.ConcreteContext(tn, _)  => Some(tn)
+      case ResolvedServiceContext.NoContext              => None
+      case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+      case ResolvedServiceContext.ConcreteContext(tn, _) => Some(tn)
     }
     private def svcCtxArgName: Option[String] = resolvedCtx match {
-      case ResolvedServiceContext.NoContext               => None
-      case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
-      case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+      case ResolvedServiceContext.NoContext              => None
+      case ResolvedServiceContext.AbstractContext(_, pn) => Some(pn)
+      case ResolvedServiceContext.ConcreteContext(_, pn) => Some(pn)
     }
     private def codecCtxName: String = resolvedCtx match {
       case ResolvedServiceContext.NoContext => "ctx"
@@ -449,10 +397,10 @@ object CSServiceWiringTranslator {
       isJson: Boolean,
       retType: TextTree[CSValue],
     ): TextTree[CSValue] = {
-      val svcName     = service.id.name.name
-      val wireType    = if (isJson) q"$csString" else q"byte[]"
-      val invokerName = if (isJson) "InvokeJson" else "InvokeUeba"
-      val wrapperName = s"${svcName}${if (isJson) "JsonService" else "UebaService"}"
+      val svcName                    = service.id.name.name
+      val wireType                   = if (isJson) q"$csString" else q"byte[]"
+      val invokerName                = if (isJson) "InvokeJson" else "InvokeUeba"
+      val wrapperName                = s"$svcName${if (isJson) "JsonService" else "UebaService"}"
       val svcType: TextTree[CSValue] = q"I${svcName.capitalize}$genericParam"
 
       // The implemented runtime contract follows the context mode: `none` keeps
@@ -470,7 +418,7 @@ object CSServiceWiringTranslator {
 
       val fieldDecls: List[TextTree[CSValue]] =
         q"private readonly $svcType _impl;" ::
-          rtField.toList.map { case (n, t) => q"private readonly $t _$n;" }
+        rtField.toList.map { case (n, t) => q"private readonly $t _$n;" }
 
       val ctorParams: TextTree[CSValue] = {
         val all = q"$svcType impl" :: rtField.toList.map { case (n, t) => q"$t $n" }
@@ -501,6 +449,130 @@ object CSServiceWiringTranslator {
          |        return ${svcName}Wiring.$invokerName$genericParam(${invokerArgs.join(", ")});
          |    }
          |}""".stripMargin
+    }
+
+    private def noErrorsInvocation(plan: CSServiceMethodPlan): TextTree[CSValue] =
+      plan.method.out match {
+        case Some(_) => q"var result = ${awaitKw}impl.${plan.methodName}(${ctxArgPass}decoded);"
+        case None    => q"${awaitKw}impl.${plan.methodName}(${ctxArgPass}decoded);"
+      }
+
+    private def errorsInvocation(plan: CSServiceMethodPlan): TextTree[CSValue] = plan.output match {
+      case Some(outType) =>
+        if (plan.hasError) {
+          val errType = plan.error.get
+          q"""try
+             |{
+             |    var callResult = impl.${plan.methodName}(${ctxArgPass}v);
+             |    return rt.LeftMap<$errType, $outType, $baboonWiringError>(
+             |        callResult, err => new $baboonWiringError.CallFailed(method, err));
+             |}
+             |catch ($csException ex)
+             |{
+             |    return rt.Fail<$baboonWiringError, $outType>(new $baboonWiringError.CallFailed(method, ex));
+             |}""".stripMargin
+        } else {
+          q"""try
+             |{
+             |    return rt.Pure<$baboonWiringError, $outType>(impl.${plan.methodName}(${ctxArgPass}v));
+             |}
+             |catch ($csException ex)
+             |{
+             |    return rt.Fail<$baboonWiringError, $outType>(new $baboonWiringError.CallFailed(method, ex));
+             |}""".stripMargin
+        }
+      case None =>
+        if (plan.hasError) {
+          val errType = plan.error.get
+          q"""try
+             |{
+             |    var callResult = impl.${plan.methodName}(${ctxArgPass}v);
+             |    return rt.LeftMap<$errType, $unit, $baboonWiringError>(
+             |        callResult, err => new $baboonWiringError.CallFailed(method, err));
+             |}
+             |catch ($csException ex)
+             |{
+             |    return rt.Fail<$baboonWiringError, $unit>(new $baboonWiringError.CallFailed(method, ex));
+             |}""".stripMargin
+        } else {
+          q"""try
+             |{
+             |    impl.${plan.methodName}(${ctxArgPass}v);
+             |    return rt.Pure<$baboonWiringError, $unit>($unit.Default);
+             |}
+             |catch ($csException ex)
+             |{
+             |    return rt.Fail<$baboonWiringError, $unit>(new $baboonWiringError.CallFailed(method, ex));
+             |}""".stripMargin
+        }
+    }
+
+    private def errorsAsyncInvocation(
+      plan: CSServiceMethodPlan,
+      wireType: TextTree[CSValue],
+      emptyWire: TextTree[CSValue],
+      encodeFlatMap: TextTree[CSValue],
+    ): TextTree[CSValue] = {
+      val hasErrType = plan.hasError
+      plan.method.out match {
+        case Some(_) =>
+          val outType = plan.output.get
+
+          val callStep = if (hasErrType) {
+            val errType = plan.error.get
+            q"""${ct("BaboonWiringError", renderFq(outType))} output;
+               |try
+               |{
+               |    var callResult = await impl.${plan.methodName}(${ctxArgPass}decoded);
+               |    output = rt.LeftMap<$errType, $outType, $baboonWiringError>(
+               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, $wireType>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          } else {
+            q"""${ct("BaboonWiringError", renderFq(outType))} output;
+               |try
+               |{
+               |    var callResultValue = await impl.${plan.methodName}(${ctxArgPass}decoded);
+               |    output = rt.Pure<$baboonWiringError, $outType>(callResultValue);
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, $wireType>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          }
+
+          q"""$callStep
+             |${encodeFlatMap.trim}""".stripMargin
+
+        case None =>
+          if (hasErrType) {
+            val errType = plan.error.get
+            q"""try
+               |{
+               |    var callResult = await impl.${plan.methodName}(${ctxArgPass}decoded);
+               |    var mapped = rt.LeftMap<$errType, $unit, $baboonWiringError>(
+               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
+               |    return rt.FlatMap<$baboonWiringError, $unit, $wireType>(mapped, v => rt.Pure<$baboonWiringError, $wireType>($emptyWire));
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, $wireType>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          } else {
+            q"""try
+               |{
+               |    await impl.${plan.methodName}(${ctxArgPass}decoded);
+               |    return rt.Pure<$baboonWiringError, $wireType>($emptyWire);
+               |}
+               |catch ($csException ex)
+               |{
+               |    return rt.Fail<$baboonWiringError, $wireType>(new $baboonWiringError.CallFailed(method, ex));
+               |}""".stripMargin
+          }
+      }
     }
 
     // ========== noErrors mode ==========
@@ -539,6 +611,7 @@ object CSServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
+          val plan     = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val encodeOutput = m.out match {
@@ -550,10 +623,7 @@ object CSServiceWiringTranslator {
               q"""return "null";"""
           }
 
-          val callExpr = m.out match {
-            case Some(_) => q"var result = ${awaitKw}impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);"
-            case None    => q"${awaitKw}impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);"
-          }
+          val callExpr = noErrorsInvocation(plan)
 
           q"""case "${m.name.name}":
              |{
@@ -583,6 +653,7 @@ object CSServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
+          val plan     = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
           val encodeOutput = m.out match {
@@ -597,10 +668,7 @@ object CSServiceWiringTranslator {
               q"""return new byte[0];"""
           }
 
-          val callExpr = m.out match {
-            case Some(_) => q"var result = ${awaitKw}impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);"
-            case None    => q"${awaitKw}impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);"
-          }
+          val callExpr = noErrorsInvocation(plan)
 
           q"""case "${m.name.name}":
              |{
@@ -679,107 +747,63 @@ object CSServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inRef    = trans.asCsRef(m.sig, domain, evo)
+          val plan     = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+          val inRef    = plan.input
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
-          if (isAsync) generateErrorsJsonCaseAsync(m, inRef, decodeIn)
+          if (isAsync) generateErrorsJsonCaseAsync(plan, inRef, decodeIn)
           else {
-          val decodeStep =
-            q"""${ct("BaboonWiringError", renderFq(inRef))} input;
-               |try
+            val decodeStep =
+              q"""${ct("BaboonWiringError", renderFq(inRef))} input;
+                 |try
+                 |{
+                 |    var wire = $BaboonTools.ParseWireJson(data);
+                 |    input = rt.Pure<$baboonWiringError, $inRef>($decodeIn);
+                 |}
+                 |catch ($csException ex)
+                 |{
+                 |    input = rt.Fail<$baboonWiringError, $inRef>(new $baboonWiringError.DecoderFailed(method, ex));
+                 |}""".stripMargin
+
+            val callAndEncodeStep = m.out match {
+              case Some(outRef) =>
+                val outType   = plan.output.get
+                val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
+
+                val callBody = errorsInvocation(plan)
+
+                q"""var output = rt.FlatMap<$baboonWiringError, $inRef, $outType>(input, v =>
+                   |{
+                   |    ${callBody.shift(4).trim}
+                   |});
+                   |return rt.FlatMap<$baboonWiringError, $outType, $csString>(output, v =>
+                   |{
+                   |    try
+                   |    {
+                   |        var encoded = $encodeOut;
+                   |        return rt.Pure<$baboonWiringError, $csString>(encoded.ToString($nsFormatting.None));
+                   |    }
+                   |    catch ($csException ex)
+                   |    {
+                   |        return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.EncoderFailed(method, ex));
+                   |    }
+                   |});""".stripMargin
+
+              case None =>
+                val callBody = errorsInvocation(plan)
+
+                q"""return rt.FlatMap<$baboonWiringError, $inRef, $csString>(input, v =>
+                   |{
+                   |    ${callBody.shift(4).trim}
+                   |    return rt.Pure<$baboonWiringError, $csString>("null");
+                   |});""".stripMargin
+            }
+
+            q"""case "${m.name.name}":
                |{
-               |    var wire = $BaboonTools.ParseWireJson(data);
-               |    input = rt.Pure<$baboonWiringError, $inRef>($decodeIn);
-               |}
-               |catch ($csException ex)
-               |{
-               |    input = rt.Fail<$baboonWiringError, $inRef>(new $baboonWiringError.DecoderFailed(method, ex));
+               |    ${decodeStep.shift(4).trim}
+               |    ${callAndEncodeStep.shift(4).trim}
                |}""".stripMargin
-
-          val hasErrType = m.err.isDefined && !resolved.noErrors
-
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val outType   = trans.asCsRef(outRef, domain, evo)
-              val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
-
-              val callBody = if (hasErrType) {
-                val errType = trans.asCsRef(m.err.get, domain, evo)
-                q"""try
-                   |{
-                   |    var callResult = impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
-                   |    return rt.LeftMap<$errType, $outType, $baboonWiringError>(
-                   |        callResult, err => new $baboonWiringError.CallFailed(method, err));
-                   |}
-                   |catch ($csException ex)
-                   |{
-                   |    return rt.Fail<$baboonWiringError, $outType>(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try
-                   |{
-                   |    return rt.Pure<$baboonWiringError, $outType>(impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v));
-                   |}
-                   |catch ($csException ex)
-                   |{
-                   |    return rt.Fail<$baboonWiringError, $outType>(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              q"""var output = rt.FlatMap<$baboonWiringError, $inRef, $outType>(input, v =>
-                 |{
-                 |    ${callBody.shift(4).trim}
-                 |});
-                 |return rt.FlatMap<$baboonWiringError, $outType, $csString>(output, v =>
-                 |{
-                 |    try
-                 |    {
-                 |        var encoded = $encodeOut;
-                 |        return rt.Pure<$baboonWiringError, $csString>(encoded.ToString($nsFormatting.None));
-                 |    }
-                 |    catch ($csException ex)
-                 |    {
-                 |        return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.EncoderFailed(method, ex));
-                 |    }
-                 |});""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                val errType = trans.asCsRef(m.err.get, domain, evo)
-                q"""try
-                   |{
-                   |    var callResult = impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
-                   |    return rt.LeftMap<$errType, $unit, $baboonWiringError>(
-                   |        callResult, err => new $baboonWiringError.CallFailed(method, err));
-                   |}
-                   |catch ($csException ex)
-                   |{
-                   |    return rt.Fail<$baboonWiringError, $unit>(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try
-                   |{
-                   |    impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
-                   |    return rt.Pure<$baboonWiringError, $unit>($unit.Default);
-                   |}
-                   |catch ($csException ex)
-                   |{
-                   |    return rt.Fail<$baboonWiringError, $unit>(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              q"""return rt.FlatMap<$baboonWiringError, $inRef, $csString>(input, v =>
-                 |{
-                 |    ${callBody.shift(4).trim}
-                 |    return rt.Pure<$baboonWiringError, $csString>("null");
-                 |});""".stripMargin
-          }
-
-          q"""case "${m.name.name}":
-             |{
-             |    ${decodeStep.shift(4).trim}
-             |    ${callAndEncodeStep.shift(4).trim}
-             |}""".stripMargin
           }
       }.join("\n")
 
@@ -808,11 +832,11 @@ object CSServiceWiringTranslator {
       * `rt.Pure` / `rt.Fail` boundaries, identical to the sync arm's results.
       */
     private def generateErrorsJsonCaseAsync(
-      m: Typedef.MethodDef,
+      plan: CSServiceMethodPlan,
       inRef: TextTree[CSValue],
       decodeIn: TextTree[CSValue],
     ): TextTree[CSValue] = {
-      val hasErrType = m.err.isDefined && !resolved.noErrors
+      val m = plan.method
 
       val decodeStep =
         q"""$inRef decoded;
@@ -831,7 +855,7 @@ object CSServiceWiringTranslator {
       // first, then the already-resolved container is threaded synchronously.
       val encodeFlatMap = m.out match {
         case Some(outRef) =>
-          val outType   = trans.asCsRef(outRef, domain, evo)
+          val outType   = plan.output.get
           val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
           q"""return rt.FlatMap<$baboonWiringError, $outType, $csString>(output, v =>
              |{
@@ -848,65 +872,7 @@ object CSServiceWiringTranslator {
         case None => q""
       }
 
-      val callAndEncodeStep = m.out match {
-        case Some(outRef) =>
-          val outType = trans.asCsRef(outRef, domain, evo)
-
-          val callStep = if (hasErrType) {
-            val errType = trans.asCsRef(m.err.get, domain, evo)
-            q"""${ct("BaboonWiringError", renderFq(outType))} output;
-               |try
-               |{
-               |    var callResult = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
-               |    output = rt.LeftMap<$errType, $outType, $baboonWiringError>(
-               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
-               |}
-               |catch ($csException ex)
-               |{
-               |    return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.CallFailed(method, ex));
-               |}""".stripMargin
-          } else {
-            q"""${ct("BaboonWiringError", renderFq(outType))} output;
-               |try
-               |{
-               |    var callResultValue = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
-               |    output = rt.Pure<$baboonWiringError, $outType>(callResultValue);
-               |}
-               |catch ($csException ex)
-               |{
-               |    return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.CallFailed(method, ex));
-               |}""".stripMargin
-          }
-
-          q"""$callStep
-             |${encodeFlatMap.trim}""".stripMargin
-
-        case None =>
-          if (hasErrType) {
-            val errType = trans.asCsRef(m.err.get, domain, evo)
-            q"""try
-               |{
-               |    var callResult = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
-               |    var mapped = rt.LeftMap<$errType, $unit, $baboonWiringError>(
-               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
-               |    return rt.FlatMap<$baboonWiringError, $unit, $csString>(mapped, v => rt.Pure<$baboonWiringError, $csString>("null"));
-               |}
-               |catch ($csException ex)
-               |{
-               |    return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.CallFailed(method, ex));
-               |}""".stripMargin
-          } else {
-            q"""try
-               |{
-               |    await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
-               |    return rt.Pure<$baboonWiringError, $csString>("null");
-               |}
-               |catch ($csException ex)
-               |{
-               |    return rt.Fail<$baboonWiringError, $csString>(new $baboonWiringError.CallFailed(method, ex));
-               |}""".stripMargin
-          }
-      }
+      val callAndEncodeStep = errorsAsyncInvocation(plan, q"$csString", q""""null"""", encodeFlatMap)
 
       q"""case "${m.name.name}":
          |{
@@ -921,111 +887,67 @@ object CSServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inRef    = trans.asCsRef(m.sig, domain, evo)
+          val plan     = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+          val inRef    = plan.input
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
-          if (isAsync) generateErrorsUebaCaseAsync(m, inRef, decodeIn)
+          if (isAsync) generateErrorsUebaCaseAsync(plan, inRef, decodeIn)
           else {
-          val decodeStep =
-            q"""${ct("BaboonWiringError", renderFq(inRef))} input;
-               |try
+            val decodeStep =
+              q"""${ct("BaboonWiringError", renderFq(inRef))} input;
+                 |try
+                 |{
+                 |    var ms = new $memoryStream(data);
+                 |    var br = new $binaryReader(ms);
+                 |    input = rt.Pure<$baboonWiringError, $inRef>($decodeIn);
+                 |}
+                 |catch ($csException ex)
+                 |{
+                 |    input = rt.Fail<$baboonWiringError, $inRef>(new $baboonWiringError.DecoderFailed(method, ex));
+                 |}""".stripMargin
+
+            val callAndEncodeStep = m.out match {
+              case Some(outRef) =>
+                val outType = plan.output.get
+                val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
+
+                val callBody = errorsInvocation(plan)
+
+                q"""var output = rt.FlatMap<$baboonWiringError, $inRef, $outType>(input, v =>
+                   |{
+                   |    ${callBody.shift(4).trim}
+                   |});
+                   |return rt.FlatMap<$baboonWiringError, $outType, byte[]>(output, v =>
+                   |{
+                   |    try
+                   |    {
+                   |        var oms = new $memoryStream();
+                   |        var bw = new $binaryWriter(oms);
+                   |        $encStmt
+                   |        bw.Flush();
+                   |        return rt.Pure<$baboonWiringError, byte[]>(oms.ToArray());
+                   |    }
+                   |    catch ($csException ex)
+                   |    {
+                   |        return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.EncoderFailed(method, ex));
+                   |    }
+                   |});""".stripMargin
+
+              case None =>
+                val callBody = errorsInvocation(plan)
+
+                q"""return rt.FlatMap<$baboonWiringError, $inRef, byte[]>(input, v =>
+                   |{
+                   |    ${callBody.shift(4).trim}
+                   |    return rt.Pure<$baboonWiringError, byte[]>(new byte[0]);
+                   |});""".stripMargin
+            }
+
+            q"""case "${m.name.name}":
                |{
-               |    var ms = new $memoryStream(data);
-               |    var br = new $binaryReader(ms);
-               |    input = rt.Pure<$baboonWiringError, $inRef>($decodeIn);
-               |}
-               |catch ($csException ex)
-               |{
-               |    input = rt.Fail<$baboonWiringError, $inRef>(new $baboonWiringError.DecoderFailed(method, ex));
+               |    ${decodeStep.shift(4).trim}
+               |    ${callAndEncodeStep.shift(4).trim}
                |}""".stripMargin
-
-          val hasErrType = m.err.isDefined && !resolved.noErrors
-
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val outType = trans.asCsRef(outRef, domain, evo)
-              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
-
-              val callBody = if (hasErrType) {
-                val errType = trans.asCsRef(m.err.get, domain, evo)
-                q"""try
-                   |{
-                   |    var callResult = impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
-                   |    return rt.LeftMap<$errType, $outType, $baboonWiringError>(
-                   |        callResult, err => new $baboonWiringError.CallFailed(method, err));
-                   |}
-                   |catch ($csException ex)
-                   |{
-                   |    return rt.Fail<$baboonWiringError, $outType>(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try
-                   |{
-                   |    return rt.Pure<$baboonWiringError, $outType>(impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v));
-                   |}
-                   |catch ($csException ex)
-                   |{
-                   |    return rt.Fail<$baboonWiringError, $outType>(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              q"""var output = rt.FlatMap<$baboonWiringError, $inRef, $outType>(input, v =>
-                 |{
-                 |    ${callBody.shift(4).trim}
-                 |});
-                 |return rt.FlatMap<$baboonWiringError, $outType, byte[]>(output, v =>
-                 |{
-                 |    try
-                 |    {
-                 |        var oms = new $memoryStream();
-                 |        var bw = new $binaryWriter(oms);
-                 |        $encStmt
-                 |        bw.Flush();
-                 |        return rt.Pure<$baboonWiringError, byte[]>(oms.ToArray());
-                 |    }
-                 |    catch ($csException ex)
-                 |    {
-                 |        return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.EncoderFailed(method, ex));
-                 |    }
-                 |});""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                val errType = trans.asCsRef(m.err.get, domain, evo)
-                q"""try
-                   |{
-                   |    var callResult = impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
-                   |    return rt.LeftMap<$errType, $unit, $baboonWiringError>(
-                   |        callResult, err => new $baboonWiringError.CallFailed(method, err));
-                   |}
-                   |catch ($csException ex)
-                   |{
-                   |    return rt.Fail<$baboonWiringError, $unit>(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try
-                   |{
-                   |    impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}v);
-                   |    return rt.Pure<$baboonWiringError, $unit>($unit.Default);
-                   |}
-                   |catch ($csException ex)
-                   |{
-                   |    return rt.Fail<$baboonWiringError, $unit>(new $baboonWiringError.CallFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              q"""return rt.FlatMap<$baboonWiringError, $inRef, byte[]>(input, v =>
-                 |{
-                 |    ${callBody.shift(4).trim}
-                 |    return rt.Pure<$baboonWiringError, byte[]>(new byte[0]);
-                 |});""".stripMargin
-          }
-
-          q"""case "${m.name.name}":
-             |{
-             |    ${decodeStep.shift(4).trim}
-             |    ${callAndEncodeStep.shift(4).trim}
-             |}""".stripMargin
           }
       }.join("\n")
 
@@ -1049,11 +971,11 @@ object CSServiceWiringTranslator {
       * [[generateErrorsJsonCaseAsync]] for the await-then-thread rationale.
       */
     private def generateErrorsUebaCaseAsync(
-      m: Typedef.MethodDef,
+      plan: CSServiceMethodPlan,
       inRef: TextTree[CSValue],
       decodeIn: TextTree[CSValue],
     ): TextTree[CSValue] = {
-      val hasErrType = m.err.isDefined && !resolved.noErrors
+      val m = plan.method
 
       val decodeStep =
         q"""$inRef decoded;
@@ -1070,7 +992,7 @@ object CSServiceWiringTranslator {
 
       val encodeFlatMap = m.out match {
         case Some(outRef) =>
-          val outType = trans.asCsRef(outRef, domain, evo)
+          val outType = plan.output.get
           val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
           q"""return rt.FlatMap<$baboonWiringError, $outType, byte[]>(output, v =>
              |{
@@ -1090,65 +1012,7 @@ object CSServiceWiringTranslator {
         case None => q""
       }
 
-      val callAndEncodeStep = m.out match {
-        case Some(outRef) =>
-          val outType = trans.asCsRef(outRef, domain, evo)
-
-          val callStep = if (hasErrType) {
-            val errType = trans.asCsRef(m.err.get, domain, evo)
-            q"""${ct("BaboonWiringError", renderFq(outType))} output;
-               |try
-               |{
-               |    var callResult = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
-               |    output = rt.LeftMap<$errType, $outType, $baboonWiringError>(
-               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
-               |}
-               |catch ($csException ex)
-               |{
-               |    return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.CallFailed(method, ex));
-               |}""".stripMargin
-          } else {
-            q"""${ct("BaboonWiringError", renderFq(outType))} output;
-               |try
-               |{
-               |    var callResultValue = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
-               |    output = rt.Pure<$baboonWiringError, $outType>(callResultValue);
-               |}
-               |catch ($csException ex)
-               |{
-               |    return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.CallFailed(method, ex));
-               |}""".stripMargin
-          }
-
-          q"""$callStep
-             |${encodeFlatMap.trim}""".stripMargin
-
-        case None =>
-          if (hasErrType) {
-            val errType = trans.asCsRef(m.err.get, domain, evo)
-            q"""try
-               |{
-               |    var callResult = await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
-               |    var mapped = rt.LeftMap<$errType, $unit, $baboonWiringError>(
-               |        callResult, err => new $baboonWiringError.CallFailed(method, err));
-               |    return rt.FlatMap<$baboonWiringError, $unit, byte[]>(mapped, v => rt.Pure<$baboonWiringError, byte[]>(new byte[0]));
-               |}
-               |catch ($csException ex)
-               |{
-               |    return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.CallFailed(method, ex));
-               |}""".stripMargin
-          } else {
-            q"""try
-               |{
-               |    await impl.${escapeCsKeyword(m.name.name.capitalize)}(${ctxArgPass}decoded);
-               |    return rt.Pure<$baboonWiringError, byte[]>(new byte[0]);
-               |}
-               |catch ($csException ex)
-               |{
-               |    return rt.Fail<$baboonWiringError, byte[]>(new $baboonWiringError.CallFailed(method, ex));
-               |}""".stripMargin
-          }
-      }
+      val callAndEncodeStep = errorsAsyncInvocation(plan, q"byte[]", q"new byte[0]", encodeFlatMap)
 
       q"""case "${m.name.name}":
          |{

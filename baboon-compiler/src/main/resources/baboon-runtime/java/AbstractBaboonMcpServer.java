@@ -39,10 +39,12 @@ public abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<C
         return invokeJson(method, data, ctx, codecCtx);
     }
 
-    private Map<String, McpToolEntry> byName() {
-        Map<String, McpToolEntry> m = new HashMap<>();
+    // Arbitrary subclasses may expose changing tools. Generated final servers
+    // override this with an owned immutable index containing no schema nodes.
+    protected Map<String, BaboonMethodId> toolMethods() {
+        Map<String, BaboonMethodId> m = new HashMap<>();
         for (McpToolEntry t : tools()) {
-            m.put(t.name, t);
+            m.put(t.name, t.method);
         }
         return Collections.unmodifiableMap(m);
     }
@@ -103,8 +105,8 @@ public abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<C
                     return errorResponse(id, McpProtocol.INVALID_PARAMS, "tools/call: tool name must be a string");
                 }
                 String toolName = nameEl.textValue();
-                McpToolEntry entry = byName().get(toolName);
-                if (entry == null) {
+                Map<String, BaboonMethodId> methods = toolMethods();
+                if (!methods.containsKey(toolName)) {
                     return errorResponse(id, McpProtocol.INVALID_PARAMS, "tools/call: unknown tool '" + toolName + "'");
                 }
                 JsonNode argsEl = (paramsNode != null && paramsNode.isObject() && paramsNode.has("arguments"))
@@ -116,7 +118,7 @@ public abstract class AbstractBaboonMcpServer<Ctx> implements IBaboonMcpServer<C
                 } catch (Exception e) {
                     return errorResponse(id, McpProtocol.INTERNAL_ERROR, "tools/call: failed to serialize arguments: " + e.getMessage());
                 }
-                BaboonEither<BaboonWiringError, String> callResult = invokeJson(entry.method, argsJson, ctx, codecCtx);
+                BaboonEither<BaboonWiringError, String> callResult = invokeJson(methods.get(toolName), argsJson, ctx, codecCtx);
                 if (callResult instanceof BaboonEither.Right<BaboonWiringError, String> right) {
                     ArrayNode content = MAPPER.createArrayNode();
                     ObjectNode textItem = MAPPER.createObjectNode();

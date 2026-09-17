@@ -1,0 +1,11 @@
+model rust.anyadt
+version "1.0.0"
+
+root adt Envelope {
+  data First {
+    value: any
+  }
+  data Second {
+    values: lst[any]
+  }
+}

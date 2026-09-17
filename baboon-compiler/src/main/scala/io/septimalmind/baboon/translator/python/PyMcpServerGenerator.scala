@@ -52,9 +52,10 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
   override def generateMcpServer(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
       lineage =>
-        val evo          = lineage.evolution
-        val latestDomain = lineage.versions(evo.latest)
-        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
+        val evo           = lineage.evolution
+        val latestDomain  = lineage.versions(evo.latest)
+        val schemaContext = schemaEmitter.prepare(latestDomain)
+        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo, schemaContext))
     }
 
     val runtimeFile =
@@ -79,7 +80,8 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
     s"$basename/${serviceName}McpServer.py"
   }
 
-  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution): (String, OutputFile) = {
+  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution, schemaContext: McpInputSchemaEmitter.PreparedDomain)
+    : (String, OutputFile) = {
     val path = serverPath(svc, domain, evo)
 
     val serviceName = svc.id.name.name
@@ -101,12 +103,12 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
     // Python dicts (json.loads of the JSON text) so they are constant values.
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
-        val toolName   = s"${serviceName}_${m.name.name}"
-        val schema     = schemaEmitter.emitInputSchema(m.sig, domain)
+        val toolName = s"${serviceName}_${m.name.name}"
+        val schema   = schemaEmitter.emitInputSchema(m.sig, schemaContext)
         val schemaJson = schema.noSpaces
           .replace("\\", "\\\\")
           .replace("\"", "\\\"")
-        val descArg    = McpDocs.flatten(m.docs).map(d => s", ${pyString(d)}").getOrElse("")
+        val descArg = McpDocs.flatten(m.docs).map(d => s", ${pyString(d)}").getOrElse("")
         s"""            McpToolEntry(${pyString(toolName)}, BaboonMethodId(${pyString(serviceName)}, ${pyString(m.name.name)}), json.loads("$schemaJson")$descArg),"""
     }
 
@@ -121,8 +123,8 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
     // the pre-change baseline.
     val isAsync = target.language.asyncServices
 
-    val baseClass    = if (isAsync) "AbstractAsyncBaboonMcpServer" else "AbstractBaboonMcpServer"
-    val asyncPrefix  = if (isAsync) "async " else ""
+    val baseClass   = if (isAsync) "AbstractAsyncBaboonMcpServer" else "AbstractBaboonMcpServer"
+    val asyncPrefix = if (isAsync) "async " else ""
     val invokeReturn =
       if (isAsync) "return await self._invoke_json(method, data, ctx, codec_ctx)"
       else "return self._invoke_json(method, data, ctx, codec_ctx)"
@@ -134,7 +136,8 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
          |# generated service dispatch; the integrator supplies it (typically the
          |# errors-mode `$invokeFnName` bound to this service) plus the per-request `ctx`.
          |import json
-         |from typing import Callable, Generic, List, TypeVar
+         |from copy import deepcopy
+         |from typing import Callable, Dict, Generic, List, TypeVar
          |
          |from ${rtPkg}baboon_mcp_runtime import $baseClass, McpServerInfo, McpSession, McpToolEntry
          |from ${rtPkg}baboon_service_wiring import BaboonLeft, BaboonMethodId, BaboonWiringError
@@ -145,6 +148,10 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
          |class $className($baseClass[Ctx], Generic[Ctx]):
          |    def __init__(self, invoke_json: Callable[[BaboonMethodId, str, Ctx, object], object]) -> None:
          |        self._invoke_json = invoke_json
+         |        self._tools = [
+         |${toolEntries.mkString("\n")}
+         |        ]
+         |        self._tools_by_name = {entry.name: entry for entry in self._tools}
          |
          |    @property
          |    def server_info(self) -> McpServerInfo:
@@ -152,9 +159,10 @@ class PyMcpServerGenerator[F[+_, +_]: Error2](
          |
          |    @property
          |    def tools(self) -> List[McpToolEntry]:
-         |        return [
-         |${toolEntries.mkString("\n")}
-         |        ]
+         |        return deepcopy(self._tools)
+         |
+         |    def _by_name(self) -> Dict[str, McpToolEntry]:
+         |        return self._tools_by_name
          |
          |    ${asyncPrefix}def invoke_json(self, method: BaboonMethodId, data: str, ctx: Ctx, codec_ctx: object) -> object:
          |        $invokeReturn

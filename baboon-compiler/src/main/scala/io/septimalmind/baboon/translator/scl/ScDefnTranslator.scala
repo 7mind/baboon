@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.IdentifierFieldKind
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -32,24 +33,6 @@ object ScDefnTranslator {
     defn: TextTree[ScValue],
     codecs: List[CodecReg],
   )
-
-  /** Discriminator for identifier-repr field rendering — see PR-56 spec
-    * (`docs/spec/identifier-repr.md` §3). All cases are populated from the
-    * validator-restricted set of allowed field types.
-    */
-  sealed trait IdentifierFieldKind
-  object IdentifierFieldKind {
-    case object Bit extends IdentifierFieldKind
-    case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
-    case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-    case object UnsignedLong extends IdentifierFieldKind /* u64 */
-    case object Str extends IdentifierFieldKind
-    case object Uid extends IdentifierFieldKind
-    case object Tsu extends IdentifierFieldKind
-    case object Tso extends IdentifierFieldKind
-    case object Bytes extends IdentifierFieldKind
-    final case class NestedId(id: io.septimalmind.baboon.typer.model.TypeId.User) extends IdentifierFieldKind
-  }
 
   final case class Output(
     path: String,
@@ -284,7 +267,7 @@ object ScDefnTranslator {
       */
     private def prependDocs(docs: Docs, tree: TextTree[ScValue]): TextTree[ScValue] = {
       val block = scTrees.renderDocs(docs, "")
-      if (block.isEmpty) tree else q"${block}$tree"
+      if (block.isEmpty) tree else q"$block$tree"
     }
 
     private def makeRepr(
@@ -440,9 +423,10 @@ object ScDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val in              = trans.asScRef(m.sig, domain, evo)
-              val out             = m.out.map(trans.asScRef(_, domain, evo))
-              val err             = m.err.map(trans.asScRef(_, domain, evo))
+              val plan            = new ScServiceMethodPlan(m, trans.asScRef(_, domain, evo), resolved)
+              val in              = plan.input
+              val out             = plan.output
+              val err             = plan.error
               val servicePkgParts = name.pkg.parts.toList
               val scFqName: ScValue => String = {
                 case t: ScValue.ScType if t.predef => t.name
@@ -454,7 +438,7 @@ object ScDefnTranslator {
               val outStr   = out.map(_.mapRender(scFqName)).getOrElse("")
               val errStr   = err.map(_.mapRender(scFqName))
               val retStr   = resolved.renderReturnType(outStr, errStr, "Unit")
-              val methodEx = q"def ${m.name.name}(${ctxParam}arg: $in): $retStr"
+              val methodEx = q"def ${plan.methodName}(${ctxParam}arg: $in): $retStr"
               prependDocs(m.docs, methodEx)
           }
           val typeParams = Seq(
@@ -542,44 +526,15 @@ object ScDefnTranslator {
       }
     }
 
-    /** Resolve a TypeRef to its underlying scalar/user kind for identifier-repr
-      * dispatch. Aliases are already collapsed in BaboonTranslator (the field's
-      * TypeRef is the resolved scalar), so we only need to discriminate
-      * Scalar/User from collection/any (which the validator rejects).
-      */
-    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
-      tpe match {
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          import TypeId.Builtins.*
-          b match {
-            case `bit`                         => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
-            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                         => IdentifierFieldKind.UnsignedLong
-            case `str`                         => IdentifierFieldKind.Str
-            case `uid`                         => IdentifierFieldKind.Uid
-            case `tsu`                         => IdentifierFieldKind.Tsu
-            case `tso`                         => IdentifierFieldKind.Tso
-            case `bytes`                       => IdentifierFieldKind.Bytes
-            case other =>
-              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
-          }
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          IdentifierFieldKind.NestedId(uid)
-        case other =>
-          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
-      }
-    }
-
     /** Per-field render expression. The variable holding the field value is
       * named `value` because we wrap the body inside a per-field block.
       */
     private def renderFieldValueExpr(fieldName: String, kind: IdentifierFieldKind): TextTree[ScValue] = {
       val escapedFieldName = escapeScKeyword(fieldName)
       kind match {
-        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.bitToString(this.$escapedFieldName)"
-        case IdentifierFieldKind.SignedInt        => q"this.$escapedFieldName.toString"
-        case IdentifierFieldKind.UnsignedSmallInt =>
+        case IdentifierFieldKind.Bit                                        => q"$baboonIdRepr.bitToString(this.$escapedFieldName)"
+        case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong => q"this.$escapedFieldName.toString"
+        case IdentifierFieldKind.UnsignedSmallInt                           =>
           // u08/u16/u32 require width-aware masking. The single 32-bit mask used
           // here would silently produce wrong values for u08/u16. All call sites
           // MUST special-case UnsignedSmallInt and dispatch to renderUnsignedSmallInt.
@@ -614,7 +569,7 @@ object ScDefnTranslator {
       val fieldExprs: List[TextTree[ScValue]] = dto.fields.map {
         f =>
           val fieldName = f.name.name
-          val kind      = identifierFieldKind(f.tpe)
+          val kind      = IdentifierFieldKind.classify(f.tpe)
           val valueExpr = kind match {
             case IdentifierFieldKind.UnsignedSmallInt =>
               f.tpe match {
@@ -644,7 +599,7 @@ object ScDefnTranslator {
         case (f, idx) =>
           val fieldName = f.name.name
           val isLast    = idx == dto.fields.length - 1
-          val kind      = identifierFieldKind(f.tpe)
+          val kind      = IdentifierFieldKind.classify(f.tpe)
           val parseHead = q"""$baboonIdRepr.parseFieldName(cursor, \"$fieldName\") match {
                              |  case Left(e)  => return Left(e)
                              |  case Right(_) => ()
@@ -657,7 +612,7 @@ object ScDefnTranslator {
                  |  case Right(v) => v
                  |  case Left(e)  => return Left(e)
                  |}""".stripMargin
-            case IdentifierFieldKind.SignedInt =>
+            case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong =>
               val tpeRef     = trans.asScRef(f.tpe, domain, evo)
               val rangeCheck = signedRangeCheck(f.tpe)
               val typeName   = signedTypeName(f.tpe)

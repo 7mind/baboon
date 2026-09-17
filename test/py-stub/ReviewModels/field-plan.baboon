@@ -1,0 +1,14 @@
+model review.python.fields
+version "1.0.0"
+
+contract PayloadContract {
+  payload: any
+}
+
+root data ContractPayload {
+  is PayloadContract
+}
+
+root data Inner {
+  value: i32
+}

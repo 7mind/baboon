@@ -105,6 +105,8 @@ object KtTypes {
   val baboonAnyOpaqueJson: KtType  = KtType(baboonRuntimePkg, "AnyOpaqueJson")
   val baboonAnyMeta: KtType        = KtType(baboonRuntimePkg, "AnyMeta")
   val baboonAnyMetaCodec: KtType   = KtType(baboonRuntimePkg, "AnyMetaCodec")
+  val baboonAnyJsonCodec: KtType   = KtType(baboonRuntimePkg, "BaboonAnyJsonCodec")
+  val baboonAnyBinCodec: KtType    = KtType(baboonRuntimePkg, "BaboonAnyBinCodec")
   val baboonCodecException: KtType = KtType(baboonRuntimePkg, "BaboonCodecException")
   val baboonEither: KtType         = KtType(baboonRuntimePkg, "Either")
 

@@ -14,11 +14,13 @@ trait DtServiceWiringTranslator {
 
   /** Generic clause (`<Ctx>`) appended to the service-interface class name when
     * an `abstract` service-context mode is active; empty otherwise (incl. `none`
-    * and concrete `type` mode). */
+    * and concrete `type` mode).
+    */
   def serviceInterfaceTypeParam: String
 
   /** Leading service-context method parameter declaration (e.g. `Ctx ctx, `)
-    * spliced before each interface method's `arg`; empty in `none` mode. */
+    * spliced before each interface method's `arg`; empty in `none` mode.
+    */
   def serviceMethodCtxParam: String
 }
 
@@ -43,8 +45,8 @@ object DtServiceWiringTranslator {
     // when the flag is off, keeping that output byte-identical to HEAD.
     private val isAsync: Boolean = target.language.asyncServices
 
-    // `async` modifier on the static dispatcher and on each per-method handler
-    // closure; `await` prefix on the impl call. Empty in sync mode.
+    // `async` modifier on the static dispatcher; `await` prefix on the impl call.
+    // Empty in sync mode.
     private val dispatcherAsyncKw: String = if (isAsync) " async" else ""
     private val awaitKw: String           = if (isAsync) "await " else ""
 
@@ -60,25 +62,23 @@ object DtServiceWiringTranslator {
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "dart", target.language.serviceContext, target.language.pragmas)
 
-    private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists {
-        c =>
-          c.id == "Json" && service.methods.forall {
-            m =>
-              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-          }
-      }
-    }
+    private case class EndpointPlan(method: Typedef.MethodDef, dartName: String, inputType: TextTree[DtValue], resultType: TextTree[DtValue])
+    private case class ServicePlan(endpoints: List[EndpointPlan], jsonActive: Boolean, uebaActive: Boolean)
 
-    private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists {
-        c =>
-          c.id == "Ueba" && service.methods.forall {
-            m =>
-              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-          }
-      }
-    }
+    private def codecActive(service: Typedef.Service, codecId: String): Boolean =
+      codecs.exists(c => c.id == codecId && service.methods.forall(m => c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))))
+
+    private lazy val servicePlans: Map[TypeId.User, ServicePlan] = domain.defs.meta.nodes.values.collect {
+      case DomainMember.User(_, service: Typedef.Service, _, _) =>
+        val endpoints = service.methods.map {
+          m =>
+            EndpointPlan(m, trans.escapeDartKeyword(m.name.name), trans.asDtRef(m.sig, domain, evo), m.out.map(o => trans.asDtRef(o, domain, evo)).getOrElse(q"void"))
+        }
+        service.id -> ServicePlan(endpoints, codecActive(service, "Json"), codecActive(service, "Ueba"))
+    }.toMap
+
+    private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = servicePlans(service.id).jsonActive
+    private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = servicePlans(service.id).uebaActive
 
     private def jsonCodecName(typeId: TypeId.User): DtValue.DtType = {
       val srcRef       = trans.toDtTypeRefKeepForeigns(typeId, domain, evo)
@@ -95,108 +95,33 @@ object DtServiceWiringTranslator {
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     // wire is a Dart dynamic (json-decoded), encode returns a Dart dynamic.
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[DtValue]): TextTree[DtValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.instance.decode($codecCtxRef, $wire)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit                                             => q"$wire as bool"
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"($wire as num).toInt()"
-          case TypeId.Builtins.i64                                             => q"($wire is String ? int.parse($wire as String) : ($wire as num).toInt())"
-          case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"($wire as num).toInt()"
-          case TypeId.Builtins.u64                       => q"($wire is String ? BigInt.parse($wire as String).toSigned(64).toInt() : ($wire as num).toInt())"
-          case TypeId.Builtins.f32 | TypeId.Builtins.f64 => q"($wire as num).toDouble()"
-          case TypeId.Builtins.f128                      => q"$baboonDecimal($wire is String ? $wire as String : $wire.toString())"
-          case TypeId.Builtins.str                       => q"$wire as String"
-          case TypeId.Builtins.uid                       => q"$wire as String"
-          case TypeId.Builtins.bytes                     => q"$baboonByteStringTools.fromHexString($wire as String)"
-          case TypeId.Builtins.tsu                       => q"$baboonTimeFormats.parseUtc($wire as String)"
-          case TypeId.Builtins.tso                       => q"$baboonTimeFormats.parseOffset($wire as String)"
-          case other                                     => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${jsonCodecName(u)}.instance.decode($codecCtxRef, $wire)"
+      case b: TypeId.BuiltinScalar => DtScalarCodecOps.decodeJson(b, wire)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[DtValue]): TextTree[DtValue] = id match {
-      case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode($codecCtxRef, $value)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit                                             => q"$value"
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"$value"
-          case TypeId.Builtins.i64                                             => q"$value.toString()"
-          case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"$value"
-          case TypeId.Builtins.u64                                             => q"BigInt.from($value).toUnsigned(64).toString()"
-          case TypeId.Builtins.f32 | TypeId.Builtins.f64                       => q"$value"
-          case TypeId.Builtins.f128                                            => q"$value.value"
-          case TypeId.Builtins.str                                             => q"$value"
-          case TypeId.Builtins.uid                                             => q"$value"
-          case TypeId.Builtins.bytes                                           => q"$value.toHexString()"
-          case TypeId.Builtins.tsu                                             => q"$baboonTimeFormats.formatUtc($value)"
-          case TypeId.Builtins.tso                                             => q"$baboonTimeFormats.formatOffset($value)"
-          case other                                                           => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${jsonCodecName(u)}.instance.encode($codecCtxRef, $value)"
+      case b: TypeId.BuiltinScalar => DtScalarCodecOps.encodeJson(b, value)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaDecodeExpr(id: TypeId, reader: TextTree[DtValue]): TextTree[DtValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.decode($codecCtxRef, $reader)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit   => q"$reader.readBool()"
-          case TypeId.Builtins.i08   => q"$reader.readI8()"
-          case TypeId.Builtins.i16   => q"$reader.readI16()"
-          case TypeId.Builtins.i32   => q"$reader.readI32()"
-          case TypeId.Builtins.i64   => q"$reader.readI64()"
-          case TypeId.Builtins.u08   => q"$reader.readU8()"
-          case TypeId.Builtins.u16   => q"$reader.readU16()"
-          case TypeId.Builtins.u32   => q"$reader.readU32()"
-          case TypeId.Builtins.u64   => q"$reader.readU64()"
-          case TypeId.Builtins.f32   => q"$reader.readF32()"
-          case TypeId.Builtins.f64   => q"$reader.readF64()"
-          case TypeId.Builtins.f128  => q"$reader.readDecimal()"
-          case TypeId.Builtins.str   => q"$reader.readString()"
-          case TypeId.Builtins.bytes => q"$reader.readBytes()"
-          case TypeId.Builtins.uid   => q"$reader.readUuid()"
-          case TypeId.Builtins.tsu   => q"$reader.readTsu()"
-          case TypeId.Builtins.tso   => q"$reader.readTso()"
-          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${uebaCodecName(u)}.instance.decode($codecCtxRef, $reader)"
+      case b: TypeId.BuiltinScalar => DtScalarCodecOps.decodeUeba(b, reader)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaEncodeStmt(id: TypeId, writer: TextTree[DtValue], value: TextTree[DtValue]): TextTree[DtValue] = id match {
-      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode($codecCtxRef, $writer, $value);"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit   => q"$writer.writeBool($value);"
-          case TypeId.Builtins.i08   => q"$writer.writeI8($value);"
-          case TypeId.Builtins.i16   => q"$writer.writeI16($value);"
-          case TypeId.Builtins.i32   => q"$writer.writeI32($value);"
-          case TypeId.Builtins.i64   => q"$writer.writeI64($value);"
-          case TypeId.Builtins.u08   => q"$writer.writeU8($value);"
-          case TypeId.Builtins.u16   => q"$writer.writeU16($value);"
-          case TypeId.Builtins.u32   => q"$writer.writeU32($value);"
-          case TypeId.Builtins.u64   => q"$writer.writeU64($value);"
-          case TypeId.Builtins.f32   => q"$writer.writeF32($value);"
-          case TypeId.Builtins.f64   => q"$writer.writeF64($value);"
-          case TypeId.Builtins.f128  => q"$writer.writeDecimal($value);"
-          case TypeId.Builtins.str   => q"$writer.writeString($value);"
-          case TypeId.Builtins.bytes => q"$writer.writeBytes($value);"
-          case TypeId.Builtins.uid   => q"$writer.writeUuid($value);"
-          case TypeId.Builtins.tsu   => q"$writer.writeTsu($value);"
-          case TypeId.Builtins.tso   => q"$writer.writeTso($value);"
-          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case u: TypeId.User          => q"${uebaCodecName(u)}.instance.encode($codecCtxRef, $writer, $value);"
+      case b: TypeId.BuiltinScalar => DtScalarCodecOps.encodeUeba(b, writer, value)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def renderContainer(error: String, success: String): String = {
       val p        = resolved.pattern.get.replace("$error", error).replace("$success", success)
       val typeName = resolved.hkt.map(_.name).getOrElse(resolved.resultType.get)
       s"$typeName$p"
-    }
-
-    private def renderConcreteContainer(error: String, success: String): String = {
-      val p = resolved.pattern.get.replace("$error", error).replace("$success", success)
-      s"${resolved.resultType.get}$p"
     }
 
     override def translateServiceRt(domain: Domain): Option[TextTree[DtValue]] = {
@@ -234,13 +159,8 @@ object DtServiceWiringTranslator {
           // would be empty — skip emission entirely so the service file stays
           // a clean abstract-interface declaration.
           if (!hasActiveJsonCodecs(service) && !hasActiveUebaCodecs(service)) None
-          // Errors-mode wiring emission for Dart relies on `IBaboonServiceRt`
-          // and FQ wire-error type names that the existing renderer does not
-          // import-trigger; the dispatcher in this mode pre-dates the muxer
-          // and is currently dead code (not invoked from any DefnTranslator
-          // path). Keep it dead in errors mode so we don't introduce a
-          // compile-time regression while shipping the no-errors muxer
-          // wrappers. The errors-mode dispatcher fix is a separate PR.
+          // Errors-mode dispatch requires symbol-tracked result/error types and
+          // muxer wrappers; it remains disabled until those contracts are implemented.
           else if (!resolved.noErrors) None
           else Some(generateNoErrorsWiring(service))
         case _ => None
@@ -264,11 +184,12 @@ object DtServiceWiringTranslator {
           val hasJson = hasActiveJsonCodecs(service)
           if (!hasUeba && !hasJson) return None
 
-          val clientMethods = service.methods.flatMap {
-            m =>
-              val dartMethodName = trans.escapeDartKeyword(m.name.name)
-              val inTypeRef      = trans.asDtRef(m.sig, domain, evo)
-              val retType        = m.out.map(o => trans.asDtRef(o, domain, evo)).getOrElse(q"void")
+          val clientMethods = servicePlans(service.id).endpoints.flatMap {
+            endpoint =>
+              val m              = endpoint.method
+              val dartMethodName = endpoint.dartName
+              val inTypeRef      = endpoint.inputType
+              val retType        = endpoint.resultType
 
               val uebaMethod = if (hasUeba) {
                 val encodeIn = uebaEncodeStmt(m.sig.id, q"writer", q"arg")
@@ -294,8 +215,9 @@ object DtServiceWiringTranslator {
                 val encodeIn = jsonEncodeExpr(m.sig.id, q"arg")
                 val decodeOut = m.out match {
                   case Some(outRef) =>
-                    val decodeExpr = jsonDecodeExpr(outRef.id, q"$dtJsonDecode(resp)")
-                    q"return $decodeExpr;"
+                    val decodeExpr = jsonDecodeExpr(outRef.id, q"wire")
+                    q"""final wire = $dtJsonDecode(resp);
+                       |return $decodeExpr;""".stripMargin
                   case None => q"return;"
                 }
                 Some(
@@ -317,9 +239,9 @@ object DtServiceWiringTranslator {
           // parameter. In `none`/concrete mode this is empty and the transport
           // signature is unchanged (byte-identical for `none`).
           val transportCtxParam: String = resolvedCtx match {
-            case ResolvedServiceContext.NoContext               => ""
-            case ResolvedServiceContext.AbstractContext(tn, _)  => s"$tn, "
-            case ResolvedServiceContext.ConcreteContext(tn, _)  => s"$tn, "
+            case ResolvedServiceContext.NoContext              => ""
+            case ResolvedServiceContext.AbstractContext(tn, _) => s"$tn, "
+            case ResolvedServiceContext.ConcreteContext(tn, _) => s"$tn, "
           }
 
           val transportFields = List(
@@ -379,11 +301,6 @@ object DtServiceWiringTranslator {
     }
     private def codecCtxRef: TextTree[DtValue] = TextTree.text[DtValue](codecCtxName)
 
-    private def renderFq(tree: TextTree[DtValue]): String = tree.mapRender {
-      case t: DtValue.DtType     => if (t.predef) trans.escapeDartKeyword(t.name) else (t.pkg.parts :+ trans.escapeDartKeyword(t.name)).mkString(".")
-      case t: DtValue.DtTypeName => trans.escapeDartKeyword(t.name)
-    }
-
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[DtValue] = {
       val svcName = service.id.name.name
 
@@ -419,9 +336,10 @@ object DtServiceWiringTranslator {
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[DtValue] = {
       val svcName = service.id.name.name
-      val cases = service.methods.map {
-        m =>
-          val dartMethodName = trans.escapeDartKeyword(m.name.name)
+      val cases = servicePlans(service.id).endpoints.map {
+        endpoint =>
+          val m              = endpoint.method
+          val dartMethodName = endpoint.dartName
           val decodeIn       = jsonDecodeExpr(m.sig.id, q"wire")
 
           val encodeOutput = m.out match {
@@ -438,37 +356,33 @@ object DtServiceWiringTranslator {
             case None    => q"${awaitKw}impl.$dartMethodName(${ctxArgPass}decoded);"
           }
 
-          q"""'${m.name.name}': ()$dispatcherAsyncKw {
+          q"""case '${m.name.name}': {
              |  final wire = $dtJsonDecode(data);
              |  final decoded = $decodeIn;
              |  $callExpr
              |  ${encodeOutput.shift(2).trim}
-             |},""".stripMargin
+             |}""".stripMargin
       }.join("\n")
 
-      val retType     = asyncRetType(q"String")
-      val handlerType = asyncRetType(q"String")
+      val retType = asyncRetType(q"String")
       q"""static $retType invokeJson$ctxTypeParamDecl(
          |  $baboonMethodId method,
          |  String data,
          |  $svcName$ctxTypeParamDecl impl,
          |  $ctxParamDecl$baboonCodecContext $codecCtxName)$dispatcherAsyncKw {
-         |  final handlers = <String, $handlerType Function()>{
+         |  switch (method.methodName) {
          |    ${cases.shift(4).trim}
-         |  };
-         |  final handler = handlers[method.methodName];
-         |  if (handler == null) {
-         |    throw $baboonWiringException($baboonWiringError.noMatchingMethod(method));
+         |    default: throw $baboonWiringException($baboonWiringError.noMatchingMethod(method));
          |  }
-         |  return ${awaitKw}handler();
          |}""".stripMargin
     }
 
     private def generateNoErrorsUebaMethod(service: Typedef.Service): TextTree[DtValue] = {
       val svcName = service.id.name.name
-      val cases = service.methods.map {
-        m =>
-          val dartMethodName = trans.escapeDartKeyword(m.name.name)
+      val cases = servicePlans(service.id).endpoints.map {
+        endpoint =>
+          val m              = endpoint.method
+          val dartMethodName = endpoint.dartName
           val decodeIn       = uebaDecodeExpr(m.sig.id, q"reader")
 
           val encodeOutput = m.out match {
@@ -486,91 +400,25 @@ object DtServiceWiringTranslator {
             case None    => q"${awaitKw}impl.$dartMethodName(${ctxArgPass}decoded);"
           }
 
-          q"""'${m.name.name}': ()$dispatcherAsyncKw {
+          q"""case '${m.name.name}': {
              |  final reader = $baboonBinTools.createReader(data);
              |  final decoded = $decodeIn;
              |  $callExpr
              |  ${encodeOutput.shift(2).trim}
-             |},""".stripMargin
+             |}""".stripMargin
       }.join("\n")
 
-      val retType     = asyncRetType(q"$dtUint8List")
-      val handlerType = asyncRetType(q"$dtUint8List")
+      val retType = asyncRetType(q"$dtUint8List")
       q"""static $retType invokeUeba$ctxTypeParamDecl(
          |  $baboonMethodId method,
          |  $dtUint8List data,
          |  $svcName$ctxTypeParamDecl impl,
          |  $ctxParamDecl$baboonCodecContext $codecCtxName)$dispatcherAsyncKw {
-         |  final handlers = <String, $handlerType Function()>{
+         |  switch (method.methodName) {
          |    ${cases.shift(4).trim}
-         |  };
-         |  final handler = handlers[method.methodName];
-         |  if (handler == null) {
-         |    throw $baboonWiringException($baboonWiringError.noMatchingMethod(method));
+         |    default: throw $baboonWiringException($baboonWiringError.noMatchingMethod(method));
          |  }
-         |  return ${awaitKw}handler();
          |}""".stripMargin
-    }
-
-    private def generateErrorsWiring(service: Typedef.Service): TextTree[DtValue] = {
-      val svcName = service.id.name.name
-
-      val jsonMethod =
-        if (hasActiveJsonCodecs(service))
-          Some(generateErrorsJsonMethod(service))
-        else None
-
-      val uebaMethod =
-        if (hasActiveUebaCodecs(service))
-          Some(generateErrorsUebaMethod(service))
-        else None
-
-      val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
-
-      val wiringClass =
-        q"""class ${svcName}Wiring {
-           |  ${methods.shift(2).trim}
-           |}""".stripMargin
-
-      val wrappers = generateServiceWrappers(service, errorsJsonRetTree, errorsUebaRetTree)
-
-      Seq(wiringClass, wrappers).filterNot(_.isEmpty).join("\n\n")
-    }
-
-    // TextTree-form errors-mode return type for the muxer-wrapper signatures.
-    // We need a TextTree (not a String) so the wrapper's
-    // `IBaboon*Service<R>` parameterisation can reference `BaboonWiringError`
-    // through the symbol-tracked DtType — `renderFq` would render it as
-    // `baboon.runtime.shared.BaboonWiringError`, which is not a valid Dart
-    // identifier path (Dart imports the type bare).
-    //
-    // These helpers are kept for forward-compat: the errors-mode dispatcher in
-    // Dart is currently disabled at the `translate` entry point pending its
-    // own fix (see comment there), so they're presently unreachable.
-    private def errorsJsonRetTree: TextTree[DtValue] = errorsRetTreeFor(q"String")
-    private def errorsUebaRetTree: TextTree[DtValue] = errorsRetTreeFor(q"$dtUint8List")
-
-    private def errorsRetTreeFor(successType: TextTree[DtValue]): TextTree[DtValue] = {
-      // Split `resolved.pattern` (e.g. `<$error, $success>`) around the two
-      // placeholders so we can splice the symbol-tracked `BaboonWiringError`
-      // (`$baboonWiringError`) and the success-type TextTree.
-      val p           = resolved.pattern.get
-      val typeName    = resolved.hkt.map(_.name).getOrElse(resolved.resultType.get)
-      // Order-sensitive: pattern always references $error then $success in the
-      // pattern shipped with the brief example. If reversed in user pragmas
-      // we fall back to a literal substitution that keeps the order-of-args
-      // intact.
-      val errorIdx    = p.indexOf("$error")
-      val successIdx  = p.indexOf("$success")
-      if (errorIdx >= 0 && successIdx > errorIdx) {
-        val pre  = p.substring(0, errorIdx)
-        val mid  = p.substring(errorIdx + "$error".length, successIdx)
-        val post = p.substring(successIdx + "$success".length)
-        q"$typeName$pre$baboonWiringError$mid$successType$post"
-      } else {
-        // Defensive fallback — render via the existing string path.
-        q"${ct(bweFq, successType.mapRender { case _ => "" })}"
-      }
     }
 
     /** Emits the cross-domain Muxer-entry wrapper classes for a service.
@@ -609,8 +457,8 @@ object DtServiceWiringTranslator {
       retType: TextTree[DtValue],
     ): TextTree[DtValue] = {
       val svcName     = service.id.name.name
-      val wireType    = if (isJson) q"String"        else q"$dtUint8List"
-      val invokerFn   = if (isJson) "invokeJson"     else "invokeUeba"
+      val wireType    = if (isJson) q"String" else q"$dtUint8List"
+      val invokerFn   = if (isJson) "invokeJson" else "invokeUeba"
       val wrapperName = s"$svcName${if (isJson) "JsonService" else "UebaService"}"
 
       // The service context (when active) is supplied PER-INVOKE rather than
@@ -620,14 +468,14 @@ object DtServiceWiringTranslator {
       // unchanged: it implements the context-free IBaboon*Service<R> and takes
       // `invoke(method, data, ctx)` — keeping that output byte-identical.
       val svcCtxTypeName: Option[String] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(tn, _)  => Some(tn)
-        case ResolvedServiceContext.ConcreteContext(tn, _)  => Some(tn)
+        case ResolvedServiceContext.NoContext              => None
+        case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+        case ResolvedServiceContext.ConcreteContext(tn, _) => Some(tn)
       }
       val svcCtxArgName: Option[String] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
-        case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+        case ResolvedServiceContext.NoContext              => None
+        case ResolvedServiceContext.AbstractContext(_, pn) => Some(pn)
+        case ResolvedServiceContext.ConcreteContext(_, pn) => Some(pn)
       }
 
       val implementsClause: TextTree[DtValue] = svcCtxTypeName match {
@@ -640,7 +488,7 @@ object DtServiceWiringTranslator {
       val rtField: Option[(String, TextTree[DtValue])] =
         if (resolved.noErrors) None else Some(("rt", q"IBaboonServiceRt"))
 
-      val implField: TextTree[DtValue]  = q"final $svcName$ctxTypeParamDecl _impl;"
+      val implField: TextTree[DtValue] = q"final $svcName$ctxTypeParamDecl _impl;"
       val extraFields: List[TextTree[DtValue]] = rtField.toList.map {
         case (name, tpe) => q"final $tpe _$name;"
       }
@@ -690,209 +538,5 @@ object DtServiceWiringTranslator {
          |}""".stripMargin
     }
 
-    private val bweFq: String = renderFq(q"$baboonWiringError")
-
-    private def ct(error: String, success: String): String = renderContainer(error, success)
-
-    private def generateErrorsJsonMethod(service: Typedef.Service): TextTree[DtValue] = {
-      val svcName       = service.id.name.name
-      val wiringRetType = ct(bweFq, "String")
-
-      val cases = service.methods.map {
-        m =>
-          val dartMethodName = trans.escapeDartKeyword(m.name.name)
-          val inRef          = trans.asDtRef(m.sig, domain, evo)
-          val decodeIn       = jsonDecodeExpr(m.sig.id, q"wire")
-
-          val decodeStep =
-            q"""${ct(bweFq, renderFq(inRef))} input;
-               |try {
-               |  final wire = $dtJsonDecode(data);
-               |  input = rt.pure($decodeIn);
-               |} catch (ex) {
-               |  input = rt.fail($baboonWiringError.decoderFailed(method, ex));
-               |}""".stripMargin
-
-          val hasErrType = m.err.isDefined && !resolved.noErrors
-
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val encodeOut = jsonEncodeExpr(outRef.id, q"v")
-
-              val callBody = if (hasErrType) {
-                q"""try {
-                   |  final callResult = impl.$dartMethodName(${ctxArgPass}v);
-                   |  return rt.leftMap(
-                   |    callResult, (err) => $baboonWiringError.callFailed(method, err));
-                   |} catch (ex) {
-                   |  return rt.fail($baboonWiringError.callFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try {
-                   |  return rt.pure(impl.$dartMethodName(${ctxArgPass}v));
-                   |} catch (ex) {
-                   |  return rt.fail($baboonWiringError.callFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              q"""final output = rt.flatMap(input, (v) {
-                 |  ${callBody.shift(2).trim}
-                 |});
-                 |return rt.flatMap(output, (v) {
-                 |  try {
-                 |    final encoded = $encodeOut;
-                 |    return rt.pure($dtJsonEncode(encoded));
-                 |  } catch (ex) {
-                 |    return rt.fail($baboonWiringError.encoderFailed(method, ex));
-                 |  }
-                 |});""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                q"""try {
-                   |  final callResult = impl.$dartMethodName(${ctxArgPass}v);
-                   |  return rt.leftMap(
-                   |    callResult, (err) => $baboonWiringError.callFailed(method, err));
-                   |} catch (ex) {
-                   |  return rt.fail($baboonWiringError.callFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try {
-                   |  impl.$dartMethodName(${ctxArgPass}v);
-                   |  return rt.pure(null);
-                   |} catch (ex) {
-                   |  return rt.fail($baboonWiringError.callFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              q"""return rt.flatMap(input, (v) {
-                 |  ${callBody.shift(2).trim}
-                 |  return rt.pure('null');
-                 |});""".stripMargin
-          }
-
-          q"""'${m.name.name}': () {
-             |  ${decodeStep.shift(2).trim}
-             |  ${callAndEncodeStep.shift(2).trim}
-             |},""".stripMargin
-      }.join("\n")
-
-      q"""static $wiringRetType invokeJson$ctxTypeParamDecl(
-         |  $baboonMethodId method,
-         |  String data,
-         |  $svcName$ctxTypeParamDecl impl,
-         |  IBaboonServiceRt rt,
-         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
-         |  final handlers = <String, $wiringRetType Function()>{
-         |    ${cases.shift(4).trim}
-         |  };
-         |  final handler = handlers[method.methodName];
-         |  if (handler == null) {
-         |    return rt.fail($baboonWiringError.noMatchingMethod(method));
-         |  }
-         |  return handler();
-         |}""".stripMargin
-    }
-
-    private def generateErrorsUebaMethod(service: Typedef.Service): TextTree[DtValue] = {
-      val svcName       = service.id.name.name
-      val wiringRetType = ct(bweFq, "Uint8List")
-
-      val cases = service.methods.map {
-        m =>
-          val dartMethodName = trans.escapeDartKeyword(m.name.name)
-          val inRef          = trans.asDtRef(m.sig, domain, evo)
-          val decodeIn       = uebaDecodeExpr(m.sig.id, q"reader")
-
-          val decodeStep =
-            q"""${ct(bweFq, renderFq(inRef))} input;
-               |try {
-               |  final reader = $baboonBinTools.createReader(data);
-               |  input = rt.pure($decodeIn);
-               |} catch (ex) {
-               |  input = rt.fail($baboonWiringError.decoderFailed(method, ex));
-               |}""".stripMargin
-
-          val hasErrType = m.err.isDefined && !resolved.noErrors
-
-          val callAndEncodeStep = m.out match {
-            case Some(outRef) =>
-              val encStmt = uebaEncodeStmt(outRef.id, q"writer", q"v")
-
-              val callBody = if (hasErrType) {
-                q"""try {
-                   |  final callResult = impl.$dartMethodName(${ctxArgPass}v);
-                   |  return rt.leftMap(
-                   |    callResult, (err) => $baboonWiringError.callFailed(method, err));
-                   |} catch (ex) {
-                   |  return rt.fail($baboonWiringError.callFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try {
-                   |  return rt.pure(impl.$dartMethodName(${ctxArgPass}v));
-                   |} catch (ex) {
-                   |  return rt.fail($baboonWiringError.callFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              q"""final output = rt.flatMap(input, (v) {
-                 |  ${callBody.shift(2).trim}
-                 |});
-                 |return rt.flatMap(output, (v) {
-                 |  try {
-                 |    final writer = $baboonBinTools.createWriter();
-                 |    $encStmt
-                 |    return rt.pure(writer.toBytes());
-                 |  } catch (ex) {
-                 |    return rt.fail($baboonWiringError.encoderFailed(method, ex));
-                 |  }
-                 |});""".stripMargin
-
-            case None =>
-              val callBody = if (hasErrType) {
-                q"""try {
-                   |  final callResult = impl.$dartMethodName(${ctxArgPass}v);
-                   |  return rt.leftMap(
-                   |    callResult, (err) => $baboonWiringError.callFailed(method, err));
-                   |} catch (ex) {
-                   |  return rt.fail($baboonWiringError.callFailed(method, ex));
-                   |}""".stripMargin
-              } else {
-                q"""try {
-                   |  impl.$dartMethodName(${ctxArgPass}v);
-                   |  return rt.pure(null);
-                   |} catch (ex) {
-                   |  return rt.fail($baboonWiringError.callFailed(method, ex));
-                   |}""".stripMargin
-              }
-
-              q"""return rt.flatMap(input, (v) {
-                 |  ${callBody.shift(2).trim}
-                 |  return rt.pure($dtUint8List(0));
-                 |});""".stripMargin
-          }
-
-          q"""'${m.name.name}': () {
-             |  ${decodeStep.shift(2).trim}
-             |  ${callAndEncodeStep.shift(2).trim}
-             |},""".stripMargin
-      }.join("\n")
-
-      q"""static $wiringRetType invokeUeba$ctxTypeParamDecl(
-         |  $baboonMethodId method,
-         |  $dtUint8List data,
-         |  $svcName$ctxTypeParamDecl impl,
-         |  IBaboonServiceRt rt,
-         |  $ctxParamDecl$baboonCodecContext $codecCtxName) {
-         |  final handlers = <String, $wiringRetType Function()>{
-         |    ${cases.shift(4).trim}
-         |  };
-         |  final handler = handlers[method.methodName];
-         |  if (handler == null) {
-         |    return rt.fail($baboonWiringError.noMatchingMethod(method));
-         |  }
-         |  return handler();
-         |}""".stripMargin
-    }
   }
 }

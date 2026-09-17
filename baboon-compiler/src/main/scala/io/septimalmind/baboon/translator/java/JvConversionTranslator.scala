@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.java
 
 import distage.Id
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.java.JvBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.java.JvTypes.*
 import io.septimalmind.baboon.translator.java.JvValue.JvPackageId
@@ -344,11 +344,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
             List(RenderedConversion(fname, tools.inPkg(pkg.parts.toSeq, classDef), Some(regtree), None))
         }
 
-        if (false) {
-          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
-        } else {
-          F.pure(rendered)
-        }
+        F.pure(rendered): Out[List[RenderedConversion]]
     }
   }
 

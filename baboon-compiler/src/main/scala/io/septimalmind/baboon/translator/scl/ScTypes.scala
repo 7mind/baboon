@@ -67,6 +67,8 @@ object ScTypes {
   val baboonAnyOpaqueJson: ScType  = ScType(baboonRuntimePkg, "AnyOpaqueJson")
   val baboonAnyMeta: ScType        = ScType(baboonRuntimePkg, "AnyMeta")
   val baboonAnyMetaCodec: ScType   = ScType(baboonRuntimePkg, "AnyMetaCodec")
+  val baboonAnyJsonCodec: ScType   = ScType(baboonRuntimePkg, "BaboonAnyJsonCodec")
+  val baboonAnyBinCodec: ScType    = ScType(baboonRuntimePkg, "BaboonAnyBinCodec")
   val baboonCodecException: ScType = ScType(baboonRuntimePkg, "BaboonCodecException")
 
   // baboon service wiring types
@@ -85,8 +87,8 @@ object ScTypes {
   val baboonAbstractConversions = ScType(baboonRuntimePkg, "AbstractBaboonConversions")
 
   // baboon facade
-  val baboonCodecsFacade    = ScType(baboonRuntimePkg, "BaboonCodecsFacade")
-  val baboonDomainVersion   = ScType(baboonRuntimePkg, "BaboonDomainVersion")
+  val baboonCodecsFacade  = ScType(baboonRuntimePkg, "BaboonCodecsFacade")
+  val baboonDomainVersion = ScType(baboonRuntimePkg, "BaboonDomainVersion")
 
   // scala
 
@@ -203,15 +205,57 @@ object ScTypes {
     * Note: `default` is NOT a Scala keyword.
     */
   val scReservedKeywords: Set[String] = Set(
-    "abstract", "case", "catch", "class", "def", "do", "else", "extends",
-    "false", "final", "finally", "for", "forSome", "if", "implicit", "import",
-    "lazy", "match", "new", "null", "object", "override", "package", "private",
-    "protected", "return", "sealed", "super", "this", "throw", "trait", "try",
-    "true", "type", "val", "var", "while", "with", "yield",
+    "abstract",
+    "case",
+    "catch",
+    "class",
+    "def",
+    "do",
+    "else",
+    "extends",
+    "false",
+    "final",
+    "finally",
+    "for",
+    "forSome",
+    "if",
+    "implicit",
+    "import",
+    "lazy",
+    "match",
+    "new",
+    "null",
+    "object",
+    "override",
+    "package",
+    "private",
+    "protected",
+    "return",
+    "sealed",
+    "super",
+    "this",
+    "throw",
+    "trait",
+    "try",
+    "true",
+    "type",
+    "val",
+    "var",
+    "while",
+    "with",
+    "yield",
     // Scala 3 soft keywords that can appear as identifiers in certain positions but are
     // safer to escape when used as field names:
-    "then", "export", "given", "using", "inline", "transparent", "opaque", "open",
-    "infix", "end",
+    "then",
+    "export",
+    "given",
+    "using",
+    "inline",
+    "transparent",
+    "opaque",
+    "open",
+    "infix",
+    "end",
   )
 
   /** Escape a Scala identifier with backtick quoting when it collides with a reserved keyword.

@@ -175,6 +175,33 @@ impl BaboonMcpServerBase {
         codec_ctx: &BaboonCodecContext,
         invoke_json: &dyn Fn(&BaboonMethodId, &str, Ctx, &BaboonCodecContext) -> Result<String, BaboonWiringError>,
     ) -> Option<JsonRpcResponse> {
+        dispatch_request(request, session, ctx, codec_ctx, &self.server_info,
+            || self.tools.iter().map(tool_json).collect(),
+            |name| self.by_name(name),
+            |entry, args, ctx, codec_ctx| invoke_json(&entry.method, args, ctx, codec_ctx),
+        )
+    }
+
+}
+
+fn tool_json(tool: &McpToolEntry) -> serde_json::Value {
+    let mut entry = serde_json::json!({"name": tool.name, "inputSchema": tool.input_schema.clone()});
+    if let Some(description) = tool.description {
+        entry["description"] = serde_json::Value::String(description.to_string());
+    }
+    entry
+}
+
+fn dispatch_request<Ctx, Entry>(
+    request: &JsonRpcRequest,
+    session: &mut McpSession,
+    ctx: Ctx,
+    codec_ctx: &BaboonCodecContext,
+    server_info: &McpServerInfo,
+    list: impl Fn() -> Vec<serde_json::Value>,
+    find: impl Fn(&str) -> Option<Entry>,
+    invoke: impl Fn(Entry, &str, Ctx, &BaboonCodecContext) -> Result<String, BaboonWiringError>,
+) -> Option<JsonRpcResponse> {
         let id = request.id.clone();
         match request.method.as_str() {
             "initialize" => {
@@ -182,7 +209,7 @@ impl BaboonMcpServerBase {
                     .and_then(|p| p.get("protocolVersion"))
                     .is_some();
                 if !has_pv {
-                    return Some(self.error_response(id, json_rpc_error_codes::INVALID_PARAMS, "initialize: missing protocolVersion"));
+                    return Some(error_response(id, json_rpc_error_codes::INVALID_PARAMS, "initialize: missing protocolVersion"));
                 }
                 session.initialized = true;
                 Some(JsonRpcResponse {
@@ -190,7 +217,7 @@ impl BaboonMcpServerBase {
                     result: Some(serde_json::json!({
                         "protocolVersion": MCP_PROTOCOL_VERSION,
                         "capabilities": { "tools": {} },
-                        "serverInfo": { "name": self.server_info.name, "version": self.server_info.version }
+                        "serverInfo": { "name": server_info.name, "version": server_info.version }
                     })),
                     error: None,
                 })
@@ -198,18 +225,9 @@ impl BaboonMcpServerBase {
             "notifications/initialized" => None,
             "tools/list" => {
                 if !session.initialized {
-                    return Some(self.error_response(id, json_rpc_error_codes::INVALID_REQUEST, "tools/list before initialize"));
+                    return Some(error_response(id, json_rpc_error_codes::INVALID_REQUEST, "tools/list before initialize"));
                 }
-                let tools: Vec<serde_json::Value> = self.tools.iter().map(|t| {
-                    let mut entry = serde_json::json!({
-                        "name": t.name,
-                        "inputSchema": t.input_schema.clone(),
-                    });
-                    if let Some(desc) = t.description {
-                        entry["description"] = serde_json::Value::String(desc.to_string());
-                    }
-                    entry
-                }).collect();
+                let tools = list();
                 Some(JsonRpcResponse {
                     id,
                     result: Some(serde_json::json!({ "tools": tools })),
@@ -218,7 +236,7 @@ impl BaboonMcpServerBase {
             }
             "tools/call" => {
                 if !session.initialized {
-                    return Some(self.error_response(id, json_rpc_error_codes::INVALID_REQUEST, "tools/call before initialize"));
+                    return Some(error_response(id, json_rpc_error_codes::INVALID_REQUEST, "tools/call before initialize"));
                 }
                 let name = request.params.as_ref()
                     .and_then(|p| p.get("name"))
@@ -226,13 +244,13 @@ impl BaboonMcpServerBase {
                 let name = match name {
                     Some(n) => n,
                     None => {
-                        return Some(self.error_response(id, json_rpc_error_codes::INVALID_PARAMS, "tools/call: missing tool name"));
+                        return Some(error_response(id, json_rpc_error_codes::INVALID_PARAMS, "tools/call: missing tool name"));
                     }
                 };
-                let entry = match self.by_name(name) {
+                let entry = match find(name) {
                     Some(e) => e,
                     None => {
-                        return Some(self.error_response(
+                        return Some(error_response(
                             id,
                             json_rpc_error_codes::INVALID_PARAMS,
                             &format!("tools/call: unknown tool '{}'", name),
@@ -246,14 +264,14 @@ impl BaboonMcpServerBase {
                 let args_json = match serde_json::to_string(&args) {
                     Ok(s) => s,
                     Err(e) => {
-                        return Some(self.error_response(
+                        return Some(error_response(
                             id,
                             json_rpc_error_codes::INTERNAL_ERROR,
                             &format!("tools/call: failed to serialize arguments: {}", e),
                         ));
                     }
                 };
-                let result = invoke_json(&entry.method, &args_json, ctx, codec_ctx);
+                let result = invoke(entry, &args_json, ctx, codec_ctx);
                 match result {
                     Ok(json_str) => {
                         Some(JsonRpcResponse {
@@ -278,15 +296,15 @@ impl BaboonMcpServerBase {
                     }
                 }
             }
-            _ => Some(self.error_response(
+            _ => Some(error_response(
                 id,
                 json_rpc_error_codes::METHOD_NOT_FOUND,
                 &format!("Method not found: {}", request.method),
             )),
         }
-    }
+}
 
-    fn error_response(&self, id: Option<JsonRpcId>, code: i32, message: &str) -> JsonRpcResponse {
+fn error_response( id: Option<JsonRpcId>, code: i32, message: &str) -> JsonRpcResponse {
         JsonRpcResponse {
             id,
             result: None,
@@ -297,7 +315,6 @@ impl BaboonMcpServerBase {
             }),
         }
     }
-}
 
 // --- Cross-service MCP muxer (tasks:T109; contract:
 // docs/research/mcp-muxer-runtime-contract.md) ---
@@ -358,13 +375,19 @@ impl std::fmt::Display for BaboonMcpWiringError {
 
 impl std::error::Error for BaboonMcpWiringError {}
 
+struct ToolRoute {
+    server_index: usize,
+    tool_index: usize,
+    method: BaboonMethodId,
+}
+
 pub struct AbstractMcpMuxer<Ctx: Clone> {
     // Insertion-ordered union table (registration order of servers, then each
-    // server's tool declaration order — contract §5). A `Vec` of `(name, server-idx,
-    // entry-method)` preserves that order deterministically without an extra crate;
-    // `route` is the name -> server-idx lookup built at registration (contract §2).
+    // server's tool declaration order — contract §5). Stable server/tool indices
+    // preserve that order deterministically without an extra crate;
+    // `route` maps tool names to indices in the ordered entry table.
     servers: Vec<Box<dyn IBaboonRoutableMcpServer<Ctx>>>,
-    entries: Vec<(String, usize, BaboonMethodId)>,
+    entries: Vec<ToolRoute>,
     route: std::collections::HashMap<String, usize>,
     merged_server_info: McpServerInfo,
 }
@@ -383,13 +406,17 @@ impl<Ctx: Clone> AbstractMcpMuxer<Ctx> {
     // returns `Err(DuplicateTool)` on a tool-name collision across servers (the
     // exact MCP-tier analogue of `JsonMuxer::register` returning `DuplicateService`).
     pub fn register(&mut self, server: Box<dyn IBaboonRoutableMcpServer<Ctx>>) -> Result<(), BaboonMcpWiringError> {
-        let idx = self.servers.len();
-        for t in server.tools() {
-            if self.route.contains_key(t.name) {
-                return Err(BaboonMcpWiringError::DuplicateTool(t.name.to_string()));
+        let tools = server.tools();
+        let mut names = std::collections::HashSet::new();
+        for tool in tools {
+            if self.route.contains_key(tool.name) || !names.insert(tool.name) {
+                return Err(BaboonMcpWiringError::DuplicateTool(tool.name.to_string()));
             }
-            self.route.insert(t.name.to_string(), idx);
-            self.entries.push((t.name.to_string(), idx, t.method.clone()));
+        }
+        let server_index = self.servers.len();
+        for (tool_index, tool) in tools.iter().enumerate() {
+            self.route.insert(tool.name.to_string(), self.entries.len());
+            self.entries.push(ToolRoute { server_index, tool_index, method: tool.method.clone() });
         }
         self.servers.push(server);
         Ok(())
@@ -400,24 +427,13 @@ impl<Ctx: Clone> AbstractMcpMuxer<Ctx> {
         Ok(self)
     }
 
-    fn entry(&self, name: &str) -> Option<&(String, usize, BaboonMethodId)> {
-        self.entries.iter().find(|(n, _, _)| n == name)
+    fn entry(&self, name: &str) -> Option<&ToolRoute> {
+        self.route.get(name).map(|index| &self.entries[*index])
     }
 
-    // Backs tools/list (contract §3.2): the union of all registered servers' tool
-    // entries in registration-then-declaration order (the insertion order of
-    // `entries`), each in the same shape the per-service base emits.
     fn tools_list_union(&self) -> Vec<serde_json::Value> {
-        self.entries.iter().map(|(name, srv_idx, _)| {
-            let entry_tool = self.servers[*srv_idx].tools().iter().find(|t| t.name == name).unwrap();
-            let mut entry = serde_json::json!({
-                "name": entry_tool.name,
-                "inputSchema": entry_tool.input_schema.clone(),
-            });
-            if let Some(desc) = entry_tool.description {
-                entry["description"] = serde_json::Value::String(desc.to_string());
-            }
-            entry
+        self.entries.iter().map(|route| {
+            tool_json(&self.servers[route.server_index].tools()[route.tool_index])
         }).collect()
     }
 
@@ -428,122 +444,10 @@ impl<Ctx: Clone> AbstractMcpMuxer<Ctx> {
         ctx: Ctx,
         codec_ctx: &BaboonCodecContext,
     ) -> Option<JsonRpcResponse> {
-        let id = request.id.clone();
-        match request.method.as_str() {
-            "initialize" => {
-                let has_pv = request.params.as_ref()
-                    .and_then(|p| p.get("protocolVersion"))
-                    .is_some();
-                if !has_pv {
-                    return Some(self.error_response(id, json_rpc_error_codes::INVALID_PARAMS, "initialize: missing protocolVersion"));
-                }
-                session.initialized = true;
-                Some(JsonRpcResponse {
-                    id,
-                    result: Some(serde_json::json!({
-                        "protocolVersion": MCP_PROTOCOL_VERSION,
-                        "capabilities": { "tools": {} },
-                        "serverInfo": { "name": self.merged_server_info.name, "version": self.merged_server_info.version }
-                    })),
-                    error: None,
-                })
-            }
-            "notifications/initialized" => None,
-            "tools/list" => {
-                if !session.initialized {
-                    return Some(self.error_response(id, json_rpc_error_codes::INVALID_REQUEST, "tools/list before initialize"));
-                }
-                Some(JsonRpcResponse {
-                    id,
-                    result: Some(serde_json::json!({ "tools": self.tools_list_union() })),
-                    error: None,
-                })
-            }
-            "tools/call" => {
-                if !session.initialized {
-                    return Some(self.error_response(id, json_rpc_error_codes::INVALID_REQUEST, "tools/call before initialize"));
-                }
-                let name = request.params.as_ref()
-                    .and_then(|p| p.get("name"))
-                    .and_then(|v| v.as_str());
-                let name = match name {
-                    Some(n) => n,
-                    None => {
-                        return Some(self.error_response(id, json_rpc_error_codes::INVALID_PARAMS, "tools/call: missing tool name"));
-                    }
-                };
-                // NoMatchingTool: surfaced as the SAME wire response the per-service
-                // base uses for an unknown tool (-32602, "unknown tool '<name>'"), so
-                // the bytes are identical whether one server or the muxer rejects.
-                let entry = match self.entry(name) {
-                    Some(e) => e,
-                    None => {
-                        return Some(self.error_response(
-                            id,
-                            json_rpc_error_codes::INVALID_PARAMS,
-                            &format!("tools/call: unknown tool '{}'", name),
-                        ));
-                    }
-                };
-                let (_name, srv_idx, method) = entry;
-                let args = request.params.as_ref()
-                    .and_then(|p| p.get("arguments"))
-                    .cloned()
-                    .unwrap_or_else(|| serde_json::json!({}));
-                let args_json = match serde_json::to_string(&args) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        return Some(self.error_response(
-                            id,
-                            json_rpc_error_codes::INTERNAL_ERROR,
-                            &format!("tools/call: failed to serialize arguments: {}", e),
-                        ));
-                    }
-                };
-                // T114 public dispatch entry — NOT handle(). Reuses the owning
-                // server's Channel-A/Channel-B mapping unchanged.
-                let result = self.servers[*srv_idx].route_tool_call(method, &args_json, ctx, codec_ctx);
-                match result {
-                    Ok(json_str) => {
-                        Some(JsonRpcResponse {
-                            id,
-                            result: Some(serde_json::json!({
-                                "content": [{ "type": "text", "text": json_str }],
-                                "isError": false
-                            })),
-                            error: None,
-                        })
-                    }
-                    Err(wiring_err) => {
-                        // Channel B: a valid protocol call whose domain payload failed.
-                        Some(JsonRpcResponse {
-                            id,
-                            result: Some(serde_json::json!({
-                                "content": [{ "type": "text", "text": wiring_err.to_string() }],
-                                "isError": true
-                            })),
-                            error: None,
-                        })
-                    }
-                }
-            }
-            _ => Some(self.error_response(
-                id,
-                json_rpc_error_codes::METHOD_NOT_FOUND,
-                &format!("Method not found: {}", request.method),
-            )),
-        }
-    }
-
-    fn error_response(&self, id: Option<JsonRpcId>, code: i32, message: &str) -> JsonRpcResponse {
-        JsonRpcResponse {
-            id,
-            result: None,
-            error: Some(JsonRpcError {
-                code,
-                message: message.to_string(),
-                data: None,
-            }),
-        }
+        dispatch_request(request, session, ctx, codec_ctx, &self.merged_server_info,
+            || self.tools_list_union(),
+            |name| self.entry(name),
+            |entry, args, ctx, codec_ctx| self.servers[entry.server_index].route_tool_call(&entry.method, args, ctx, codec_ctx),
+        )
     }
 }

@@ -64,32 +64,26 @@ public record BaboonTypeMeta(
      * the ADT meta envelope. When the user-declared type is the concrete branch, use the branch
      * identifier directly.
      */
-    @SuppressWarnings("unchecked")
     public static BaboonTypeMeta from(BaboonGenerated value, Class<?> declaredType) {
         Class<?> actual = value.getClass();
 
         String typeIdentifier;
         if (value instanceof BaboonAdtMemberMeta && declaredType != null && declaredType.isInterface()) {
-            typeIdentifier = readStaticString(actual, "baboonAdtTypeIdentifier");
+            typeIdentifier = BaboonMetadataAccess.requiredString(actual, "baboonAdtTypeIdentifier");
         } else {
-            typeIdentifier = readStaticString(actual, "baboonTypeIdentifier");
+            typeIdentifier = BaboonMetadataAccess.requiredString(actual, "baboonTypeIdentifier");
         }
 
-        String domainIdentifier = readStaticString(actual, "baboonDomainIdentifier");
-        String domainVersion = readStaticString(actual, "baboonDomainVersion");
+        String domainIdentifier = BaboonMetadataAccess.requiredString(actual, "baboonDomainIdentifier");
+        String domainVersion = BaboonMetadataAccess.requiredString(actual, "baboonDomainVersion");
 
         // Codegen invariant (mirrors PR-08-D02): baboonSameInVersions is always non-empty. Index
         // directly so a violation throws IndexOutOfBoundsException rather than silently masquerading
         // as a same-version meta.
-        List<String> sameIn;
-        try {
-            sameIn = (List<String>) actual.getField("baboonSameInVersions").get(null);
-        } catch (ReflectiveOperationException e) {
-            throw new BaboonException("Type " + actual.getName() + " is missing static field 'baboonSameInVersions'", e);
-        }
+        List<String> sameIn = BaboonMetadataAccess.sameInVersions(actual);
         String minCompat = sameIn.get(0);
 
-        Map<String, String> minReaders = readMinReaderVersions(actual);
+        Map<String, String> minReaders = BaboonMetadataAccess.minReaderVersions(actual);
         String readableMin = minReaders.get(JSON_READABLE_TIER);
         if (readableMin == null) {
             throw new BaboonException("Type " + actual.getName() + ": baboonMinReaderVersions lacks '" + JSON_READABLE_TIER + "'");
@@ -116,7 +110,7 @@ public record BaboonTypeMeta(
             return meta;
         }
         String tier = ctx.useIndices() ? UEBA_PREFIX_ANY_MODE_TIER : UEBA_PREFIX_COMPACT_TIER;
-        String bound = readMinReaderVersions(value.getClass()).get(tier);
+        String bound = BaboonMetadataAccess.minReaderVersions(value.getClass()).get(tier);
         if (bound == null) {
             throw new BaboonException("Type " + value.getClass().getName() + ": baboonMinReaderVersions lacks '" + tier + "'");
         }
@@ -124,27 +118,6 @@ public record BaboonTypeMeta(
         return v2
             ? new BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION_2, meta.domainIdentifier(), meta.domainVersion(), meta.domainVersionMinCompat(), meta.typeIdentifier(), bound)
             : new BaboonTypeMeta(meta.metaVersion(), meta.domainIdentifier(), meta.domainVersion(), bound, meta.typeIdentifier(), meta.domainVersionReadableMin());
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, String> readMinReaderVersions(Class<?> actual) {
-        try {
-            return (Map<String, String>) actual.getField("baboonMinReaderVersions").get(null);
-        } catch (ReflectiveOperationException e) {
-            throw new BaboonException("Type " + actual.getName() + " is missing static field 'baboonMinReaderVersions'", e);
-        }
-    }
-
-    private static String readStaticString(Class<?> klass, String name) {
-        try {
-            Object v = klass.getField(name).get(null);
-            if (!(v instanceof String s)) {
-                throw new BaboonException("Type " + klass.getName() + " field '" + name + "' is not a String");
-            }
-            return s;
-        } catch (ReflectiveOperationException e) {
-            throw new BaboonException("Type " + klass.getName() + " is missing static field '" + name + "'", e);
-        }
     }
 
     public static BaboonTypeMeta readMeta(LEDataInputStream reader) throws Exception {

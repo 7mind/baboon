@@ -85,8 +85,8 @@ class ScMcpServerGenerator[F[+_, +_]: Error2](
 
   private def isEitherErrorsMode(resolved: io.septimalmind.baboon.translator.ResolvedServiceResult): Boolean =
     !resolved.noErrors &&
-      resolved.hkt.isEmpty &&
-      resolved.resultType.exists(t => t == "Either" || t == "scala.util.Either")
+    resolved.hkt.isEmpty &&
+    resolved.resultType.exists(t => t == "Either" || t == "scala.util.Either")
 
   private def describeResult(resolved: io.septimalmind.baboon.translator.ResolvedServiceResult): String = {
     if (resolved.noErrors) "no-errors mode (no error channel)"
@@ -100,9 +100,10 @@ class ScMcpServerGenerator[F[+_, +_]: Error2](
   private def emitSources(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
       lineage =>
-        val evo          = lineage.evolution
-        val latestDomain = lineage.versions(evo.latest)
-        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
+        val evo           = lineage.evolution
+        val latestDomain  = lineage.versions(evo.latest)
+        val schemaContext = schemaEmitter.prepare(latestDomain)
+        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo, schemaContext))
     }
 
     val runtimeFile =
@@ -128,7 +129,8 @@ class ScMcpServerGenerator[F[+_, +_]: Error2](
     }
   }
 
-  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution): (String, OutputFile) = {
+  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution, schemaContext: McpInputSchemaEmitter.PreparedDomain)
+    : (String, OutputFile) = {
     val path = serverPath(svc, domain, evo)
 
     val serviceName = svc.id.name.name
@@ -141,10 +143,11 @@ class ScMcpServerGenerator[F[+_, +_]: Error2](
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
         val toolName = s"${serviceName}_${m.name.name}"
-        val schema   = schemaEmitter.emitInputSchema(m.sig, domain)
+        val schema   = schemaEmitter.emitInputSchema(m.sig, schemaContext)
         // The self-contained JSON Schema is carried as a constant literal value.
         // io.circe.Json literals are produced by io.circe.parser.parse.
-        val descArg = McpDocs.flatten(m.docs)
+        val descArg = McpDocs
+          .flatten(m.docs)
           .map(d => s"\n      description = Some(${scalaString(d)}),")
           .getOrElse("")
         s"""    _root_.baboon.runtime.shared.McpToolEntry(
@@ -154,7 +157,8 @@ class ScMcpServerGenerator[F[+_, +_]: Error2](
            |    ),""".stripMargin
     }
 
-    val invokeJsonType = s"(_root_.baboon.runtime.shared.BaboonMethodId, String, Ctx, _root_.baboon.runtime.shared.BaboonCodecContext) => Either[_root_.baboon.runtime.shared.BaboonWiringError, String]"
+    val invokeJsonType =
+      s"(_root_.baboon.runtime.shared.BaboonMethodId, String, Ctx, _root_.baboon.runtime.shared.BaboonCodecContext) => Either[_root_.baboon.runtime.shared.BaboonWiringError, String]"
 
     val body =
       s"""// Generated MCP server for service `$serviceName` (model `${domain.id.path.mkString(".")}` v$modelVer).
