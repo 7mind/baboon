@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerTarget.ScTarget
-import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceResultResolver}
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceMethodPlan, ServiceResultResolver}
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
@@ -26,6 +26,9 @@ object ScServiceWiringTranslator {
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "scala", target.language.serviceResult, target.language.pragmas)
+
+    private def methodPlan(method: Typedef.MethodDef): ServiceMethodPlan[TextTree[ScValue]] =
+      new ServiceMethodPlan(method, trans.asScRef(_, domain, evo), resolved, method.name.name)
 
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "scala", target.language.serviceContext, target.language.pragmas)
@@ -210,7 +213,7 @@ object ScServiceWiringTranslator {
 
           val clientMethods = service.methods.flatMap {
             m =>
-              val plan      = new ScServiceMethodPlan(m, trans.asScRef(_, domain, evo), resolved)
+              val plan      = methodPlan(m)
               val outRefOpt = plan.output
               val outFq     = outRefOpt.map(renderFq).getOrElse("Unit")
               val retType   = if (resolved.noErrors) outFq else ct(bweFq, outFq)
@@ -548,7 +551,7 @@ object ScServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val plan     = new ScServiceMethodPlan(m, trans.asScRef(_, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val encodeOutput = m.out match {
@@ -589,7 +592,7 @@ object ScServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val plan     = new ScServiceMethodPlan(m, trans.asScRef(_, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
           val encodeOutput = m.out match {
@@ -673,7 +676,7 @@ object ScServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val plan     = new ScServiceMethodPlan(m, trans.asScRef(_, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val inRef    = plan.input
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
@@ -777,7 +780,7 @@ object ScServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val plan     = new ScServiceMethodPlan(m, trans.asScRef(_, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val inRef    = plan.input
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 

@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.IdentifierFieldKind
+import io.septimalmind.baboon.translator.{IdentifierFieldKind, ServiceMethodPlan}
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -423,7 +423,7 @@ object ScDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val plan            = new ScServiceMethodPlan(m, trans.asScRef(_, domain, evo), resolved)
+              val plan            = new ServiceMethodPlan(m, trans.asScRef(_, domain, evo), resolved, m.name.name)
               val in              = plan.input
               val out             = plan.output
               val err             = plan.error

@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.java
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.JvTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.IdentifierFieldKind
+import io.septimalmind.baboon.translator.{IdentifierFieldKind, ServiceMethodPlan}
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.java.JvValue.JvType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -595,7 +595,7 @@ object JvDefnTranslator {
       }
       val methods = service.methods.map {
         m =>
-          val plan = new JvServiceMethodPlan(m, tpe => trans.asJvRef(tpe, domain, evo), resolved)
+          val plan = new ServiceMethodPlan(m, tpe => trans.asJvRef(tpe, domain, evo), resolved, JvTypeTranslator.escapeJvKeyword(m.name.name))
           val in   = plan.input
           val out  = plan.output
           val err  = plan.error
@@ -606,7 +606,7 @@ object JvDefnTranslator {
           val outStr         = out.map(_.mapRender(jvFqName)).getOrElse("void")
           val errStr         = err.map(_.mapRender(jvFqName))
           val retStr         = resolved.renderReturnType(outStr, errStr, "void")
-          val javaMethodName = plan.declarationName
+          val javaMethodName = plan.methodName
           val retTree: TextTree[JvValue] =
             if (target.language.asyncServices) {
               val inner = if (retStr == "void") "Void" else retStr

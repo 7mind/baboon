@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
-import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceResultResolver}
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceMethodPlan, ServiceResultResolver}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.typer.model.*
@@ -27,6 +27,9 @@ object CSServiceWiringTranslator {
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "cs", target.language.serviceResult, target.language.pragmas)
+
+    private def methodPlan(method: Typedef.MethodDef): ServiceMethodPlan[TextTree[CSValue]] =
+      new ServiceMethodPlan(method, trans.asCsRef(_, domain, evo), resolved, CSTypes.escapeCsKeyword(method.name.name.capitalize))
 
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "cs", target.language.serviceContext, target.language.pragmas)
@@ -227,7 +230,7 @@ object CSServiceWiringTranslator {
 
           val clientMethods = service.methods.flatMap {
             m =>
-              val plan    = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+              val plan    = methodPlan(m)
               val inRef   = plan.input
               val retType = clientRet(plan.output)
 
@@ -451,13 +454,13 @@ object CSServiceWiringTranslator {
          |}""".stripMargin
     }
 
-    private def noErrorsInvocation(plan: CSServiceMethodPlan): TextTree[CSValue] =
+    private def noErrorsInvocation(plan: ServiceMethodPlan[TextTree[CSValue]]): TextTree[CSValue] =
       plan.method.out match {
         case Some(_) => q"var result = ${awaitKw}impl.${plan.methodName}(${ctxArgPass}decoded);"
         case None    => q"${awaitKw}impl.${plan.methodName}(${ctxArgPass}decoded);"
       }
 
-    private def errorsInvocation(plan: CSServiceMethodPlan): TextTree[CSValue] = plan.output match {
+    private def errorsInvocation(plan: ServiceMethodPlan[TextTree[CSValue]]): TextTree[CSValue] = plan.output match {
       case Some(outType) =>
         if (plan.hasError) {
           val errType = plan.error.get
@@ -508,7 +511,7 @@ object CSServiceWiringTranslator {
     }
 
     private def errorsAsyncInvocation(
-      plan: CSServiceMethodPlan,
+      plan: ServiceMethodPlan[TextTree[CSValue]],
       wireType: TextTree[CSValue],
       emptyWire: TextTree[CSValue],
       encodeFlatMap: TextTree[CSValue],
@@ -611,7 +614,7 @@ object CSServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val plan     = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val encodeOutput = m.out match {
@@ -653,7 +656,7 @@ object CSServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val plan     = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
           val encodeOutput = m.out match {
@@ -747,7 +750,7 @@ object CSServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val plan     = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val inRef    = plan.input
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
@@ -832,7 +835,7 @@ object CSServiceWiringTranslator {
       * `rt.Pure` / `rt.Fail` boundaries, identical to the sync arm's results.
       */
     private def generateErrorsJsonCaseAsync(
-      plan: CSServiceMethodPlan,
+      plan: ServiceMethodPlan[TextTree[CSValue]],
       inRef: TextTree[CSValue],
       decodeIn: TextTree[CSValue],
     ): TextTree[CSValue] = {
@@ -887,7 +890,7 @@ object CSServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val plan     = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+          val plan     = methodPlan(m)
           val inRef    = plan.input
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
@@ -971,7 +974,7 @@ object CSServiceWiringTranslator {
       * [[generateErrorsJsonCaseAsync]] for the await-then-thread rationale.
       */
     private def generateErrorsUebaCaseAsync(
-      plan: CSServiceMethodPlan,
+      plan: ServiceMethodPlan[TextTree[CSValue]],
       inRef: TextTree[CSValue],
       decodeIn: TextTree[CSValue],
     ): TextTree[CSValue] = {

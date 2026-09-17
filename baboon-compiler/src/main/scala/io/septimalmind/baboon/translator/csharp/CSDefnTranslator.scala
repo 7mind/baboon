@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.IdentifierFieldKind
+import io.septimalmind.baboon.translator.{IdentifierFieldKind, ServiceMethodPlan}
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
@@ -507,7 +507,7 @@ object CSDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val plan = new CSServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved)
+              val plan = new ServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved, CSTypes.escapeCsKeyword(m.name.name.capitalize))
               val out  = plan.output
               val err  = plan.error
               val csFqName: CSValue => String = {

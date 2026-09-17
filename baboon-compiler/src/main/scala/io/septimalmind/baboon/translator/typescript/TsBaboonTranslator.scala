@@ -6,7 +6,7 @@ import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyOpaqueModule, tsBaboonIdReprModule, tsBaboonRuntimeShared, tsCrossLangFixtureModule, tsFixtureShared}
 import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, DomainProductTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -75,14 +75,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     p: CompilerProduct,
     translate: DomainMember.User => F[NEList[BaboonIssue], List[TsDefnTranslator.Output]],
   ): F[NEList[BaboonIssue], List[TsDefnTranslator.Output]] = {
-    if (target.output.products.contains(p)) {
-      F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-        case (_, defn: DomainMember.User) => translate(defn)
-        case _                            => F.pure(List.empty)
-      }
-    } else {
-      F.pure(List.empty)
-    }
+    DomainProductTranslator.translate(domain, target.output.products, p, translate)
   }
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[TsDefnTranslator.Output]] = {
@@ -257,18 +250,17 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
         // Meta class: the real per-type sameIn / forward-readable tables for this version
         // (user types only; unknown type ids resolve to empty, never to fabricated own-version data).
-        val sameInEntries = lineage.evolution
-          .typesUnchangedSince(domain.version).toList.collect {
-            case (tid: TypeId.User, u) => (tid.toString, u.sameIn.toList.map(_.v.toString))
-          }.sortBy(_._1).map {
-            case (tid, vs) => q""""$tid": [${vs.map(v => s"'$v'").mkString(", ")}],"""
-          }
-        val forwardEntries = lineage.evolution
-          .typesForwardReadable(domain.version).toList.collect {
-            case (tid: TypeId.User, fr) => (tid.toString, fr.readable.toList.map { case (v, tier) => (v.v.toString, tier.wireName) })
-          }.sortBy(_._1).map {
-            case (tid, pairs) => q""""$tid": { ${pairs.map { case (v, t) => s"'$v': '$t'" }.mkString(", ")} },"""
-          }
+        val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+        val sameInEntries = metadata.sameIn.collect {
+          case EvolutionMetadataPlan.SameIn(tid: TypeId.User, versions) => (tid.toString, versions)
+        }.map {
+          case (tid, vs) => q""""$tid": [${vs.map(v => s"'$v'").mkString(", ")}],"""
+        }
+        val forwardEntries = metadata.forwardReadable.collect {
+          case EvolutionMetadataPlan.ForwardReadable(tid: TypeId.User, readers) => (tid.toString, readers)
+        }.map {
+          case (tid, pairs) => q""""$tid": { ${pairs.map { case EvolutionMetadataPlan.ReaderVersion(v, t) => s"'$v': '$t'" }.mkString(", ")} },"""
+        }
 
         q"""class ${verClassName}JsonCodecs extends AbstractBaboonJsonCodecs {
            |    constructor() {

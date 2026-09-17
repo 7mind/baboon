@@ -7,7 +7,7 @@ import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue
 import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.OutputOrigin
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -314,24 +314,17 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     val basename = csFiles.basename(domain, lineage.evolution)
     val pkg      = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q"""_unmodified.Add("${tid.toString}", new $csList<$csString> { ${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")} });"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q"""_unmodified.Add("${tid.toString}", new $csList<$csString> { ${versions.map(s => q"\"$s\"").join(", ")} });"""
+    }
 
-    val forwardEntries = lineage.evolution
-      .typesForwardReadable(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, fr) =>
-          val pairs = fr.readable.toList.map { case (v, tier) => s"""{ "${v.v.toString}", "${tier.wireName}" }""" }.mkString(", ")
-          q"""_forwardReadable.Add("${tid.toString}", new $csDictionary<$csString, $csString> { $pairs });"""
-      }
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s"""{ "$v", "$tier" }""" }.mkString(", ")
+        q"""_forwardReadable.Add("${tid.toString}", new $csDictionary<$csString, $csString> { $pairs });"""
+    }
 
     val metaTree =
       q"""public sealed class BaboonMeta : $iBaboonMeta

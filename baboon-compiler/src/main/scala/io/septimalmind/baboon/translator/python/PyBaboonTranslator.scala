@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyModuleId
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, DomainProductTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage, Domain, DomainMember, EvolutionStep}
 import izumi.distage.Subcontext
 import izumi.functional.bio.{Error2, F}
@@ -417,24 +417,17 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
   private def generateMeta(domain: Domain, lineage: BaboonLineage): Out[List[PyDefnTranslator.Output]] = {
     val basename = pyFileTools.basename(domain, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q""""${tid.toString}": [${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}]"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q""""${tid.toString}": [${versions.map(s => q"\"$s\"").join(", ")}]"""
+    }
 
-    val forwardEntries = lineage.evolution
-      .typesForwardReadable(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, fr) =>
-          val pairs = fr.readable.toList.map { case (v, tier) => s""""${v.v.toString}": "${tier.wireName}"""" }.mkString(", ")
-          q""""${tid.toString}": {$pairs}"""
-      }
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s""""$v": "$tier"""" }.mkString(", ")
+        q""""${tid.toString}": {$pairs}"""
+    }
 
     val metaTree =
       q"""class BaboonMetadata($baboonMeta):
@@ -472,14 +465,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     p: CompilerProduct,
     translate: DomainMember.User => F[NEList[BaboonIssue], List[PyDefnTranslator.Output]],
   ): F[NEList[BaboonIssue], List[PyDefnTranslator.Output]] = {
-    if (target.output.products.contains(p)) {
-      F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-        case (_, defn: DomainMember.User) => translate(defn)
-        case _                            => F.pure(List.empty)
-      }
-    } else {
-      F.pure(List.empty)
-    }
+    DomainProductTranslator.translate(domain, target.output.products, p, translate)
   }
 }
 
