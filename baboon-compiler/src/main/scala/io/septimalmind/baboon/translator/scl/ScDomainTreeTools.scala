@@ -13,12 +13,22 @@ trait ScDomainTreeTools {
 
 object ScDomainTreeTools {
   final case class MetaField(
-    signature: TextTree[ScValue],
-    value: TextTree[ScValue],
-    refValue: TextTree[ScValue],
-  ) {
-    def valueField: TextTree[ScValue]    = q"$signature = $value"
-    def refValueField: TextTree[ScValue] = q"$signature = $refValue"
+    valueField: TextTree[ScValue],
+    refValueField: TextTree[ScValue],
+  )
+
+  object MetaField {
+    def apply(signature: TextTree[ScValue], value: TextTree[ScValue], refValue: TextTree[ScValue]): MetaField =
+      MetaField(q"$signature = $value", q"$signature = $refValue")
+
+    def cached(name: String, tpe: TextTree[ScValue], value: TextTree[ScValue], refValue: TextTree[ScValue]): MetaField = {
+      val backing = s"_$name"
+      MetaField(
+        q"""private lazy val $backing: $tpe = $value
+           |def $name: $tpe = $backing""".stripMargin,
+        q"def $name: $tpe = $refValue",
+      )
+    }
   }
 
   final class ScDomainTreeToolsImpl(
@@ -76,12 +86,32 @@ object ScDomainTreeTools {
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
       val ref             = typeTranslator.asScType(defn.id, domain, evolution)
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
-      val sameInVersion = MetaField(
-        q"def baboonSameInVersions: $scList[$scString]",
+      val sameInVersion = MetaField.cached(
+        "baboonSameInVersions",
+        q"$scList[$scString]",
         q"$scList(${unmodifiedSince.mkString(", ")})",
         q"$ref.baboonSameInVersions",
       )
-      List(sameInVersion)
+      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forwardEntries = forward.readable.toList.map {
+        case (v, tier) => s""""${v.v.toString}" -> "${tier.wireName}""""
+      }
+      val forwardReadable = MetaField.cached(
+        "baboonForwardReadable",
+        q"${ScTypes.scMap}[$scString, $scString]",
+        q"${ScTypes.scMap}(${forwardEntries.mkString(", ")})",
+        q"$ref.baboonForwardReadable",
+      )
+      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+        case (tier, v) => s""""${tier.wireName}" -> "${v.v.toString}""""
+      }
+      val minReaders = MetaField.cached(
+        "baboonMinReaderVersions",
+        q"${ScTypes.scMap}[$scString, $scString]",
+        q"${ScTypes.scMap}(${minReaderEntries.mkString(", ")})",
+        q"$ref.baboonMinReaderVersions",
+      )
+      List(sameInVersion, forwardReadable, minReaders)
     }
   }
 }

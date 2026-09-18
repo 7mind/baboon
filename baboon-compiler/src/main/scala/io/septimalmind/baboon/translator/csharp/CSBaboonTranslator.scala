@@ -7,7 +7,7 @@ import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue
 import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.OutputOrigin
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -207,28 +207,29 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     val className      = s"Domain${pascalDomainId}Facade"
 
     // Emit one Register call per known version, in ascending order.
-    val registers = lineage.versions.toSeq.sortBy(_._1).map {
-      case (version, domain) =>
-        val versionPkg = trans.toCsPkg(domain.id, version, evo)
-        val codecsJson = CSValue.CSType(versionPkg, "BaboonCodecsJson", fq = false, CSValue.CSTypeOrigin.Other)
-        val codecsUeba = CSValue.CSType(versionPkg, "BaboonCodecsUeba", fq = false, CSValue.CSTypeOrigin.Other)
-        val metaFac    = CSValue.CSType(versionPkg, "BaboonMeta", fq = false, CSValue.CSTypeOrigin.Other)
-        val domainId   = domain.id.toString
-        val versionStr = version.v.toString
+    val registers = lineage.versions.toSeq
+      .sortBy(_._1).map {
+        case (version, domain) =>
+          val versionPkg = trans.toCsPkg(domain.id, version, evo)
+          val codecsJson = CSValue.CSType(versionPkg, "BaboonCodecsJson", fq = false, CSValue.CSTypeOrigin.Other)
+          val codecsUeba = CSValue.CSType(versionPkg, "BaboonCodecsUeba", fq = false, CSValue.CSTypeOrigin.Other)
+          val metaFac    = CSValue.CSType(versionPkg, "BaboonMeta", fq = false, CSValue.CSTypeOrigin.Other)
+          val domainId   = domain.id.toString
+          val versionStr = version.v.toString
 
-        if (withMeta) {
-          q"""Register(
-             |    new $baboonDomainVersion("$domainId", "$versionStr"),
-             |    () => $codecsJson.Instance,
-             |    () => $codecsUeba.Instance,
-             |    () => $metaFac.Instance);""".stripMargin
-        } else {
-          q"""Register(
-             |    new $baboonDomainVersion("$domainId", "$versionStr"),
-             |    () => $codecsJson.Instance,
-             |    () => $codecsUeba.Instance);""".stripMargin
-        }
-    }.toList
+          if (withMeta) {
+            q"""Register(
+               |    new $baboonDomainVersion("$domainId", "$versionStr"),
+               |    () => $codecsJson.Instance,
+               |    () => $codecsUeba.Instance,
+               |    () => $metaFac.Instance);""".stripMargin
+          } else {
+            q"""Register(
+               |    new $baboonDomainVersion("$domainId", "$versionStr"),
+               |    () => $codecsJson.Instance,
+               |    () => $codecsUeba.Instance);""".stripMargin
+          }
+      }.toList
 
     val classTree =
       q"""public sealed class $className : $baboonCodecsFacade
@@ -313,14 +314,17 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     val basename = csFiles.basename(domain, lineage.evolution)
     val pkg      = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q"""_unmodified.Add("${tid.toString}", new $csList<$csString> { ${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")} });"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q"""_unmodified.Add("${tid.toString}", new $csList<$csString> { ${versions.map(s => q"\"$s\"").join(", ")} });"""
+    }
+
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s"""{ "$v", "$tier" }""" }.mkString(", ")
+        q"""_forwardReadable.Add("${tid.toString}", new $csDictionary<$csString, $csString> { $pairs });"""
+    }
 
     val metaTree =
       q"""public sealed class BaboonMeta : $iBaboonMeta
@@ -328,6 +332,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
          |    private BaboonMeta()
          |    {
          |        ${entries.join("\n").shift(8).trim}
+         |        ${forwardEntries.join("\n").shift(8).trim}
          |    }
          |
          |    public $csIReadOnlyList<$csString> SameInVersions($csString typeIdString)
@@ -335,7 +340,14 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
          |        return _unmodified[typeIdString];
          |    }
          |
+         |    public $csIReadOnlyDictionary<$csString, $csString> ForwardReadableVersions($csString typeIdString)
+         |    {
+         |        return _forwardReadable[typeIdString];
+         |    }
+         |
          |    private readonly $csIDictionary<$csString, $csList<$csString>> _unmodified = new $csDictionary<$csString, $csList<$csString>>();
+         |
+         |    private readonly $csIDictionary<$csString, $csDictionary<$csString, $csString>> _forwardReadable = new $csDictionary<$csString, $csDictionary<$csString, $csString>>();
          |
          |    private static readonly $csLazy<BaboonMeta> LazyInstance = new $csLazy<BaboonMeta>(() => new BaboonMeta());
          |
@@ -475,6 +487,8 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           rt(s"BaboonExceptions.cs", "baboon-runtime/cs/BaboonExceptions.cs"),
           rt(s"BaboonTypeMeta.cs", "baboon-runtime/cs/BaboonTypeMeta.cs"),
           rt(s"AnyOpaque.cs", "baboon-runtime/cs/AnyOpaque.cs"),
+          rt(s"BaboonAnyJsonCodec.cs", "baboon-runtime/cs/BaboonAnyJsonCodec.cs"),
+          rt(s"BaboonAnyBinCodec.cs", "baboon-runtime/cs/BaboonAnyBinCodec.cs"),
           rt(s"BaboonTools.cs", "baboon-runtime/cs/BaboonTools.cs"),
           rt(s"BaboonTime.cs", "baboon-runtime/cs/BaboonTime.cs"),
           rt(s"BaboonByteString.cs", "baboon-runtime/cs/BaboonByteString.cs"),

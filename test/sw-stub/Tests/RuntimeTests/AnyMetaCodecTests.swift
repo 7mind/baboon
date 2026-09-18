@@ -565,6 +565,7 @@ final class AnyMetaCodecTests: XCTestCase {
             var baboonDomainIdentifier: String { "stub.dom" }
             var baboonTypeIdentifier: String { "StubT" }
             var baboonSameInVersions: [String] { ["1.0.0"] }
+            var baboonMinReaderVersions: [String: String] { ["identical": "1.0.0", "prefix-any-mode": "1.0.0", "prefix-compact": "1.0.0", "json-additive": "1.0.0"] }
         }
 
         final class StubBinCodec: BaboonBinCodecBase<StubLatestValue> {
@@ -624,6 +625,7 @@ final class AnyMetaCodecTests: XCTestCase {
         var baboonDomainIdentifier: String { "stub.dom" }
         var baboonTypeIdentifier: String { "StubT" }
         var baboonSameInVersions: [String] { ["1.0.0"] }
+        var baboonMinReaderVersions: [String: String] { ["identical": "1.0.0", "prefix-any-mode": "1.0.0", "prefix-compact": "1.0.0", "json-additive": "1.0.0"] }
     }
 
     func testDecodeFromJsonLatest_absentEnvelope_returnsNil() throws {

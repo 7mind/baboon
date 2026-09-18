@@ -1,0 +1,27 @@
+model fwde2e.fwd
+
+version "2.0.0"
+
+import "1.0.0" { * } without {
+  FwdAppendVar
+  FwdMidInsert
+  FwdEnumGrows
+}
+
+root data FwdAppendVar {
+  a: i32
+  b: str
+  t: opt[str]
+}
+
+root data FwdMidInsert {
+  a: i32
+  m: opt[i32]
+  z: str
+}
+
+enum FwdEnumGrows {
+  A
+  B
+  C
+}

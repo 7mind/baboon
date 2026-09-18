@@ -406,6 +406,15 @@ class Sec1InitializeTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class Sec2ToolsListTests(unittest.TestCase):
+    def test_public_tool_mutation_does_not_change_server_metadata(self):
+        server = _make_server()
+        expected = server.tools
+        exposed = server.tools
+        exposed[0].name = "changed"
+        exposed[0].input_schema.clear()
+        exposed.clear()
+        self.assertEqual(expected, server.tools)
+
 
     def test_exactly_seven_tools_in_declaration_order(self):
         tools, resp, *_ = _init_and_list()

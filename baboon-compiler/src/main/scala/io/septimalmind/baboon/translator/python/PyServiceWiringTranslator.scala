@@ -71,68 +71,30 @@ object PyServiceWiringTranslator {
     }
 
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
-    // Python JSON codecs take/return `str` (raw JSON). For builtins, use json.loads/json.dumps.
+    // Python JSON codecs take/return `str` (raw JSON); scalar operations restore native values.
     private def jsonDecodeExpr(id: TypeId, data: TextTree[PyValue]): TextTree[PyValue] = id match {
       case u: TypeId.User          => q"${jsonCodecType(u)}.instance().decode($codecCtxRef, $data)"
-      case _: TypeId.BuiltinScalar => q"$pyJsonLoads($data)"
+      case b: TypeId.BuiltinScalar => PyScalarCodecOps.jsonServiceDecode(b, data)
       case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[PyValue]): TextTree[PyValue] = id match {
       case u: TypeId.User          => q"${jsonCodecType(u)}.instance().encode($codecCtxRef, $value)"
-      case _: TypeId.BuiltinScalar => q"$pyJsonDumps($value)"
+      case b: TypeId.BuiltinScalar => PyScalarCodecOps.jsonServiceEncode(b, value)
       case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaDecodeExpr(id: TypeId, reader: TextTree[PyValue]): TextTree[PyValue] = id match {
       case u: TypeId.User => q"${uebaCodecType(u)}.instance().decode($codecCtxRef, $reader)"
       case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit   => q"$reader.read_bool()"
-          case TypeId.Builtins.i08   => q"$reader.read_byte()"
-          case TypeId.Builtins.i16   => q"$reader.read_i16()"
-          case TypeId.Builtins.i32   => q"$reader.read_i32()"
-          case TypeId.Builtins.i64   => q"$reader.read_i64()"
-          case TypeId.Builtins.u08   => q"$reader.read_ubyte()"
-          case TypeId.Builtins.u16   => q"$reader.read_u16()"
-          case TypeId.Builtins.u32   => q"$reader.read_u32()"
-          case TypeId.Builtins.u64   => q"$reader.read_u64()"
-          case TypeId.Builtins.f32   => q"$reader.read_f32()"
-          case TypeId.Builtins.f64   => q"$reader.read_f64()"
-          case TypeId.Builtins.f128  => q"$reader.read_f128()"
-          case TypeId.Builtins.str   => q"$reader.read_string()"
-          case TypeId.Builtins.uid   => q"$reader.read_uuid()"
-          case TypeId.Builtins.tsu   => q"$reader.read_datetime()"
-          case TypeId.Builtins.tso   => q"$reader.read_datetime()"
-          case TypeId.Builtins.bytes => q"$reader.read_bytes()"
-          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
+        PyScalarCodecOps.decode(b, reader)
       case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaEncodeStmt(id: TypeId, writer: TextTree[PyValue], value: TextTree[PyValue]): TextTree[PyValue] = id match {
       case u: TypeId.User => q"${uebaCodecType(u)}.instance().encode($codecCtxRef, $writer, $value)"
       case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit   => q"$writer.write_bool($value)"
-          case TypeId.Builtins.i08   => q"$writer.write_byte($value)"
-          case TypeId.Builtins.i16   => q"$writer.write_i16($value)"
-          case TypeId.Builtins.i32   => q"$writer.write_i32($value)"
-          case TypeId.Builtins.i64   => q"$writer.write_i64($value)"
-          case TypeId.Builtins.u08   => q"$writer.write_ubyte($value)"
-          case TypeId.Builtins.u16   => q"$writer.write_u16($value)"
-          case TypeId.Builtins.u32   => q"$writer.write_u32($value)"
-          case TypeId.Builtins.u64   => q"$writer.write_u64($value)"
-          case TypeId.Builtins.f32   => q"$writer.write_f32($value)"
-          case TypeId.Builtins.f64   => q"$writer.write_f64($value)"
-          case TypeId.Builtins.f128  => q"$writer.write_f128($value)"
-          case TypeId.Builtins.str   => q"$writer.write_str($value)"
-          case TypeId.Builtins.uid   => q"$writer.write_uuid($value)"
-          case TypeId.Builtins.tsu   => q"$writer.write_datetime($value)"
-          case TypeId.Builtins.tso   => q"$writer.write_datetime($value)"
-          case TypeId.Builtins.bytes => q"$writer.write_bytes($value)"
-          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
+        PyScalarCodecOps.encode(b, writer, value)
       case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
@@ -240,8 +202,8 @@ object PyServiceWiringTranslator {
 
           val clientMethods = service.methods.flatMap {
             m =>
-              val inType  = typeTranslator.asPyRef(m.sig, domain, evolution, fileTools.definitionsBasePkg)
-              val outType = m.out.map(o => typeTranslator.asPyRef(o, domain, evolution, fileTools.definitionsBasePkg))
+              val inType                      = typeTranslator.asPyRef(m.sig, domain, evolution, fileTools.definitionsBasePkg)
+              val outType                     = m.out.map(o => typeTranslator.asPyRef(o, domain, evolution, fileTools.definitionsBasePkg))
               val retAnnot: TextTree[PyValue] = outType.getOrElse(q"None")
 
               val uebaMethod = if (hasUeba) {
@@ -314,7 +276,7 @@ object PyServiceWiringTranslator {
           }
 
           val clientTree =
-            q"""class ${svcName}Client${clientGenericBaseClause}:
+            q"""class ${svcName}Client$clientGenericBaseClause:
                |    \"\"\"RPC client for $svcName. Holds user-supplied transport callbacks
                |    `(service, method, data) -> data` and a $baboonCodecContext, and exposes one
                |    method per endpoint (UEBA: bare name / `bytes`; JSON: `_json` suffix / `str`).
@@ -422,10 +384,10 @@ object PyServiceWiringTranslator {
     }
 
     private def generateOneWrapper(service: Typedef.Service, svcType: PyType, isJson: Boolean): TextTree[PyValue] = {
-      val svcName     = service.id.name.name
-      val wrapperName = s"${svcName}${if (isJson) "_JsonService" else "_UebaService"}"
-      val invokerFn   = s"${if (isJson) "invoke_json_" else "invoke_ueba_"}$svcName"
-      val wireType    = if (isJson) "str" else "bytes"
+      val svcName                     = service.id.name.name
+      val wrapperName                 = s"$svcName${if (isJson) "_JsonService" else "_UebaService"}"
+      val invokerFn                   = s"${if (isJson) "invoke_json_" else "invoke_ueba_"}$svcName"
+      val wireType                    = if (isJson) "str" else "bytes"
       val retAnnot: TextTree[PyValue] = if (resolved.noErrors) q"$wireType" else q""
 
       // `rt` (errors mode) is a per-construction dependency, so it stays a
@@ -439,9 +401,9 @@ object PyServiceWiringTranslator {
       // when a service context is active. In `none` mode `ctx` denotes the
       // codec context (historical contract) — there is no separate svc ctx.
       val svcCtxParam: Option[String] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
-        case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+        case ResolvedServiceContext.NoContext              => None
+        case ResolvedServiceContext.AbstractContext(_, pn) => Some(pn)
+        case ResolvedServiceContext.ConcreteContext(_, pn) => Some(pn)
       }
 
       val ctorParams: List[TextTree[PyValue]] = {
@@ -539,7 +501,7 @@ object PyServiceWiringTranslator {
          |        ${ctorAssigns.join("\n").shift(8).trim}
          |
          |    ${asyncPrefix}def invoke(self, $invokeParams)$invokeReturnArrow:
-         |        return ${awaitPrefix}$invokerFn(${invokerArgs.join(", ")})
+         |        return $awaitPrefix$invokerFn(${invokerArgs.join(", ")})
          |""".stripMargin
     }
 
@@ -590,7 +552,9 @@ object PyServiceWiringTranslator {
              |    ${encodeAndReturn.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: ${svcTypeRef(svcType)}, ${ctxParamDecl}$codecCtxName: $baboonCodecContext) -> str:
+      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: ${svcTypeRef(
+          svcType
+        )}, $ctxParamDecl$codecCtxName: $baboonCodecContext) -> str:
          |    ${cases.shift(4).trim}
          |    raise $baboonWiringException($baboonNoMatchingMethod(method))
          |""".stripMargin
@@ -626,7 +590,9 @@ object PyServiceWiringTranslator {
              |    ${encodeAndReturn.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: ${svcTypeRef(svcType)}, ${ctxParamDecl}$codecCtxName: $baboonCodecContext) -> bytes:
+      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: ${svcTypeRef(
+          svcType
+        )}, $ctxParamDecl$codecCtxName: $baboonCodecContext) -> bytes:
          |    ${cases.shift(4).trim}
          |    raise $baboonWiringException($baboonNoMatchingMethod(method))
          |""".stripMargin
@@ -790,7 +756,9 @@ object PyServiceWiringTranslator {
              |    ${callAndEncodeStep.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: ${svcTypeRef(svcType)}, rt: $ibaboonServiceRtType, ${ctxParamDecl}$codecCtxName: $baboonCodecContext):
+      q"""${asyncPrefix}def invoke_json_$svcName(method: $baboonMethodId, data: str, impl: ${svcTypeRef(
+          svcType
+        )}, rt: $ibaboonServiceRtType, $ctxParamDecl$codecCtxName: $baboonCodecContext):
          |    ${cases.shift(4).trim}
          |    return rt.fail($baboonNoMatchingMethod(method))
          |""".stripMargin
@@ -887,7 +855,9 @@ object PyServiceWiringTranslator {
              |    ${callAndEncodeStep.shift(4).trim}""".stripMargin
       }.joinN()
 
-      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: ${svcTypeRef(svcType)}, rt: $ibaboonServiceRtType, ${ctxParamDecl}$codecCtxName: $baboonCodecContext):
+      q"""${asyncPrefix}def invoke_ueba_$svcName(method: $baboonMethodId, data: bytes, impl: ${svcTypeRef(
+          svcType
+        )}, rt: $ibaboonServiceRtType, $ctxParamDecl$codecCtxName: $baboonCodecContext):
          |    ${cases.shift(4).trim}
          |    return rt.fail($baboonNoMatchingMethod(method))
          |""".stripMargin

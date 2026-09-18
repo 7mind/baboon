@@ -109,6 +109,15 @@ async def _send(server, session, codec_ctx, req):
 
 
 class Sec3AsyncToolsCallTests(unittest.TestCase):
+    def test_public_tool_mutation_does_not_change_server_metadata(self):
+        server = _make_server()
+        expected = server.tools
+        exposed = server.tools
+        exposed[0].name = "changed"
+        exposed[0].input_schema.clear()
+        exposed.clear()
+        self.assertEqual(expected, server.tools)
+
 
     def test_ping_returns_ok_true_async(self):
         # THE GREEN POINT (post-T61).

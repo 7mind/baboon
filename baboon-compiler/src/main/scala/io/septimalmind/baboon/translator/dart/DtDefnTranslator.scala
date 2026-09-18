@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.dart
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.DtTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.IdentifierFieldKind
 import io.septimalmind.baboon.translator.dart.DtValue.DtType
 import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
@@ -61,7 +62,7 @@ object DtDefnTranslator {
       */
     private def prependDocs(docs: Docs, tree: TextTree[DtValue]): TextTree[DtValue] = {
       val block = dtTrees.renderDocs(docs, "")
-      if (block.isEmpty) tree else q"${block}$tree"
+      if (block.isEmpty) tree else q"$block$tree"
     }
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -364,6 +365,8 @@ object DtDefnTranslator {
         "baboonDomainIdentifier",
         "baboonTypeIdentifier",
         "baboonSameInVersions",
+        "baboonForwardReadable",
+        "baboonMinReaderVersions",
         "baboonAdtTypeIdentifier",
       )
       val instanceGetters = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.valueGetter)
@@ -381,9 +384,10 @@ object DtDefnTranslator {
       } else q""
 
       val equalsBody = if (hasFields) {
-        val fieldComparisons = dto.fields.map { f =>
-          val dartName = trans.escapeDartKeyword(f.name.name)
-          q"baboonDeepEquals($dartName, other.$dartName)"
+        val fieldComparisons = dto.fields.map {
+          f =>
+            val dartName = trans.escapeDartKeyword(f.name.name)
+            q"baboonDeepEquals($dartName, other.$dartName)"
         }
         q"""@override
            |bool operator ==(Object other) =>
@@ -396,9 +400,10 @@ object DtDefnTranslator {
       }
 
       val hashCodeBody = if (hasFields) {
-        val hashParts = dto.fields.map { f =>
-          val dartName = trans.escapeDartKeyword(f.name.name)
-          q"baboonDeepHashCode($dartName)"
+        val hashParts = dto.fields.map {
+          f =>
+            val dartName = trans.escapeDartKeyword(f.name.name)
+            q"baboonDeepHashCode($dartName)"
         }
         q"""@override
            |int get hashCode => Object.hashAll([${hashParts.join(", ")}]);""".stripMargin
@@ -411,9 +416,10 @@ object DtDefnTranslator {
         // Identifier toString — spec docs/spec/identifier-repr.md, PR-57d.
         renderIdentifierToString(dto, name)
       } else if (hasFields) {
-        val fieldStrings = dto.fields.map { f =>
-          val dartName = trans.escapeDartKeyword(f.name.name)
-          q"${f.name.name}: $$$dartName"
+        val fieldStrings = dto.fields.map {
+          f =>
+            val dartName = trans.escapeDartKeyword(f.name.name)
+            q"${f.name.name}: $$$dartName"
         }
         q"""@override
            |String toString() => '${name.asName}(${fieldStrings.join(", ")})';""".stripMargin
@@ -476,6 +482,8 @@ object DtDefnTranslator {
         "baboonDomainIdentifier",
         "baboonTypeIdentifier",
         "baboonSameInVersions",
+        "baboonForwardReadable",
+        "baboonMinReaderVersions",
       )
       val instanceGetters = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.valueGetter)
 
@@ -508,7 +516,7 @@ object DtDefnTranslator {
       mainMeta: List[DtDomainTreeTools.MetaField],
       codecMeta: Iterable[TextTree[DtValue]],
     ): DefnRepr = {
-      val contractParents  = adt.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
+      val contractParents = adt.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
       // MFACADE-PR-F: include BaboonMetaProvider on the sealed parent so polymorphic
       // dispatch sees the interface; concrete branch DTOs implement it via renderDto's
       // own conformance + instance getters.
@@ -579,9 +587,9 @@ object DtDefnTranslator {
       val ctxTypeParam   = wiringTranslator.serviceInterfaceTypeParam
       val methods = service.methods.map {
         m =>
-          val in       = trans.asDtRef(m.sig, domain, evo)
-          val out      = m.out.map(trans.asDtRef(_, domain, evo))
-          val baseRet  = out.map(o => q"$o").getOrElse(q"void")
+          val in      = trans.asDtRef(m.sig, domain, evo)
+          val out     = m.out.map(trans.asDtRef(_, domain, evo))
+          val baseRet = out.map(o => q"$o").getOrElse(q"void")
           // Under `--dt-async-services` the interface method returns `Future<T>`
           // (`Future<void>` for void), aligning with the always-async Dart
           // client; when off the bare `T`/`void` keeps output byte-identical.
@@ -614,46 +622,6 @@ object DtDefnTranslator {
 
     // ----- Identifier toString + parseRepr emission (PR-57d) -----
     // Spec: docs/spec/identifier-repr.md.
-    private sealed trait IdentifierFieldKind
-    private object IdentifierFieldKind {
-      case object Bit extends IdentifierFieldKind
-      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32 */
-      case object SignedLong extends IdentifierFieldKind /* i64 */
-      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong extends IdentifierFieldKind /* u64 */
-      case object Str extends IdentifierFieldKind
-      case object Uid extends IdentifierFieldKind
-      case object Tsu extends IdentifierFieldKind
-      case object Tso extends IdentifierFieldKind
-      case object Bytes extends IdentifierFieldKind
-      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
-    }
-
-    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
-      tpe match {
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          import TypeId.Builtins.*
-          b match {
-            case `bit`                 => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` => IdentifierFieldKind.SignedInt
-            case `i64`                 => IdentifierFieldKind.SignedLong
-            case `u08` | `u16` | `u32` => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                 => IdentifierFieldKind.UnsignedLong
-            case `str`                 => IdentifierFieldKind.Str
-            case `uid`                 => IdentifierFieldKind.Uid
-            case `tsu`                 => IdentifierFieldKind.Tsu
-            case `tso`                 => IdentifierFieldKind.Tso
-            case `bytes`               => IdentifierFieldKind.Bytes
-            case other =>
-              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
-          }
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          IdentifierFieldKind.NestedId(uid)
-        case other =>
-          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
-      }
-    }
-
     private def signedTypeName(tpe: TypeRef): String = tpe match {
       case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
       case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
@@ -707,7 +675,7 @@ object DtDefnTranslator {
         f =>
           val srcFieldName  = f.name.name
           val dartFieldName = trans.escapeDartKeyword(srcFieldName)
-          val kind          = identifierFieldKind(f.tpe)
+          val kind          = IdentifierFieldKind.classify(f.tpe)
           val valueExpr     = renderIdentifierFieldValueExpr(dartFieldName, kind)
           q""""$srcFieldName:" + ($valueExpr)"""
       }
@@ -734,7 +702,7 @@ object DtDefnTranslator {
           val valVar       = s"${srcFieldName}_v"
           val resVar       = s"${srcFieldName}_r"
           val isLast       = idx == dto.fields.length - 1
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val tpe          = trans.asDtRef(f.tpe, domain, evo)
 
           val parseHead =

@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.JvTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.java.JvTypes.*
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, DomainProductTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -120,14 +120,7 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
     p: CompilerProduct,
     translate: DomainMember.User => F[NEList[BaboonIssue], List[JvDefnTranslator.Output]],
   ): F[NEList[BaboonIssue], List[JvDefnTranslator.Output]] = {
-    if (target.output.products.contains(p)) {
-      F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-        case (_, defn: DomainMember.User) => translate(defn)
-        case _                            => F.pure(List.empty)
-      }
-    } else {
-      F.pure(List.empty)
-    }
+    DomainProductTranslator.translate(domain, target.output.products, p, translate)
   }
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[JvDefnTranslator.Output]] = {
@@ -170,26 +163,36 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
     val basename = jvFiles.basename(domain, lineage.evolution)
     val pkg      = trans.toJvPkg(domain.id, domain.version, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q"""unmodified.put("${tid.toString}", $jvList.of(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}));"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q"""unmodified.put("${tid.toString}", $jvList.of(${versions.map(s => q"\"$s\"").join(", ")}));"""
+    }
+
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s"""java.util.Map.entry("$v", "$tier")""" }.mkString(", ")
+        q"""forwardReadable.put("${tid.toString}", $jvMap.ofEntries($pairs));"""
+    }
 
     val metaTree =
       q"""public final class BaboonMetadata implements $baboonMeta {
          |  private static final $jvMap<String, $jvList<String>> unmodified = new java.util.HashMap<>();
+         |  private static final $jvMap<String, $jvMap<String, String>> forwardReadable = new java.util.HashMap<>();
          |
          |  static {
          |    ${entries.joinN().shift(4).trim}
+         |    ${forwardEntries.joinN().shift(4).trim}
          |  }
          |
          |  @Override
          |  public $jvList<String> sameInVersions(String typeId) {
          |    return unmodified.getOrDefault(typeId, $jvList.of());
+         |  }
+         |
+         |  @Override
+         |  public $jvMap<String, String> forwardReadableVersions(String typeId) {
+         |    return forwardReadable.getOrDefault(typeId, $jvMap.of());
          |  }
          |}""".stripMargin
 
@@ -303,6 +306,8 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
           rt("BaboonDomainVersion.java", "baboon-runtime/java/BaboonDomainVersion.java"),
           rt("BaboonTypeMeta.java", "baboon-runtime/java/BaboonTypeMeta.java"),
           rt("BaboonAnyOpaque.java", "baboon-runtime/java/BaboonAnyOpaque.java"),
+          rt("BaboonAnyJsonCodec.java", "baboon-runtime/java/BaboonAnyJsonCodec.java"),
+          rt("BaboonAnyBinCodec.java", "baboon-runtime/java/BaboonAnyBinCodec.java"),
           rt("BaboonCodecsFacade.java", "baboon-runtime/java/BaboonCodecsFacade.java"),
           rt("BaboonMethodId.java", "baboon-runtime/java/BaboonMethodId.java"),
           rt("BaboonWiringError.java", "baboon-runtime/java/BaboonWiringError.java"),
@@ -317,6 +322,7 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
           rt("JsonMuxerCtx.java", "baboon-runtime/java/JsonMuxerCtx.java"),
           rt("UebaMuxerCtx.java", "baboon-runtime/java/UebaMuxerCtx.java"),
           rt("BaboonExt.java", "baboon-runtime/java/BaboonExt.java"),
+          rt("BaboonMetadataAccess.java", "baboon-runtime/java/BaboonMetadataAccess.java"),
         )
       )
     } else {

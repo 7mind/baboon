@@ -4,6 +4,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.typescript.TsTypes.*
+import io.septimalmind.baboon.translator.typescript.TsDefnTranslator.ExportedSymbol
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -27,6 +28,7 @@ object TsServiceWiringTranslator {
     evo: BaboonEvolution,
     tsFileTools: TsFileTools,
   ) extends TsServiceWiringTranslator {
+    private val scalarOps = new TsScalarCodecOps(target)
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "typescript", target.language.serviceResult, target.language.pragmas)
@@ -121,31 +123,8 @@ object TsServiceWiringTranslator {
         val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsJsonCodecGenerator => c }.get.codecName(tsType)
         q"$codec.instance.decode($tsBaboonCodecContext.Default, $wire)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit => q"$wire as boolean"
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 | TypeId.Builtins.f32 |
-              TypeId.Builtins.f64 =>
-            q"$wire as number"
-          case TypeId.Builtins.i64 | TypeId.Builtins.u64 => q"BigInt($wire as string)"
-          case TypeId.Builtins.f128                      => q"$tsBaboonDecimal.fromString($wire as string)"
-          case TypeId.Builtins.str | TypeId.Builtins.uid => q"$wire as string"
-          case TypeId.Builtins.bytes                     => q"$tsBinTools.hexDecode($wire as string)"
-          case TypeId.Builtins.tsu =>
-            target.language.timestampsUtcMode match {
-              case "string" => q"$wire as string"
-              case "date"   => q"new Date($wire as string)"
-              case _        => q"$tsBaboonDateTimeUtc.fromISO($wire as string)"
-            }
-          case TypeId.Builtins.tso =>
-            target.language.timestampsOffsetMode match {
-              case "string" => q"$wire as string"
-              case "date"   => q"new Date($wire as string)"
-              case _        => q"$tsBaboonDateTimeOffset.fromISO($wire as string)"
-            }
-          case other => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case b: TypeId.BuiltinScalar => scalarOps.decodeJson(b, wire)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[TsValue]): TextTree[TsValue] = id match {
@@ -153,24 +132,8 @@ object TsServiceWiringTranslator {
         val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsJsonCodecGenerator => c }.get.codecName(tsType)
         q"$codec.instance.encode($tsBaboonCodecContext.Default, $value)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.i64 | TypeId.Builtins.u64 => q"$value.toString()"
-          case TypeId.Builtins.f128                      => q"$value.toString()"
-          case TypeId.Builtins.bytes                     => q"$tsBinTools.hexEncode($value)"
-          case TypeId.Builtins.tsu =>
-            target.language.timestampsUtcMode match {
-              case "string" => value
-              case _        => q"$value.toISOString()"
-            }
-          case TypeId.Builtins.tso =>
-            target.language.timestampsOffsetMode match {
-              case "string" => value
-              case _        => q"$value.toISOString()"
-            }
-          case _ => value
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case b: TypeId.BuiltinScalar => scalarOps.encodeJson(b, value)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaDecodeExpr(id: TypeId, reader: TextTree[TsValue]): TextTree[TsValue] = id match {
@@ -178,38 +141,8 @@ object TsServiceWiringTranslator {
         val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsUEBACodecGenerator => c }.get.codecName(tsType)
         q"$codec.instance.decode($codecCtxRef, $reader)"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit   => q"$tsBinTools.readBool($reader)"
-          case TypeId.Builtins.i08   => q"$tsBinTools.readI8($reader)"
-          case TypeId.Builtins.i16   => q"$tsBinTools.readI16($reader)"
-          case TypeId.Builtins.i32   => q"$tsBinTools.readI32($reader)"
-          case TypeId.Builtins.i64   => q"$tsBinTools.readI64($reader)"
-          case TypeId.Builtins.u08   => q"$tsBinTools.readU8($reader)"
-          case TypeId.Builtins.u16   => q"$tsBinTools.readU16($reader)"
-          case TypeId.Builtins.u32   => q"$tsBinTools.readU32($reader)"
-          case TypeId.Builtins.u64   => q"$tsBinTools.readU64($reader)"
-          case TypeId.Builtins.f32   => q"$tsBinTools.readF32($reader)"
-          case TypeId.Builtins.f64   => q"$tsBinTools.readF64($reader)"
-          case TypeId.Builtins.f128  => q"$tsBinTools.readDecimal($reader)"
-          case TypeId.Builtins.str   => q"$tsBinTools.readString($reader)"
-          case TypeId.Builtins.bytes => q"$tsBinTools.readBytes($reader)"
-          case TypeId.Builtins.uid   => q"$tsBinTools.readUuid($reader)"
-          case TypeId.Builtins.tsu =>
-            target.language.timestampsUtcMode match {
-              case "string" => q"$tsBinTools.readTimestampUtc($reader).toISOString()"
-              case "date"   => q"$tsBinTools.readTimestampUtc($reader).date"
-              case _        => q"$tsBinTools.readTimestampUtc($reader)"
-            }
-          case TypeId.Builtins.tso =>
-            target.language.timestampsOffsetMode match {
-              case "string" => q"$tsBinTools.readTimestampOffset($reader).toISOString()"
-              case "date"   => q"$tsBinTools.readTimestampOffset($reader).date"
-              case _        => q"$tsBinTools.readTimestampOffset($reader)"
-            }
-          case other => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case b: TypeId.BuiltinScalar => scalarOps.decodeUeba(b, reader)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaEncodeStmt(id: TypeId, writer: TextTree[TsValue], value: TextTree[TsValue]): TextTree[TsValue] = id match {
@@ -217,38 +150,8 @@ object TsServiceWiringTranslator {
         val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsUEBACodecGenerator => c }.get.codecName(tsType)
         q"$codec.instance.encode($codecCtxRef, $value, $writer);"
-      case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit   => q"$tsBinTools.writeBool($writer, $value);"
-          case TypeId.Builtins.i08   => q"$tsBinTools.writeI8($writer, $value);"
-          case TypeId.Builtins.i16   => q"$tsBinTools.writeI16($writer, $value);"
-          case TypeId.Builtins.i32   => q"$tsBinTools.writeI32($writer, $value);"
-          case TypeId.Builtins.i64   => q"$tsBinTools.writeI64($writer, $value);"
-          case TypeId.Builtins.u08   => q"$tsBinTools.writeU8($writer, $value);"
-          case TypeId.Builtins.u16   => q"$tsBinTools.writeU16($writer, $value);"
-          case TypeId.Builtins.u32   => q"$tsBinTools.writeU32($writer, $value);"
-          case TypeId.Builtins.u64   => q"$tsBinTools.writeU64($writer, $value);"
-          case TypeId.Builtins.f32   => q"$tsBinTools.writeF32($writer, $value);"
-          case TypeId.Builtins.f64   => q"$tsBinTools.writeF64($writer, $value);"
-          case TypeId.Builtins.f128  => q"$tsBinTools.writeDecimal($writer, $value);"
-          case TypeId.Builtins.str   => q"$tsBinTools.writeString($writer, $value);"
-          case TypeId.Builtins.bytes => q"$tsBinTools.writeBytes($writer, $value);"
-          case TypeId.Builtins.uid   => q"$tsBinTools.writeUuid($writer, $value);"
-          case TypeId.Builtins.tsu =>
-            target.language.timestampsUtcMode match {
-              case "string" => q"$tsBinTools.writeTimestampUtc($writer, $tsBaboonDateTimeUtc.fromISO($value));"
-              case "date"   => q"$tsBinTools.writeTimestampUtc($writer, $tsBaboonDateTimeUtc.fromDate($value));"
-              case _        => q"$tsBinTools.writeTimestampUtc($writer, $value);"
-            }
-          case TypeId.Builtins.tso =>
-            target.language.timestampsOffsetMode match {
-              case "string" => q"$tsBinTools.writeTimestampOffset($writer, $tsBaboonDateTimeOffset.fromISO($value));"
-              case "date"   => q"$tsBinTools.writeTimestampOffset($writer, $tsBaboonDateTimeOffset.fromISO($value.toISOString()));"
-              case _        => q"$tsBinTools.writeTimestampOffset($writer, $value);"
-            }
-          case other => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
-      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+      case b: TypeId.BuiltinScalar => scalarOps.encodeUeba(b, writer, value)
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     override def translateServiceRt(): Option[TsDefnTranslator.Output] = {
@@ -289,12 +192,7 @@ object TsServiceWiringTranslator {
         )
       } else None
 
-      // Include BaboonEither as TsType to trigger import (only for built-in)
-      val importTrigger: Option[TextTree[TsValue]] = if (isBuiltinEither) {
-        Some(q"type _BaboonEither<L, R> = $baboonEither<L, R>;")
-      } else None
-
-      val tree = Seq[Option[TextTree[TsValue]]](importTrigger, Some(rtTrait), defaultImpl).flatten.joinNN()
+      val tree = (rtTrait :: defaultImpl.toList).joinNN()
 
       Some(
         TsDefnTranslator.Output(
@@ -302,6 +200,9 @@ object TsServiceWiringTranslator {
           tree,
           rtModule,
           CompilerProduct.Definition,
+          imports = if (isBuiltinEither) List(baboonEither) else Nil,
+          exports =
+            Some(List(ExportedSymbol("IBaboonServiceRt", typeOnly = true)) ++ defaultImpl.toList.map(_ => ExportedSymbol("BaboonServiceRtDefault", typeOnly = false))),
         )
       )
     }
@@ -315,6 +216,17 @@ object TsServiceWiringTranslator {
 
           val wiringPath   = getWiringPath(defn)
           val wiringModule = TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ wiringPath.stripSuffix(".ts").split('/').toList)
+          val serviceName  = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg).name
+          val exported = List(true -> activeJsonCodec(service), false -> activeBinCodec(service)).flatMap {
+            case (isJson, codec) =>
+              codec.toList.flatMap {
+                _ =>
+                  List(
+                    ExportedSymbol(typeTranslator.serviceInvokeName(serviceName, isJson), typeOnly  = false),
+                    ExportedSymbol(typeTranslator.serviceWrapperName(serviceName, isJson), typeOnly = false),
+                  )
+              }
+          }
 
           Some(
             TsDefnTranslator.Output(
@@ -322,6 +234,8 @@ object TsServiceWiringTranslator {
               methods,
               wiringModule,
               CompilerProduct.Definition,
+              imports = if (resolved.noErrors) Nil else containerTypeRef.toList,
+              exports = Some(exported),
             )
           )
         case _ => None
@@ -362,7 +276,7 @@ object TsServiceWiringTranslator {
                   }
                   q"""public async ${m.name.name}Json(${ctxParamDecl}arg: $inType): Promise<$retType> {
                      |    const encoded = JSON.stringify($encodeInExpr);
-                     |    const resp = await this.transportJson(${ctxArgPass}"${svcType.name}", "${m.name.name}", encoded);
+                     |    const resp = await this.transportJson($ctxArgPass"${svcType.name}", "${m.name.name}", encoded);
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
               }
@@ -378,7 +292,7 @@ object TsServiceWiringTranslator {
                   q"""public async ${m.name.name}(${ctxParamDecl}arg: $inType, $codecCtxName: $tsBaboonCodecContext = $tsBaboonCodecContext.Default): Promise<$retType> {
                      |    const writer = new $tsBaboonBinWriter();
                      |    ${uebaEncodeStmt(m.sig.id.asInstanceOf[TypeId.Scalar], q"writer", q"arg")};
-                     |    const resp = await this.transportUeba(${ctxArgPass}"${svcType.name}", "${m.name.name}", writer.toBytes());
+                     |    const resp = await this.transportUeba($ctxArgPass"${svcType.name}", "${m.name.name}", writer.toBytes());
                      |    ${decodeOut.shift(4).trim}
                      |}""".stripMargin
               }
@@ -423,6 +337,7 @@ object TsServiceWiringTranslator {
               clientTree,
               clientModule,
               CompilerProduct.Definition,
+              exports = Some(List(ExportedSymbol(typeTranslator.serviceClientName(svcType.name), typeOnly = false))),
             )
           )
         case _ => None
@@ -471,10 +386,10 @@ object TsServiceWiringTranslator {
                 )
                 if (resolved.noErrors) {
                   q"""case "${s.id.name.name}":
-                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}$codecCtxName);""".stripMargin
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, $ctxArgPass$codecCtxName);""".stripMargin
                 } else {
                   q"""case "${s.id.name.name}":
-                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}$codecCtxName);""".stripMargin
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, $ctxArgPass$codecCtxName);""".stripMargin
                 }
             }
         }
@@ -492,7 +407,7 @@ object TsServiceWiringTranslator {
              |    methodName: string,
              |    data: Uint8Array,
              |    impls: {${implFields.join("; ")}},
-             |    $rtParam${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
+             |    $rtParam$ctxParamDecl$codecCtxName: $tsBaboonCodecContext
              |): $retTypeUeba {
              |    switch (serviceName) {
              |        ${cases.joinN().shift(8).trim}
@@ -516,10 +431,10 @@ object TsServiceWiringTranslator {
                 )
                 if (resolved.noErrors) {
                   q"""case "${s.id.name.name}":
-                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}$codecCtxName);""".stripMargin
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, $ctxArgPass$codecCtxName);""".stripMargin
                 } else {
                   q"""case "${s.id.name.name}":
-                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}$codecCtxName);""".stripMargin
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, $ctxArgPass$codecCtxName);""".stripMargin
                 }
             }
         }
@@ -532,7 +447,7 @@ object TsServiceWiringTranslator {
              |    methodName: string,
              |    data: string,
              |    impls: {${implFields.join("; ")}},
-             |    $rtParam${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
+             |    $rtParam$ctxParamDecl$codecCtxName: $tsBaboonCodecContext
              |): $retTypeJson {
              |    switch (serviceName) {
              |        ${cases.joinN().shift(8).trim}
@@ -543,19 +458,7 @@ object TsServiceWiringTranslator {
         )
       } else None
 
-      // When the dispatcher's return type contains a result container (errors
-      // mode), trigger the symbol imports for `BaboonEither<…>` and
-      // `BaboonWiringError` via a phantom type alias — the dispatcher's
-      // return-type string `Promise<BaboonEither<BaboonWiringError, …>>` is
-      // built textually via `renderContainer` and would otherwise reference
-      // unimported names.
-      val containerImportTrigger: Option[TextTree[TsValue]] =
-        if (resolved.noErrors) None
-        else containerTypeRef.map(ref => q"type _DispatcherContainerImport<L, R> = $ref<L, R>;")
-      val wiringErrorImportTrigger: Option[TextTree[TsValue]] =
-        if (resolved.noErrors) None else Some(q"type _DispatcherWiringErrorImport = $baboonWiringError;")
-
-      val tree             = (containerImportTrigger.toSeq ++ wiringErrorImportTrigger.toSeq ++ Seq(uebaFn, jsonFn).flatten).joinNN()
+      val tree             = Seq(uebaFn, jsonFn).flatten.joinNN()
       val dispatcherPath   = s"$fbase/baboon-dispatcher.ts"
       val dispatcherModule = TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ dispatcherPath.stripSuffix(".ts").split('/').toList)
 
@@ -565,6 +468,9 @@ object TsServiceWiringTranslator {
           tree,
           dispatcherModule,
           CompilerProduct.Definition,
+          imports = if (resolved.noErrors) Nil else containerTypeRef.toList :+ baboonWiringError,
+          exports =
+            Some(uebaFn.toList.map(_ => ExportedSymbol("dispatchUeba", typeOnly = false)) ++ jsonFn.toList.map(_ => ExportedSymbol("dispatchJson", typeOnly = false))),
         )
       )
     }
@@ -604,8 +510,8 @@ object TsServiceWiringTranslator {
       case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
       case _                                             => None
     }
-    private def ctxTypeParamDecl: String              = ctxTypeName.fold("")(tn => s"<$tn>")
-    private def ctxTypeArg: TextTree[TsValue]         = ctxTypeName.fold(TextTree.text[TsValue](""))(tn => q"<$tn>")
+    private def ctxTypeParamDecl: String      = ctxTypeName.fold("")(tn => s"<$tn>")
+    private def ctxTypeArg: TextTree[TsValue] = ctxTypeName.fold(TextTree.text[TsValue](""))(tn => q"<$tn>")
 
     // The codec context parameter is always present in wiring/client/wrapper
     // signatures; when a service context is active its parameter name (default
@@ -654,19 +560,19 @@ object TsServiceWiringTranslator {
       isJson: Boolean,
       retType: TextTree[TsValue],
     ): TextTree[TsValue] = {
-      val wireType   = if (isJson) q"string"     else q"Uint8Array"
-      val invokerFn  = typeTranslator.serviceInvokeName(svcType.name, isJson)
+      val wireType            = if (isJson) q"string" else q"Uint8Array"
+      val invokerFn           = typeTranslator.serviceInvokeName(svcType.name, isJson)
       val wrapperName: String = typeTranslator.serviceWrapperName(svcType.name, isJson)
 
       val svcCtxTypeName: Option[String] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(tn, _)  => Some(tn)
-        case ResolvedServiceContext.ConcreteContext(tn, _)  => Some(tn)
+        case ResolvedServiceContext.NoContext              => None
+        case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+        case ResolvedServiceContext.ConcreteContext(tn, _) => Some(tn)
       }
       val svcCtxArgName: Option[String] = resolvedCtx match {
-        case ResolvedServiceContext.NoContext               => None
-        case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
-        case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+        case ResolvedServiceContext.NoContext              => None
+        case ResolvedServiceContext.AbstractContext(_, pn) => Some(pn)
+        case ResolvedServiceContext.ConcreteContext(_, pn) => Some(pn)
       }
 
       // The implemented runtime contract follows the context mode: `none` keeps
@@ -695,8 +601,8 @@ object TsServiceWiringTranslator {
 
       val invokerArgs: List[TextTree[TsValue]] = {
         val base: List[TextTree[TsValue]] = List(q"method", q"data", q"this.impl")
-        val withRt     = rtField.fold(base)(_ => base :+ q"this.rt")
-        val withSvcCtx = svcCtxArgName.fold(withRt)(n => withRt :+ TextTree.text[TsValue](n))
+        val withRt                        = rtField.fold(base)(_ => base :+ q"this.rt")
+        val withSvcCtx                    = svcCtxArgName.fold(withRt)(n => withRt :+ TextTree.text[TsValue](n))
         withSvcCtx :+ codecCtxRef
       }
 
@@ -709,7 +615,7 @@ object TsServiceWiringTranslator {
          |        ${ctorAssigns.join("\n").shift(8).trim}
          |    }
          |
-         |    invoke(method: $baboonMethodId, data: $wireType, ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext): $retType {
+         |    invoke(method: $baboonMethodId, data: $wireType, $ctxParamDecl$codecCtxName: $tsBaboonCodecContext): $retType {
          |        return $invokerFn(${invokerArgs.join(", ")});
          |    }
          |}""".stripMargin
@@ -736,7 +642,7 @@ object TsServiceWiringTranslator {
     private def noErrorsJsonRetType: String = if (isAsync) "Promise<string>" else "string"
     private def noErrorsUebaRetType: String = if (isAsync) "Promise<Uint8Array>" else "Uint8Array"
 
-    private def noErrorsJsonRetTree: TextTree[TsValue] = if (isAsync) q"Promise<string>"     else q"string"
+    private def noErrorsJsonRetTree: TextTree[TsValue] = if (isAsync) q"Promise<string>" else q"string"
     private def noErrorsUebaRetTree: TextTree[TsValue] = if (isAsync) q"Promise<Uint8Array>" else q"Uint8Array"
 
     private def generateNoErrorsJsonFn(
@@ -767,7 +673,7 @@ object TsServiceWiringTranslator {
          |    method: $baboonMethodId,
          |    data: string,
          |    impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg,
-         |    ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
+         |    $ctxParamDecl$codecCtxName: $tsBaboonCodecContext
          |): $noErrorsJsonRetType {
          |    switch (method.methodName) {
          |        ${cases.shift(8).trim}
@@ -808,7 +714,7 @@ object TsServiceWiringTranslator {
          |    method: $baboonMethodId,
          |    data: Uint8Array,
          |    impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg,
-         |    ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
+         |    $ctxParamDecl$codecCtxName: $tsBaboonCodecContext
          |): $noErrorsUebaRetType {
          |    switch (method.methodName) {
          |        ${cases.shift(8).trim}
@@ -836,14 +742,9 @@ object TsServiceWiringTranslator {
         if (activeBinCodec(service).isDefined) Some(generateErrorsUebaFn(service, svcType))
         else None
 
-      val importTrigger: Option[TextTree[TsValue]] = containerTypeRef.map {
-        ref =>
-          q"type _ContainerImport<L, R> = $ref<L, R>;"
-      }
-
       val wrappers = generateServiceWrappers(service, svcType, errorsJsonRetTree, errorsUebaRetTree)
 
-      (importTrigger.toSeq ++ jsonFn.toSeq ++ uebaFn.toSeq :+ wrappers).joinNN()
+      (jsonFn.toSeq ++ uebaFn.toSeq :+ wrappers).joinNN()
     }
 
     private def errorsJsonRetType: String = {
@@ -1033,7 +934,7 @@ object TsServiceWiringTranslator {
          |    data: string,
          |    impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg,
          |    rt: $ibaboonServiceRt,
-         |    ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
+         |    $ctxParamDecl$codecCtxName: $tsBaboonCodecContext
          |): $errorsJsonRetType {
          |    switch (method.methodName) {
          |        ${cases.shift(8).trim}
@@ -1057,7 +958,7 @@ object TsServiceWiringTranslator {
          |    data: Uint8Array,
          |    impl: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg,
          |    rt: $ibaboonServiceRt,
-         |    ${ctxParamDecl}$codecCtxName: $tsBaboonCodecContext
+         |    $ctxParamDecl$codecCtxName: $tsBaboonCodecContext
          |): $errorsUebaRetType {
          |    switch (method.methodName) {
          |        ${cases.shift(8).trim}

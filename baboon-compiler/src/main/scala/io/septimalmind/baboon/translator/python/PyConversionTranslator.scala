@@ -54,6 +54,13 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
         val typeFrom = typeTranslator.asPyTypeVersioned(conversion.sourceTpe, srcDom, evolution, pyFileTools.definitionsBasePkg)
         def typeTo   = typeTranslator.asPyType(conversion.targetTpe, domain, evolution, pyFileTools.definitionsBasePkg)
 
+        val targetMeta = if (conversion.sourceTpe != conversion.targetTpe) {
+          q"""@$pyProperty
+             |def _target_type_id(self) -> str:
+             |    return "${conversion.targetTpe.toString}"
+             |""".stripMargin
+        } else q""
+
         val meta =
           q"""@$pyProperty
              |def version_from(self) -> str:
@@ -68,7 +75,9 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
              |    return "${conversion.sourceTpe.toString}"
              |""".stripMargin
 
-        val convTree           = genConversionTree(conversion, typeFrom, typeTo, convType, meta)
+        val conversionMeta = List(meta, targetMeta).filterNot(_.isEmpty).join("\n")
+
+        val convTree           = genConversionTree(conversion, typeFrom, typeTo, convType, conversionMeta)
         val registerTree       = genRegisterTree(conversion, typeFrom, typeTo, convType)
         val abstractConversion = genAbstractConversion(conversion, convType)
 
@@ -171,11 +180,11 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
         val ops = c.ops.map(o => o.targetField -> o).toMap
         val assigns = dtoDefn.fields.map {
           field =>
-            val op           = ops(field)
-            val fieldName    = field.name.name
+            val op        = ops(field)
+            val fieldName = field.name.name
             // Access source object attribute using the keyword-escaped name.
-            val srcAttrName  = escapePyKeyword(fieldName)
-            val fieldRef     = q"_from.$srcAttrName"
+            val srcAttrName = escapePyKeyword(fieldName)
+            val fieldRef    = q"_from.$srcAttrName"
             val expr = op match {
               case o: FieldOp.Transfer => transfer(o.targetField.tpe, fieldRef)
 
@@ -232,16 +241,19 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
         }
         // Local variable references, then constructor kwargs using escaped attribute names.
         val ctorArgs = dtoDefn.fields.map(f => q"${escapePyKeyword(f.name.name).toLowerCase}")
-        Some(q"""class ${convType.name}($abstractConversion[$typeFrom, $typeTo]):
-                |    @$pyOverride
-                |    def do_convert(self, ctx, conversions: $baboonAbstractConversions, _from: $typeFrom) -> $typeTo:
-                |        ${assigns.join("\n").shift(8).trim}
-                |        return $typeTo(
-                |            ${ctorArgs.zip(dtoDefn.fields).map { case (a, f) => q"${if (PyKeywords.isKeyword(f.name.name)) s"${f.name.name}_" else f.name.name}=$a" }.join(",\n").shift(12).trim}
-                |        )
-                |
-                |    ${meta.shift(4).trim}
-                |""".stripMargin.trim)
+        Some(
+          q"""class ${convType.name}($abstractConversion[$typeFrom, $typeTo]):
+             |    @$pyOverride
+             |    def do_convert(self, ctx, conversions: $baboonAbstractConversions, _from: $typeFrom) -> $typeTo:
+             |        ${assigns.join("\n").shift(8).trim}
+             |        return $typeTo(
+             |            ${ctorArgs
+              .zip(dtoDefn.fields).map { case (a, f) => q"${if (PyKeywords.isKeyword(f.name.name)) s"${f.name.name}_" else f.name.name}=$a" }.join(",\n").shift(12).trim}
+             |        )
+             |
+             |    ${meta.shift(4).trim}
+             |""".stripMargin.trim
+        )
 
       case _: Conversion.CustomConversionRequired =>
         Some(q"""class ${convType.name}($abstractConversion[$typeFrom, $typeTo]):
@@ -262,19 +274,12 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
       case (TypeId.Builtins.opt, TypeId.Builtins.lst) =>
         q"[] if $fieldRef is None else [${transfer(newArgs.head, fieldRef, Some(oldArgs.head))}]"
       case (TypeId.Builtins.opt, TypeId.Builtins.set) =>
-        q"{} if $fieldRef is None else {${transfer(newArgs.head, fieldRef, Some(oldArgs.head))}}"
+        q"$pySet() if $fieldRef is None else {${transfer(newArgs.head, fieldRef, Some(oldArgs.head))}}"
       case (TypeId.Builtins.opt, TypeId.Builtins.opt) =>
         q"None if $fieldRef is None else ${transfer(newArgs.head, fieldRef, Some(oldArgs.head))}"
 
-      case (TypeId.Builtins.lst, TypeId.Builtins.lst) =>
-        q"[${transfer(newArgs.head, tmp, Some(oldArgs.head))} for v in range(len($fieldRef))]"
-      case (TypeId.Builtins.lst, TypeId.Builtins.set) =>
-        q"{${transfer(newArgs.head, tmp, Some(oldArgs.head))} for v in range(len($fieldRef))}"
-
-      case (TypeId.Builtins.set, TypeId.Builtins.lst) =>
-        q"[${transfer(newArgs.head, tmp, Some(oldArgs.head))} for v in range(len($fieldRef))]"
-      case (TypeId.Builtins.set, TypeId.Builtins.set) =>
-        q"{${transfer(newArgs.head, tmp, Some(oldArgs.head))} for v in range(len($fieldRef))}"
+      case (TypeId.Builtins.lst | TypeId.Builtins.set, TypeId.Builtins.lst | TypeId.Builtins.set) =>
+        mapCollection(newId, fieldRef, transfer(newArgs.head, tmp, Some(oldArgs.head)))
 
       case (TypeId.Builtins.map, TypeId.Builtins.map) =>
         val keyRef = q"k"
@@ -339,7 +344,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
     val tmp = q"v"
     cn match {
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
-        q"[${transfer(c.args.head, tmp, Some(co.args.head))} for v in $oldRef]"
+        mapCollection(c.id, oldRef, transfer(c.args.head, tmp, Some(co.args.head)))
 
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.map =>
         val keyRef   = c.args.head
@@ -349,11 +354,17 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
 
         q"{${transfer(keyRef, kv, Some(co.args.head))}: ${transfer(valueRef, vv, Some(co.args.last))} for k,v in $oldRef.items()}"
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.set =>
-        q"{${transfer(c.args.head, tmp, Some(co.args.head))} for v in $oldRef}"
+        mapCollection(c.id, oldRef, transfer(c.args.head, tmp, Some(co.args.head)))
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
         q"None if $oldRef is None else ${transfer(c.args.head, oldRef, Some(co.args.head))}"
       case c => throw new IllegalStateException(s"Unsupported constructor type: ${c.id}")
     }
+  }
+
+  private def mapCollection(id: TypeId, source: TextTree[PyValue], element: TextTree[PyValue]): TextTree[PyValue] = id match {
+    case TypeId.Builtins.lst => q"[$element for v in $source]"
+    case TypeId.Builtins.set => q"{$element for v in $source}"
+    case other               => throw new IllegalStateException(s"Unsupported collection mapping: $other")
   }
 
   private def transferScalar(

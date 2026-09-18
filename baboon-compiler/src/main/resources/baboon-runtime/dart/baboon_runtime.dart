@@ -33,10 +33,29 @@ abstract class BaboonCodecsFacadeBase {
 /// (UEBA <-> JSON) can resolve codecs by `(domain, version, typeid)` from an `AnyMeta` envelope.
 /// `null` for the bare [defaultCtx]/[indexed]/[compact] singletons; [withFacade] is the single
 /// intended construction path for ctxes that thread a facade. Mirrors Scala/C#/Java/Kotlin/TS.
+/// Which lower bound the WRITER publishes as the UEBA envelope's `domainVersionMinCompat` (the v1
+/// binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration
+/// (UEBA)"). [strict]: the byte-identical bound (`baboonSameInVersions.first`) — the default.
+/// [tolerant]: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+/// payloads, `prefix-any-mode` for indexed ones); readers older than the writer then decode the
+/// payload with their newest codec, dropping the appended fields they do not know. A reader cannot
+/// distinguish such an envelope from a byte-identical one, so re-encoding intermediaries must run
+/// at the writer's version or newer.
+enum ForwardWritePolicy { strict, tolerant }
+
+/// Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+/// [v1] (default): single bound slot (`domainVersionMinCompat`), value chosen by [ForwardWritePolicy].
+/// [v2]: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for
+/// the payload's index mode; the reader's [ForwardReadPolicy] then applies to binary exactly as it does
+/// to JSON. Only readers that know v2 can decode it.
+enum BaboonEnvelopeVersion { v1, v2 }
+
 abstract class BaboonCodecContext {
   const BaboonCodecContext();
 
   bool get useIndices;
+  ForwardWritePolicy get forwardWritePolicy => ForwardWritePolicy.strict;
+  BaboonEnvelopeVersion get envelopeVersion => BaboonEnvelopeVersion.v1;
   BaboonCodecsFacadeBase? get facade => null;
 
   static const BaboonCodecContext defaultCtx = _BaboonCodecContextCompact();
@@ -45,6 +64,26 @@ abstract class BaboonCodecContext {
 
   static BaboonCodecContext withFacade(bool useIndices, BaboonCodecsFacadeBase facade) =>
       _BaboonCodecContextWithFacade(useIndices, facade);
+
+  /// Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade.
+  static BaboonCodecContext custom(bool useIndices, ForwardWritePolicy forwardWritePolicy, BaboonEnvelopeVersion envelopeVersion, BaboonCodecsFacadeBase? facade) =>
+      _BaboonCodecContextCustom(useIndices, forwardWritePolicy, envelopeVersion, facade);
+}
+
+class _BaboonCodecContextCustom extends BaboonCodecContext {
+  final bool _useIndices;
+  final ForwardWritePolicy _forwardWritePolicy;
+  final BaboonEnvelopeVersion _envelopeVersion;
+  final BaboonCodecsFacadeBase? _facade;
+  const _BaboonCodecContextCustom(this._useIndices, this._forwardWritePolicy, this._envelopeVersion, this._facade);
+  @override
+  bool get useIndices => _useIndices;
+  @override
+  ForwardWritePolicy get forwardWritePolicy => _forwardWritePolicy;
+  @override
+  BaboonEnvelopeVersion get envelopeVersion => _envelopeVersion;
+  @override
+  BaboonCodecsFacadeBase? get facade => _facade;
 }
 
 class _BaboonCodecContextCompact extends BaboonCodecContext {
@@ -156,9 +195,13 @@ mixin BaboonBinCodecIndexed {
     if (!hasIndex) return [];
     final count = indexElementsCount;
     final entries = <BaboonIndexEntry>[];
+    var previousEnd = 0;
     for (var i = 0; i < count; i++) {
       final offset = reader.readI32();
       final length = reader.readI32();
+      if (length <= 0) throw FormatException('Invalid UEBA index length: $length');
+      if (offset < previousEnd) throw FormatException('Invalid UEBA index offset: $offset');
+      previousEnd = offset + length;
       entries.add(BaboonIndexEntry(offset, length));
     }
     return entries;
@@ -177,21 +220,25 @@ class BaboonIndexEntry {
 class BaboonBinWriter {
   static const int _dotnetEpochOffsetMs = 62135596800000;
   Uint8List _buf;
+  late ByteData _view;
   int _pos;
 
   BaboonBinWriter([int initialCapacity = 256])
       : _buf = Uint8List(initialCapacity),
-        _pos = 0;
+        _pos = 0 {
+    _view = ByteData.sublistView(_buf);
+  }
 
   void _ensureCapacity(int needed) {
     if (_pos + needed > _buf.length) {
-      var newCap = _buf.length * 2;
+      var newCap = _buf.isEmpty ? 1 : _buf.length * 2;
       while (newCap < _pos + needed) {
         newCap *= 2;
       }
       final newBuf = Uint8List(newCap);
       newBuf.setRange(0, _pos, _buf);
       _buf = newBuf;
+      _view = ByteData.sublistView(newBuf);
     }
   }
 
@@ -204,72 +251,55 @@ class BaboonBinWriter {
 
   void writeI8(int value) {
     _ensureCapacity(1);
-    final bd = ByteData(1);
-    bd.setInt8(0, value);
-    _buf[_pos++] = bd.getUint8(0);
+    _view.setInt8(_pos, value);
+    _pos += 1;
   }
 
   void writeU16(int value) {
     _ensureCapacity(2);
-    final bd = ByteData(2);
-    bd.setUint16(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 2, bd.buffer.asUint8List());
+    _view.setUint16(_pos, value, Endian.little);
     _pos += 2;
   }
 
   void writeI16(int value) {
     _ensureCapacity(2);
-    final bd = ByteData(2);
-    bd.setInt16(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 2, bd.buffer.asUint8List());
+    _view.setInt16(_pos, value, Endian.little);
     _pos += 2;
   }
 
   void writeU32(int value) {
     _ensureCapacity(4);
-    final bd = ByteData(4);
-    bd.setUint32(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 4, bd.buffer.asUint8List());
+    _view.setUint32(_pos, value, Endian.little);
     _pos += 4;
   }
 
   void writeI32(int value) {
     _ensureCapacity(4);
-    final bd = ByteData(4);
-    bd.setInt32(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 4, bd.buffer.asUint8List());
+    _view.setInt32(_pos, value, Endian.little);
     _pos += 4;
   }
 
   void writeU64(int value) {
     _ensureCapacity(8);
-    final bd = ByteData(8);
-    bd.setUint64(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 8, bd.buffer.asUint8List());
+    _view.setUint64(_pos, value, Endian.little);
     _pos += 8;
   }
 
   void writeI64(int value) {
     _ensureCapacity(8);
-    final bd = ByteData(8);
-    bd.setInt64(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 8, bd.buffer.asUint8List());
+    _view.setInt64(_pos, value, Endian.little);
     _pos += 8;
   }
 
   void writeF32(double value) {
     _ensureCapacity(4);
-    final bd = ByteData(4);
-    bd.setFloat32(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 4, bd.buffer.asUint8List());
+    _view.setFloat32(_pos, value, Endian.little);
     _pos += 4;
   }
 
   void writeF64(double value) {
     _ensureCapacity(8);
-    final bd = ByteData(8);
-    bd.setFloat64(0, value, Endian.little);
-    _buf.setRange(_pos, _pos + 8, bd.buffer.asUint8List());
+    _view.setFloat64(_pos, value, Endian.little);
     _pos += 8;
   }
 
@@ -323,9 +353,7 @@ class BaboonBinWriter {
 
   void _writeRawI32(int value) {
     _ensureCapacity(4);
-    final bd = ByteData(4);
-    bd.setUint32(0, value & 0xFFFFFFFF, Endian.little);
-    _buf.setRange(_pos, _pos + 4, bd.buffer.asUint8List());
+    _view.setUint32(_pos, value & 0xFFFFFFFF, Endian.little);
     _pos += 4;
   }
 
@@ -376,7 +404,14 @@ class BaboonBinWriter {
   }
 
   Uint8List toBytes() {
-    return Uint8List.fromList(_buf.sublist(0, _pos));
+    return _buf.sublist(0, _pos);
+  }
+
+  void writeBuffer(BaboonBinWriter source) {
+    final length = source._pos;
+    _ensureCapacity(length);
+    _buf.setRange(_pos, _pos + length, source._buf);
+    _pos += length;
   }
 }
 
@@ -477,7 +512,7 @@ class BaboonBinReader {
     final length = readI32();
     final bytes = _buf.sublist(_pos, _pos + length);
     _pos += length;
-    return Uint8List.fromList(bytes);
+    return bytes;
   }
 
   /// Read exactly [count] raw bytes from the wire (no length prefix). Used by the `any`-field
@@ -487,7 +522,7 @@ class BaboonBinReader {
   Uint8List readNBytes(int count) {
     final bytes = _buf.sublist(_pos, _pos + count);
     _pos += count;
-    return Uint8List.fromList(bytes);
+    return bytes;
   }
 
   /// Skip [count] raw bytes without materialising them. Used by the `any`-field decoder helper to
@@ -738,7 +773,7 @@ class BaboonDateTimeOffset {
           offsetMillis == other.offsetMillis;
 
   @override
-  int get hashCode => Object.hashAll([epochMillis, offsetMillis]);
+  int get hashCode => Object.hash(epochMillis, offsetMillis);
 
   @override
   String toString() => BaboonTimeFormats.formatOffset(this);
@@ -837,7 +872,7 @@ class BaboonMethodId {
       other is BaboonMethodId && serviceId == other.serviceId && methodName == other.methodName;
 
   @override
-  int get hashCode => Object.hashAll([serviceId, methodName]);
+  int get hashCode => Object.hash(serviceId, methodName);
 
   @override
   String toString() => '$serviceId.$methodName';
@@ -1194,6 +1229,11 @@ class BaboonConversionNotFound extends BaboonCodecException {
 /// implementation provides this.
 abstract class BaboonMeta {
   List<String> sameInVersions(String typeId);
+
+  /// Forward-readability per type: newer version -> guarantee tier (see
+  /// [BaboonMetaProvider.baboonForwardReadable]). Concrete default keeps subclassing
+  /// stubs working; generated metadata overrides it.
+  Map<String, String> forwardReadableVersions(String typeId) => {};
 }
 
 /// Semver-shaped 3-tuple for `getCodec`'s version-window math. PR-19-D01 lesson: regex literals
@@ -1277,16 +1317,36 @@ class BaboonTypeMeta {
   final String domainVersion;
   final String domainVersionMinCompat;
   final String typeIdentifier;
+  /// Oldest domain version whose JSON codec can decode the payload under the json-additive
+  /// contract (tolerant key lookup; fields unknown to that version are dropped). Always
+  /// <= domainVersionMinCompat. Published as `$rv` when it differs from the (effective)
+  /// minCompat; the binary v1 envelope does not carry it. Empty means "= minCompat".
+  final String domainVersionReadableMin;
+
+  /// Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`.
+  static const String jsonReadableTier = 'json-additive';
+  /// Tier keys of the UEBA prefix bounds in `baboonMinReaderVersions`, per index mode.
+  static const String uebaPrefixCompactTier = 'prefix-compact';
+  static const String uebaPrefixAnyModeTier = 'prefix-any-mode';
 
   const BaboonTypeMeta(
     this.metaVersion,
     this.domainIdentifier,
     this.domainVersion,
     this.domainVersionMinCompat,
-    this.typeIdentifier,
-  );
+    this.typeIdentifier, [
+    this.domainVersionReadableMin = '',
+  ]);
 
   BaboonDomainVersion versionRef() => BaboonDomainVersion(domainIdentifier, domainVersion);
+
+  String get effectiveReadableMin => domainVersionReadableMin.isEmpty ? domainVersionMinCompat : domainVersionReadableMin;
+
+  BaboonDomainVersion? versionReadableMin() {
+    if (domainVersionReadableMin.isEmpty) return versionMinCompat();
+    if (domainVersionReadableMin == domainVersion) return null;
+    return BaboonDomainVersion(domainIdentifier, domainVersionReadableMin);
+  }
 
   BaboonDomainVersion? versionMinCompat() {
     if (domainVersionMinCompat.isEmpty) return null;
@@ -1325,7 +1385,9 @@ class BaboonTypeMeta {
     if (d is! String || v is! String || t is! String) return null;
     final uv = json[r'$uv'];
     final minCompat = (uv is String) ? uv : v;
-    return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t);
+    final rv = json[r'$rv'];
+    final readableMin = (rv is String) ? rv : minCompat;
+    return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t, readableMin);
   }
 
   static BaboonTypeMeta? readMetaBin(BaboonBinReader reader) =>
@@ -1347,13 +1409,40 @@ class BaboonTypeMeta {
         'BaboonTypeMeta.from: empty baboonSameInVersions for type [${meta.baboonDomainIdentifier}.$typeId]',
       );
     }
+    final readableMin = meta.baboonMinReaderVersions[jsonReadableTier];
+    if (readableMin == null) {
+      throw BaboonException(
+        'BaboonTypeMeta.from: baboonMinReaderVersions lacks "$jsonReadableTier" for type [${meta.baboonDomainIdentifier}.$typeId]',
+      );
+    }
     return BaboonTypeMeta(
       BaboonTypeMetaCodec.metaVersion,
       meta.baboonDomainIdentifier,
       meta.baboonDomainVersion,
       sameIn.first,
       typeId,
+      readableMin,
     );
+  }
+
+  /// Envelope for a UEBA payload written under [ctx]: [from] with `domainVersionMinCompat` lowered
+  /// to the prefix bound of the context's index mode when the writer policy is
+  /// [ForwardWritePolicy.tolerant].
+  static BaboonTypeMeta forBin(BaboonGenerated value, BaboonCodecContext ctx, {bool useAdtIdentifier = false}) {
+    final meta = from(value, useAdtIdentifier: useAdtIdentifier);
+    final v2 = ctx.envelopeVersion == BaboonEnvelopeVersion.v2;
+    if (!v2 && ctx.forwardWritePolicy == ForwardWritePolicy.strict) return meta;
+    final tier = ctx.useIndices ? uebaPrefixAnyModeTier : uebaPrefixCompactTier;
+    final bound = (value as BaboonMetaProvider).baboonMinReaderVersions[tier];
+    if (bound == null) {
+      throw BaboonException(
+        'BaboonTypeMeta.forBin: baboonMinReaderVersions lacks "$tier" for type [${meta.domainIdentifier}.${meta.typeIdentifier}]',
+      );
+    }
+    // v2 carries both bounds (the writer policy is irrelevant); v1 tolerant puts the prefix bound in its single slot
+    return v2
+        ? BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion2, meta.domainIdentifier, meta.domainVersion, meta.domainVersionMinCompat, meta.typeIdentifier, bound)
+        : BaboonTypeMeta(meta.metaVersion, meta.domainIdentifier, meta.domainVersion, bound, meta.typeIdentifier, meta.domainVersionReadableMin);
   }
 
   @override
@@ -1364,19 +1453,56 @@ class BaboonTypeMeta {
           domainIdentifier == other.domainIdentifier &&
           domainVersion == other.domainVersion &&
           domainVersionMinCompat == other.domainVersionMinCompat &&
+          effectiveReadableMin == other.effectiveReadableMin &&
           typeIdentifier == other.typeIdentifier;
 
   @override
-  int get hashCode => Object.hash(metaVersion, domainIdentifier, domainVersion, domainVersionMinCompat, typeIdentifier);
+  int get hashCode => Object.hash(metaVersion, domainIdentifier, domainVersion, domainVersionMinCompat, effectiveReadableMin, typeIdentifier);
 
   @override
   String toString() => 'BaboonTypeMeta($domainIdentifier.$typeIdentifier@$domainVersion)';
 }
 
 class BaboonTypeMetaCodec {
+  /// Layout written by default (binary) and always (JSON `$mv`).
   static const int metaVersion = 1;
+  static const int metaVersion2 = 2;
+
+  // v2 flags byte (codec-envelope.md §2.1.3): bit 0 — minCompat follows; bit 1 — readableMin follows.
+  static const int _v2FlagMinCompat = 0x01;
+  static const int _v2FlagReadableMin = 0x02;
+  static const int _v2FlagsMask = _v2FlagMinCompat | _v2FlagReadableMin;
 
   static void writeBin(BaboonTypeMeta meta, BaboonBinWriter writer) {
+    switch (meta.metaVersion) {
+      case metaVersion:
+        _writeBinV1(meta, writer);
+        return;
+      case metaVersion2:
+        _writeBinV2(meta, writer);
+        return;
+      default:
+        throw BaboonException('Unsupported binary envelope metaVersion ${meta.metaVersion}');
+    }
+  }
+
+  // v2: `02 | domainId | domainVersion | flags | [minCompat] | [readableMin] | typeId`; each bound is
+  // elided exactly as in JSON (minCompat when == domainVersion, readableMin when == effective minCompat)
+  static void _writeBinV2(BaboonTypeMeta meta, BaboonBinWriter writer) {
+    final minCompat = meta.domainVersionMinCompat.isEmpty ? meta.domainVersion : meta.domainVersionMinCompat;
+    final readableMin = meta.domainVersionReadableMin.isEmpty ? minCompat : meta.domainVersionReadableMin;
+    final hasMinCompat = minCompat != meta.domainVersion;
+    final hasReadableMin = readableMin != minCompat;
+    writer.writeU8(metaVersion2);
+    writer.writeString(meta.domainIdentifier);
+    writer.writeString(meta.domainVersion);
+    writer.writeU8((hasMinCompat ? _v2FlagMinCompat : 0) | (hasReadableMin ? _v2FlagReadableMin : 0));
+    if (hasMinCompat) writer.writeString(minCompat);
+    if (hasReadableMin) writer.writeString(readableMin);
+    writer.writeString(meta.typeIdentifier);
+  }
+
+  static void _writeBinV1(BaboonTypeMeta meta, BaboonBinWriter writer) {
     writer.writeU8(metaVersion);
     writer.writeString(meta.domainIdentifier);
     writer.writeString(meta.domainVersion);
@@ -1392,13 +1518,28 @@ class BaboonTypeMetaCodec {
   static BaboonTypeMeta? readMeta(BaboonBinReader reader) {
     final v = reader.readU8();
     if (v == metaVersion) return _readMetaV1(reader);
+    if (v == metaVersion2) return _readMetaV2(reader);
     return null;
   }
 
-  static BaboonTypeMeta _readMetaV1(BaboonBinReader reader) {
+  static BaboonTypeMeta? _readMetaV2(BaboonBinReader reader) {
+    final d = reader.readString();
+    final dv = reader.readString();
+    final flags = reader.readU8();
+    // unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+    if ((flags & ~_v2FlagsMask) != 0) return null;
+    final mc = (flags & _v2FlagMinCompat) != 0 ? reader.readString() : dv;
+    final rm = (flags & _v2FlagReadableMin) != 0 ? reader.readString() : mc;
+    final t = reader.readString();
+    return BaboonTypeMeta(metaVersion2, d, dv, mc, t, rm);
+  }
+
+  static BaboonTypeMeta? _readMetaV1(BaboonBinReader reader) {
     final d = reader.readString();
     final dv = reader.readString();
     final hasMinCompat = reader.readU8();
+    // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+    if (hasMinCompat != 0 && hasMinCompat != 1) return null;
     final mc = hasMinCompat == 1 ? reader.readString() : dv;
     final t = reader.readString();
     return BaboonTypeMeta(metaVersion, d, dv, mc, t);
@@ -1416,6 +1557,10 @@ class BaboonTypeMetaCodec {
     if (meta.domainVersion != meta.domainVersionMinCompat) {
       obj[r'$uv'] = meta.domainVersionMinCompat;
     }
+    // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+    if (meta.domainVersionReadableMin.isNotEmpty && meta.domainVersionReadableMin != meta.domainVersionMinCompat) {
+      obj[r'$rv'] = meta.domainVersionReadableMin;
+    }
     return obj;
   }
 }
@@ -1429,6 +1574,18 @@ abstract class BaboonMetaProvider {
   String get baboonDomainIdentifier;
   String get baboonTypeIdentifier;
   List<String> get baboonSameInVersions;
+
+  /// Forward-readability: newer domain versions whose encoded data THIS version's codec can
+  /// decode, mapped to the guarantee tier
+  /// ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+  /// The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
+  /// the cursor after decoding.
+  Map<String, String> get baboonForwardReadable;
+
+  /// Writer-side inverse of [baboonForwardReadable]: guarantee tier -> oldest domain version
+  /// whose codec can decode THIS version's encoding of this type. The "identical" bound equals
+  /// `baboonSameInVersions[0]`; the "json-additive" bound is published as `$rv`.
+  Map<String, String> get baboonMinReaderVersions;
 }
 
 /// Implemented by generated ADT branches. Mirrors Kotlin's `BaboonAdtMemberMeta` for the
@@ -1463,7 +1620,7 @@ int baboonDeepHashCode(dynamic value) {
   if (value == null) return 0;
   if (value is Map) {
     return Object.hashAllUnordered(
-      value.entries.map((e) => Object.hashAll([baboonDeepHashCode(e.key), baboonDeepHashCode(e.value)])),
+      value.entries.map((e) => Object.hash(baboonDeepHashCode(e.key), baboonDeepHashCode(e.value))),
     );
   }
   if (value is Set) {

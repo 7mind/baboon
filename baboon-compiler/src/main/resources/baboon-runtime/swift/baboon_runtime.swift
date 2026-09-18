@@ -79,6 +79,16 @@ public protocol BaboonMeta {
     // Until then, the facade only consumes this method via the Lazy-stored value, so missing
     // conformance only manifests when codecs from older versions are looked up.
     func sameInVersions(_ typeId: String) -> [String]
+
+    /// Forward-readability per type: newer version -> guarantee tier (see
+    /// `BaboonMetaProvider.baboonForwardReadable`).
+    func forwardReadableVersions(_ typeId: String) -> [String: String]
+}
+
+// Default keeps hand-written conforming stubs source-compatible; generated metadata
+// registries override it with the real table.
+public extension BaboonMeta {
+    func forwardReadableVersions(_ typeId: String) -> [String: String] { [:] }
 }
 
 // --- Codec Context ---
@@ -99,10 +109,35 @@ open class BaboonCodecsFacadeBase {
 // PR 9.1: promoted from Swift enum to class so subclassing can carry an optional facade
 // reference. Existing static accessors (`.defaultCtx`, `.compact`, `.indexed`, `.default`)
 // preserved; `useIndices` preserved as a property; new `facade` getter defaults to `nil`.
+// Which lower bound the WRITER publishes as the UEBA envelope's `domainVersionMinCompat` (the v1
+// binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration
+// (UEBA)"). `.strict`: the byte-identical bound (`baboonSameInVersions[0]`) — the default.
+// `.tolerant`: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+// payloads, `prefix-any-mode` for indexed ones); readers older than the writer then decode the
+// payload with their newest codec, dropping the appended fields they do not know. A reader cannot
+// distinguish such an envelope from a byte-identical one, so re-encoding intermediaries must run
+// at the writer's version or newer.
+public enum ForwardWritePolicy {
+    case strict
+    case tolerant
+}
+
+// Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+// `.v1` (default): single bound slot (`domainVersionMinCompat`), value chosen by `ForwardWritePolicy`.
+// `.v2`: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for
+// the payload's index mode; the reader's `ForwardReadPolicy` then applies to binary exactly as it does
+// to JSON. Only readers that know v2 can decode it.
+public enum BaboonEnvelopeVersion {
+    case v1
+    case v2
+}
+
 open class BaboonCodecContext {
     public init() {}
 
     open var useIndices: Bool { return false }
+    open var forwardWritePolicy: ForwardWritePolicy { return .strict }
+    open var envelopeVersion: BaboonEnvelopeVersion { return .v1 }
     open var facade: BaboonCodecsFacadeBase? { return nil }
 
     public static let defaultCtx: BaboonCodecContext = BaboonCodecContextCompact()
@@ -113,6 +148,29 @@ open class BaboonCodecContext {
     public static func withFacade(_ useIndices: Bool, _ facade: BaboonCodecsFacadeBase) -> BaboonCodecContext {
         return BaboonCodecContextWithFacade(useIndices: useIndices, facade: facade)
     }
+
+    // Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade.
+    public static func custom(_ useIndices: Bool, _ forwardWritePolicy: ForwardWritePolicy, _ envelopeVersion: BaboonEnvelopeVersion, _ facade: BaboonCodecsFacadeBase?) -> BaboonCodecContext {
+        return BaboonCodecContextCustom(useIndices: useIndices, forwardWritePolicy: forwardWritePolicy, envelopeVersion: envelopeVersion, facade: facade)
+    }
+}
+
+public final class BaboonCodecContextCustom: BaboonCodecContext {
+    private let _useIndices: Bool
+    private let _forwardWritePolicy: ForwardWritePolicy
+    private let _envelopeVersion: BaboonEnvelopeVersion
+    private let _facade: BaboonCodecsFacadeBase?
+    public init(useIndices: Bool, forwardWritePolicy: ForwardWritePolicy, envelopeVersion: BaboonEnvelopeVersion, facade: BaboonCodecsFacadeBase?) {
+        self._useIndices = useIndices
+        self._forwardWritePolicy = forwardWritePolicy
+        self._envelopeVersion = envelopeVersion
+        self._facade = facade
+        super.init()
+    }
+    public override var useIndices: Bool { return _useIndices }
+    public override var forwardWritePolicy: ForwardWritePolicy { return _forwardWritePolicy }
+    public override var envelopeVersion: BaboonEnvelopeVersion { return _envelopeVersion }
+    public override var facade: BaboonCodecsFacadeBase? { return _facade }
 }
 
 public final class BaboonCodecContextCompact: BaboonCodecContext {
@@ -224,18 +282,35 @@ public struct BaboonIndexEntry {
 }
 
 extension BaboonBinCodecIndexed {
+    public func consumeIndex(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> Int {
+        try readIndexEntries(reader) { _, _ in }
+    }
+
     public func readIndex(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> [BaboonIndexEntry] {
-        let header = reader.readU8()
-        let hasIndex = (header & 1) != 0
-        if !hasIndex { return [] }
-        let count = indexElementsCount
         var entries: [BaboonIndexEntry] = []
-        for _ in 0..<count {
-            let offset = reader.readI32()
-            let length = reader.readI32()
+        _ = try readIndexEntries(reader) { offset, length in
             entries.append(BaboonIndexEntry(offset: offset, length: length))
         }
         return entries
+    }
+
+    private func readIndexEntries(_ reader: BaboonBinReader, _ consume: (Int32, Int32) -> Void) throws -> Int {
+        guard reader.remaining >= 1 else { throw BaboonCodecError.truncated("Missing UEBA index header") }
+        let header = reader.readU8()
+        if header & 1 == 0 { return 0 }
+        let count = indexElementsCount
+        let indexEntryBytes = 2 * MemoryLayout<Int32>.size
+        var previousEnd: Int64 = 0
+        for _ in 0..<count {
+            guard reader.remaining >= indexEntryBytes else { throw BaboonCodecError.truncated("Truncated UEBA index entry") }
+            let offset = reader.readI32()
+            let length = reader.readI32()
+            guard length > 0 else { throw BaboonCodecError.invalidInput("Invalid UEBA index length: \(length)") }
+            guard Int64(offset) >= previousEnd else { throw BaboonCodecError.invalidInput("Invalid UEBA index offset: \(offset)") }
+            previousEnd = Int64(offset) + Int64(length)
+            consume(offset, length)
+        }
+        return count
     }
 }
 
@@ -419,38 +494,12 @@ public class BaboonBinWriter {
     }
 
     public func writeUuid(_ uuid: UUID) {
-        let hex = uuid.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-        assert(hex.count == 32)
-
-        let hexBytes = Array(hex.utf8)
-        func parseByte(_ offset: Int) -> UInt8 {
-            func hexVal(_ c: UInt8) -> UInt8 {
-                if c >= 48 && c <= 57 { return c - 48 }
-                if c >= 97 && c <= 102 { return c - 87 }
-                if c >= 65 && c <= 70 { return c - 55 }
-                fatalError("Invalid hex char")
-            }
-            return hexVal(hexBytes[offset]) << 4 | hexVal(hexBytes[offset + 1])
-        }
-
+        let bytes = uuid.uuid
         // .NET mixed-endian GUID format
-        var bytes = [UInt8](repeating: 0, count: 16)
-        // First 4 bytes: little-endian
-        bytes[0] = parseByte(6)
-        bytes[1] = parseByte(4)
-        bytes[2] = parseByte(2)
-        bytes[3] = parseByte(0)
-        // Next 2 bytes: little-endian
-        bytes[4] = parseByte(10)
-        bytes[5] = parseByte(8)
-        // Next 2 bytes: little-endian
-        bytes[6] = parseByte(14)
-        bytes[7] = parseByte(12)
-        // Remaining 8 bytes: big-endian
-        for i in 0..<8 {
-            bytes[8 + i] = parseByte(16 + i * 2)
-        }
-        writeAll(Data(bytes))
+        writeAll(Data([
+            bytes.3, bytes.2, bytes.1, bytes.0, bytes.5, bytes.4, bytes.7, bytes.6,
+            bytes.8, bytes.9, bytes.10, bytes.11, bytes.12, bytes.13, bytes.14, bytes.15,
+        ]))
     }
 
     public func writeTsu(_ value: Date) {
@@ -486,6 +535,7 @@ public class BaboonBinWriter {
 public class BaboonBinReader {
     private let data: Data
     private var pos: Int = 0
+    fileprivate var remaining: Int { data.count - pos }
 
     public init(_ data: Data) {
         self.data = data
@@ -685,33 +735,15 @@ public class BaboonBinReader {
         guard pos + 16 <= data.count else {
             throw BaboonCodecError.truncated("readUuid: need 16 bytes at pos \(pos), only \(data.count - pos) available")
         }
-        var bytes = [UInt8](repeating: 0, count: 16)
-        for i in 0..<16 {
-            bytes[i] = data[data.startIndex + pos + i]
-        }
+        let start = data.startIndex + pos
         pos += 16
-
         // .NET mixed-endian GUID format to standard UUID
-        func hexByte(_ b: UInt8) -> String {
-            return String(format: "%02x", b)
-        }
-
-        var hex = ""
-        hex += hexByte(bytes[3]) + hexByte(bytes[2]) + hexByte(bytes[1]) + hexByte(bytes[0])
-        hex += "-"
-        hex += hexByte(bytes[5]) + hexByte(bytes[4])
-        hex += "-"
-        hex += hexByte(bytes[7]) + hexByte(bytes[6])
-        hex += "-"
-        hex += hexByte(bytes[8]) + hexByte(bytes[9])
-        hex += "-"
-        for i in 10..<16 {
-            hex += hexByte(bytes[i])
-        }
-        guard let uuid = UUID(uuidString: hex) else {
-            throw BaboonCodecError.invalidUuid
-        }
-        return uuid
+        return UUID(uuid: (
+            data[start + 3], data[start + 2], data[start + 1], data[start],
+            data[start + 5], data[start + 4], data[start + 7], data[start + 6],
+            data[start + 8], data[start + 9], data[start + 10], data[start + 11],
+            data[start + 12], data[start + 13], data[start + 14], data[start + 15]
+        ))
     }
 
     public func readTsu() -> Date {
@@ -1256,6 +1288,26 @@ public protocol BaboonMetaProvider {
     var baboonDomainIdentifier: String { get }
     var baboonTypeIdentifier: String { get }
     var baboonSameInVersions: [String] { get }
+
+    /// Forward-readability: newer domain versions whose encoded data THIS version's codec can
+    /// decode, mapped to the guarantee tier
+    /// ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+    /// The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
+    /// the cursor after decoding.
+    var baboonForwardReadable: [String: String] { get }
+
+    /// Writer-side inverse of `baboonForwardReadable`: guarantee tier -> oldest domain version
+    /// whose codec can decode THIS version's encoding of this type. The "identical" bound equals
+    /// `baboonSameInVersions[0]`; the "json-additive" bound is published as `$rv`.
+    var baboonMinReaderVersions: [String: String] { get }
+}
+
+// Default keeps hand-written conforming stubs source-compatible; generated types
+// override it with the real per-type table.
+// `baboonMinReaderVersions` has no default: the envelope writer fails fast when a tier is missing,
+// so every conformance must provide all four (generated types do).
+public extension BaboonMetaProvider {
+    var baboonForwardReadable: [String: String] { [:] }
 }
 
 // Implemented by generated ADT branches. Mirrors Kotlin/Dart `BaboonAdtMember` for the
@@ -1266,233 +1318,9 @@ public protocol BaboonAdtMember {
 
 // --- Version / DomainVersion / TypeMeta ---
 //
-// PR-19-D01 lesson: regex literals in template files are read verbatim — but Swift runtime files
-// in this project go through `processEscapes` (see PR-20-D01 sister-bug). We use only manual
-// numeric parsing, no regex; safe regardless.
-
-public struct BaboonVersion: Comparable, Hashable, CustomStringConvertible {
-    public let major: Int
-    public let minor: Int
-    public let patch: Int
-
-    public init(major: Int, minor: Int, patch: Int) {
-        self.major = major
-        self.minor = minor
-        self.patch = patch
-    }
-
-    public static func from(_ version: String) throws -> BaboonVersion {
-        let chunks = version.split(separator: ".", omittingEmptySubsequences: false)
-        if chunks.count != 3 {
-            throw BaboonException("Expected to have version in format x.y.z, got \(version)")
-        }
-        guard let major = Int(chunks[0].trimmingCharacters(in: .whitespaces)) else {
-            throw BaboonException("Expected to have version in format x.y.z, got \(version). Invalid major value.")
-        }
-        guard let minor = Int(chunks[1].trimmingCharacters(in: .whitespaces)) else {
-            throw BaboonException("Expected to have version in format x.y.z, got \(version). Invalid minor value.")
-        }
-        guard let patch = Int(chunks[2].trimmingCharacters(in: .whitespaces)) else {
-            throw BaboonException("Expected to have version in format x.y.z, got \(version). Invalid patch value.")
-        }
-        return BaboonVersion(major: major, minor: minor, patch: patch)
-    }
-
-    public static func < (lhs: BaboonVersion, rhs: BaboonVersion) -> Bool {
-        if lhs.major != rhs.major { return lhs.major < rhs.major }
-        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
-        return lhs.patch < rhs.patch
-    }
-
-    public var description: String { return "\(major).\(minor).\(patch)" }
-}
-
-public struct BaboonException: Error, CustomStringConvertible {
-    public let message: String
-    public let cause: Error?
-    public init(_ message: String, _ cause: Error? = nil) {
-        self.message = message
-        self.cause = cause
-    }
-    public var description: String { return "BaboonException: \(message)" }
-}
-
-public struct BaboonDomainVersion: Hashable, CustomStringConvertible {
-    public let domainIdentifier: String
-    public let domainVersion: String
-
-    public init(_ domainIdentifier: String, _ domainVersion: String) {
-        self.domainIdentifier = domainIdentifier
-        self.domainVersion = domainVersion
-    }
-
-    public func version() throws -> BaboonVersion {
-        return try BaboonVersion.from(domainVersion)
-    }
-
-    public var description: String { return "\(domainIdentifier):\(domainVersion)" }
-}
-
-// On-wire type meta envelope. Mirrors Dart/Kotlin `BaboonTypeMeta`.
-public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
-    public let metaVersion: Int
-    public let domainIdentifier: String
-    public let domainVersion: String
-    public let domainVersionMinCompat: String
-    public let typeIdentifier: String
-
-    public init(
-        _ metaVersion: Int,
-        _ domainIdentifier: String,
-        _ domainVersion: String,
-        _ domainVersionMinCompat: String,
-        _ typeIdentifier: String
-    ) {
-        self.metaVersion = metaVersion
-        self.domainIdentifier = domainIdentifier
-        self.domainVersion = domainVersion
-        self.domainVersionMinCompat = domainVersionMinCompat
-        self.typeIdentifier = typeIdentifier
-    }
-
-    public func versionRef() -> BaboonDomainVersion {
-        return BaboonDomainVersion(domainIdentifier, domainVersion)
-    }
-
-    public func versionMinCompat() -> BaboonDomainVersion? {
-        if domainVersionMinCompat.isEmpty { return nil }
-        if domainVersionMinCompat == domainVersion { return nil }
-        return BaboonDomainVersion(domainIdentifier, domainVersionMinCompat)
-    }
-
-    public func writeBin(_ writer: BaboonBinWriter) {
-        BaboonTypeMetaCodec.writeBin(self, writer)
-    }
-
-    public func writeJson() -> [String: Any] {
-        return BaboonTypeMetaCodec.writeJson(self)
-    }
-
-    // MFACADE-PR-3: accept `$mv` as either a JSON number or a string (back-compat
-    // with M28-vintage fixtures); both must equal `metaVersion`. Absent falls through.
-    public static func readMetaJson(_ json: Any?) -> BaboonTypeMeta? {
-        guard let obj = json as? [String: Any] else { return nil }
-        if let mv = obj["$mv"] {
-            // MFACADE-PR-3-D02: reject Bool explicitly — in Foundation Bool bridges to NSNumber,
-            // so `true`/`false` would otherwise slip through the NSNumber branch with intValue 1/0.
-            if mv is Bool { return nil }
-            var mvInt: Int? = nil
-            if let n = mv as? Int {
-                mvInt = n
-            } else if let n = mv as? NSNumber {
-                // MFACADE-PR-7-D12: reject Float/Double-typed NSNumber. JSONSerialization
-                // bridges JSON numbers as NSNumber whose `objCType` reflects the source literal:
-                // `d` = Double, `f` = Float; integer types ('i'/'l'/'q'/'s'/'c'/etc.) otherwise.
-                // Even whole-valued doubles like `1.0` are rejected because the source token
-                // wasn't integer-typed. Decided per-PR-7 to be strict-everywhere about
-                // numeric-type discrimination where parse-time preservation allows.
-                let oct = String(cString: n.objCType)
-                if oct == "d" || oct == "f" { return nil }
-                mvInt = n.intValue
-            } else if let s = mv as? String {
-                mvInt = Int(s)
-            }
-            guard let n = mvInt, n == BaboonTypeMetaCodec.metaVersion else { return nil }
-        }
-        guard let d = obj["$d"] as? String else { return nil }
-        guard let v = obj["$v"] as? String else { return nil }
-        guard let t = obj["$t"] as? String else { return nil }
-        let minCompat = (obj["$uv"] as? String) ?? v
-        return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t)
-    }
-
-    public static func readMetaBin(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
-        return try BaboonTypeMetaCodec.readMeta(reader)
-    }
-
-    // Build a meta from a generated value. Optionally use the ADT type identifier when encoding
-    // through an ADT-typed reference (PR-19-D02). Throws when the value does not conform to
-    // [BaboonMetaProvider] — generated DTOs gain this conformance via the codegen's
-    // automatic `: BaboonMetaProvider` clause (MFACADE-PR-E).
-    public static func from(_ value: Any, useAdtIdentifier: Bool = false) throws -> BaboonTypeMeta {
-        guard let meta = value as? BaboonMetaProvider else {
-            throw BaboonException(
-                "BaboonTypeMeta.from: value of type \(type(of: value)) does not conform to BaboonMetaProvider."
-            )
-        }
-        let typeId: String
-        if useAdtIdentifier, let adt = value as? BaboonAdtMember {
-            typeId = adt.baboonAdtTypeIdentifier
-        } else {
-            typeId = meta.baboonTypeIdentifier
-        }
-        let sameIn = meta.baboonSameInVersions
-        // PR-08-D02 fail-fast: a generator emitting an empty `sameInVersions` is a bug.
-        if sameIn.isEmpty {
-            throw BaboonException(
-                "BaboonTypeMeta.from: empty baboonSameInVersions for type [\(meta.baboonDomainIdentifier).\(typeId)]"
-            )
-        }
-        return BaboonTypeMeta(
-            BaboonTypeMetaCodec.metaVersion,
-            meta.baboonDomainIdentifier,
-            meta.baboonDomainVersion,
-            sameIn[0],
-            typeId
-        )
-    }
-
-    public var description: String {
-        return "BaboonTypeMeta(\(domainIdentifier).\(typeIdentifier)@\(domainVersion))"
-    }
-}
-
-public enum BaboonTypeMetaCodec {
-    public static let metaVersion: Int = 1
-
-    public static func writeBin(_ meta: BaboonTypeMeta, _ writer: BaboonBinWriter) {
-        writer.writeU8(UInt8(metaVersion))
-        writer.writeString(meta.domainIdentifier)
-        writer.writeString(meta.domainVersion)
-        if meta.domainVersion == meta.domainVersionMinCompat {
-            writer.writeU8(0)
-        } else {
-            writer.writeU8(1)
-            writer.writeString(meta.domainVersionMinCompat)
-        }
-        writer.writeString(meta.typeIdentifier)
-    }
-
-    public static func readMeta(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
-        let v = Int(reader.readU8())
-        if v == metaVersion { return try readMetaV1(reader) }
-        return nil
-    }
-
-    private static func readMetaV1(_ reader: BaboonBinReader) throws -> BaboonTypeMeta {
-        let d = try reader.readString()
-        let dv = try reader.readString()
-        let hasMinCompat = reader.readU8()
-        let mc = hasMinCompat == 1 ? try reader.readString() : dv
-        let t = try reader.readString()
-        return BaboonTypeMeta(metaVersion, d, dv, mc, t)
-    }
-
-    public static func writeJson(_ meta: BaboonTypeMeta) -> [String: Any] {
-        // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
-        // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
-        var obj: [String: Any] = [
-            "$mv": metaVersion,
-            "$d": meta.domainIdentifier,
-            "$v": meta.domainVersion,
-            "$t": meta.typeIdentifier,
-        ]
-        if meta.domainVersion != meta.domainVersionMinCompat {
-            obj["$uv"] = meta.domainVersionMinCompat
-        }
-        return obj
-    }
-}
+// `BaboonVersion`, `BaboonDomainVersion`, `BaboonTypeMeta` and `BaboonTypeMetaCodec` live in
+// `baboon_type_meta.swift` (same module; this file is embedded as a single JVM string constant and
+// must stay under 64KB).
 
 // --- Deep Equality / HashCode for JSON-shaped values ---
 //

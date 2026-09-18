@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.java
 
 import io.septimalmind.baboon.translator.java.JvDomainTreeTools.MetaField
-import io.septimalmind.baboon.translator.java.JvTypes.{javaClass, jvList, jvString}
+import io.septimalmind.baboon.translator.java.JvTypes.{javaClass, jvList, jvMap, jvString}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -81,7 +81,24 @@ object JvDomainTreeTools {
         q"$jvList.of(${unmodifiedSince.mkString(", ")})",
         q"$ref.baboonSameInVersions",
       )
-      List(sameInVersion)
+      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forwardEntries = forward.readable.toList.map {
+        case (v, tier) => s"""java.util.Map.entry("${v.v.toString}", "${tier.wireName}")"""
+      }
+      val forwardReadable = MetaField(
+        q"public static final $jvMap<$jvString, $jvString> baboonForwardReadable",
+        q"$jvMap.ofEntries(${forwardEntries.mkString(", ")})",
+        q"$ref.baboonForwardReadable",
+      )
+      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+        case (tier, v) => s"""java.util.Map.entry("${tier.wireName}", "${v.v.toString}")"""
+      }
+      val minReaders = MetaField(
+        q"public static final $jvMap<$jvString, $jvString> baboonMinReaderVersions",
+        q"$jvMap.ofEntries(${minReaderEntries.mkString(", ")})",
+        q"$ref.baboonMinReaderVersions",
+      )
+      List(sameInVersion, forwardReadable, minReaders)
     }
   }
 }

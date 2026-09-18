@@ -1,0 +1,115 @@
+// Forward-compatibility comparator fixtures (see
+// docs/drafts/20260911-0937-forward-compat-metadata.md).
+//
+// Intentionally OUTSIDE the shared `baboon-compiler/src/test/resources/baboon/`
+// model-dir (D9): these models exist only for the JVM-level
+// ForwardCompatComparatorTest and contain underivable evolution steps that
+// would force manual conversion stubs in every language lane.
+
+model fwdcompat.model
+
+version "1.0.0"
+
+// v2 appends a fixed-length field -> PREFIX_ANY_MODE
+root data AppendFixed {
+  a: i32
+  b: str
+}
+
+// v2 and v3 append variable-length fields -> PREFIX_COMPACT
+root data AppendVar {
+  a: i32
+}
+
+// v2 inserts a field in the middle -> JSON_ADDITIVE; v3 removes a field -> range ends
+root data MidInsert {
+  a: i32
+  z: str
+}
+
+// v2 removes a field -> NONE
+root data Removed {
+  a: i32
+  b: str
+}
+
+// v2 changes a field type (precision expansion; still narrowing when read forward) -> NONE
+root data Changed {
+  a: i32
+}
+
+// own structure never changes; dep AppendVar appends -> capped at JSON_ADDITIVE
+root data HostOfAppend {
+  dep: AppendVar
+  x: i32
+}
+
+data Stable {
+  s: str
+}
+
+// fully unchanged closure -> IDENTICAL throughout
+root data HostOfUnchanged {
+  dep: Stable
+}
+
+enum EnumGrows {
+  A
+  B
+}
+
+// dep enum gains a member -> NONE
+root data EnumGrowsHost {
+  e: EnumGrows
+}
+
+enum EnumReorder {
+  A
+  B
+}
+
+// dep enum members reordered (positional UEBA discriminants shift) -> JSON_ADDITIVE
+root data EnumReorderHost {
+  e: EnumReorder
+}
+
+// recursive DTO appending a field: self-dependency must demote PREFIX to JSON_ADDITIVE
+root data Recur {
+  v: i32
+  next: opt[Recur]
+}
+
+// branch L appends a field in v2: L itself is PREFIX_COMPACT, the ADT is capped at JSON_ADDITIVE
+root adt Sum {
+  data L {
+    lv: i32
+  }
+  data R {
+    rv: str
+  }
+}
+
+// v2 reorders the ADT branch list: positional UEBA discriminants shift, so
+// neither the ADT nor its host may be classified byte-identical
+root adt SumReorder {
+  data SL {
+    slv: i32
+  }
+  data SR {
+    srv: str
+  }
+}
+
+root data SumReorderHost {
+  s: SumReorder
+}
+
+// v2 swaps the map's type arguments INSIDE the dep; the host's own shape is
+// unchanged but its bytes are not
+data MapCarrier {
+  mc: map[i32, str]
+}
+
+root data MapSwapHost {
+  c: MapCarrier
+}

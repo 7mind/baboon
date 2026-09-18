@@ -9,8 +9,8 @@ object DtTypes {
   val baboonFixturePkg: DtPackageId = parseDtPkg("baboon.fixture")
 
   // baboon metadata
-  val iBaboonGenerated: DtType       = DtType(baboonRuntimePkg, "BaboonGenerated")
-  val iBaboonAdtMemberMeta: DtType   = DtType(baboonRuntimePkg, "BaboonAdtMemberMeta")
+  val iBaboonGenerated: DtType     = DtType(baboonRuntimePkg, "BaboonGenerated")
+  val iBaboonAdtMemberMeta: DtType = DtType(baboonRuntimePkg, "BaboonAdtMemberMeta")
   // PR-F: BaboonAdtMember is the runtime-active interface with an instance getter
   // (`String get baboonAdtTypeIdentifier`) used by `BaboonTypeMeta.from(_, useAdtIdentifier: true)`.
   // BaboonAdtMemberMeta is the static-only marker kept for back-compat; new ADT branches
@@ -43,12 +43,16 @@ object DtTypes {
   // `uebaToJson`). The base abstract type `BaboonCodecsFacadeBase` lives in `baboon_runtime.dart`
   // (already imported) so `ctx.facade` typechecks; the codec downcasts to the concrete facade
   // when invoking the cross-format helpers.
-  val baboonAnyOpaquePkg: DtPackageId = parseDtPkg("baboon.any.opaque")
-  val baboonAnyOpaque: DtType         = DtType(baboonAnyOpaquePkg, "AnyOpaque")
-  val baboonAnyOpaqueUeba: DtType     = DtType(baboonAnyOpaquePkg, "AnyOpaqueUeba")
-  val baboonAnyOpaqueJson: DtType     = DtType(baboonAnyOpaquePkg, "AnyOpaqueJson")
-  val baboonAnyMeta: DtType           = DtType(baboonAnyOpaquePkg, "AnyMeta")
-  val baboonAnyMetaCodec: DtType      = DtType(baboonAnyOpaquePkg, "AnyMetaCodec")
+  val baboonAnyOpaquePkg: DtPackageId  = parseDtPkg("baboon.any.opaque")
+  val baboonAnyOpaque: DtType          = DtType(baboonAnyOpaquePkg, "AnyOpaque")
+  val baboonAnyOpaqueUeba: DtType      = DtType(baboonAnyOpaquePkg, "AnyOpaqueUeba")
+  val baboonAnyOpaqueJson: DtType      = DtType(baboonAnyOpaquePkg, "AnyOpaqueJson")
+  val baboonAnyMeta: DtType            = DtType(baboonAnyOpaquePkg, "AnyMeta")
+  val baboonAnyMetaCodec: DtType       = DtType(baboonAnyOpaquePkg, "AnyMetaCodec")
+  val baboonEncodeAnyJsonField: DtType = DtType(baboonAnyOpaquePkg, "encodeAnyJsonField")
+  val baboonDecodeAnyJsonField: DtType = DtType(baboonAnyOpaquePkg, "decodeAnyJsonField")
+  val baboonEncodeAnyUebaField: DtType = DtType(baboonAnyOpaquePkg, "encodeAnyUebaField")
+  val baboonDecodeAnyUebaField: DtType = DtType(baboonAnyOpaquePkg, "decodeAnyUebaField")
 
   val baboonCodecsFacadePkg: DtPackageId = parseDtPkg("baboon.codecs.facade")
   val baboonCodecsFacade: DtType         = DtType(baboonCodecsFacadePkg, "BaboonCodecsFacade")

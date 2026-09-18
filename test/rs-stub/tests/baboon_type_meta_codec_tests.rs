@@ -31,6 +31,7 @@ impl BaboonGeneratedDyn for TestVal {
     fn baboon_domain_identifier_dyn(&self) -> &str { "test.dom" }
     fn baboon_type_identifier_dyn(&self) -> &str { "TestType" }
     fn baboon_same_in_versions_dyn(&self) -> Vec<String> { vec!["1.0.0".to_string()] }
+    fn baboon_min_reader_versions_dyn(&self) -> Vec<(String, String)> { vec![("identical".to_string(), "1.0.0".to_string()), ("prefix-any-mode".to_string(), "1.0.0".to_string()), ("prefix-compact".to_string(), "1.0.0".to_string()), ("json-additive".to_string(), "1.0.0".to_string())] }
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }
 }

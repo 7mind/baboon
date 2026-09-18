@@ -20,7 +20,7 @@ UEBA has a sister format, [SICK](https://github.com/7mind/sick), which is an ind
 - `str`: UTF‑8 bytes prefixed by a varint length (LEB128, 7 bits per byte, continuation bit 0x80).
 - `bytes`: length `i32` then raw bytes.
 - `uid`: 16 bytes in .NET GUID mixed‑endian layout (fields Data1/2/3 little‑endian, Data4 big‑endian).
-- `tsu`/`tso`: two `i64` values (milliseconds since epoch, offset millis) plus one `i8` “kind” flag.
+- `tsu`/`tso`: two `i64` values (local milliseconds since the .NET epoch, offset millis) plus one `i8` "kind" flag mirroring .NET `DateTimeKind`: `0` Unspecified, `1` Utc, `2` Local. C# writes the `RpDateTime.Kind` it holds (`DetectKind`: Utc for a zero offset, Local when the offset equals `TimeZoneInfo.Local`'s offset for that instant, else Unspecified), and the compiler's converter emulates that with the JVM's zone rules; every other runtime writes `1` for a zero offset and `0` otherwise. Readers other than C# ignore the byte beyond range-checking. Because "Local" depends on the writer's time zone, byte-for-byte equality of a timestamp across writers is not guaranteed — only structural equality is.
 
 ## Collections
 
@@ -30,7 +30,7 @@ UEBA has a sister format, [SICK](https://github.com/7mind/sick), which is an ind
 
 ## User types
 
-- Enums: encoded as `i32` of the discriminant.
+- Enums: encoded as a single `u8` — the zero-based POSITIONAL index of the member in declaration order (explicit `const` member values do not appear on the wire). Verified against the C#, Scala, TypeScript and Rust generators; consequently member reordering or mid-list insertion changes existing discriminants.
 - DTO/ADT/contract branches: fields encoded in declaration order.
 - ADT branches: written as the branch payload followed by branch metadata when wrapped codecs are enabled; by default branches are emitted without an envelope (caller knows the concrete branch).
 

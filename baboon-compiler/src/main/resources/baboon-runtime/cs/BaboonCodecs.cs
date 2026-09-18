@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System;
 using System.Collections.Immutable;
-using System.Diagnostics;
 using Newtonsoft.Json.Linq;
 
 // ReSharper disable UnusedTypeParameter
@@ -32,28 +31,67 @@ namespace Baboon.Runtime.Shared
         public string BaboonTypeIdentifier();
     }
 
+    /// <summary>
+    /// Which lower bound the WRITER publishes as the UEBA envelope's <c>DomainVersionMinCompat</c>
+    /// (the v1 binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope
+    /// integration (UEBA)"). Strict: the byte-identical bound (<c>BaboonSameInVersions()[0]</c>) — the
+    /// default. Tolerant: the prefix-read bound for the chosen index mode (<c>prefix-compact</c> for
+    /// compact payloads, <c>prefix-any-mode</c> for indexed ones); readers older than the writer then
+    /// decode the payload with their newest codec, dropping the appended fields they do not know. A
+    /// reader cannot distinguish such an envelope from a byte-identical one, so re-encoding
+    /// intermediaries must run at the writer's version or newer.
+    /// </summary>
+    public enum ForwardWritePolicy
+    {
+        Strict,
+        Tolerant,
+    }
+
+    /// <summary>
+    /// Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+    /// V1 (default): single bound slot (<c>DomainVersionMinCompat</c>), value chosen by <see cref="ForwardWritePolicy"/>.
+    /// V2: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for the
+    /// payload's index mode; the reader's <c>ForwardReadPolicy</c> then applies to binary exactly as it does
+    /// to JSON. Only readers that know v2 can decode it.
+    /// </summary>
+    public enum BaboonEnvelopeVersion
+    {
+        V1,
+        V2,
+    }
+
     public class BaboonCodecContext
     {
         // Accept null facade for the bare singletons (Compact/Indexed). The runtime helper
         // `WithFacade(...)` is the single intended construction path for ctxes that thread
         // a facade through generated codec calls — see PR 3.1's facade plumbing for the
         // `any`-feature cross-format conversion (Q6 option (a) in the design plan).
-        private BaboonCodecContext(bool useIndexes, BaboonCodecsFacade? facade)
+        private BaboonCodecContext(bool useIndexes, ForwardWritePolicy forwardWritePolicy, BaboonEnvelopeVersion envelopeVersion, BaboonCodecsFacade? facade)
         {
             UseIndices = useIndexes;
+            ForwardWritePolicy = forwardWritePolicy;
+            EnvelopeVersion = envelopeVersion;
             Facade = facade;
         }
 
         public bool UseIndices { get; }
 
+        public ForwardWritePolicy ForwardWritePolicy { get; }
+
+        public BaboonEnvelopeVersion EnvelopeVersion { get; }
+
         public BaboonCodecsFacade? Facade { get; }
 
-        public static BaboonCodecContext Indexed { get; } = new(true, null);
-        public static BaboonCodecContext Compact { get; } = new(false, null);
+        public static BaboonCodecContext Indexed { get; } = new(true, ForwardWritePolicy.Strict, BaboonEnvelopeVersion.V1, null);
+        public static BaboonCodecContext Compact { get; } = new(false, ForwardWritePolicy.Strict, BaboonEnvelopeVersion.V1, null);
         public static BaboonCodecContext Default { get; } = Compact;
 
         public static BaboonCodecContext WithFacade(bool useIndices, BaboonCodecsFacade facade) =>
-            new(useIndices, facade);
+            new(useIndices, ForwardWritePolicy.Strict, BaboonEnvelopeVersion.V1, facade);
+
+        /// <summary>Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade.</summary>
+        public static BaboonCodecContext Custom(bool useIndices, ForwardWritePolicy forwardWritePolicy, BaboonEnvelopeVersion envelopeVersion, BaboonCodecsFacade? facade) =>
+            new(useIndices, forwardWritePolicy, envelopeVersion, facade);
     }
 
     public interface IBaboonCodec<T> : IBaboonCodecData
@@ -154,9 +192,21 @@ namespace Baboon.Runtime.Shared
 
         List<BaboonIndexEntry> ReadIndex(BaboonCodecContext ctx, BinaryReader wire)
         {
+            var result = new List<BaboonIndexEntry>();
+            ReadIndexEntries(ctx, wire, result);
+            return result;
+        }
+
+        ushort ConsumeIndex(BaboonCodecContext ctx, BinaryReader wire)
+        {
+            return ReadIndexEntries(ctx, wire, null);
+        }
+
+        private ushort ReadIndexEntries(BaboonCodecContext ctx, BinaryReader wire, List<BaboonIndexEntry>? entries)
+        {
             var header = wire.ReadByte();
             var isIndexed = (header & 0b0000001) != 0;
-            var result = new List<BaboonIndexEntry>();
+            ushort count = 0;
             uint prevoffset = 0;
             uint prevlen = 0;
             // ReSharper disable once InvertIf
@@ -167,38 +217,41 @@ namespace Baboon.Runtime.Shared
                 {
                     var offset = wire.ReadUInt32();
                     var len = wire.ReadUInt32();
-                    Debug.Assert(len > 0);
-                    Debug.Assert(offset >= prevoffset + prevlen);
-                    result.Add(new BaboonIndexEntry(offset, len));
+                    if (len == 0 || len > int.MaxValue) throw new InvalidDataException($"Invalid UEBA index length: {len}");
+                    if (offset > int.MaxValue || (ulong)offset < (ulong)prevoffset + prevlen)
+                        throw new InvalidDataException($"Invalid UEBA index offset: {offset}");
+                    if (entries != null) entries.Add(new BaboonIndexEntry(offset, len));
+                    count++;
                     left = (ushort) (left - 1);
                     prevoffset = offset;
                     prevlen = len;
                 }
             }
 
-            return result;
+            return count;
         }
 
         void WriteIndexFixedLenField(BinaryWriter writer, int expected, Action doWrite)
         {
-            var before = (uint) writer.BaseStream.Position;
+            var before = writer.BaseStream.Position;
             doWrite();
-            var after = (uint) writer.BaseStream.Position;
+            var after = writer.BaseStream.Position;
             var length = after - before;
-            Debug.Assert(length == expected);
-            Debug.Assert(after >= before, $"Got after={after}, before={before}");
+            if (length != expected || after < before)
+                throw new InvalidDataException($"Invalid UEBA field length: {length}, expected {expected}");
         }
 
         uint WriteIndexVarLenField(BinaryWriter writer, BinaryWriter fakeWriter, Action doWrite)
         {
-            var before = (uint) fakeWriter.BaseStream.Position;
+            var before = fakeWriter.BaseStream.Position;
             doWrite();
-            var after = (uint) fakeWriter.BaseStream.Position;
+            var after = fakeWriter.BaseStream.Position;
             var length = after - before;
-            writer.Write(before);
-            writer.Write(length);
-            Debug.Assert(after >= before, $"Got after={after}, before={before}");
-            return length;
+            if (before < 0 || before > int.MaxValue || length <= 0 || length > int.MaxValue)
+                throw new InvalidDataException($"Invalid UEBA index entry: offset={before}, length={length}");
+            writer.Write((int)before);
+            writer.Write((int)length);
+            return (uint)length;
         }
     }
 

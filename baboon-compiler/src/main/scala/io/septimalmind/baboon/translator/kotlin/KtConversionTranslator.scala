@@ -1,7 +1,8 @@
 package io.septimalmind.baboon.translator.kotlin
 
 import distage.Id
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.ValueConversionPlan
 import io.septimalmind.baboon.translator.kotlin.KtBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
 import io.septimalmind.baboon.translator.kotlin.KtValue.KtPackageId
@@ -37,77 +38,33 @@ class KtConversionTranslator[F[+_, +_]: Error2](
   private val srcVer = srcDom.version
   type Out[T] = F[NEList[BaboonIssue], T]
 
-  private def transfer(newTpe: TypeRef, oldRef: TextTree[KtValue], depth: Int, maybeOldTpe: Option[TypeRef] = None): TextTree[KtValue] = {
+  private def transfer(tpe: TypeRef, oldRef: TextTree[KtValue], depth: Int): TextTree[KtValue] =
+    transfer(tpe, oldRef, depth, tpe)
+
+  private def transfer(newTpe: TypeRef, oldRef: TextTree[KtValue], depth: Int, oldTpe: TypeRef): TextTree[KtValue] =
+    renderTransfer(ValueConversionPlan(oldTpe, newTpe), oldRef, depth)
+
+  private def renderTransfer(plan: ValueConversionPlan, oldRef: TextTree[KtValue], depth: Int): TextTree[KtValue] = {
     import io.septimalmind.baboon.translator.FQNSymbol.*
+    import ValueConversionPlan.*
 
-    val oldTpe         = maybeOldTpe.getOrElse(newTpe)
-    val newTypeRefTree = trans.asKtRef(newTpe, domain, evo)
-    val oldTypeRefTree = trans.asKtRef(oldTpe, srcDom, evo).fullyQualified
-
-    (newTpe, oldTpe) match {
-      case (c: TypeRef.Constructor, s: TypeRef.Scalar) =>
-        val headTransfer = transfer(c.args.head, oldRef, depth + 1, Some(s))
-        c.id match {
-          case TypeId.Builtins.opt =>
-            q"$headTransfer"
-          case TypeId.Builtins.lst =>
-            q"listOf($headTransfer)"
-          case TypeId.Builtins.set =>
-            q"setOf($headTransfer)"
-          case _ =>
-            throw new IllegalStateException(s"Unsupported constructor type: ${c.id}")
-        }
-
-      case (ns: TypeRef.Scalar, os: TypeRef.Scalar) =>
-        transferScalar(oldRef, newTypeRefTree, oldTypeRefTree, ns, os)
-      case (TypeRef.Scalar(_), c: TypeRef.Constructor) =>
-        throw new IllegalStateException(s"Unsupported scalar to constructor conversion: ${c.id}")
-      case (cn: TypeRef.Constructor, co: TypeRef.Constructor) =>
-        transferConstructor(oldRef, depth, cn, co)
-      // `any` payload is opaque (bytes / JsonElement); we never auto-convert between `any` and a
-      // non-`any` type (validator forbids it). When both old and new are `any` AND their (variant,
-      // underlying) pair is identical, copy the reference as-is — the surface ADT is the same
-      // `AnyOpaque` and the wire bytes carry their own meta header, independent of the schema
-      // version of the containing DTO. Variant or underlying changes are breaking per spec
-      // §Evolution and should have been rejected by `BaboonRules.incompatibleAdditions`; we emit a
-      // defensive throw in case that layer is ever loosened.
-      case (newA: TypeRef.Any, oldA: TypeRef.Any) =>
-        if (newA == oldA) oldRef
-        else
-          throw new IllegalStateException(
-            s"BUG: conversion of `any` field across variant or underlying change is breaking and should have been rejected by BaboonRules.incompatibleAdditions: $oldA -> $newA"
-          )
-      case (_: TypeRef.Any, other) =>
-        throw new IllegalStateException(s"BUG: cannot auto-convert field of type $other to `any` (not allowed by evolution rules)")
-      case (other, _: TypeRef.Any) =>
-        throw new IllegalStateException(s"BUG: cannot auto-convert `any` field to type $other (not allowed by evolution rules)")
-    }
-  }
-
-  private def transferConstructor(
-    oldRef: TextTree[KtValue],
-    depth: Int,
-    cn: TypeRef.Constructor,
-    co: TypeRef.Constructor,
-  ): TextTree[KtValue] = {
     val tmp = q"e${depth.toString}"
-    cn match {
-      case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
-        q"$oldRef.map { $tmp -> ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))} }"
-
-      case c: TypeRef.Constructor if c.id == TypeId.Builtins.map =>
-        val keyRef   = c.args.head
-        val valueRef = c.args.last
-        val kv       = q"$tmp.key"
-        val vv       = q"$tmp.value"
-
-        q"$oldRef.map { $tmp -> (${transfer(keyRef, kv, depth + 1, Some(co.args.head))}) to (${transfer(valueRef, vv, depth + 1, Some(co.args.last))}) }.toMap()"
-      case c: TypeRef.Constructor if c.id == TypeId.Builtins.set =>
-        q"$oldRef.map { $tmp -> ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))} }.toSet()"
-      case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
-        q"$oldRef?.let { $tmp -> ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))} }"
-      case c =>
-        throw new IllegalStateException(s"Unsupported constructor type: ${c.id}")
+    plan match {
+      case Scalar(source, target) =>
+        val newTypeRefTree = trans.asKtRef(target, domain, evo)
+        val oldTypeRefTree = trans.asKtRef(source, srcDom, evo).fullyQualified
+        transferScalar(oldRef, newTypeRefTree, oldTypeRefTree, target, source)
+      case CopyOpaque => oldRef
+      case WrapOptional(element) => renderTransfer(element, oldRef, depth + 1)
+      case WrapList(element)     => q"listOf(${renderTransfer(element, oldRef, depth + 1)})"
+      case WrapSet(element)      => q"setOf(${renderTransfer(element, oldRef, depth + 1)})"
+      case MapOptional(element) => q"$oldRef?.let { $tmp -> ${renderTransfer(element, tmp, depth + 1)} }"
+      case MapList(element)     => q"$oldRef.map { $tmp -> ${renderTransfer(element, tmp, depth + 1)} }"
+      case MapSet(element)      => q"$oldRef.map { $tmp -> ${renderTransfer(element, tmp, depth + 1)} }.toSet()"
+      case MapEntries(key, value) =>
+        val kv = q"$tmp.key"
+        val vv = q"$tmp.value"
+        q"$oldRef.map { $tmp -> (${renderTransfer(key, kv, depth + 1)}) to (${renderTransfer(value, vv, depth + 1)}) }.toMap()"
     }
   }
 
@@ -176,10 +133,12 @@ class KtConversionTranslator[F[+_, +_]: Error2](
         val tin  = trans.asKtType(conv.sourceTpe, srcDom, evo).fullyQualified
         def tout = trans.asKtType(conv.targetTpe, domain, evo)
 
-        val meta = q"""override val versionFrom: String = "${srcVer.v.toString}"
-                      |override val versionTo: String = "${domain.version.v.toString}"
-                      |override val typeId: String = "${conv.sourceTpe.toString}"
+        val targetMeta = if (conv.sourceTpe == conv.targetTpe) q"" else q"""override val targetTypeId: String = "${conv.targetTpe.toString}""""
+        val sourceMeta = q"""override val versionFrom: String = "${srcVer.v.toString}"
+                            |override val versionTo: String = "${domain.version.v.toString}"
+                            |override val typeId: String = "${conv.sourceTpe.toString}"
                       """.stripMargin.trim
+        val meta = if (conv.sourceTpe == conv.targetTpe) sourceMeta else Seq(sourceMeta, targetMeta).join("\n")
 
         val rendered = conv match {
           case _: Conversion.CustomConversionRequired =>
@@ -235,7 +194,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
               oldId =>
                 val oldT  = trans.asKtType(oldId, srcDom, evo).fullyQualified
                 val newId = c.branchMapping.getOrElse(oldId.name.name, oldId)
-                q"is $oldT -> ${transfer(TypeRef.Scalar(newId), q"x", 1, Some(TypeRef.Scalar(oldId)))}"
+                q"is $oldT -> ${transfer(TypeRef.Scalar(newId), q"x", 1, TypeRef.Scalar(oldId))}"
             } :+ q"else -> throw $javaIllegalArgumentException(\"Bad input: \" + from)"
 
             val classDef = q"""
@@ -287,7 +246,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
                       case TypeRef.Constructor(TypeId.Builtins.opt, _) => q"_from.$fld"
                       case _                                           => q"listOf(_from.$fld)"
                     }
-                  case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1, Some(o.oldTpe))
+                  case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1, o.oldTpe)
                   case o: FieldOp.SwapCollectionType => swapCollType(q"_from.$fld", o, 0)
                   case o: FieldOp.Rename =>
                     val srcName = KtTypeTranslator.escapeKtKeyword(o.sourceFieldName.name)
@@ -303,7 +262,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
                           case _                                           => q"listOf($srcFieldRef)"
                         }
                       case m: FieldOp.ExpandPrecision =>
-                        transfer(m.newTpe, srcFieldRef, 1, Some(m.oldTpe))
+                        transfer(m.newTpe, srcFieldRef, 1, m.oldTpe)
                       case m: FieldOp.SwapCollectionType =>
                         swapCollType(srcFieldRef, m, 0)
                     }
@@ -331,11 +290,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
             List(RenderedConversion(fname, tools.inPkg(pkg.parts.toSeq, classDef), Some(regtree), None))
         }
 
-        if (false) {
-          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
-        } else {
-          F.pure(rendered)
-        }
+        F.pure(rendered): Out[List[RenderedConversion]]
     }
 
   }
@@ -347,30 +302,30 @@ class KtConversionTranslator[F[+_, +_]: Error2](
 
     (oldId, newId) match {
       case (TypeId.Builtins.opt, TypeId.Builtins.lst) =>
-        q"""listOfNotNull($fieldRef?.let { e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))} })"""
+        q"""listOfNotNull($fieldRef?.let { e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)} })"""
       case (TypeId.Builtins.opt, TypeId.Builtins.set) =>
-        q"""setOfNotNull($fieldRef?.let { e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))} })"""
+        q"""setOfNotNull($fieldRef?.let { e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)} })"""
       case (TypeId.Builtins.opt, TypeId.Builtins.opt) =>
-        q"""$fieldRef?.let { e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))} }"""
+        q"""$fieldRef?.let { e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)} }"""
 
       case (TypeId.Builtins.lst, TypeId.Builtins.lst) =>
-        q"""$fieldRef.map { e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))} }"""
+        q"""$fieldRef.map { e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)} }"""
       case (TypeId.Builtins.lst, TypeId.Builtins.set) =>
-        q"""$fieldRef.map { e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))} }.toSet()"""
+        q"""$fieldRef.map { e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)} }.toSet()"""
 
       case (TypeId.Builtins.set, TypeId.Builtins.lst) =>
-        q"""$fieldRef.map { e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))} }"""
+        q"""$fieldRef.map { e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)} }"""
       case (TypeId.Builtins.set, TypeId.Builtins.set) =>
-        q"""$fieldRef.map { e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))} }.toSet()"""
+        q"""$fieldRef.map { e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)} }.toSet()"""
 
       case (TypeId.Builtins.map, TypeId.Builtins.map) =>
         val keyRef = q"k"
         val valRef = q"v"
-        q"""$fieldRef.map { (k, v) -> (${transfer(newArgs.head, keyRef, 1, Some(oldArgs.head))}) to (${transfer(
+        q"""$fieldRef.map { (k, v) -> (${transfer(newArgs.head, keyRef, 1, oldArgs.head)}) to (${transfer(
             newArgs.last,
             valRef,
             1,
-            Some(oldArgs.last),
+            oldArgs.last,
           )}) }.toMap()"""
       case _ =>
         throw new IllegalStateException("Unsupported collection swap")

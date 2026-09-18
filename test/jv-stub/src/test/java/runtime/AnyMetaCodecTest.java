@@ -573,6 +573,8 @@ class AnyMetaCodecTest {
         StubMeta(List<String> v) { this.versions = v; }
         @Override
         public List<String> sameInVersions(String typeId) { return versions; }
+        @Override
+        public java.util.Map<String, String> forwardReadableVersions(String typeId) { return java.util.Map.of(); }
     }
 
     private static final class StubConv extends AbstractBaboonConversions {

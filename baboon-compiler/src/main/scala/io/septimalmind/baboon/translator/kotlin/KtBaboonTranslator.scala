@@ -6,12 +6,12 @@ import io.septimalmind.baboon.CompilerTarget.KtTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
 import io.septimalmind.baboon.translator.kotlin.KtValue.KtPackageId
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import io.septimalmind.baboon.translator.BaboonRuntimeResources
+import io.septimalmind.baboon.translator.{BaboonRuntimeResources, DomainProductTranslator}
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -80,13 +80,13 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
 
     val registerCalls = lineage.versions.toSeq.sortBy(_._1).map {
       case (version, domain) =>
-        val verPkg      = trans.toKtPkg(domain.id, version, lineage.evolution)
-        val verStr      = version.v.toString
-        val codecsJson  = KtValue.KtType(verPkg, "BaboonCodecsJson")
-        val codecsUeba  = KtValue.KtType(verPkg, "BaboonCodecsUeba")
-        val metadata    = KtValue.KtType(verPkg, "BaboonMetadata")
-        val hasMeta     = target.language.writeEvolutionDict
-        val hasJson     = target.language.generateJsonCodecs
+        val verPkg     = trans.toKtPkg(domain.id, version, lineage.evolution)
+        val verStr     = version.v.toString
+        val codecsJson = KtValue.KtType(verPkg, "BaboonCodecsJson")
+        val codecsUeba = KtValue.KtType(verPkg, "BaboonCodecsUeba")
+        val metadata   = KtValue.KtType(verPkg, "BaboonMetadata")
+        val hasMeta    = target.language.writeEvolutionDict
+        val hasJson    = target.language.generateJsonCodecs
         (hasJson, hasMeta) match {
           case (true, true) =>
             q"""register(
@@ -122,7 +122,7 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
          |  }
          |}""".stripMargin
 
-    val tree   = ktTreeTools.inPkg(lineagePkg.parts.toSeq, facadeTree)
+    val tree = ktTreeTools.inPkg(lineagePkg.parts.toSeq, facadeTree)
     val output = KtDefnTranslator.Output(
       s"${lineage.pkg.path.map(_.toLowerCase).mkString("/")}/$classNameStr.kt",
       tree,
@@ -137,16 +137,8 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
     domain: Domain,
     p: CompilerProduct,
     translate: DomainMember.User => F[NEList[BaboonIssue], List[KtDefnTranslator.Output]],
-  ): F[NEList[BaboonIssue], List[KtDefnTranslator.Output]] = {
-    if (target.output.products.contains(p)) {
-      F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-        case (_, defn: DomainMember.User) => translate(defn)
-        case _                            => F.pure(List.empty)
-      }
-    } else {
-      F.pure(List.empty)
-    }
-  }
+  ): F[NEList[BaboonIssue], List[KtDefnTranslator.Output]] =
+    DomainProductTranslator.translate(domain, target.output.products, p, translate)
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[KtDefnTranslator.Output]] = {
     val evo = lineage.evolution
@@ -188,25 +180,34 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
     val basename = ktFiles.basename(domain, lineage.evolution)
     val pkg      = trans.toKtPkg(domain.id, domain.version, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q"""unmodified["${tid.toString}"] = listOf(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")})"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q"""unmodified["${tid.toString}"] = listOf(${versions.map(s => q"\"$s\"").join(", ")})"""
+    }
+
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s""""$v" to "$tier"""" }.mkString(", ")
+        q"""forwardReadable["${tid.toString}"] = mapOf($pairs)"""
+    }
 
     val metaTree =
       q"""object BaboonMetadata : $baboonMeta {
          |  private val unmodified = mutableMapOf<String, List<String>>()
+         |  private val forwardReadable = mutableMapOf<String, Map<String, String>>()
          |
          |  init {
          |    ${entries.joinN().shift(4).trim}
+         |    ${forwardEntries.joinN().shift(4).trim}
          |  }
          |
          |  override fun sameInVersions(typeId: String): List<String> {
          |    return unmodified[typeId] ?: emptyList()
+         |  }
+         |
+         |  override fun forwardReadableVersions(typeId: String): Map<String, String> {
+         |    return forwardReadable[typeId] ?: emptyMap()
          |  }
          |}""".stripMargin
 
@@ -326,16 +327,18 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
       val rtDir = if (target.language.multiplatform) "baboon-runtime/kotlin-kmp" else "baboon-runtime/kotlin"
 
       val baseFiles = List(
+        rt("BaboonAnyBinCodec.kt", s"$rtDir/BaboonAnyBinCodec.kt", stripJsonSections),
         rt("BaboonAnyOpaque.kt", s"$rtDir/BaboonAnyOpaque.kt", stripJsonSections),
         rt("BaboonByteString.kt", s"$rtDir/BaboonByteString.kt"),
         rt("BaboonCodecs.kt", s"$rtDir/BaboonCodecs.kt", stripJsonSections),
         rt("BaboonCodecsFacade.kt", s"$rtDir/BaboonCodecsFacade.kt", stripJsonSections),
+        rt("BaboonCodecVersionSelection.kt", "baboon-runtime/kotlin-common/BaboonCodecVersionSelection.kt"),
         rt("BaboonConversions.kt", s"$rtDir/BaboonConversions.kt"),
-        rt("BaboonEither.kt", s"$rtDir/BaboonEither.kt"),
-        rt("BaboonExceptions.kt", s"$rtDir/BaboonExceptions.kt"),
+        rt("BaboonEither.kt", "baboon-runtime/kotlin-common/BaboonEither.kt"),
+        rt("BaboonExceptions.kt", "baboon-runtime/kotlin-common/BaboonExceptions.kt"),
         rt("BaboonIdentifierRepr.kt", s"$rtDir/BaboonIdentifierRepr.kt"),
         rt("BaboonRuntimeShared.kt", s"$rtDir/BaboonRuntimeShared.kt"),
-        rt("BaboonServiceWiring.kt", s"$rtDir/BaboonServiceWiring.kt"),
+        rt("BaboonServiceWiring.kt", "baboon-runtime/kotlin-common/BaboonServiceWiring.kt"),
         rt("BaboonTools.kt", s"$rtDir/BaboonTools.kt"),
         rt("BaboonTimeFormats.kt", s"$rtDir/BaboonTimeFormats.kt"),
       )
@@ -347,7 +350,11 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
         )
       } else Nil
 
-      F.pure(baseFiles ++ kmpExtraFiles)
+      val jsonFiles = if (jsonEnabled) {
+        List(rt("BaboonAnyJsonCodec.kt", "baboon-runtime/kotlin-common/BaboonAnyJsonCodec.kt"))
+      } else Nil
+
+      F.pure(baseFiles ++ kmpExtraFiles ++ jsonFiles)
     } else {
       F.pure(List.empty)
     }

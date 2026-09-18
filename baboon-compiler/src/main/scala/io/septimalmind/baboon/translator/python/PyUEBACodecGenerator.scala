@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.python
 
+import io.septimalmind.baboon.translator.{UebaLayoutPlan, UebaLengthCheckRenderer}
 import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.python.PyKeywords.escapePyKeyword
@@ -19,6 +20,7 @@ class PyUEBACodecGenerator(
   pyTarget: PyTarget,
   domain: Domain,
 ) extends PyCodecTranslator {
+  private val layout = new UebaLayoutPlan(domain)
   override def translate(
     defn: DomainMember.User,
     pyRef: PyValue.PyType,
@@ -56,7 +58,7 @@ class PyUEBACodecGenerator(
     val isEncoderEnabled = pyTarget.language.enableDeprecatedEncoders || domain.version == evolution.latest
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
-        val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
+        val varlens = layout.indexedFields(d)
         val comment = varlens.map(f => q"# ${f.toString}").joinN()
         q"""$comment
            |return ${varlens.size.toString}""".stripMargin
@@ -223,15 +225,16 @@ class PyUEBACodecGenerator(
   private def genDtoDecoder(name: PyValue.PyType, fields: List[(TextTree[PyValue], TextTree[PyValue])], dto: Typedef.Dto): TextTree[PyValue] = {
     // Use the keyword-escaped attribute name for constructor kwargs.
     // Keyword fields use `class_=decoder` (requires populate_by_name=True in model_config).
+    val fieldPlans = PyFieldPlan.forDto(domain, dto)
     val fieldsDecoders = dto.fields.zip(fields.map(_._2)).map {
       case (field, decoder) =>
-        val attrName = if (PyKeywords.isKeyword(field.name.name)) s"${field.name.name}_" else field.name.name
+        val attrName = fieldPlans(field).constructorName
         q"$attrName=$decoder"
     }
-    q"""index = self.read_index(ctx, wire)
+    q"""index_count = self.consume_index(ctx, wire)
        |
        |if ctx.use_indices:
-       |    assert len(index) == self.index_elements_count(ctx)
+       |    if index_count != self.index_elements_count(ctx): raise ValueError("Unexpected UEBA index count: " + str(index_count))
        |
        |return ${name.name}(
        |    ${fieldsDecoders.join(",\n").shift(4).trim}
@@ -240,14 +243,6 @@ class PyUEBACodecGenerator(
   }
 
   private def genDtoBodies(name: PyType, dto: Typedef.Dto): (TextTree[PyValue], TextTree[PyValue]) = {
-    def adtBranchIndex(id: TypeId.User) = {
-      domain.defs.meta
-        .nodes(id).asInstanceOf[DomainMember.User]
-        .defn.asInstanceOf[Typedef.Adt]
-        .dataMembers(domain)
-        .zipWithIndex.find(_._1 == dto.id).get._2
-    }
-
     val fields = fieldsOf(dto)
 
     val noIndex = Seq(
@@ -274,7 +269,7 @@ class PyUEBACodecGenerator(
 
     val enc = dto.id.owner match {
       case Owner.Adt(id) if pyTarget.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""wire.write_byte(${idx.toString})
            |$fieldsEncoders""".stripMargin
       case _ => fieldsEncoders
@@ -282,9 +277,9 @@ class PyUEBACodecGenerator(
 
     val dec = dto.id.owner match {
       case Owner.Adt(id) if pyTarget.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""marker = wire.read_byte()
-           |assert marker == ${idx.toString}
+           |if marker != ${idx.toString}: raise ValueError("Unexpected UEBA ADT branch marker: " + str(marker))
            |return self.decode_branch(ctx, wire)""".stripMargin
       case _ => fieldsDecoders
     }
@@ -293,37 +288,25 @@ class PyUEBACodecGenerator(
   }
 
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[PyValue], TextTree[PyValue], TextTree[PyValue])] = {
-    dto.fields.map {
-      f =>
+    layout.fields(dto).map {
+      case UebaLayoutPlan.FieldLayout(f, length) =>
         val fieldRef = q"value.${escapePyKeyword(f.name.name)}"
         val encoder  = mkEncoder(f.tpe, fieldRef, q"wire")
         val fakeEnc  = mkEncoder(f.tpe, fieldRef, q"fake_writer")
         val dec      = mkDecoder(f.tpe)
 
-        val w = domain.refMeta(f.tpe).len match {
+        val w = length match {
           case BinReprLen.Fixed(bytes) =>
             q"""# ${f.toString}
                |before = write_memory_stream.tell()
                |${fakeEnc.trim}
                |after = write_memory_stream.tell()
                |length = after - before
-               |assert length == ${bytes.toString}
+               |${lengthChecks(BinReprLen.Fixed(bytes)).trim}
                |""".stripMargin
 
           case v: BinReprLen.Variable =>
-            val sanityChecks = v match {
-              case BinReprLen.Unknown() =>
-                q"assert after >= before, f\"Got after={after}, before={before}\""
-
-              case BinReprLen.Alternatives(variants) =>
-                q"assert length in {${variants.mkString(", ")}}, f\"Got length={length}\""
-
-              case BinReprLen.Range(min, max) =>
-                List(
-                  Some(q"assert length >= ${min.toString}, f\"Got length={length}\" "),
-                  max.map(m => q"assert length <= ${m.toString}, $$\"Got length={length}\""),
-                ).flatten.joinN()
-            }
+            val sanityChecks = lengthChecks(v)
 
             q"""# ${f.toString}
                |before = write_memory_stream.tell()
@@ -339,35 +322,20 @@ class PyUEBACodecGenerator(
     }
   }
 
+  private def lengthChecks(length: BinReprLen): TextTree[PyValue] =
+    UebaLengthCheckRenderer.render[PyValue](
+      length,
+      equalTo = bytes => q"length == ${bytes.toString}",
+      oneOf   = bytes => q"length in {${bytes.mkString(", ")}}",
+      enforce = condition => q"""if not ($condition): raise ValueError("Invalid UEBA field length: " + str(length))""",
+    )
+
   private def mkEncoder(tpe: TypeRef, ref: TextTree[PyValue], writerRef: TextTree[PyValue]): TextTree[PyValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit => q"$writerRef.write_bool($ref)"
-              case TypeId.Builtins.i08 => q"$writerRef.write_byte($ref)"
-              case TypeId.Builtins.i16 => q"$writerRef.write_i16($ref)"
-              case TypeId.Builtins.i32 => q"$writerRef.write_i32($ref)"
-              case TypeId.Builtins.i64 => q"$writerRef.write_i64($ref)"
-              case TypeId.Builtins.u08 => q"$writerRef.write_ubyte($ref)"
-              case TypeId.Builtins.u16 => q"$writerRef.write_u16($ref)"
-              case TypeId.Builtins.u32 => q"$writerRef.write_u32($ref)"
-              case TypeId.Builtins.u64 => q"$writerRef.write_u64($ref)"
-              case TypeId.Builtins.f32 => q"$writerRef.write_f32($ref)"
-              case TypeId.Builtins.f64 => q"$writerRef.write_f64($ref)"
-
-              case TypeId.Builtins.f128 => q"$writerRef.write_f128($ref)"
-              case TypeId.Builtins.str  => q"$writerRef.write_str($ref)"
-
-              case TypeId.Builtins.uid => q"$writerRef.write_uuid($ref)"
-              case TypeId.Builtins.tsu => q"$writerRef.write_datetime($ref)"
-              case TypeId.Builtins.tso => q"$writerRef.write_datetime($ref)"
-
-              case TypeId.Builtins.bytes => q"$writerRef.write_bytes($ref)"
-
-              case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+            PyScalarCodecOps.encode(s, writerRef, ref)
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -407,30 +375,7 @@ class PyUEBACodecGenerator(
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit => q"wire.read_bool()"
-              case TypeId.Builtins.i08 => q"wire.read_byte()"
-              case TypeId.Builtins.i16 => q"wire.read_i16()"
-              case TypeId.Builtins.i32 => q"wire.read_i32()"
-              case TypeId.Builtins.i64 => q"wire.read_i64()"
-              case TypeId.Builtins.u08 => q"wire.read_ubyte()"
-              case TypeId.Builtins.u16 => q"wire.read_u16()"
-              case TypeId.Builtins.u32 => q"wire.read_u32()"
-              case TypeId.Builtins.u64 => q"wire.read_u64()"
-              case TypeId.Builtins.f32 => q"wire.read_f32()"
-              case TypeId.Builtins.f64 => q"wire.read_f64()"
-
-              case TypeId.Builtins.f128 => q"wire.read_f128()"
-              case TypeId.Builtins.str  => q"wire.read_string()"
-
-              case TypeId.Builtins.uid => q"wire.read_uuid()"
-              case TypeId.Builtins.tsu => q"wire.read_datetime()"
-              case TypeId.Builtins.tso => q"wire.read_datetime()"
-
-              case TypeId.Builtins.bytes => q"wire.read_bytes()"
-
-              case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+            PyScalarCodecOps.decode(s, q"wire")
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -464,13 +409,8 @@ class PyUEBACodecGenerator(
   // Deep walk (mirrors Scala/C#/Rust/Kotlin/Java/TS/Dart/Swift `hasAnyField`): a codec class
   // needs the any-field helpers if any direct or nested-via-Constructor-arg field has type `any`.
   private def hasAnyField(defn: DomainMember.User): Boolean = {
-    def hasAny(tpe: TypeRef): Boolean = tpe match {
-      case _: TypeRef.Any         => true
-      case _: TypeRef.Scalar      => false
-      case c: TypeRef.Constructor => c.args.exists(hasAny)
-    }
     defn.defn match {
-      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case d: Typedef.Dto => d.fields.exists(f => PyFieldPlan.containsAny(f.tpe))
       case _              => false
     }
   }

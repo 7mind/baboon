@@ -372,6 +372,9 @@ class StubJson extends AbstractBaboonJsonCodecs {
 class StubMeta implements BaboonMeta {
     constructor(private readonly versions: string[]) {}
     public sameInVersions(_typeId: string): string[] { return this.versions; }
+    public forwardReadableVersions(_typeId: string): { readonly [version: string]: string } {
+        return Object.fromEntries(this.versions.map(v => [v, "identical"]));
+    }
 }
 
 class StubConv implements AbstractBaboonConversions {
@@ -383,6 +386,8 @@ class StubGenerated implements BaboonGenerated {
     public baboonDomainVersion(): string { return "1.0.0"; }
     public baboonDomainIdentifier(): string { return "dom"; }
     public baboonSameInVersions(): string[] { return ["1.0.0"]; }
+    public baboonForwardReadable(): { readonly [version: string]: string } { return { "1.0.0": "identical" }; }
+    public baboonMinReaderVersions(): { readonly [tier: string]: string } { return { "identical": "1.0.0", "prefix-any-mode": "1.0.0", "prefix-compact": "1.0.0", "json-additive": "1.0.0" }; }
     public baboonTypeIdentifier(): string { return "T"; }
 }
 
@@ -446,6 +451,8 @@ class StubAdtBranchGenerated implements BaboonGenerated {
     public baboonDomainVersion(): string { return "1.0.0"; }
     public baboonDomainIdentifier(): string { return "dom"; }
     public baboonSameInVersions(): string[] { return ["1.0.0"]; }
+    public baboonForwardReadable(): { readonly [version: string]: string } { return { "1.0.0": "identical" }; }
+    public baboonMinReaderVersions(): { readonly [tier: string]: string } { return { "identical": "1.0.0", "prefix-any-mode": "1.0.0", "prefix-compact": "1.0.0", "json-additive": "1.0.0" }; }
     public baboonTypeIdentifier(): string { return "BranchT"; }
 }
 

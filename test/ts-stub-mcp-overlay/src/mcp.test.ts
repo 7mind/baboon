@@ -207,6 +207,17 @@ function initAndList(): { tools: Array<{ name: string; inputSchema: unknown; des
 // ---------------------------------------------------------------------------
 
 describe("MCP §1: initialize", () => {
+    test("tool schema snapshots do not mutate subsequent lists or cached routes", () => {
+        const server = makeServer();
+        const first = server.tools;
+        const originalName = first[0].name;
+        const schema = first[0].inputSchema as Record<string, unknown>;
+        schema["mutated"] = true;
+        (first[0].method as { methodName: string }).methodName = "mutated";
+        expect(server.tools[0].name).toBe(originalName);
+        expect(server.tools[0].method.methodName).not.toBe("mutated");
+        expect(server.tools[0].inputSchema).not.toHaveProperty("mutated");
+    });
     const server = makeServer();
     const session = new McpSession();
 

@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -23,15 +24,62 @@ using Newtonsoft.Json.Linq;
 
 namespace Baboon.Runtime.Shared
 {
+    /// <summary>
+    /// How a reader treats JSON payloads written by a NEWER domain version than it registers.
+    /// Lossless: decode only when the envelope's <c>$uv</c> (byte-identical bound) reaches a registered
+    /// version — the pre-<c>$rv</c> behavior. Tolerant: additionally honor <c>$rv</c> (json-additive
+    /// bound): decode with that version's codec, silently dropping fields this reader does not know.
+    /// Re-encoding intermediaries must use Lossless or they truncate data for downstream consumers.
+    /// </summary>
+    public enum ForwardReadPolicy
+    {
+        Lossless,
+        Tolerant,
+    }
+
     public class BaboonCodecsFacade
     {
         private const string CONTENT_JSON_KEY = "$c";
+
+        /// <summary>
+        /// Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+        /// bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
+        /// </summary>
+        public ForwardReadPolicy ForwardReadPolicy { get; set; } = ForwardReadPolicy.Tolerant;
 
         private readonly ConcurrentDictionary<BaboonDomainVersion, Lazy<AbstractBaboonJsonCodecs>> _versionsCodecsJson = new();
         private readonly ConcurrentDictionary<BaboonDomainVersion, Lazy<AbstractBaboonUebaCodecs>> _versionsCodecsBin = new();
         private readonly ConcurrentDictionary<BaboonDomainVersion, Lazy<AbstractBaboonConversions>> _versionsConversions = new();
         private readonly ConcurrentDictionary<BaboonDomainVersion, Lazy<IBaboonMeta>> _versionsMeta = new();
-        private readonly ConcurrentDictionary<string, List<BaboonDomainVersion>> _domainVersions = new();
+        private sealed class RegisteredVersion
+        {
+            public RegisteredVersion(BaboonDomainVersion id)
+            {
+                Id = id;
+                var culture = CultureInfo.CurrentCulture;
+                _numberFormat = culture.GetType() == typeof(CultureInfo) ? culture.NumberFormat : null;
+                _version = new Lazy<BaboonVersion>(() => id.Version);
+            }
+
+            public BaboonDomainVersion Id { get; }
+            private readonly NumberFormatInfo? _numberFormat;
+            private readonly Lazy<BaboonVersion> _version;
+            public BaboonVersion Version
+            {
+                get
+                {
+                    var culture = CultureInfo.CurrentCulture;
+                    // The public parser observes mutable formats and subclass GetFormat overrides.
+                    return _numberFormat is { IsReadOnly: true }
+                        && culture.GetType() == typeof(CultureInfo)
+                        && ReferenceEquals(culture.NumberFormat, _numberFormat)
+                        ? _version.Value
+                        : Id.Version;
+                }
+            }
+        }
+
+        private readonly ConcurrentDictionary<string, List<RegisteredVersion>> _domainVersions = new();
         private readonly object _domainVersionsLock = new();
 
         /// <summary>
@@ -184,7 +232,7 @@ namespace Baboon.Runtime.Shared
                 throw new BaboonCodecException.CodecNotFound("Baboon codecs must have at least one domain registered.");
             }
 
-            foreach (var dv in _domainVersions.Values.SelectMany(v => v))
+            foreach (var dv in _domainVersions.Values.SelectMany(v => v).Select(v => v.Id))
             {
                 if (!_versionsConversions.ContainsKey(dv))
                 {
@@ -292,7 +340,7 @@ namespace Baboon.Runtime.Shared
         public Either<BaboonCodecException, Unit> EncodeToBin<T>(BaboonCodecContext ctx, BinaryWriter writer, T value, BaboonTypeMeta? typeMetaOverride)
             where T : IBaboonGenerated
         {
-            var typeMeta = BaboonTypeMeta.From(value, typeof(T));
+            var typeMeta = BaboonTypeMeta.ForBin(value, typeof(T), ctx);
             var codecResult = GetBinCodec(typeMeta, exact: true);
             if (codecResult.IsLeft)
             {
@@ -813,7 +861,7 @@ namespace Baboon.Runtime.Shared
                 ));
             }
 
-            if (versions.All(v => v != dvFrom))
+            if (versions.All(v => v.Id != dvFrom))
             {
                 return Either.Left<BaboonCodecException, TTo>(new BaboonCodecException.ConverterFailure(
                     $"Unknown domain version' {dvFrom}'."
@@ -822,8 +870,9 @@ namespace Baboon.Runtime.Shared
 
             // Iterate from first to latest, applying each step's conversion when needed.
             IBaboonGenerated current = value;
-            foreach (var toVersion in versions)
+            foreach (var registered in versions)
             {
+                var toVersion = registered.Id;
                 // Mid-walk early-exit: if the current value already matches the target type
                 // (e.g. an intermediate non-latest TO has been reached), stop walking and return.
                 // Matches OLD facade semantics for non-latest TO calls.
@@ -831,7 +880,7 @@ namespace Baboon.Runtime.Shared
 
                 if (
                     current.BaboonDomainVersion() == toVersion.DomainVersion ||
-                    new BaboonDomainVersion(current.BaboonDomainIdentifier(), current.BaboonDomainVersion()).Version >= toVersion.Version
+                    new BaboonDomainVersion(current.BaboonDomainIdentifier(), current.BaboonDomainVersion()).Version >= registered.Version
                 )
                 {
                     continue;
@@ -932,9 +981,10 @@ namespace Baboon.Runtime.Shared
             var currentType = value.GetType();
             var adtType = (value as IBaboonAdtMemberMeta)?.BaboonAdtType();
 
-            foreach (var toVersion in versions)
+            foreach (var registered in versions)
             {
-                if (dvFrom.Version >= toVersion.Version) continue;
+                var toVersion = registered.Id;
+                if (dvFrom.Version >= registered.Version) continue;
 
                 if (!_versionsConversions.TryGetValue(toVersion, out var lazyConversions))
                 {
@@ -966,7 +1016,8 @@ namespace Baboon.Runtime.Shared
 
         private Either<BaboonCodecException, IBaboonStreamCodec<IBaboonGenerated, BinaryWriter, BinaryReader>> GetBinCodec(BaboonTypeMeta typeMeta, bool exact)
         {
-            var codec = GetCodec(_versionsCodecsBin, typeMeta, exact);
+            // v1 envelopes carry readableMin == minCompat, so the policy only bites on v2 envelopes (and JSON)
+            var codec = GetCodec(_versionsCodecsBin, typeMeta, exact, tolerant: ForwardReadPolicy == ForwardReadPolicy.Tolerant);
             if (codec.IsLeft)
             {
                 return Either.Left<BaboonCodecException, IBaboonStreamCodec<IBaboonGenerated, BinaryWriter, BinaryReader>>(
@@ -986,7 +1037,7 @@ namespace Baboon.Runtime.Shared
 
         private Either<BaboonCodecException, IBaboonValueCodec<IBaboonGenerated, JToken>> GetJsonCodec(BaboonTypeMeta typeMeta, bool exact)
         {
-            var codec = GetCodec(_versionsCodecsJson, typeMeta, exact);
+            var codec = GetCodec(_versionsCodecsJson, typeMeta, exact, tolerant: ForwardReadPolicy == ForwardReadPolicy.Tolerant);
             if (codec.IsLeft)
             {
                 return Either.Left<BaboonCodecException, IBaboonValueCodec<IBaboonGenerated, JToken>>(
@@ -1007,7 +1058,8 @@ namespace Baboon.Runtime.Shared
         private Either<BaboonCodecException, IBaboonCodecData> GetCodec<TCodecs>(
             ConcurrentDictionary<BaboonDomainVersion, Lazy<TCodecs>> versionsCodecs,
             BaboonTypeMeta typeMeta,
-            bool exact
+            bool exact,
+            bool tolerant
         )
             where TCodecs : AbstractBaboonCodecs
         {
@@ -1016,24 +1068,31 @@ namespace Baboon.Runtime.Shared
                 return Either.Left<BaboonCodecException, IBaboonCodecData>(new BaboonCodecException.CodecNotFound($"Unknown domain {typeMeta.DomainIdentifier}."));
             }
 
-            var minVersion = versions[0];
-            var maxVersion = versions[^1];
+            var minVersion = versions[0].Id;
+            var maxVersion = versions[^1].Id;
 
-            BaboonDomainVersion modelVersion;
-            var lookupVersion = typeMeta.VersionRef;
-            var minCompat = typeMeta.VersionMinCompat;
-            if (minCompat is not null && lookupVersion.Version > maxVersion.Version)
-            {
-                modelVersion = minCompat;
-            }
-            else
-            {
-                modelVersion = lookupVersion;
-            }
-
+            var modelVersion = typeMeta.VersionRef;
             var modelV = modelVersion.Version;
-            var maxV = maxVersion.Version;
-            var minV = minVersion.Version;
+            var maxV = versions[^1].Version;
+            var minV = versions[0].Version;
+
+            if (!exact && modelV > maxV)
+            {
+                // a payload from a NEWER version than we register. The oldest version whose codec may
+                // decode it is the bound the writer published (byte-identical or, under its Tolerant
+                // policy, prefix-readable), or — for tolerant JSON reads — the json-additive bound.
+                // Forward-readability is monotone along the version chain, so once the bound reaches a
+                // registered version our newest codec reads the payload (losing at most the fields
+                // appended after our version).
+                var lowerBound = tolerant ? typeMeta.VersionReadableMin : typeMeta.VersionMinCompat;
+                if (lowerBound is not null && lowerBound.Version <= maxV)
+                {
+                    return GetCodecExact(versionsCodecs, maxVersion, typeMeta.TypeIdentifier);
+                }
+                return Either.Left<BaboonCodecException, IBaboonCodecData>(new BaboonCodecException.CodecNotFound(
+                    $"Unsupported domain version '{modelVersion}'."
+                ));
+            }
 
             // exact=true: caller knows the model version and wants its codec — never substitute.
             // exact=false at the latest registered version (PR-07-D02): single-version-domain case;
@@ -1046,12 +1105,12 @@ namespace Baboon.Runtime.Shared
 
             if (modelV >= minV && modelV < maxV)
             {
-                return GetCodecMaxCompat(versionsCodecs, modelVersion, maxVersion, typeMeta.TypeIdentifier);
+                return GetCodecMaxCompat(versionsCodecs, modelVersion, versions[^1], typeMeta.TypeIdentifier);
             }
 
             if (modelV < minV)
             {
-                return GetCodecMaxCompat(versionsCodecs, minVersion, maxVersion, typeMeta.TypeIdentifier);
+                return GetCodecMaxCompat(versionsCodecs, minVersion, versions[^1], typeMeta.TypeIdentifier);
             }
 
             return Either.Left<BaboonCodecException, IBaboonCodecData>(new BaboonCodecException.CodecNotFound(
@@ -1086,7 +1145,7 @@ namespace Baboon.Runtime.Shared
         private Either<BaboonCodecException, IBaboonCodecData> GetCodecMaxCompat<TCodecs>(
             ConcurrentDictionary<BaboonDomainVersion, Lazy<TCodecs>> versionsCodecs,
             BaboonDomainVersion modelVersion,
-            BaboonDomainVersion maxVersion,
+            RegisteredVersion maxVersion,
             string typeIdentifier
         )
             where TCodecs : AbstractBaboonCodecs
@@ -1103,7 +1162,7 @@ namespace Baboon.Runtime.Shared
             for (var i = sameVersions.Count - 1; i >= 0; i--)
             {
                 var sv = sameVersions[i];
-                if (sv == maxVersion.DomainVersion || BaboonVersion.From(sv) <= maxVersion.Version)
+                if (sv == maxVersion.Id.DomainVersion || BaboonVersion.From(sv) <= maxVersion.Version)
                 {
                     bestSame = sv;
                     break;
@@ -1129,14 +1188,14 @@ namespace Baboon.Runtime.Shared
             {
                 if (_domainVersions.TryGetValue(domainVersion.DomainIdentifier, out var existing))
                 {
-                    if (existing.Contains(domainVersion)) return;
-                    var updated = new List<BaboonDomainVersion>(existing) {domainVersion};
+                    if (existing.Any(v => v.Id == domainVersion)) return;
+                    var updated = new List<RegisteredVersion>(existing) {new RegisteredVersion(domainVersion)};
                     updated.Sort((a, b) => a.Version.CompareTo(b.Version));
                     _domainVersions[domainVersion.DomainIdentifier] = updated;
                 }
                 else
                 {
-                    _domainVersions[domainVersion.DomainIdentifier] = new List<BaboonDomainVersion> {domainVersion};
+                    _domainVersions[domainVersion.DomainIdentifier] = new List<RegisteredVersion> {new RegisteredVersion(domainVersion)};
                 }
             }
         }

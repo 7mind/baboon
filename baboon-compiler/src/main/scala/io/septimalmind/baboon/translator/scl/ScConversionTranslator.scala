@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.scl
 
 import distage.Id
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.scl.ScBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.translator.scl.ScValue.ScPackageId
@@ -41,7 +41,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
     import io.septimalmind.baboon.translator.FQNSymbol.*
 
     val oldTpe         = maybeOldTpe.getOrElse(newTpe)
-    val newTypeRefTree = trans.asScRef(newTpe, domain, evo)
+    val newTypeRefTree = trans.asScRef(newTpe, domain, evo).fullyQualified
     val oldTypeRefTree = trans.asScRef(oldTpe, srcDom, evo).fullyQualified
 
     (newTpe, oldTpe) match {
@@ -154,12 +154,14 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         )).mkString("-")
 
         val tin  = trans.asScType(conv.sourceTpe, srcDom, evo).fullyQualified
-        val tout = trans.asScType(conv.targetTpe, domain, evo)
+        val tout = trans.asScType(conv.targetTpe, domain, evo).fullyQualified
 
-        val meta = q"""override def versionFrom: $scString = "${srcVer.v.toString}"
-                      |override def versionTo: $scString = "${domain.version.v.toString}"
-                      |override def typeId: $scString = "${conv.sourceTpe.toString}"
+        val targetMeta = if (conv.sourceTpe == conv.targetTpe) q"" else q"""override protected def targetTypeId: $scString = "${conv.targetTpe.toString}""""
+        val sourceMeta = q"""override def versionFrom: $scString = "${srcVer.v.toString}"
+                            |override def versionTo: $scString = "${domain.version.v.toString}"
+                            |override def typeId: $scString = "${conv.sourceTpe.toString}"
                       """.stripMargin.trim
+        val meta = if (conv.sourceTpe == conv.targetTpe) sourceMeta else Seq(sourceMeta, targetMeta).join("\n")
 
         val rendered = conv match {
           case _: Conversion.CustomConversionRequired =>
@@ -244,8 +246,8 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             val ops = c.ops.map(o => o.targetField -> o).toMap
             val assigns = dto.fields.map {
               f =>
-                val op          = ops(f)
-                val fld         = escapeScKeyword(f.name.name)
+                val op           = ops(f)
+                val fld          = escapeScKeyword(f.name.name)
                 val localVarName = escapeScKeyword(f.name.name.toLowerCase)
                 val expr = op match {
                   case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"_from.$fld", 1)
@@ -304,11 +306,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), Some(regtree), None))
         }
 
-        if (false) {
-          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
-        } else {
-          F.pure(rendered)
-        }
+        F.pure(rendered): Out[List[RenderedConversion]]
     }
 
   }

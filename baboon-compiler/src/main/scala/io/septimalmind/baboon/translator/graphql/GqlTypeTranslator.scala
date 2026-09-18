@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.graphql
 
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.translator.schema.SchemaReferences
 
 class GqlTypeTranslator {
 
@@ -26,8 +27,12 @@ class GqlTypeTranslator {
       else if (prefixLines.isEmpty) suffixLines
       else prefixLines ++ List("") ++ suffixLines
 
-    val tq       = "\"\"\""
-    val escaped  = allLines.map(_.replace(tq, "\\\"\\\"\\\""))
+    descriptionLiteral(allLines, indent)
+  }
+
+  def descriptionLiteral(lines: List[String], indent: String): String = {
+    val tq      = "\"\"\""
+    val escaped = lines.map(_.replace(tq, "\\\"\\\"\\\""))
 
     if (escaped.size == 1) {
       s"""$indent"${escaped.head}"\n"""
@@ -38,26 +43,11 @@ class GqlTypeTranslator {
   }
 
   def foreignTypeResolution(domain: Domain): Map[TypeId.User, Option[TypeRef]] = {
-    domain.defs.meta.nodes.values.collect {
-      case u: DomainMember.User =>
-        u.defn match {
-          case f: Typedef.Foreign => Some(f.id -> f.runtimeMapping)
-          case _                  => None
-        }
-    }.flatten.toMap
+    SchemaReferences.prepare(domain).resolutions
   }
 
   def resolveTypeRef(ref: TypeRef, foreignResolutions: Map[TypeId.User, Option[TypeRef]]): TypeRef = {
-    ref match {
-      case TypeRef.Scalar(id: TypeId.User) =>
-        foreignResolutions.get(id) match {
-          case Some(Some(resolved)) => resolveTypeRef(resolved, foreignResolutions)
-          case _                    => ref
-        }
-      case TypeRef.Constructor(id, args) =>
-        TypeRef.Constructor(id, args.map(a => resolveTypeRef(a, foreignResolutions)))
-      case _ => ref
-    }
+    SchemaReferences.resolve(ref, foreignResolutions)
   }
 
   def scalarName(id: TypeId.BuiltinScalar): String = {
@@ -122,12 +112,11 @@ class GqlTypeTranslator {
   }
 
   def typeName(id: TypeId.User): String = {
-    val parts = id.pkg.path.toList ++ id.owner.asPseudoPkg :+ id.name.name
-    parts.map(sanitize).mkString("_")
+    SchemaReferences.name(id)
   }
 
   def sanitize(s: String): String = {
-    s.replace("-", "_").replace(".", "_")
+    SchemaReferences.sanitize(s)
   }
 
   /** Ensure a name is a valid GraphQL identifier: `[_A-Za-z][_0-9A-Za-z]*`.

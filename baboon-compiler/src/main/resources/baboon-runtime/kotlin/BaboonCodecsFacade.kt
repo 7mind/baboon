@@ -12,7 +12,21 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * How a reader treats JSON payloads written by a NEWER domain version than it registers.
+ * Lossless: decode only when the envelope's `$uv` (byte-identical bound) reaches a registered
+ * version — the pre-`$rv` behavior. Tolerant: additionally honor `$rv` (json-additive bound):
+ * decode with that version's codec, silently dropping fields this reader does not know.
+ * Re-encoding intermediaries must use Lossless or they truncate data for downstream consumers.
+ */
+enum class ForwardReadPolicy { Lossless, Tolerant }
+
 open class BaboonCodecsFacade {
+    /**
+     * Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+     * bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
+     */
+    var forwardReadPolicy: ForwardReadPolicy = ForwardReadPolicy.Tolerant
     private val CONTENT_JSON_KEY = "${'$'}c"
 
     // @baboon:json-start
@@ -140,7 +154,7 @@ open class BaboonCodecsFacade {
     ): ByteArray {
         val byteStream = ByteArrayOutputStream()
         val ledStream = LEDataOutputStream(byteStream)
-        val typeMeta = BaboonTypeMeta.from(value)
+        val typeMeta = BaboonTypeMeta.forBin(value, ctx)
         val codec = getBinCodec(typeMeta, exact = true) as BaboonBinCodec<T>
         typeMeta.writeBin(ledStream)
         codec.encode(ctx, ledStream, value)
@@ -180,6 +194,10 @@ open class BaboonCodecsFacade {
             if (typeMeta.domainVersion != typeMeta.domainVersionMinCompat) {
                 put("${'$'}uv", JsonPrimitive(typeMeta.domainVersionMinCompat))
             }
+            // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+            if (typeMeta.domainVersionReadableMin.isNotEmpty() && typeMeta.domainVersionReadableMin != typeMeta.domainVersionMinCompat) {
+                put("${'$'}rv", JsonPrimitive(typeMeta.domainVersionReadableMin))
+            }
             put(CONTENT_JSON_KEY, content)
         }
     }
@@ -204,22 +222,25 @@ open class BaboonCodecsFacade {
         val v = json["${'$'}v"]?.toString()?.trim('"') ?: return null
         val t = json["${'$'}t"]?.toString()?.trim('"') ?: return null
         val uv = json["${'$'}uv"]?.toString()?.trim('"') ?: v
-        return BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t)
+        val rv = json["${'$'}rv"]?.toString()?.trim('"') ?: uv
+        return BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t, rv)
     }
 
     private fun getJsonCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
-        return getCodec(versionsCodecsJson, typeMeta, exact)
+        return getCodec(versionsCodecsJson, typeMeta, exact, tolerant = forwardReadPolicy == ForwardReadPolicy.Tolerant)
     }
     // @baboon:json-end
 
     private fun getBinCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
-        return getCodec(versionsCodecsBin, typeMeta, exact)
+        // v1 envelopes carry readableMin == minCompat, so the policy only bites on v2 envelopes (and JSON)
+        return getCodec(versionsCodecsBin, typeMeta, exact, tolerant = forwardReadPolicy == ForwardReadPolicy.Tolerant)
     }
 
     private fun <TCodecs : AbstractBaboonCodecs> getCodec(
         versionsCodecs: ConcurrentHashMap<BaboonDomainVersion, Lazy<TCodecs>>,
         typeMeta: BaboonTypeMeta,
         exact: Boolean,
+        tolerant: Boolean,
     ): BaboonCodecData {
         val versions = domainVersions[typeMeta.domainIdentifier]
             ?.takeIf { it.isNotEmpty() }
@@ -228,27 +249,15 @@ open class BaboonCodecsFacade {
         val minVersion = versions.first()
         val maxVersion = versions.last()
 
-        val modelVersion = when {
-            typeMeta.versionMinCompat() != null && typeMeta.version().version > maxVersion.version ->
-                typeMeta.versionMinCompat()!!
-            else -> typeMeta.version()
-        }
-
-        return when {
-            exact && modelVersion.version == maxVersion.version ->
-                getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier)
-            // PR-07-D02 fix: non-exact lookup at the latest registered version routes to exact
-            // lookup. Without this arm a single-version domain (min == max == model) falls through
-            // every other arm because the next one's strict `<` excludes equality, producing a
-            // misleading "Unsupported domain version" error. Mirrors Scala/C# fix.
-            !exact && modelVersion.version == maxVersion.version ->
-                getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier)
-            modelVersion.version >= minVersion.version && modelVersion.version < maxVersion.version ->
-                getCodecMaxCompat(versionsCodecs, modelVersion, maxVersion, typeMeta.typeIdentifier)
-            modelVersion.version < minVersion.version ->
-                getCodecMaxCompat(versionsCodecs, minVersion, maxVersion, typeMeta.typeIdentifier)
-            else ->
-                throw BaboonCodecException.CodecNotFound("Unsupported domain version '$modelVersion'.")
+        return when (val selection = BaboonCodecVersionSelection.select(typeMeta, minVersion, maxVersion, exact, tolerant)) {
+            is BaboonCodecVersionSelection.Exact ->
+                getCodecExact(versionsCodecs, selection.version, typeMeta.typeIdentifier)
+            is BaboonCodecVersionSelection.Compatible ->
+                getCodecMaxCompat(versionsCodecs, selection.version, maxVersion, typeMeta.typeIdentifier)
+            is BaboonCodecVersionSelection.UnsupportedForward ->
+                throw BaboonCodecException.CodecNotFound("Unsupported domain version '${selection.version}'.")
+            is BaboonCodecVersionSelection.Unsupported ->
+                throw BaboonCodecException.CodecNotFound("Unsupported domain version '${selection.version}'.")
         }
     }
 
@@ -298,7 +307,9 @@ open class BaboonCodecsFacade {
     fun preload() {
         Thread {
             try {
+                // @baboon:json-start
                 versionsCodecsJson.values.forEach { it.value }
+                // @baboon:json-end
                 versionsCodecsBin.values.forEach { it.value }
             } catch (_: Throwable) {}
         }.start()

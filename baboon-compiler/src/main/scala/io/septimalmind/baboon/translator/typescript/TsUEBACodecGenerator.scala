@@ -1,12 +1,11 @@
 package io.septimalmind.baboon.translator.typescript
 
 import io.septimalmind.baboon.CompilerTarget.TsTarget
-import io.septimalmind.baboon.parser.model.RawMemberMeta
+import io.septimalmind.baboon.translator.{UebaLayoutPlan, UebaLengthCheckRenderer}
 import io.septimalmind.baboon.translator.typescript.TsTypes.*
 import io.septimalmind.baboon.translator.typescript.TsValue.TsType
 import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -19,12 +18,14 @@ class TsUEBACodecGenerator(
   tsFileTools: TsFileTools,
   tsDomainTreeTools: TsDomainTreeTools,
 ) extends TsCodecTranslator {
+  private val layout    = new UebaLayoutPlan(domain)
+  private val scalarOps = new TsScalarCodecOps(target)
   override def translate(defn: DomainMember.User, tsRef: TsValue.TsType, srcRef: TsValue.TsType): Option[TextTree[TsValue]] = {
     if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto  => Some(genDtoCodec(srcRef, d))
-        case e: Typedef.Enum => Some(genEnumCodec(srcRef, e))
-        case a: Typedef.Adt  => Some(genAdtCodec(srcRef, a))
+        case d: Typedef.Dto     => Some(genDtoCodec(srcRef, d))
+        case e: Typedef.Enum    => Some(genEnumCodec(srcRef, e))
+        case a: Typedef.Adt     => Some(genAdtCodec(a))
         case f: Typedef.Foreign =>
           // Mirror C# (CSUEBACodecGenerator): a Custom-bound foreign emits a value codec class whose
           // encode/decode throw by default; the host overrides it via `lazyInstance`. Containing types
@@ -81,12 +82,10 @@ class TsUEBACodecGenerator(
            |}""".stripMargin.trim
       )
 
-    val anyHelpers: List[TextTree[TsValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
-
     val baseMethods = encodeMethod ++ decodeMethod ++
       branchDecoder.map(tree => q"""public decodeBranch(ctx: $tsBaboonCodecContext, reader: $tsBaboonBinReader) {
                                    |    ${tree.shift(4).trim}
-                                   |}""".stripMargin) ++ anyHelpers
+                                   |}""".stripMargin)
 
     val meta = tsDomainTreeTools.makeCodecMeta(defn, codecName(srcRef))
 
@@ -113,19 +112,6 @@ class TsUEBACodecGenerator(
     )
   }
 
-  private def adtBranchIndex(adtId: TypeId.User, dtoId: TypeId): Int = {
-    domain.defs.meta
-      .nodes(adtId)
-      .asInstanceOf[DomainMember.User]
-      .defn
-      .asInstanceOf[Typedef.Adt]
-      .dataMembers(domain)
-      .zipWithIndex
-      .find(_._1 == dtoId)
-      .get
-      ._2
-  }
-
   private def genBranchDecoder(
     name: TsType,
     d: Typedef.Dto,
@@ -140,19 +126,13 @@ class TsUEBACodecGenerator(
   }
 
   private def dtoDec(dto: Typedef.Dto, name: TsType, fields: List[TextTree[TsValue]]): TextTree[TsValue] = {
-    val indexCount = dto.fields.count(f => domain.refMeta(f.tpe).len.isVariable)
+    val indexCount = layout.indexedFields(dto).size
     val ctorFields = dto.fields.map {
       f =>
         q"${typeTranslator.escapeTsKeyword(f.name.name)},"
     }
-    q"""const header = $tsBinTools.readByte(reader);
-       |const useIndices = header === 0x01;
-       |if (useIndices) {
-       |    for (let i = 0; i < ${indexCount.toString}; i++) {
-       |        $tsBinTools.readI32(reader);
-       |        $tsBinTools.readI32(reader);
-       |    }
-       |}
+    q"""const indexCount = $tsBinTools.consumeIndex(reader, ${indexCount.toString});
+       |if (ctx.useIndices && indexCount !== ${indexCount.toString}) throw new $tsBaboonDecoderFailure("Unexpected UEBA index count: " + indexCount);
        |${fields.joinN().trim}
        |return new $name(
        |    ${ctorFields.joinN().shift(4).trim}
@@ -160,31 +140,40 @@ class TsUEBACodecGenerator(
   }
 
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[TsValue], TextTree[TsValue], TextTree[TsValue])] = {
-    dto.fields.map {
-      field =>
+    layout.fields(dto).map {
+      case UebaLayoutPlan.FieldLayout(field, length) =>
         val fieldName        = field.name.name
         val escapedFieldName = typeTranslator.escapeTsKeyword(fieldName)
-        val isVariable       = domain.refMeta(field.tpe).len.isVariable
         // Property access uses the escaped getter name; local var name is also escaped to avoid
         // emitting `const default = ...` or `const class = ...` which are TS syntax errors.
         val enc     = mkEncoder(field.tpe, q"value.$escapedFieldName", "writer")
         val fakeEnc = mkEncoder(field.tpe, q"value.$escapedFieldName", "buffer")
         val dec     = q"const $escapedFieldName = ${mkDecoder(field.tpe)};"
-        val w = if (isVariable) {
-          q"""{
-             |    const before = buffer.position();
-             |    $tsBinTools.writeI32(writer, before);
-             |    $fakeEnc
-             |    const after = buffer.position();
-             |    $tsBinTools.writeI32(writer, after - before);
-             |}""".stripMargin
-        } else {
-          fakeEnc
-        }
+        val indexOffset =
+          if (length.isVariable) q"""if (before > ${UebaLayoutPlan.MaxIndexValue.toString}) throw new $tsBaboonEncoderFailure("UEBA index offset exceeds i32");
+                                    |$tsBinTools.writeI32(writer, before);""".stripMargin else q""
+        val indexLength = if (length.isVariable) q"$tsBinTools.writeI32(writer, length);" else q""
+        val w = q"""{
+                   |    const before = buffer.position();
+                   |    $indexOffset
+                   |    $fakeEnc
+                   |    const after = buffer.position();
+                   |    const length = after - before;
+                   |    ${lengthChecks(length).shift(4).trim}
+                   |    $indexLength
+                   |}""".stripMargin
 
         (enc, dec, w)
     }
   }
+
+  private def lengthChecks(length: BinReprLen): TextTree[TsValue] =
+    UebaLengthCheckRenderer.render[TsValue](
+      length,
+      equalTo = bytes => q"length === ${bytes.toString}",
+      oneOf   = bytes => q"[${bytes.mkString(", ")}].includes(length)",
+      enforce = condition => q"""if (!($condition)) throw new $tsBaboonEncoderFailure("Invalid UEBA field length: " + length);""",
+    )
 
   private def genDtoCodec(name: TsValue.TsType, dto: Typedef.Dto): (TextTree[TsValue], TextTree[TsValue]) = {
     val fields = fieldsOf(dto)
@@ -194,7 +183,7 @@ class TsUEBACodecGenerator(
     ).filterNot(_.isEmpty).joinN()
 
     val fenc =
-      q"""if (ctx === $tsBaboonCodecContext.Indexed) {
+      q"""if (ctx.useIndices) {
          |    $tsBinTools.writeByte(writer, 0x01);
          |    const buffer = new $tsBaboonBinWriter();
          |    ${fields.map(_._3).joinN().shift(4).trim}
@@ -207,7 +196,7 @@ class TsUEBACodecGenerator(
 
     val enc = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id, dto.id)
+        val idx = layout.adtBranchIndex(id, dto.id)
 
         q"""$tsBinTools.writeByte(writer, ${idx.toString})
            |$fenc""".stripMargin
@@ -216,9 +205,9 @@ class TsUEBACodecGenerator(
 
     val dec = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id, dto.id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""const marker = $tsBinTools.readByte(reader)
-           |if (marker !== ${idx.toString}) { throw new Error("Expected ADT branch marker ${idx.toString}, got " + marker); }
+           |if (marker !== ${idx.toString}) { throw new $tsBaboonDecoderFailure("Expected ADT branch marker ${idx.toString}, got " + marker); }
            |return this.decodeBranch(ctx, reader)""".stripMargin
       case _ => fdec
     }
@@ -252,7 +241,7 @@ class TsUEBACodecGenerator(
     )
   }
 
-  private def genAdtCodec(name: TsValue.TsType, adt: Typedef.Adt): (TextTree[TsValue], TextTree[TsValue]) = {
+  private def genAdtCodec(adt: Typedef.Adt): (TextTree[TsValue], TextTree[TsValue]) = {
     val branches = adt.dataMembers(domain).zipWithIndex.toList
 
     val encBranches = branches.map {
@@ -284,17 +273,6 @@ class TsUEBACodecGenerator(
         }
     }
 
-    q"""export function encode_${name.name}_ueba(value: ${name.name}, ctx: $tsBaboonCodecContext, writer: $tsBaboonBinWriter): void {
-       |    ${encBranches.joinN().shift(4).trim}
-       |}
-       |
-       |export function decode_${name.name}_ueba(ctx: $tsBaboonCodecContext, reader: $tsBaboonBinReader): ${name.name} {
-       |    const tag = $tsBinTools.readByte(reader);
-       |    switch (tag) {
-       |        ${decBranches.joinN().shift(8).trim}
-       |        default: throw new Error("Unknown ADT branch tag: " + tag);
-       |    }
-       |}""".stripMargin
     (
       q"""${encBranches.joinN().shift(4).trim}
          |throw new Error("Unhandled ADT branch: " + (value as {constructor?: {name?: string}}).constructor?.name);""".stripMargin,
@@ -311,33 +289,7 @@ class TsUEBACodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case TypeId.Builtins.bit   => q"$tsBinTools.writeBool($w, $ref);"
-          case TypeId.Builtins.i08   => q"$tsBinTools.writeI8($w, $ref);"
-          case TypeId.Builtins.i16   => q"$tsBinTools.writeI16($w, $ref);"
-          case TypeId.Builtins.i32   => q"$tsBinTools.writeI32($w, $ref);"
-          case TypeId.Builtins.i64   => q"$tsBinTools.writeI64($w, $ref);"
-          case TypeId.Builtins.u08   => q"$tsBinTools.writeU8($w, $ref);"
-          case TypeId.Builtins.u16   => q"$tsBinTools.writeU16($w, $ref);"
-          case TypeId.Builtins.u32   => q"$tsBinTools.writeU32($w, $ref);"
-          case TypeId.Builtins.u64   => q"$tsBinTools.writeU64($w, $ref);"
-          case TypeId.Builtins.f32   => q"$tsBinTools.writeF32($w, $ref);"
-          case TypeId.Builtins.f64   => q"$tsBinTools.writeF64($w, $ref);"
-          case TypeId.Builtins.f128  => q"$tsBinTools.writeDecimal($w, $ref);"
-          case TypeId.Builtins.str   => q"$tsBinTools.writeString($w, $ref);"
-          case TypeId.Builtins.bytes => q"$tsBinTools.writeBytes($w, $ref);"
-          case TypeId.Builtins.uid   => q"$tsBinTools.writeUuid($w, $ref);"
-          case TypeId.Builtins.tsu =>
-            target.language.timestampsUtcMode match {
-              case "string" => q"$tsBinTools.writeTimestampUtc($w, $tsBaboonDateTimeUtc.fromISO($ref));"
-              case "date"   => q"$tsBinTools.writeTimestampUtc($w, $tsBaboonDateTimeUtc.fromDate($ref));"
-              case _        => q"$tsBinTools.writeTimestampUtc($w, $ref);"
-            }
-          case TypeId.Builtins.tso =>
-            target.language.timestampsOffsetMode match {
-              case "string" => q"$tsBinTools.writeTimestampOffset($w, $tsBaboonDateTimeOffset.fromISO($ref));"
-              case "date"   => q"$tsBinTools.writeTimestampOffset($w, $tsBaboonDateTimeOffset.fromISO($ref.toISOString()));"
-              case _        => q"$tsBinTools.writeTimestampOffset($w, $ref);"
-            }
+          case b: TypeId.BuiltinScalar => scalarOps.encodeUeba(b, w, ref)
           case u: TypeId.User =>
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
@@ -406,33 +358,7 @@ class TsUEBACodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case TypeId.Builtins.bit   => q"$tsBinTools.readBool(reader)"
-          case TypeId.Builtins.i08   => q"$tsBinTools.readI8(reader)"
-          case TypeId.Builtins.i16   => q"$tsBinTools.readI16(reader)"
-          case TypeId.Builtins.i32   => q"$tsBinTools.readI32(reader)"
-          case TypeId.Builtins.i64   => q"$tsBinTools.readI64(reader)"
-          case TypeId.Builtins.u08   => q"$tsBinTools.readU8(reader)"
-          case TypeId.Builtins.u16   => q"$tsBinTools.readU16(reader)"
-          case TypeId.Builtins.u32   => q"$tsBinTools.readU32(reader)"
-          case TypeId.Builtins.u64   => q"$tsBinTools.readU64(reader)"
-          case TypeId.Builtins.f32   => q"$tsBinTools.readF32(reader)"
-          case TypeId.Builtins.f64   => q"$tsBinTools.readF64(reader)"
-          case TypeId.Builtins.f128  => q"$tsBinTools.readDecimal(reader)"
-          case TypeId.Builtins.str   => q"$tsBinTools.readString(reader)"
-          case TypeId.Builtins.bytes => q"$tsBinTools.readBytes(reader)"
-          case TypeId.Builtins.uid   => q"$tsBinTools.readUuid(reader)"
-          case TypeId.Builtins.tsu =>
-            target.language.timestampsUtcMode match {
-              case "string" => q"$tsBinTools.readTimestampUtc(reader).toISOString()"
-              case "date"   => q"$tsBinTools.readTimestampUtc(reader).date"
-              case _        => q"$tsBinTools.readTimestampUtc(reader)"
-            }
-          case TypeId.Builtins.tso =>
-            target.language.timestampsOffsetMode match {
-              case "string" => q"$tsBinTools.readTimestampOffset(reader).toISOString()"
-              case "date"   => q"$tsBinTools.readTimestampOffset(reader).date"
-              case _        => q"$tsBinTools.readTimestampOffset(reader)"
-            }
+          case b: TypeId.BuiltinScalar => scalarOps.decodeUeba(b, q"reader")
           case u: TypeId.User =>
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
@@ -472,142 +398,14 @@ class TsUEBACodecGenerator(
     }
   }
 
-  // Deep walk (mirrors Scala/C#/Rust/Kotlin/Java hasAnyField): a codec class needs the any-field
-  // helpers if any direct or nested-via-Constructor-arg field has type `any`.
-  private def hasAnyField(defn: DomainMember.User): Boolean = {
-    def hasAny(tpe: TypeRef): Boolean = tpe match {
-      case _: TypeRef.Any         => true
-      case _: TypeRef.Scalar      => false
-      case c: TypeRef.Constructor => c.args.exists(hasAny)
-    }
-    defn.defn match {
-      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
-      case _              => false
-    }
-  }
-
-  // Encode delegates to the per-codec-class `encodeAnyField` helper. Wires the expected kind byte
-  // and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
   private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[TsValue], writer: String): TextTree[TsValue] = {
-    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
-    val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
-    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
-    q"this.encodeAnyField(ctx, $writer, $expectedHex, $staticDom, $staticVer, $staticTid, $ref);"
+    val plan = TsAnyFieldPlan.forField(a, domain)
+    q"$tsEncodeAnyUebaField(ctx, $writer, ${plan.kindHex}, ${plan.staticDomain}, ${plan.staticVersion}, ${plan.staticTypeId}, $ref);"
   }
 
-  // Decode delegates to the per-codec-class `decodeAnyField` helper.
   private def mkAnyDecoder(a: TypeRef.Any): TextTree[TsValue] = {
-    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
-    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
-    q"this.decodeAnyField(reader, $expectedHex)"
-  }
-
-  // Static fallbacks for the cross-format facade helper (`jsonToUebaBytes`). The wire `meta` may
-  // omit components that are pinned by the field's static declaration; the codec emits whatever is
-  // statically known so the facade can fill the gaps. Per spec table:
-  //   A=(undef,undef,undef), B=(currentDomain,undef,undef), C=(currentDomain,currentVersion,undef),
-  //   D1=(undef,undef,underlyingFqid), D2=(currentDomain,undef,underlyingFqid),
-  //   D3=(currentDomain,currentVersion,underlyingFqid).
-  // Duplicated across Scala/C#/Rust/Kotlin/Java/TS — extraction deferred (textual emission diverges
-  // by language flavor; see PR 4.2 ledger entry's DRY analysis).
-  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[TsValue], TextTree[TsValue], TextTree[TsValue]) = {
-    val none                     = q"undefined"
-    def some(s: String)          = q""""$s""""
-    val currentDomain: String    = domain.id.toString
-    val currentDomainVer: String = domain.version.v.toString
-    val typeidStatic = a.underlying match {
-      case Some(u) => some(u.id.toString)
-      case None    => none
-    }
-    val (domainStatic, versionStatic) = a.variant match {
-      case AnyVariant.Global  => (none, none)
-      case AnyVariant.ThisDom => (some(currentDomain), none)
-      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
-    }
-    (domainStatic, versionStatic, typeidStatic)
-  }
-
-  // Per-codec-class helpers consolidating the any-field framing, kind-check, and
-  // buffer-then-write / read-then-skip paths — emitted at most once per codec class that has any
-  // any-bearing field. Mirrors `JvUEBACodecGenerator.anyFieldHelpers`. Wire layout (locked, see
-  // docs/drafts/20260424-1738-any-opaque-fields.md §"Wire format"):
-  //   length:i32 | meta-length:i32 | meta-kind:u8 | meta-strings | blob
-  //
-  // PR-12-D01 lesson applied: explicit negative-i32 sanity guards on on-wire lengths run before
-  // any size arithmetic — `4 + Int32.min` overflows silently otherwise.
-  private def anyFieldHelpers: TextTree[TsValue] = {
-    q"""private encodeAnyField(
-       |    ctx: $tsBaboonCodecContext,
-       |    writer: $tsBaboonBinWriter,
-       |    expectedKind: number,
-       |    staticDomain: string | undefined,
-       |    staticVersion: string | undefined,
-       |    staticTypeid: string | undefined,
-       |    value: $tsBaboonAnyOpaque,
-       |): void {
-       |    if (value.meta.kind !== expectedKind) {
-       |        throw new $tsBaboonEncoderFailure(
-       |            `any: meta-kind 0x$${(value.meta.kind & 0xFF).toString(16).padStart(2, "0")} does not match field-declared 0x$${(expectedKind & 0xFF).toString(16).padStart(2, "0")}`
-       |        );
-       |    }
-       |    let anyBlob: Uint8Array;
-       |    if (value.tag === "Ueba") {
-       |        anyBlob = value.bytes;
-       |    } else {
-       |        const anyFacade = ctx.facade;
-       |        if (anyFacade === undefined) {
-       |            throw new $tsBaboonEncoderFailure(
-       |                "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply anyOpaqueUeba directly."
-       |            );
-       |        }
-       |        const anyConvResult = anyFacade.jsonToUebaBytes(value.meta, value.json, staticDomain, staticVersion, staticTypeid);
-       |        if (anyConvResult.tag === "Left") {
-       |            throw anyConvResult.value;
-       |        }
-       |        anyBlob = anyConvResult.value;
-       |    }
-       |    // Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
-       |    const anyMetaBuf = new $tsBaboonBinWriter();
-       |    $tsBaboonAnyMetaCodec.writeBin(value.meta, anyMetaBuf);
-       |    const anyMetaBytes = anyMetaBuf.toBytes();
-       |    const anyTotalLength = 4 + anyMetaBytes.length + anyBlob.length;
-       |    $tsBinTools.writeI32(writer, anyTotalLength);
-       |    $tsBinTools.writeI32(writer, anyMetaBytes.length);
-       |    writer.writeBytes(anyMetaBytes);
-       |    writer.writeBytes(anyBlob);
-       |}
-       |
-       |private decodeAnyField(reader: $tsBaboonBinReader, expectedKind: number): $tsBaboonAnyOpaque {
-       |    const anyTotalLength = $tsBinTools.readI32(reader);
-       |    if (anyTotalLength < 0) {
-       |        throw new $tsBaboonDecoderFailure(`any: negative total-length $${anyTotalLength}`);
-       |    }
-       |    const anyMetaLength = $tsBinTools.readI32(reader);
-       |    if (anyMetaLength < 0) {
-       |        throw new $tsBaboonDecoderFailure(`any: negative meta-length $${anyMetaLength}`);
-       |    }
-       |    if (anyTotalLength < 4 + anyMetaLength) {
-       |        throw new $tsBaboonDecoderFailure(`any: total-length $${anyTotalLength} smaller than 4 + meta-length $${anyMetaLength}`);
-       |    }
-       |    const anyReadResult = $tsBaboonAnyMetaCodec.readBinWithLength(reader);
-       |    const anyMeta = anyReadResult.meta;
-       |    const anyBytesRead = anyReadResult.bytesRead;
-       |    if (anyBytesRead > anyMetaLength) {
-       |        throw new $tsBaboonDecoderFailure(`any: meta bytes-read $${anyBytesRead} exceeded meta-length window $${anyMetaLength}`);
-       |    }
-       |    if (anyBytesRead < anyMetaLength) {
-       |        // Forward-compat: skip future meta-extension bytes within the meta-length window.
-       |        reader.readBytes(anyMetaLength - anyBytesRead);
-       |    }
-       |    if (anyMeta.kind !== expectedKind) {
-       |        throw new $tsBaboonDecoderFailure(
-       |            `any: wire kind 0x$${(anyMeta.kind & 0xFF).toString(16).padStart(2, "0")} does not match field-declared 0x$${(expectedKind & 0xFF).toString(16).padStart(2, "0")}`
-       |        );
-       |    }
-       |    const anyBlobLen = anyTotalLength - 4 - anyMetaLength;
-       |    const anyBlob = reader.readBytes(anyBlobLen);
-       |    return $tsBaboonAnyOpaqueUebaCtor(anyMeta, anyBlob);
-       |}""".stripMargin
+    val plan = TsAnyFieldPlan.forField(a, domain)
+    q"$tsDecodeAnyUebaField(reader, ${plan.kindHex})"
   }
 
   def codecName(name: TsValue.TsType): TsValue.TsType = {
@@ -629,11 +427,7 @@ class TsUEBACodecGenerator(
     } else None
   }
 
-  override def isActive(id: TypeId): Boolean = {
-    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Typescript) &&
-    target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
-      .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
-  }
+  override def isActive(id: TypeId): Boolean = TsCodecActivation.isActive(target, domain, id, TsCodecActivation.Ueba)
 
   override def id: String = "Ueba"
 }

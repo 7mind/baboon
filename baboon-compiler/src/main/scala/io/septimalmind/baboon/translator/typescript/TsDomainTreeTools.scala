@@ -28,15 +28,32 @@ object TsDomainTreeTools {
 
     private def sameInVersion(defn: DomainMember.User, source: TsType): List[TextTree[TsValue]] = {
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id)
+      val forward         = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forwardLiteral =
+        forward.readable.toList.map { case (v, tier) => s""""${v.v.toString}": "${tier.wireName}"""" }.mkString("{ ", ", ", " }")
+      val minReaderLiteral = evolution
+        .minReaders(domain.version, defn.id).toList.sortBy(_._1.weight)
+        .map { case (tier, v) => s""""${tier.wireName}": "${v.v.toString}"""" }
+        .mkString("{ ", ", ", " }")
       if (defn.isAdt) {
         List(
-          q"BaboonSameInVersions: [${unmodifiedSince.sameIn.map(v => q"\"${v.v.toString}\"").toList.join(", ")}]"
+          q"BaboonSameInVersions: [${unmodifiedSince.sameIn.map(v => q"\"${v.v.toString}\"").toList.join(", ")}]",
+          q"BaboonForwardReadable: $forwardLiteral as { readonly [version: string]: string }",
+          q"BaboonMinReaderVersions: $minReaderLiteral as { readonly [tier: string]: string }",
         )
       } else {
         List(
           q"""public static readonly BaboonSameInVersions = [${unmodifiedSince.sameIn.map(v => q"\"${v.v.toString}\"").toList.join(", ")}]
              |public baboonSameInVersions() {
              |    return $source.BaboonSameInVersions
+             |}
+             |public static readonly BaboonForwardReadable: { readonly [version: string]: string } = $forwardLiteral
+             |public baboonForwardReadable() {
+             |    return $source.BaboonForwardReadable
+             |}
+             |public static readonly BaboonMinReaderVersions: { readonly [tier: string]: string } = $minReaderLiteral
+             |public baboonMinReaderVersions() {
+             |    return $source.BaboonMinReaderVersions
              |}""".stripMargin
         )
       }

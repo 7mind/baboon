@@ -23,7 +23,7 @@ package baboon.runtime.shared {
   sealed trait JsonRpcId
   object JsonRpcId {
     final case class StringId(value: String) extends JsonRpcId
-    final case class LongId(value: Long)     extends JsonRpcId
+    final case class LongId(value: Long) extends JsonRpcId
   }
 
   final case class JsonRpcRequest(
@@ -37,7 +37,7 @@ package baboon.runtime.shared {
   final case class JsonRpcResponse(
     id: Option[JsonRpcId],
     result: Option[io.circe.Json] = None,
-    error: Option[JsonRpcError] = None,
+    error: Option[JsonRpcError]   = None,
   )
 
   // JSON-RPC / MCP protocol constants (wire contract K4).
@@ -125,6 +125,96 @@ package baboon.runtime.shared {
   // All JSON-RPC method strings ("tools/list" …) and result keys ("protocolVersion",
   // "inputSchema" …) are literal lowercase strings, NOT subject to any per-language
   // symbol casing.
+  private trait McpDispatchOwner[Ctx] {
+    def serverInfo: McpServerInfo
+    def tools: Seq[McpToolEntry]
+    def lookup(name: String): Option[(McpToolEntry, IBaboonRoutableMcpServer[Ctx])]
+    def errorResponse(id: Option[JsonRpcId], code: Int, message: String): JsonRpcResponse
+    def describeWiringError(error: BaboonWiringError): String
+  }
+
+  private object McpProtocolDispatch {
+    def handle[Ctx](owner: McpDispatchOwner[Ctx], request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): Option[JsonRpcResponse] = {
+      val id = request.id
+      request.method match {
+        case "initialize" =>
+          val pv = request.params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
+          if (request.params.isEmpty || pv.isEmpty) {
+            Some(owner.errorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion"))
+          } else {
+            session.initialized = true
+            val result = io.circe.Json.obj(
+              "protocolVersion" -> io.circe.Json.fromString(McpProtocol.Version),
+              "capabilities"    -> io.circe.Json.obj("tools" -> io.circe.Json.obj()),
+              "serverInfo" -> io.circe.Json.obj(
+                "name"    -> io.circe.Json.fromString(owner.serverInfo.name),
+                "version" -> io.circe.Json.fromString(owner.serverInfo.version),
+              ),
+            )
+            Some(JsonRpcResponse(id, result = Some(result)))
+          }
+
+        case "notifications/initialized" =>
+          None
+
+        case "tools/list" =>
+          if (!session.initialized) {
+            Some(owner.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize"))
+          } else {
+            val toolsArray = owner.tools.map {
+              t =>
+                val base = Seq(
+                  "name"        -> io.circe.Json.fromString(t.name),
+                  "inputSchema" -> t.inputSchema,
+                )
+                val withDesc = t.description.fold(base)(d => base :+ ("description" -> io.circe.Json.fromString(d)))
+                io.circe.Json.obj(withDesc: _*)
+            }
+            val result = io.circe.Json.obj("tools" -> io.circe.Json.arr(toolsArray: _*))
+            Some(JsonRpcResponse(id, result = Some(result)))
+          }
+
+        case "tools/call" =>
+          if (!session.initialized) {
+            Some(owner.errorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize"))
+          } else {
+            val nameOpt = request.params.flatMap(_.hcursor.downField("name").as[String].toOption)
+            nameOpt match {
+              case None =>
+                Some(owner.errorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name"))
+              case Some(name) =>
+                owner.lookup(name) match {
+                  case None =>
+                    Some(owner.errorResponse(id, JsonRpcErrorCodes.InvalidParams, s"tools/call: unknown tool '$name'"))
+                  case Some((entry, server)) =>
+                    val argsJson = request.params
+                      .flatMap(_.hcursor.downField("arguments").as[io.circe.Json].toOption)
+                      .getOrElse(io.circe.Json.obj())
+                      .noSpaces
+                    server.routeToolCall(entry.method, argsJson, ctx, codecCtx) match {
+                      case Right(text) =>
+                        val content = io.circe.Json.arr(io.circe.Json.obj("type" -> io.circe.Json.fromString("text"), "text" -> io.circe.Json.fromString(text)))
+                        val result  = io.circe.Json.obj("content" -> content, "isError" -> io.circe.Json.fromBoolean(false))
+                        Some(JsonRpcResponse(id, result = Some(result)))
+                      case Left(err) =>
+                        // Channel B: a valid protocol call whose domain payload failed.
+                        val content = io.circe.Json.arr(
+                          io.circe.Json.obj("type" -> io.circe.Json.fromString("text"), "text" -> io.circe.Json.fromString(owner.describeWiringError(err)))
+                        )
+                        val result = io.circe.Json.obj("content" -> content, "isError" -> io.circe.Json.fromBoolean(true))
+                        Some(JsonRpcResponse(id, result = Some(result)))
+                    }
+                }
+            }
+          }
+
+        case other =>
+          Some(owner.errorResponse(id, JsonRpcErrorCodes.MethodNotFound, s"Method not found: $other"))
+      }
+    }
+
+  }
+
   abstract class AbstractBaboonMcpServer[Ctx] extends IBaboonMcpServer[Ctx] with IBaboonRoutableMcpServer[Ctx] {
     // PUBLIC routable-server surface (tasks:T114): the muxer reads `serverInfo` /
     // `tools` and routes via `routeToolCall`, never via the private `byName()`
@@ -141,82 +231,19 @@ package baboon.runtime.shared {
     private def byName(): Map[String, McpToolEntry] =
       tools.map(t => t.name -> t).toMap
 
-    override final def handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): Option[JsonRpcResponse] = {
-      val id = request.id
-      request.method match {
-        case "initialize" =>
-          val pv = request.params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
-          if (request.params.isEmpty || pv.isEmpty) {
-            Some(errorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion"))
-          } else {
-            session.initialized = true
-            val result = io.circe.Json.obj(
-              "protocolVersion" -> io.circe.Json.fromString(McpProtocol.Version),
-              "capabilities"    -> io.circe.Json.obj("tools" -> io.circe.Json.obj()),
-              "serverInfo"      -> io.circe.Json.obj(
-                "name"    -> io.circe.Json.fromString(serverInfo.name),
-                "version" -> io.circe.Json.fromString(serverInfo.version),
-              ),
-            )
-            Some(JsonRpcResponse(id, result = Some(result)))
-          }
-
-        case "notifications/initialized" =>
-          None
-
-        case "tools/list" =>
-          if (!session.initialized) {
-            Some(errorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize"))
-          } else {
-            val toolsArray = tools.map {
-              t =>
-                val base = Seq(
-                  "name"        -> io.circe.Json.fromString(t.name),
-                  "inputSchema" -> t.inputSchema,
-                )
-                val withDesc = t.description.fold(base)(d => base :+ ("description" -> io.circe.Json.fromString(d)))
-                io.circe.Json.obj(withDesc: _*)
-            }
-            val result = io.circe.Json.obj("tools" -> io.circe.Json.arr(toolsArray: _*))
-            Some(JsonRpcResponse(id, result = Some(result)))
-          }
-
-        case "tools/call" =>
-          if (!session.initialized) {
-            Some(errorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize"))
-          } else {
-            val nameOpt = request.params.flatMap(_.hcursor.downField("name").as[String].toOption)
-            nameOpt match {
-              case None =>
-                Some(errorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name"))
-              case Some(name) =>
-                byName().get(name) match {
-                  case None =>
-                    Some(errorResponse(id, JsonRpcErrorCodes.InvalidParams, s"tools/call: unknown tool '$name'"))
-                  case Some(entry) =>
-                    val argsJson = request.params
-                      .flatMap(_.hcursor.downField("arguments").as[io.circe.Json].toOption)
-                      .getOrElse(io.circe.Json.obj())
-                      .noSpaces
-                    invokeJson(entry.method, argsJson, ctx, codecCtx) match {
-                      case Right(text) =>
-                        val content = io.circe.Json.arr(io.circe.Json.obj("type" -> io.circe.Json.fromString("text"), "text" -> io.circe.Json.fromString(text)))
-                        val result  = io.circe.Json.obj("content" -> content, "isError" -> io.circe.Json.fromBoolean(false))
-                        Some(JsonRpcResponse(id, result = Some(result)))
-                      case Left(err) =>
-                        // Channel B: a valid protocol call whose domain payload failed.
-                        val content = io.circe.Json.arr(io.circe.Json.obj("type" -> io.circe.Json.fromString("text"), "text" -> io.circe.Json.fromString(describeWiringError(err))))
-                        val result  = io.circe.Json.obj("content" -> content, "isError" -> io.circe.Json.fromBoolean(true))
-                        Some(JsonRpcResponse(id, result = Some(result)))
-                    }
-                }
-            }
-          }
-
-        case other =>
-          Some(errorResponse(id, JsonRpcErrorCodes.MethodNotFound, s"Method not found: $other"))
-      }
+    private lazy val dispatchOwner = new McpDispatchOwner[Ctx] {
+      override def serverInfo: McpServerInfo = AbstractBaboonMcpServer.this.serverInfo
+      override def tools: Seq[McpToolEntry]  = AbstractBaboonMcpServer.this.tools
+      override def lookup(name: String): Option[(McpToolEntry, IBaboonRoutableMcpServer[Ctx])] =
+        byName().get(name).map(entry => (entry, AbstractBaboonMcpServer.this))
+      override def errorResponse(id: Option[JsonRpcId], code: Int, message: String): JsonRpcResponse =
+        AbstractBaboonMcpServer.this.errorResponse(id, code, message)
+      override def describeWiringError(error: BaboonWiringError): String =
+        AbstractBaboonMcpServer.this.describeWiringError(error)
     }
+
+    override final def handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): Option[JsonRpcResponse] =
+      McpProtocolDispatch.handle(dispatchOwner, request, session, ctx, codecCtx)
 
     protected def errorResponse(id: Option[JsonRpcId], code: Int, message: String): JsonRpcResponse =
       JsonRpcResponse(id, error = Some(JsonRpcError(code, message)))
@@ -275,11 +302,11 @@ package baboon.runtime.shared {
   // `initialize` returns a single merged `serverInfo` supplied to the ctor.
   class AbstractMcpMuxer[Ctx](
     mergedServerInfo: McpServerInfo,
-    initServers: IBaboonRoutableMcpServer[Ctx]*,
+    initServers: IBaboonRoutableMcpServer[Ctx]*
   ) extends IBaboonMcpServer[Ctx] {
     // Registration-order-preserving table: tool name -> owning server.
     // Built at registration time (contract §2), never per request.
-    private val route  = scala.collection.mutable.LinkedHashMap.empty[String, IBaboonRoutableMcpServer[Ctx]]
+    private val route   = scala.collection.mutable.LinkedHashMap.empty[String, IBaboonRoutableMcpServer[Ctx]]
     private val entries = scala.collection.mutable.LinkedHashMap.empty[String, McpToolEntry]
 
     initServers.foreach(register)
@@ -298,92 +325,19 @@ package baboon.runtime.shared {
       }
     }
 
-    override final def handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): Option[JsonRpcResponse] = {
-      val id = request.id
-      request.method match {
-        case "initialize" =>
-          val pv = request.params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
-          if (request.params.isEmpty || pv.isEmpty) {
-            Some(errorResponse(id, JsonRpcErrorCodes.InvalidParams, "initialize: missing protocolVersion"))
-          } else {
-            session.initialized = true
-            val result = io.circe.Json.obj(
-              "protocolVersion" -> io.circe.Json.fromString(McpProtocol.Version),
-              "capabilities"    -> io.circe.Json.obj("tools" -> io.circe.Json.obj()),
-              "serverInfo"      -> io.circe.Json.obj(
-                "name"    -> io.circe.Json.fromString(mergedServerInfo.name),
-                "version" -> io.circe.Json.fromString(mergedServerInfo.version),
-              ),
-            )
-            Some(JsonRpcResponse(id, result = Some(result)))
-          }
-
-        case "notifications/initialized" =>
-          None
-
-        case "tools/list" =>
-          if (!session.initialized) {
-            Some(errorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/list before initialize"))
-          } else {
-            val toolsArray = toolsListUnion()
-            val result = io.circe.Json.obj("tools" -> io.circe.Json.arr(toolsArray: _*))
-            Some(JsonRpcResponse(id, result = Some(result)))
-          }
-
-        case "tools/call" =>
-          if (!session.initialized) {
-            Some(errorResponse(id, JsonRpcErrorCodes.InvalidRequest, "tools/call before initialize"))
-          } else {
-            val nameOpt = request.params.flatMap(_.hcursor.downField("name").as[String].toOption)
-            nameOpt match {
-              case None =>
-                Some(errorResponse(id, JsonRpcErrorCodes.InvalidParams, "tools/call: missing tool name"))
-              case Some(name) =>
-                route.get(name) match {
-                  case None =>
-                    // NoMatchingTool: surfaced as the SAME wire response the per-service
-                    // base uses for an unknown tool (-32602, "unknown tool '<name>'"),
-                    // so the bytes are identical whether one server or the muxer rejects.
-                    Some(errorResponse(id, JsonRpcErrorCodes.InvalidParams, s"tools/call: unknown tool '$name'"))
-                  case Some(server) =>
-                    val entry    = entries(name)
-                    val argsJson = request.params
-                      .flatMap(_.hcursor.downField("arguments").as[io.circe.Json].toOption)
-                      .getOrElse(io.circe.Json.obj())
-                      .noSpaces
-                    server.routeToolCall(entry.method, argsJson, ctx, codecCtx) match {
-                      case Right(text) =>
-                        val content = io.circe.Json.arr(io.circe.Json.obj("type" -> io.circe.Json.fromString("text"), "text" -> io.circe.Json.fromString(text)))
-                        val result  = io.circe.Json.obj("content" -> content, "isError" -> io.circe.Json.fromBoolean(false))
-                        Some(JsonRpcResponse(id, result = Some(result)))
-                      case Left(err) =>
-                        // Channel B: a valid protocol call whose domain payload failed.
-                        val content = io.circe.Json.arr(io.circe.Json.obj("type" -> io.circe.Json.fromString("text"), "text" -> io.circe.Json.fromString(describeWiringError(err))))
-                        val result  = io.circe.Json.obj("content" -> content, "isError" -> io.circe.Json.fromBoolean(true))
-                        Some(JsonRpcResponse(id, result = Some(result)))
-                    }
-                }
-            }
-          }
-
-        case other =>
-          Some(errorResponse(id, JsonRpcErrorCodes.MethodNotFound, s"Method not found: $other"))
-      }
+    private lazy val dispatchOwner = new McpDispatchOwner[Ctx] {
+      override def serverInfo: McpServerInfo = mergedServerInfo
+      override def tools: Seq[McpToolEntry]  = entries.values.toSeq
+      override def lookup(name: String): Option[(McpToolEntry, IBaboonRoutableMcpServer[Ctx])] =
+        route.get(name).map(server => (entries(name), server))
+      override def errorResponse(id: Option[JsonRpcId], code: Int, message: String): JsonRpcResponse =
+        AbstractMcpMuxer.this.errorResponse(id, code, message)
+      override def describeWiringError(error: BaboonWiringError): String =
+        AbstractMcpMuxer.this.describeWiringError(error)
     }
 
-    // Backs tools/list (§3.2): the union of all registered servers' tool entries
-    // in registration-then-declaration order (the insertion order of `entries`),
-    // each in the same shape the per-service base emits.
-    private def toolsListUnion(): Seq[io.circe.Json] =
-      entries.values.map {
-        t =>
-          val base = Seq(
-            "name"        -> io.circe.Json.fromString(t.name),
-            "inputSchema" -> t.inputSchema,
-          )
-          val withDesc = t.description.fold(base)(d => base :+ ("description" -> io.circe.Json.fromString(d)))
-          io.circe.Json.obj(withDesc: _*)
-      }.toSeq
+    override final def handle(request: JsonRpcRequest, session: McpSession, ctx: Ctx, codecCtx: BaboonCodecContext): Option[JsonRpcResponse] =
+      McpProtocolDispatch.handle(dispatchOwner, request, session, ctx, codecCtx)
 
     protected def errorResponse(id: Option[JsonRpcId], code: Int, message: String): JsonRpcResponse =
       JsonRpcResponse(id, error = Some(JsonRpcError(code, message)))

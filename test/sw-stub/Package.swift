@@ -60,6 +60,33 @@ let package = Package(
             path: "Sources/RenameNs"
         ),
 
+        // ----- fwde2e.fwd / fwde2e.chain forward-compat fixtures (docs/forward-compat.md) -------
+        .target(
+            name: "Fwde2eFwd_v1_0_0",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/Fwde2eFwd_v1_0_0"
+        ),
+        .target(
+            name: "Fwde2eFwd",
+            dependencies: ["BaboonRuntime", "Fwde2eFwd_v1_0_0"],
+            path: "Sources/Fwde2eFwd"
+        ),
+        .target(
+            name: "Fwde2eChain_v1_0_0",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/Fwde2eChain_v1_0_0"
+        ),
+        .target(
+            name: "Fwde2eChain_v2_0_0",
+            dependencies: ["BaboonRuntime", "Fwde2eChain_v1_0_0"],
+            path: "Sources/Fwde2eChain_v2_0_0"
+        ),
+        .target(
+            name: "Fwde2eChain",
+            dependencies: ["BaboonRuntime", "Fwde2eChain_v1_0_0", "Fwde2eChain_v2_0_0"],
+            path: "Sources/Fwde2eChain"
+        ),
+
         // ----- Single-version fixtures ----------------------------------------------------------
         .target(
             name: "MyOk",
@@ -190,7 +217,7 @@ let package = Package(
         // ExtractedContractsTests imports MyOkExtractedContracts (T45).
         .testTarget(
             name: "RuntimeTests",
-            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0", "RecursiveTree", "MyOkExtractedContracts"],
+            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0", "RecursiveTree", "MyOkExtractedContracts", "Fwde2eFwd", "Fwde2eChain"],
             path: "Tests/RuntimeTests"
         ),
 
@@ -289,6 +316,16 @@ let package = Package(
             name: "TestpkgPkg0Tests",
             dependencies: ["BaboonRuntime", "TestpkgPkg0"],
             path: "Tests/BaboonTests/TestpkgPkg0"
+        ),
+        .testTarget(
+            name: "Fwde2eFwdTests",
+            dependencies: ["BaboonRuntime", "Fwde2eFwd"],
+            path: "Tests/BaboonTests/Fwde2eFwd"
+        ),
+        .testTarget(
+            name: "Fwde2eChainTests",
+            dependencies: ["BaboonRuntime", "Fwde2eChain"],
+            path: "Tests/BaboonTests/Fwde2eChain"
         ),
         .testTarget(
             name: "MyOkExtractedContractsTests",

@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.mcp
 
 import io.circe.Json
 import io.septimalmind.baboon.translator.openapi.OasTypeTranslator
+import io.septimalmind.baboon.translator.schema.{JsonSchema, SchemaReferences}
 import io.septimalmind.baboon.typer.model.*
 
 import scala.collection.mutable
@@ -45,6 +46,8 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
 
   import McpInputSchemaEmitter.*
 
+  def prepare(domain: Domain): PreparedDomain = PreparedDomain(domain, SchemaReferences.prepare(domain))
+
   /** Emit the standalone `inputSchema` for one service method's request DTO.
     *
     * @param requestSig the method's `sig` — a `TypeRef` to the reified `_in`
@@ -53,11 +56,12 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     * @return a self-contained JSON Schema object (the MCP tool `inputSchema`).
     */
   def emitInputSchema(requestSig: TypeRef, domain: Domain): Json = {
-    val ctx = ForeignContext(
-      resolutions = typeTranslator.foreignTypeResolution(domain),
-      defs        = foreignDefsOf(domain),
-      enums       = enumDefsOf(domain),
-    )
+    emitInputSchema(requestSig, prepare(domain))
+  }
+
+  def emitInputSchema(requestSig: TypeRef, prepared: PreparedDomain): Json = {
+    val domain = prepared.domain
+    val ctx    = prepared.references
 
     val rootId = requestSig match {
       case TypeRef.Scalar(id: TypeId.User) => id
@@ -107,7 +111,7 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     * and excludes foreign types resolvable to a precise scalar (inlined at the
     * reference site, not bundled).
     */
-  private def reachableClosure(domain: Domain, rootDto: Typedef.Dto, ctx: ForeignContext): Set[TypeId.User] = {
+  private def reachableClosure(domain: Domain, rootDto: Typedef.Dto, ctx: SchemaReferences): Set[TypeId.User] = {
     val seen    = mutable.LinkedHashSet.empty[TypeId.User]
     val pending = mutable.Queue.empty[TypeId.User]
 
@@ -145,10 +149,10 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     * inline scalar are excluded (not bundled into `$defs`); foreign types with a
     * Baboon `rt` mapping are resolved through before inspection.
     */
-  private def referencedUserTypes(ref: TypeRef, ctx: ForeignContext): List[TypeId.User] = {
+  private def referencedUserTypes(ref: TypeRef, ctx: SchemaReferences): List[TypeId.User] = {
     typeTranslator.resolveTypeRef(ref, ctx.resolutions) match {
       case TypeRef.Scalar(id: TypeId.User) =>
-        foreignScalar(ctx.defs.get(id)) match {
+        foreignScalar(ctx.foreigns.get(id)) match {
           case Some(_) => List.empty // inlined as a scalar, not a $defs entry
           case None    => List(id)
         }
@@ -164,7 +168,7 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     * one entry; an ADT contributes its own `oneOf` entry (its branches are
     * separate closure members emitted independently).
     */
-  private def emitNamedType(m: DomainMember.User, domain: Domain, ctx: ForeignContext): List[(String, Json)] = {
+  private def emitNamedType(m: DomainMember.User, domain: Domain, ctx: SchemaReferences): List[(String, Json)] = {
     val name = typeTranslator.schemaName(m.id)
     m.defn match {
       case _: Typedef.NonDataTypedef =>
@@ -198,7 +202,7 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     * `{"type":"object"}`; callers prepend it so the same body serves both the
     * inlined root and a `$defs` entry).
     */
-  private def dtoBody(dto: Typedef.Dto, ctx: ForeignContext): Json = {
+  private def dtoBody(dto: Typedef.Dto, ctx: SchemaReferences): Json = {
     if (dto.fields.isEmpty) {
       Json.obj()
     } else {
@@ -223,7 +227,7 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     val branchRefs = members.map(localRef)
     val shortNames = members.map(_.name.name)
     mergeObjects(
-      Json.obj(oneOfKeyword -> Json.arr(branchRefs*)),
+      Json.obj(oneOfKeyword       -> Json.arr(branchRefs*)),
       Json.obj(descriptionKeyword -> Json.fromString(typeTranslator.adtWrapperDoc(shortNames))),
     )
   }
@@ -240,31 +244,31 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     * local `#/$defs/<Name>`. Scalars and the `any` envelope reuse the OAS
     * fragment generator verbatim; collections recurse so element refs are local.
     */
-  private def fieldSchema(ref: TypeRef, ctx: ForeignContext): Json = {
+  private def fieldSchema(ref: TypeRef, ctx: SchemaReferences): Json = {
     typeTranslator.resolveTypeRef(ref, ctx.resolutions) match {
       case TypeRef.Scalar(id: TypeId.BuiltinScalar) =>
-        parseFragment(typeTranslator.scalarSchemaJson(id))
+        typeTranslator.scalarSchemaValue(id)
 
       case TypeRef.Scalar(id: TypeId.User) =>
-        foreignScalar(ctx.defs.get(id)) match {
-          case Some(scalar) => parseFragment(typeTranslator.scalarSchemaJson(scalar))
+        foreignScalar(ctx.foreigns.get(id)) match {
+          case Some(scalar) => typeTranslator.scalarSchemaValue(scalar)
           case None         => localRef(id)
         }
 
       case TypeRef.Constructor(TypeId.Builtins.opt, args) =>
-        Json.obj(oneOfKeyword -> Json.arr(fieldSchema(args.head, ctx), Json.obj(typeKeyword -> Json.fromString("null"))))
+        JsonSchema.nullable(fieldSchema(args.head, ctx))
 
       case TypeRef.Constructor(TypeId.Builtins.lst, args) =>
-        Json.obj(typeKeyword -> Json.fromString("array"), itemsKeyword -> fieldSchema(args.head, ctx))
+        JsonSchema.array(fieldSchema(args.head, ctx))
 
       case TypeRef.Constructor(TypeId.Builtins.set, args) =>
-        Json.obj(typeKeyword -> Json.fromString("array"), itemsKeyword -> fieldSchema(args.head, ctx), uniqueItemsKeyword -> Json.True)
+        JsonSchema.uniqueArray(fieldSchema(args.head, ctx))
 
       case TypeRef.Constructor(TypeId.Builtins.map, args) =>
         mapSchema(args.head, args.tail.head, ctx)
 
       case _: TypeRef.Any =>
-        parseFragment(typeTranslator.baboonAnySchema)
+        typeTranslator.baboonAnySchemaValue
 
       case other =>
         throw new IllegalArgumentException(s"Unexpected type reference in MCP inputSchema emitter: ${other.id.name.name}")
@@ -280,26 +284,16 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     * entry objects (JSON has no native non-string-keyed map). Mirrors the OAS
     * map shape but with local element refs.
     */
-  private def mapSchema(keyRef: TypeRef, valRef: TypeRef, ctx: ForeignContext): Json = {
+  private def mapSchema(keyRef: TypeRef, valRef: TypeRef, ctx: SchemaReferences): Json = {
     val valSchema = fieldSchema(valRef, ctx)
     enumKey(keyRef, ctx) match {
       case Some(e) =>
-        Json.obj(
-          typeKeyword                 -> Json.fromString("object"),
-          additionalPropertiesKeyword -> valSchema,
-          propertyNamesKeyword        -> enumSchema(e),
-        )
+        JsonSchema.objectMap(valSchema, Some(enumSchema(e)))
       case None =>
         if (isStringKey(keyRef)) {
-          Json.obj(typeKeyword -> Json.fromString("object"), additionalPropertiesKeyword -> valSchema)
+          JsonSchema.objectMap(valSchema, None)
         } else {
-          val keySchema = fieldSchema(keyRef, ctx)
-          val entry = Json.obj(
-            typeKeyword       -> Json.fromString("object"),
-            requiredKeyword   -> Json.arr(Json.fromString("key"), Json.fromString("value")),
-            propertiesKeyword -> Json.obj("key" -> keySchema, "value" -> valSchema),
-          )
-          Json.obj(typeKeyword -> Json.fromString("array"), itemsKeyword -> entry)
+          JsonSchema.entryMap(fieldSchema(keyRef, ctx), valSchema)
         }
     }
   }
@@ -307,7 +301,7 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
   /** The enum typedef a map key resolves to, if any (after Baboon `rt` foreign
     * resolution). `None` for non-enum keys.
     */
-  private def enumKey(ref: TypeRef, ctx: ForeignContext): Option[Typedef.Enum] =
+  private def enumKey(ref: TypeRef, ctx: SchemaReferences): Option[Typedef.Enum] =
     typeTranslator.resolveTypeRef(ref, ctx.resolutions) match {
       case TypeRef.Scalar(id: TypeId.User) => ctx.enums.get(id)
       case _                               => None
@@ -357,34 +351,6 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     case _                                           => false
   }
 
-  private def foreignDefsOf(domain: Domain): Map[TypeId.User, Typedef.Foreign] =
-    domain.defs.meta.nodes.values.collect {
-      case u: DomainMember.User =>
-        u.defn match {
-          case f: Typedef.Foreign => Some(f.id -> f)
-          case _                  => None
-        }
-    }.flatten.toMap
-
-  private def enumDefsOf(domain: Domain): Map[TypeId.User, Typedef.Enum] =
-    domain.defs.meta.nodes.values.collect {
-      case u: DomainMember.User =>
-        u.defn match {
-          case e: Typedef.Enum => Some(e.id -> e)
-          case _               => None
-        }
-    }.flatten.toMap
-
-  /** Parse a JSON fragment string produced by the OAS fragment generator into a
-    * `Json` value. The OAS generator returns well-formed JSON object literals;
-    * a parse failure indicates an emitter defect and is surfaced eagerly.
-    */
-  private def parseFragment(fragment: String): Json =
-    io.circe.parser.parse(fragment) match {
-      case Right(j)  => j
-      case Left(err) => throw new IllegalStateException(s"OAS fragment did not parse as JSON: $fragment ($err)")
-    }
-
   /** Shallow object merge: `b`'s keys extend / override `a`'s. Both must be JSON
     * objects (the emitter only ever merges object schemas).
     */
@@ -413,15 +379,7 @@ object McpInputSchemaEmitter {
   final val defsKeyword                 = "$defs"
   final val defsSegment                 = "$defs"
 
-  /** Foreign-type lookup context threaded through one emission: the OAS
-    * Baboon→Baboon resolution map plus the foreign typedefs (for per-language
-    * binding inspection). Kept local to a call so the emitter stays stateless.
-    */
-  private final case class ForeignContext(
-    resolutions: Map[TypeId.User, Option[TypeRef]],
-    defs: Map[TypeId.User, Typedef.Foreign],
-    enums: Map[TypeId.User, Typedef.Enum],
-  )
+  final case class PreparedDomain private[mcp] (domain: Domain, references: SchemaReferences)
 
   /** Per-language declaration strings that denote that language's native string
     * type. A foreign type all of whose bindings are in this set collapses to a

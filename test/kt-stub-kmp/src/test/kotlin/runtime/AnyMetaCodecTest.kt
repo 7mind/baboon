@@ -494,6 +494,7 @@ class AnyMetaCodecTest {
 
     private class StubMeta : BaboonMeta {
         override fun sameInVersions(typeId: String): List<String> = emptyList()
+        override fun forwardReadableVersions(typeId: String): Map<String, String> = emptyMap()
     }
 
     private class StubJsonCodecs : AbstractBaboonJsonCodecs()

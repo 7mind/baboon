@@ -47,9 +47,10 @@ class DtMcpServerGenerator[F[+_, +_]: Error2](
   override def generateMcpServer(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     val perService: List[(String, OutputFile)] = family.domains.toMap.values.toList.flatMap {
       lineage =>
-        val evo          = lineage.evolution
-        val latestDomain = lineage.versions(evo.latest)
-        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo))
+        val evo           = lineage.evolution
+        val latestDomain  = lineage.versions(evo.latest)
+        val schemaContext = schemaEmitter.prepare(latestDomain)
+        servicesOf(latestDomain).map(svc => generateForService(svc, latestDomain, evo, schemaContext))
     }
 
     val runtimeFile =
@@ -75,7 +76,8 @@ class DtMcpServerGenerator[F[+_, +_]: Error2](
     s"$basename/$fname"
   }
 
-  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution): (String, OutputFile) = {
+  private def generateForService(svc: Typedef.Service, domain: Domain, evo: BaboonEvolution, schemaContext: McpInputSchemaEmitter.PreparedDomain)
+    : (String, OutputFile) = {
     val path = serverPath(svc, domain, evo)
 
     val serviceName = svc.id.name.name
@@ -90,14 +92,14 @@ class DtMcpServerGenerator[F[+_, +_]: Error2](
     val toolEntries: List[String] = svc.methods.toList.map {
       m =>
         val toolName = s"${serviceName}_${m.name.name}"
-        val schema   = schemaEmitter.emitInputSchema(m.sig, domain)
+        val schema   = schemaEmitter.emitInputSchema(m.sig, schemaContext)
         // Embed schema as a Dart single-quoted string literal. Escape rules:
         // `\` → `\\`, `'` → `\'`, `$` → `\$` (Dart interpolation guard).
         val schemaLiteral = schema.noSpaces
           .replace("\\", "\\\\")
           .replace("'", "\\'")
           .replace("$", "\\$")
-        val descArg   = McpDocs.flatten(m.docs).map(d => s", ${dartDescString(d)}").getOrElse("")
+        val descArg = McpDocs.flatten(m.docs).map(d => s", ${dartDescString(d)}").getOrElse("")
         s"    McpToolEntry(${dartString(toolName)}, const BaboonMethodId(${dartString(serviceName)}, ${dartString(m.name.name)}), jsonDecode('$schemaLiteral') as Map<String, dynamic>$descArg),"
     }
 
@@ -181,14 +183,14 @@ object DtMcpServerGenerator {
   def dartString(s: String): String = {
     val sb = new StringBuilder("'")
     s.foreach {
-      case '\\'  => sb.append("\\\\")
-      case '\''  => sb.append("\\'")
-      case '$'   => sb.append("\\$")
-      case '\n'  => sb.append("\\n")
-      case '\r'  => sb.append("\\r")
-      case '\t'  => sb.append("\\t")
+      case '\\'          => sb.append("\\\\")
+      case '\''          => sb.append("\\'")
+      case '$'           => sb.append("\\$")
+      case '\n'          => sb.append("\\n")
+      case '\r'          => sb.append("\\r")
+      case '\t'          => sb.append("\\t")
       case c if c < 0x20 => sb.append(f"\\u${c.toInt}%04x")
-      case c     => sb.append(c)
+      case c             => sb.append(c)
     }
     sb.append('\'').toString()
   }

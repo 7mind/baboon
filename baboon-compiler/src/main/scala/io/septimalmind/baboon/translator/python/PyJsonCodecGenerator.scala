@@ -19,9 +19,13 @@ final class PyJsonCodecGenerator(
   pyTarget: PyTarget,
   domain: Domain,
 ) extends PyCodecTranslator {
+  private val fieldSerialization: Map[TypeRef, PyFieldPlan.SerializationFeatures] = domain.defs.meta.nodes.valuesIterator.collect {
+    case DomainMember.User(_, dto: Typedef.Dto, _, _) => dto.fields.map(_.tpe)
+  }.flatten.toSet.iterator.map((tpe: TypeRef) => tpe -> PyFieldPlan.serializationFeatures(tpe, domain)).toMap
+
   override def translate(defn: DomainMember.User, pyRef: PyType, srcRef: PyType): Option[TextTree[PyValue]] = {
     (defn.defn match {
-      case d: Typedef.Dto  => Some(genDtoBodies(pyRef, d))
+      case d: Typedef.Dto  => Some(genDtoBodies(pyRef, d, false))
       case _: Typedef.Adt  => Some(genAdtBodies(pyRef))
       case _: Typedef.Enum => Some(genEnumBodies(pyRef))
       case f: Typedef.Foreign =>
@@ -57,9 +61,25 @@ final class PyJsonCodecGenerator(
               |""".stripMargin)
     val anyHelpers: List[TextTree[PyValue]]       = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
     val customKeyHelpers: List[TextTree[PyValue]] = if (hasCustomForeignMapKey(defn)) List(tryDecodeKeyHelper) else Nil
-    val baseMethods                               = encodeMethod ++ decodeMethod ++ anyHelpers ++ customKeyHelpers
-    val cName                                     = q"${srcRef.name}_JsonCodec"
-    val cType                                     = q"'${codecType(defn.id)}'"
+    val valueBodies = defn.defn match {
+      case d: Typedef.Dto if dtoNeedsExplicitWalker(d) => Some(genDtoBodies(name, d, true))
+      case _: Typedef.Enum                             => Some((q"return value.value", q"return $name(wire)"))
+      case _                                           => None
+    }
+    val valueMethods = valueBodies.toList.flatMap {
+      case (valueEnc, valueDec) =>
+        val valueEncode = if (isEncoderEnabled) {
+          List(q"""def encode_value(self, context: $baboonCodecContext, value: $name) -> $pyAny:
+                  |    ${valueEnc.shift(4).trim}
+                  |""".stripMargin)
+        } else Nil
+        valueEncode ++ List(q"""def decode_value(self, context: $baboonCodecContext, wire: $pyAny) -> $name:
+                               |    ${valueDec.shift(4).trim}
+                               |""".stripMargin)
+    }
+    val baseMethods = encodeMethod ++ decodeMethod ++ valueMethods ++ anyHelpers ++ customKeyHelpers
+    val cName       = q"${srcRef.name}_JsonCodec"
+    val cType       = q"'${codecType(defn.id)}'"
 
     val cParent = if (isEncoderEnabled) {
       defn match {
@@ -108,7 +128,7 @@ final class PyJsonCodecGenerator(
     (encode, decode)
   }
 
-  private def genDtoBodies(name: PyType, dto: Typedef.Dto): (TextTree[PyValue], TextTree[PyValue]) = {
+  private def genDtoBodies(name: PyType, dto: Typedef.Dto, nativeValue: Boolean): (TextTree[PyValue], TextTree[PyValue]) = {
     // For DTOs without `any`-bearing fields AND without `map[user-key, V]` fields, fall through to
     // pydantic's transparent `model_dump_json` / `model_validate_json` round-trip — pydantic knows
     // every field type. For DTOs WITH `any`-bearing fields, pydantic cannot round-trip an
@@ -129,143 +149,49 @@ final class PyJsonCodecGenerator(
       val decode = q"""return $name.model_validate_json(wire)""".stripMargin
       (encode, decode)
     } else {
-      // The exclude set for model_dump uses Python attribute names (not aliases).
-      // Keyword fields have attribute name `fieldName_`, others use `fieldName`.
-      val walkedFieldAttrNames = dto.fields.filter(f => fieldNeedsExplicitWalk(f.tpe))
-        .map(f => if (PyKeywords.isKeyword(f.name.name)) s"${f.name.name}_" else f.name.name)
-      val excludeSet           = walkedFieldAttrNames.map(n => q"'$n'").join(", ")
+      // Pydantic exclusions use backing attributes, not serialization aliases.
+      val fieldPlans = PyFieldPlan.forDto(domain, dto)
+      val walkedFieldAttrNames = dto.fields
+        .filter(f => fieldNeedsExplicitWalk(f.tpe))
+        .map(f => fieldPlans(f).attributeName)
+      val excludeSet = walkedFieldAttrNames.map(n => q"'$n'").join(", ")
       val encodePatches = dto.fields.collect {
         case f if fieldNeedsExplicitWalk(f.tpe) =>
           // Wire key is the ORIGINAL model name; attribute access uses the escaped Python name.
-          q"obj['${f.name.name}'] = ${mkJsonAnyEncoder(f.tpe, q"value.${escapePyKeyword(f.name.name)}")}"
+          q"obj['${fieldPlans(f).wireName}'] = ${mkJsonAnyEncoder(f.tpe, q"value.${fieldPlans(f).accessorName}")}"
       }
       val decodePatches = dto.fields.collect {
         case f if fieldNeedsExplicitWalk(f.tpe) =>
           // Wire key is the ORIGINAL model name.
           q"obj['${f.name.name}'] = ${mkJsonAnyDecoder(f.tpe, q"obj['${f.name.name}']")}"
       }
+      val encoded = if (nativeValue) q"obj" else q"$pyJsonDumps(obj)"
+      val decoded = if (nativeValue) q"dict(wire)" else q"$pyJsonLoads(wire)"
       val encode =
         q"""obj = value.model_dump(mode='json', exclude={$excludeSet})
            |${encodePatches.joinN()}
-           |return $pyJsonDumps(obj)""".stripMargin
+           |return $encoded""".stripMargin
       val decode =
-        q"""obj = $pyJsonLoads(wire)
+        q"""obj = $decoded
            |${decodePatches.joinN()}
            |return $name.model_validate(obj)""".stripMargin
       (encode, decode)
     }
   }
 
-  // Top-level field test: a codec class needs the any-field helpers if any direct or nested-via-
-  // Constructor-arg field has type `any`. Mirrors `PyUEBACodecGenerator.hasAnyField`; this 14th
-  // instance (7 UEBA + 7 JSON generators) is duplicated per-language per-codec — extraction
-  // deferred per ledger.
-  private def hasAnyField(defn: DomainMember.User): Boolean = {
-    defn.defn match {
-      case d: Typedef.Dto => dtoHasAnyField(d)
-      case _              => false
-    }
-  }
-
-  private def dtoHasAnyField(dto: Typedef.Dto): Boolean = dto.fields.exists(f => fieldHasAny(f.tpe))
-
-  private def fieldHasAny(tpe: TypeRef): Boolean = tpe match {
-    case _: TypeRef.Any         => true
-    case _: TypeRef.Scalar      => false
-    case c: TypeRef.Constructor => c.args.exists(fieldHasAny)
-  }
-
-  // PR-I.2-D01: detect whether the DTO contains any `map[custom-foreign-key, V]` fields. When
-  // present, the codec class needs the `_try_decode_key` helper that wraps the host call in
-  // try/except and re-raises as `BaboonCodecException.DecoderFailure("malformed key: ...")` —
-  // Python expressions cannot contain try/except, so the wrap is factored into a class method
-  // callable from the dict-comprehension key expression via `self._try_decode_key(lambda: ..., k)`.
-  private def hasCustomForeignMapKey(defn: DomainMember.User): Boolean = defn.defn match {
-    case d: Typedef.Dto => dtoHasCustomForeignMapKey(d)
+  private def hasAnyField(defn: DomainMember.User): Boolean = defn.defn match {
+    case d: Typedef.Dto => d.fields.exists(f => fieldSerialization(f.tpe).hasAny)
     case _              => false
   }
 
-  private def dtoHasCustomForeignMapKey(dto: Typedef.Dto): Boolean =
-    dto.fields.exists(f => fieldHasCustomForeignMapKey(f.tpe))
-
-  // Returns true iff `tpe` (used as a map key) transitively reaches a Custom-foreign via
-  // `mkJsonKeyDecoder`'s recursion paths: (a) direct Custom-foreign scalar, or (b) single-field
-  // wrapper DTO whose inner type reaches a Custom-foreign. Mirrors `mkJsonKeyDecoder`'s match arms
-  // so `_try_decode_key` is emitted exactly when the generated comprehension expression uses it.
-  private def keyTypeNeedsCustomForeignWrap(tpe: TypeRef): Boolean = tpe match {
-    case TypeRef.Scalar(u: TypeId.User) =>
-      domain.defs.meta.nodes.get(u) match {
-        case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
-          f.bindings.get(BaboonLang.Py) match {
-            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
-              keyTypeNeedsCustomForeignWrap(aliasedRef)
-            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) => true
-            case _                                                                  => false
-          }
-        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
-          keyTypeNeedsCustomForeignWrap(d.fields.head.tpe)
-        case _ => false
-      }
-    case _ => false
+  private def hasCustomForeignMapKey(defn: DomainMember.User): Boolean = defn.defn match {
+    case d: Typedef.Dto => d.fields.exists(f => fieldSerialization(f.tpe).hasCustomForeignKey)
+    case _              => false
   }
 
-  private def fieldHasCustomForeignMapKey(tpe: TypeRef): Boolean = tpe match {
-    case _: TypeRef.Any    => false
-    case _: TypeRef.Scalar => false
-    case c: TypeRef.Constructor =>
-      val isCustomForeignKeyMap = c.id == TypeId.Builtins.map && (c.args.head match {
-        case TypeRef.Scalar(_: TypeId.User) => keyTypeNeedsCustomForeignWrap(c.args.head)
-        case _                              => false
-      })
-      isCustomForeignKeyMap || c.args.exists(fieldHasCustomForeignMapKey)
-  }
+  private def dtoNeedsExplicitWalker(dto: Typedef.Dto): Boolean = dto.fields.exists(f => fieldNeedsExplicitWalk(f.tpe))
 
-  // PR-60-D02: detect whether the DTO contains any `map[user-key, V]` fields where the key is a
-  // user type (DTO/id/foreign). Pydantic's transparent path mis-handles such keys; the explicit
-  // walker uses `mkJsonKeyEncoder`/`mkJsonKeyDecoder` to round-trip them as strings.
-  private def dtoHasUserKeyMapField(dto: Typedef.Dto): Boolean = dto.fields.exists(f => fieldHasUserKeyMap(f.tpe))
-
-  private def fieldHasUserKeyMap(tpe: TypeRef): Boolean = tpe match {
-    case _: TypeRef.Any    => false
-    case _: TypeRef.Scalar => false
-    case c: TypeRef.Constructor =>
-      val isMapWithUserKey = c.id == TypeId.Builtins.map && (c.args.head match {
-        case TypeRef.Scalar(_: TypeId.User) => true
-        case _                              => false
-      })
-      isMapWithUserKey || c.args.exists(fieldHasUserKeyMap)
-  }
-
-  // PR-29.10-D01: detect whether the DTO contains any field whose type is an ADT user type.
-  // When a DTO field is declared as an ADT base type (e.g. `okEnvelope: IntStrEnvelope`),
-  // pydantic's `model_dump_json()` uses the declared base-type schema for the `model_serializer`
-  // wrap handler — which has no fields — producing `{"VariantName": {}}` instead of
-  // `{"VariantName": {"field": value}}`. The explicit walker bypasses pydantic's path and
-  // dispatches directly to the ADT's JSON codec.
-  private def dtoHasAdtField(dto: Typedef.Dto): Boolean = dto.fields.exists(f => fieldHasAdt(f.tpe))
-
-  private def fieldHasAdt(tpe: TypeRef): Boolean = tpe match {
-    case TypeRef.Scalar(u: TypeId.User) =>
-      domain.defs.meta.nodes.get(u) match {
-        case Some(DomainMember.User(_, _: Typedef.Adt, _, _)) => true
-        case _                                                => false
-      }
-    case _: TypeRef.Scalar      => false
-    case _: TypeRef.Any         => false
-    case c: TypeRef.Constructor => c.args.exists(fieldHasAdt)
-  }
-
-  // PR-60-D02: route a DTO through the explicit walker path when EITHER any-bearing OR user-key-
-  // map-bearing fields are present. The walker handles both cases; non-walked subtrees are passed
-  // through `pydantic_core.to_jsonable_python` (encode) / left untouched for Pydantic
-  // `model_validate` to coerce (decode).
-  // PR-29.10-D01: also route when ADT-bearing fields are present (pydantic's inherited
-  // model_serializer loses subclass fields when serialized as a declared base-type field).
-  private def dtoNeedsExplicitWalker(dto: Typedef.Dto): Boolean =
-    dtoHasAnyField(dto) || dtoHasUserKeyMapField(dto) || dtoHasAdtField(dto)
-
-  private def fieldNeedsExplicitWalk(tpe: TypeRef): Boolean =
-    fieldHasAny(tpe) || fieldHasUserKeyMap(tpe) || fieldHasAdt(tpe)
+  private def fieldNeedsExplicitWalk(tpe: TypeRef): Boolean = fieldSerialization(tpe).needsExplicitWalk
 
   // Builds an expression that produces a JSON-friendly Python value (dict/list/scalar) for a
   // walked field's value. Recurses only into subtrees that need explicit walking (any-bearing,
@@ -300,20 +226,20 @@ final class PyJsonCodecGenerator(
       domain.defs.meta.nodes.get(u) match {
         case Some(DomainMember.User(_, _: Typedef.Adt, _, _)) =>
           val c = codecType(u)
-          q"$pyJsonLoads($c.instance().encode(context, $ref))"
+          q"$c.instance().encode_value(context, $ref)"
         case _ =>
           // PR-60-D02: a scalar may legitimately appear inside a walked subtree (e.g. the value
           // side of `map[user-key, V]` where V is itself a non-any-bearing scalar). Defer JSON
           // conversion to Pydantic's `to_jsonable_python` — equivalent to `model_dump(mode='json')`
           // for that scalar.
-          q"$pyToJsonablePython($ref)"
+          PyScalarCodecOps.jsonFieldValue(ref)
       }
     case _: TypeRef.Scalar =>
       // PR-60-D02: a scalar may legitimately appear inside a walked subtree (e.g. the value side
       // of `map[user-key, V]` where V is itself a non-any-bearing scalar). Defer JSON conversion
       // to Pydantic's `to_jsonable_python` — equivalent to what `model_dump(mode='json')` would
       // have produced for that scalar.
-      q"$pyToJsonablePython($ref)"
+      PyScalarCodecOps.jsonFieldValue(ref)
   }
 
   // M19/PR-60: produces a JSON-serializable key (Python str/int/etc.) from a typed key. For
@@ -388,7 +314,7 @@ final class PyJsonCodecGenerator(
       domain.defs.meta.nodes.get(u) match {
         case Some(DomainMember.User(_, _: Typedef.Adt, _, _)) =>
           val c = codecType(u)
-          q"$c.instance().decode(context, $pyJsonDumps($ref))"
+          q"$c.instance().decode_value(context, $ref)"
         case _ =>
           // PR-60-D02: scalar leaves inside walked subtrees pass through unchanged — the
           // subsequent `model_validate(obj)` call handles primitive/user-type coercion from JSON.

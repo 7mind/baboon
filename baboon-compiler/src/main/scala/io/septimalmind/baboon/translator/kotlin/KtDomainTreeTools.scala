@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.kotlin
 
 import io.septimalmind.baboon.translator.kotlin.KtDomainTreeTools.MetaField
-import io.septimalmind.baboon.translator.kotlin.KtTypes.{ktList, ktString}
+import io.septimalmind.baboon.translator.kotlin.KtTypes.{ktList, ktMap, ktString}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -84,7 +84,24 @@ object KtDomainTreeTools {
         q"listOf(${unmodifiedSince.mkString(", ")})",
         q"$ref.baboonSameInVersions",
       )
-      List(sameInVersion)
+      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forwardEntries = forward.readable.toList.map {
+        case (v, tier) => s""""${v.v.toString}" to "${tier.wireName}""""
+      }
+      val forwardReadable = MetaField(
+        q"val baboonForwardReadable: $ktMap<$ktString, $ktString>",
+        q"mapOf(${forwardEntries.mkString(", ")})",
+        q"$ref.baboonForwardReadable",
+      )
+      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+        case (tier, v) => s""""${tier.wireName}" to "${v.v.toString}""""
+      }
+      val minReaders = MetaField(
+        q"val baboonMinReaderVersions: $ktMap<$ktString, $ktString>",
+        q"mapOf(${minReaderEntries.mkString(", ")})",
+        q"$ref.baboonMinReaderVersions",
+      )
+      List(sameInVersion, forwardReadable, minReaders)
     }
   }
 }

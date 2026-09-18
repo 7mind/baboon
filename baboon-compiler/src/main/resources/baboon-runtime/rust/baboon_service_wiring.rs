@@ -60,22 +60,44 @@ pub trait IBaboonUebaService<R> {
     fn invoke(&self, method: &BaboonMethodId, data: &[u8], ctx: &BaboonCodecContext) -> R;
 }
 
+struct ServiceRegistry<S: ?Sized> {
+    table: std::collections::BTreeMap<String, Box<S>>,
+}
+
+impl<S: ?Sized> ServiceRegistry<S> {
+    fn new() -> Self { Self { table: std::collections::BTreeMap::new() } }
+
+    fn register(&mut self, name: String, service: Box<S>) -> Result<(), BaboonWiringError> {
+        match self.table.entry(name) {
+            std::collections::btree_map::Entry::Occupied(entry) =>
+                Err(BaboonWiringError::DuplicateService(entry.key().clone())),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(service);
+                Ok(())
+            }
+        }
+    }
+
+    fn find(&self, method: &BaboonMethodId) -> Result<&S, BaboonWiringError> {
+        self.table.get(&method.service_name).map(|service| service.as_ref())
+            .ok_or_else(|| BaboonWiringError::NoMatchingService(method.clone()))
+    }
+
+    fn names(&self) -> Vec<String> { self.table.keys().cloned().collect() }
+}
+
 pub struct JsonMuxer<R> {
-    table: std::collections::BTreeMap<String, Box<dyn IBaboonJsonService<R>>>,
+    table: ServiceRegistry<dyn IBaboonJsonService<R>>,
 }
 
 impl<R> JsonMuxer<R> {
     pub fn new() -> Self {
-        Self { table: std::collections::BTreeMap::new() }
+        Self { table: ServiceRegistry::new() }
     }
 
     pub fn register(&mut self, service: Box<dyn IBaboonJsonService<R>>) -> Result<(), BaboonWiringError> {
         let name = service.service_name().to_string();
-        if self.table.contains_key(&name) {
-            return Err(BaboonWiringError::DuplicateService(name));
-        }
-        self.table.insert(name, service);
-        Ok(())
+        self.table.register(name, service)
     }
 
     pub fn with(mut self, service: Box<dyn IBaboonJsonService<R>>) -> Result<Self, BaboonWiringError> {
@@ -84,14 +106,11 @@ impl<R> JsonMuxer<R> {
     }
 
     pub fn invoke(&self, method: &BaboonMethodId, data: &str, ctx: &BaboonCodecContext) -> Result<R, BaboonWiringError> {
-        match self.table.get(&method.service_name) {
-            Some(svc) => Ok(svc.invoke(method, data, ctx)),
-            None => Err(BaboonWiringError::NoMatchingService(method.clone())),
-        }
+        Ok(self.table.find(method)?.invoke(method, data, ctx))
     }
 
     pub fn service_names(&self) -> Vec<String> {
-        self.table.keys().cloned().collect()
+        self.table.names()
     }
 }
 
@@ -100,21 +119,17 @@ impl<R> Default for JsonMuxer<R> {
 }
 
 pub struct UebaMuxer<R> {
-    table: std::collections::BTreeMap<String, Box<dyn IBaboonUebaService<R>>>,
+    table: ServiceRegistry<dyn IBaboonUebaService<R>>,
 }
 
 impl<R> UebaMuxer<R> {
     pub fn new() -> Self {
-        Self { table: std::collections::BTreeMap::new() }
+        Self { table: ServiceRegistry::new() }
     }
 
     pub fn register(&mut self, service: Box<dyn IBaboonUebaService<R>>) -> Result<(), BaboonWiringError> {
         let name = service.service_name().to_string();
-        if self.table.contains_key(&name) {
-            return Err(BaboonWiringError::DuplicateService(name));
-        }
-        self.table.insert(name, service);
-        Ok(())
+        self.table.register(name, service)
     }
 
     pub fn with(mut self, service: Box<dyn IBaboonUebaService<R>>) -> Result<Self, BaboonWiringError> {
@@ -123,14 +138,11 @@ impl<R> UebaMuxer<R> {
     }
 
     pub fn invoke(&self, method: &BaboonMethodId, data: &[u8], ctx: &BaboonCodecContext) -> Result<R, BaboonWiringError> {
-        match self.table.get(&method.service_name) {
-            Some(svc) => Ok(svc.invoke(method, data, ctx)),
-            None => Err(BaboonWiringError::NoMatchingService(method.clone())),
-        }
+        Ok(self.table.find(method)?.invoke(method, data, ctx))
     }
 
     pub fn service_names(&self) -> Vec<String> {
-        self.table.keys().cloned().collect()
+        self.table.names()
     }
 }
 
@@ -159,21 +171,17 @@ pub trait IBaboonUebaServiceCtx<Ctx, R> {
 }
 
 pub struct JsonMuxerCtx<Ctx, R> {
-    table: std::collections::BTreeMap<String, Box<dyn IBaboonJsonServiceCtx<Ctx, R>>>,
+    table: ServiceRegistry<dyn IBaboonJsonServiceCtx<Ctx, R>>,
 }
 
 impl<Ctx, R> JsonMuxerCtx<Ctx, R> {
     pub fn new() -> Self {
-        Self { table: std::collections::BTreeMap::new() }
+        Self { table: ServiceRegistry::new() }
     }
 
     pub fn register(&mut self, service: Box<dyn IBaboonJsonServiceCtx<Ctx, R>>) -> Result<(), BaboonWiringError> {
         let name = service.service_name().to_string();
-        if self.table.contains_key(&name) {
-            return Err(BaboonWiringError::DuplicateService(name));
-        }
-        self.table.insert(name, service);
-        Ok(())
+        self.table.register(name, service)
     }
 
     pub fn with(mut self, service: Box<dyn IBaboonJsonServiceCtx<Ctx, R>>) -> Result<Self, BaboonWiringError> {
@@ -182,14 +190,11 @@ impl<Ctx, R> JsonMuxerCtx<Ctx, R> {
     }
 
     pub fn invoke(&self, method: &BaboonMethodId, data: &str, ctx: Ctx, codec_ctx: &BaboonCodecContext) -> Result<R, BaboonWiringError> {
-        match self.table.get(&method.service_name) {
-            Some(svc) => Ok(svc.invoke(method, data, ctx, codec_ctx)),
-            None => Err(BaboonWiringError::NoMatchingService(method.clone())),
-        }
+        Ok(self.table.find(method)?.invoke(method, data, ctx, codec_ctx))
     }
 
     pub fn service_names(&self) -> Vec<String> {
-        self.table.keys().cloned().collect()
+        self.table.names()
     }
 }
 
@@ -198,21 +203,17 @@ impl<Ctx, R> Default for JsonMuxerCtx<Ctx, R> {
 }
 
 pub struct UebaMuxerCtx<Ctx, R> {
-    table: std::collections::BTreeMap<String, Box<dyn IBaboonUebaServiceCtx<Ctx, R>>>,
+    table: ServiceRegistry<dyn IBaboonUebaServiceCtx<Ctx, R>>,
 }
 
 impl<Ctx, R> UebaMuxerCtx<Ctx, R> {
     pub fn new() -> Self {
-        Self { table: std::collections::BTreeMap::new() }
+        Self { table: ServiceRegistry::new() }
     }
 
     pub fn register(&mut self, service: Box<dyn IBaboonUebaServiceCtx<Ctx, R>>) -> Result<(), BaboonWiringError> {
         let name = service.service_name().to_string();
-        if self.table.contains_key(&name) {
-            return Err(BaboonWiringError::DuplicateService(name));
-        }
-        self.table.insert(name, service);
-        Ok(())
+        self.table.register(name, service)
     }
 
     pub fn with(mut self, service: Box<dyn IBaboonUebaServiceCtx<Ctx, R>>) -> Result<Self, BaboonWiringError> {
@@ -221,14 +222,11 @@ impl<Ctx, R> UebaMuxerCtx<Ctx, R> {
     }
 
     pub fn invoke(&self, method: &BaboonMethodId, data: &[u8], ctx: Ctx, codec_ctx: &BaboonCodecContext) -> Result<R, BaboonWiringError> {
-        match self.table.get(&method.service_name) {
-            Some(svc) => Ok(svc.invoke(method, data, ctx, codec_ctx)),
-            None => Err(BaboonWiringError::NoMatchingService(method.clone())),
-        }
+        Ok(self.table.find(method)?.invoke(method, data, ctx, codec_ctx))
     }
 
     pub fn service_names(&self) -> Vec<String> {
-        self.table.keys().cloned().collect()
+        self.table.names()
     }
 }
 

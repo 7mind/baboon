@@ -1,5 +1,5 @@
 use crate::any_opaque::{AnyMeta, AnyOpaque, BaboonCodecError};
-use crate::baboon_runtime::BaboonCodecContext;
+use crate::baboon_runtime::{BaboonCodecContext, BaboonEnvelopeVersion, ForwardWritePolicy};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
@@ -25,6 +25,27 @@ pub trait BaboonGeneratedDyn: std::any::Any + Send + Sync {
     /// Codegen invariant: the slice is never empty (`first()` is called for `domainVersionMinCompat`
     /// in `BaboonTypeMeta::from`); a violation panics with a fail-fast message.
     fn baboon_same_in_versions_dyn(&self) -> Vec<String>;
+    fn baboon_first_same_in_version_dyn(&self) -> Option<std::borrow::Cow<'_, str>> {
+        self.baboon_same_in_versions_dyn().into_iter().next().map(std::borrow::Cow::Owned)
+    }
+    /// Forward-readability: newer domain versions whose encoded data THIS version's codec can
+    /// decode, as `(version, tier)` pairs with tier one of
+    /// "identical" | "prefix-any-mode" | "prefix-compact" | "json-additive".
+    /// The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
+    /// the cursor after decoding. Default is empty; generated impls override with the real table.
+    fn baboon_forward_readable_dyn(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    /// Writer-side inverse of `baboon_forward_readable_dyn`: `(guarantee tier, oldest domain
+    /// version whose codec can decode THIS version's encoding of this type)`. The "identical"
+    /// bound equals `baboon_same_in_versions_dyn()[0]`; the "json-additive" bound is published
+    /// as `$rv`, the prefix-* bounds feed the binary envelope. No default: the envelope writer
+    /// fails fast when a tier is missing, so every impl must provide all four (generated impls do).
+    fn baboon_min_reader_versions_dyn(&self) -> Vec<(String, String)>;
+    fn baboon_min_reader_version_dyn(&self, tier: &str) -> Option<std::borrow::Cow<'_, str>> {
+        self.baboon_min_reader_versions_dyn().into_iter()
+            .find(|(t, _)| t == tier).map(|(_, v)| std::borrow::Cow::Owned(v))
+    }
     fn as_any(&self) -> &dyn std::any::Any;
     /// Consume the box and recover an `Any` for downcasting via `Box::downcast`. Mirrors
     /// the C# `if (current is TTo result)` pattern used in `Convert<TFrom, TTo>`.
@@ -130,6 +151,12 @@ pub trait BaboonAnyMeta: Send + Sync {
     /// Returns versions in which `type_id` is structurally identical (mirrors Scala's
     /// `BaboonMeta.sameInVersions`). Used for the `getCodecMaxCompat` resolution path.
     fn same_in_versions(&self, type_id: &str) -> Vec<String>;
+    /// Forward-readability per type: `(newer version, guarantee tier)` pairs (see
+    /// `BaboonGeneratedDyn::baboon_forward_readable_dyn`). Default is empty; generated
+    /// metas override with the real table.
+    fn forward_readable_versions(&self, _type_id: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
 }
 
 // --- Domain version key ---
@@ -196,225 +223,12 @@ impl std::fmt::Display for BaboonVersion {
     }
 }
 
-// --- BaboonTypeMeta (synthetic; used for facade lookup) ---
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BaboonTypeMeta {
-    pub meta_version: u8,
-    pub domain_identifier: String,
-    pub domain_version: String,
-    pub domain_version_min_compat: String,
-    pub type_identifier: String,
-}
-
-impl BaboonTypeMeta {
-    pub const META_VERSION_1: u8 = 1;
-    pub const META_VERSION: u8 = Self::META_VERSION_1;
-
-    pub fn new<D: Into<String>, V: Into<String>, MC: Into<String>, T: Into<String>>(
-        meta_version: u8,
-        domain_identifier: D,
-        domain_version: V,
-        domain_version_min_compat: MC,
-        type_identifier: T,
-    ) -> Self {
-        BaboonTypeMeta {
-            meta_version,
-            domain_identifier: domain_identifier.into(),
-            domain_version: domain_version.into(),
-            domain_version_min_compat: domain_version_min_compat.into(),
-            type_identifier: type_identifier.into(),
-        }
-    }
-
-    pub fn version_ref(&self) -> BaboonDomainVersion {
-        BaboonDomainVersion::new(&self.domain_identifier, &self.domain_version)
-    }
-
-    pub fn version_min_compat(&self) -> Option<BaboonDomainVersion> {
-        if self.domain_version_min_compat.is_empty() || self.domain_version_min_compat == self.domain_version {
-            None
-        } else {
-            Some(BaboonDomainVersion::new(&self.domain_identifier, &self.domain_version_min_compat))
-        }
-    }
-}
-
-// --- BaboonTypeMeta wire codec ---
+// --- BaboonTypeMeta ---
 //
-// Mirrors C#'s static `BaboonTypeMetaCodec` (BaboonTypeMeta.cs:126-214) and Scala's
-// `BaboonTypeMetaCodec` (BaboonRuntimeShared.scala:156-214). Used by the facade encode/decode
-// entry points to write/read the meta prefix that precedes the payload in both binary and
-// JSON envelopes. Lives here (alongside `BaboonTypeMeta`) rather than in `any_opaque.rs`
-// because it's part of the facade-level wire surface, not the AnyMeta protocol.
-
-pub mod baboon_type_meta_codec {
-    use super::{BaboonTypeMeta, BaboonCodecError};
-    use crate::baboon_runtime::bin_tools;
-    use std::io::{Read, Write};
-
-    pub const META_VERSION_KEY: &str = "$mv";
-    pub const DOMAIN_IDENTIFIER_KEY: &str = "$d";
-    pub const DOMAIN_VERSION_KEY: &str = "$v";
-    pub const DOMAIN_VERSION_MIN_COMPAT_KEY: &str = "$uv";
-    pub const TYPE_IDENTIFIER_KEY: &str = "$t";
-
-    /// Wire format: `[meta-version:u8][domain:string][version:string][has-min-compat:u8][min-compat?:string][type-id:string]`.
-    /// Mirrors C# BaboonTypeMetaCodec.WriteBin / Scala writeBin exactly.
-    pub fn write_bin(meta: &BaboonTypeMeta, writer: &mut dyn Write) -> std::io::Result<()> {
-        bin_tools::write_byte(writer, BaboonTypeMeta::META_VERSION)?;
-        bin_tools::write_string(writer, &meta.domain_identifier)?;
-        bin_tools::write_string(writer, &meta.domain_version)?;
-        if meta.domain_version == meta.domain_version_min_compat {
-            bin_tools::write_byte(writer, 0)?;
-        } else {
-            bin_tools::write_byte(writer, 1)?;
-            bin_tools::write_string(writer, &meta.domain_version_min_compat)?;
-        }
-        bin_tools::write_string(writer, &meta.type_identifier)
-    }
-
-    /// Reads the wire-format prefix. Returns `Ok(None)` when the leading meta-version byte
-    /// does not match `META_VERSION_1` (forward-compat: future meta versions). Mirrors C#
-    /// `ReadMeta(BinaryReader)` (BaboonTypeMeta.cs:169) returning nullable.
-    pub fn read_bin<R: Read>(reader: &mut R) -> Result<Option<BaboonTypeMeta>, BaboonCodecError> {
-        let meta_version = bin_tools::read_byte(reader).map_err(|e| {
-            BaboonCodecError::decoder_failure_from_box(
-                "BaboonTypeMetaCodec.read_bin: failed to read meta-version byte",
-                e,
-            )
-        })?;
-        if meta_version != BaboonTypeMeta::META_VERSION_1 {
-            return Ok(None);
-        }
-        let domain_identifier = bin_tools::read_string(reader).map_err(|e| {
-            BaboonCodecError::decoder_failure_from_box(
-                "BaboonTypeMetaCodec.read_bin: failed to read domain identifier",
-                e,
-            )
-        })?;
-        let domain_version = bin_tools::read_string(reader).map_err(|e| {
-            BaboonCodecError::decoder_failure_from_box(
-                "BaboonTypeMetaCodec.read_bin: failed to read domain version",
-                e,
-            )
-        })?;
-        let has_min_compat = bin_tools::read_byte(reader).map_err(|e| {
-            BaboonCodecError::decoder_failure_from_box(
-                "BaboonTypeMetaCodec.read_bin: failed to read has-min-compat byte",
-                e,
-            )
-        })?;
-        let domain_version_min_compat = if has_min_compat == 1 {
-            bin_tools::read_string(reader).map_err(|e| {
-                BaboonCodecError::decoder_failure_from_box(
-                    "BaboonTypeMetaCodec.read_bin: failed to read min-compat",
-                    e,
-                )
-            })?
-        } else {
-            domain_version.clone()
-        };
-        let type_identifier = bin_tools::read_string(reader).map_err(|e| {
-            BaboonCodecError::decoder_failure_from_box(
-                "BaboonTypeMetaCodec.read_bin: failed to read type identifier",
-                e,
-            )
-        })?;
-        Ok(Some(BaboonTypeMeta::new(
-            BaboonTypeMeta::META_VERSION,
-            domain_identifier,
-            domain_version,
-            domain_version_min_compat,
-            type_identifier,
-        )))
-    }
-
-    /// JSON envelope writer. Mirrors C# `BaboonTypeMetaCodec.WriteJson` (BaboonTypeMeta.cs:156)
-    /// and Scala `writeMeta(json)` — returns the `{$mv,$d,$v,$t,$uv?}` object without `$c`.
-    /// Callers (e.g. `BaboonCodecsFacade::encode_to_json`) are expected to append the content
-    /// payload under the `$c` key. Symmetric to `read_meta_json` so the rust runtime exposes
-    /// the same shape of public envelope API as the peer backends; closes
-    /// `[MFACADE-PR-3-D13]`.
-    pub fn write_meta_json(meta: &BaboonTypeMeta) -> serde_json::Map<String, serde_json::Value> {
-        let mut envelope = serde_json::Map::new();
-        // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
-        // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
-        envelope.insert(
-            META_VERSION_KEY.to_string(),
-            serde_json::Value::Number(serde_json::Number::from(BaboonTypeMeta::META_VERSION)),
-        );
-        envelope.insert(
-            DOMAIN_IDENTIFIER_KEY.to_string(),
-            serde_json::Value::String(meta.domain_identifier.clone()),
-        );
-        envelope.insert(
-            DOMAIN_VERSION_KEY.to_string(),
-            serde_json::Value::String(meta.domain_version.clone()),
-        );
-        envelope.insert(
-            TYPE_IDENTIFIER_KEY.to_string(),
-            serde_json::Value::String(meta.type_identifier.clone()),
-        );
-        if meta.domain_version != meta.domain_version_min_compat
-            && !meta.domain_version_min_compat.is_empty()
-        {
-            envelope.insert(
-                DOMAIN_VERSION_MIN_COMPAT_KEY.to_string(),
-                serde_json::Value::String(meta.domain_version_min_compat.clone()),
-            );
-        }
-        envelope
-    }
-
-    /// JSON envelope reader. Mirrors C# `ReadMeta(JToken)` (BaboonTypeMeta.cs:189) and Scala
-    /// `readMeta(json)` (BaboonRuntimeShared.scala:197). Returns `Ok(None)` when the input is
-    /// not an object, when `$mv` is present but not "1", or when any of `$d`/`$v`/`$t` is missing.
-    pub fn read_meta_json(
-        json: &serde_json::Value,
-    ) -> Result<Option<BaboonTypeMeta>, BaboonCodecError> {
-        let obj = match json.as_object() {
-            Some(o) => o,
-            None => return Ok(None),
-        };
-        if let Some(mv) = obj.get(META_VERSION_KEY) {
-            // MFACADE-PR-3: accept $mv as either a JSON number or a string (back-compat
-            // with M28-vintage fixtures); both must equal META_VERSION_1.
-            let mv_byte: Option<u8> = match mv {
-                serde_json::Value::Number(n) => n.as_u64().and_then(|x| u8::try_from(x).ok()),
-                serde_json::Value::String(s) => s.parse::<u8>().ok(),
-                _ => None,
-            };
-            match mv_byte {
-                Some(v) if v == BaboonTypeMeta::META_VERSION_1 => {}
-                _ => return Ok(None),
-            }
-        }
-        let d = match obj.get(DOMAIN_IDENTIFIER_KEY).and_then(|v| v.as_str()) {
-            Some(s) => s,
-            None => return Ok(None),
-        };
-        let v = match obj.get(DOMAIN_VERSION_KEY).and_then(|v| v.as_str()) {
-            Some(s) => s,
-            None => return Ok(None),
-        };
-        let t = match obj.get(TYPE_IDENTIFIER_KEY).and_then(|v| v.as_str()) {
-            Some(s) => s,
-            None => return Ok(None),
-        };
-        let uv = obj
-            .get(DOMAIN_VERSION_MIN_COMPAT_KEY)
-            .and_then(|v| v.as_str())
-            .unwrap_or(v);
-        Ok(Some(BaboonTypeMeta::new(
-            BaboonTypeMeta::META_VERSION,
-            d,
-            v,
-            uv,
-            t,
-        )))
-    }
-}
+// `BaboonTypeMeta` and its wire codec live in `baboon_type_meta.rs` (this file is embedded as a
+// single JVM string constant and must stay under 64KB); they are re-exported here so the
+// `crate::baboon_codecs_facade::{BaboonTypeMeta, baboon_type_meta_codec}` paths keep resolving.
+pub use crate::baboon_type_meta::{baboon_type_meta_codec, BaboonTypeMeta};
 
 // --- Lazy<T> primitive ---
 //
@@ -423,41 +237,61 @@ pub mod baboon_type_meta_codec {
 // access only. A registered codec table can call into lots of types' registrations during
 // construction; lazy is what avoids paying that cost up front.
 
-pub struct LazyCodec<T> {
-    cell: OnceLock<Arc<T>>,
+struct LazyValue<T> {
+    cell: OnceLock<T>,
     init: Mutex<Option<Box<dyn FnOnce() -> T + Send>>>,
+}
+
+impl<T> LazyValue<T> {
+    fn new<F: FnOnce() -> T + Send + 'static>(init: F) -> Self {
+        Self { cell: OnceLock::new(), init: Mutex::new(Some(Box::new(init))) }
+    }
+
+    fn from_value(value: T) -> Self {
+        let cell = OnceLock::new();
+        let _ = cell.set(value);
+        Self { cell, init: Mutex::new(None) }
+    }
+
+    fn get(&self) -> &T {
+        self.cell.get_or_init(|| {
+            let mut guard = self.init.lock().expect("LazyCodec mutex poisoned");
+            guard.take().expect("LazyCodec missing both init and value")()
+        })
+    }
+}
+
+pub struct LazyCodec<T> {
+    value: LazyValue<Arc<T>>,
 }
 
 impl<T> LazyCodec<T> {
     pub fn new<F: FnOnce() -> T + Send + 'static>(init: F) -> Self {
-        LazyCodec { cell: OnceLock::new(), init: Mutex::new(Some(Box::new(init))) }
+        Self { value: LazyValue::new(move || Arc::new(init())) }
     }
 
     pub fn from_value(value: T) -> Self {
-        let cell = OnceLock::new();
-        let _ = cell.set(Arc::new(value));
-        LazyCodec { cell, init: Mutex::new(None) }
+        Self { value: LazyValue::from_value(Arc::new(value)) }
     }
 
     pub fn get(&self) -> Arc<T> {
-        if let Some(v) = self.cell.get() {
-            return Arc::clone(v);
-        }
-        let value = {
-            let mut guard = self.init.lock().expect("LazyCodec mutex poisoned");
-            match guard.take() {
-                Some(thunk) => thunk(),
-                None => {
-                    drop(guard);
-                    return Arc::clone(self.cell.get().expect("LazyCodec missing both init and value"));
-                }
-            }
-        };
-        let arc = Arc::new(value);
-        match self.cell.set(Arc::clone(&arc)) {
-            Ok(()) => arc,
-            Err(_) => Arc::clone(self.cell.get().expect("LazyCodec set failed but cell empty")),
-        }
+        Arc::clone(self.value.get())
+    }
+}
+
+struct CodecRegistry<C: ?Sized> {
+    codecs: HashMap<String, LazyValue<Arc<C>>>,
+}
+
+impl<C: ?Sized> CodecRegistry<C> {
+    fn new() -> Self { Self { codecs: HashMap::new() } }
+
+    fn register<F: FnOnce() -> Arc<C> + Send + 'static>(&mut self, id: &str, thunk: F) {
+        self.codecs.insert(id.to_string(), LazyValue::new(thunk));
+    }
+
+    fn try_find(&self, id: &str) -> Option<Arc<C>> {
+        self.codecs.get(id).map(|lazy| Arc::clone(lazy.get()))
     }
 }
 
@@ -473,7 +307,7 @@ pub trait AbstractBaboonCodecs: Send + Sync {
 }
 
 pub struct AbstractBaboonJsonCodecsImpl {
-    codecs: HashMap<String, LazyCodec<Arc<dyn BaboonAnyJsonCodec>>>,
+    codecs: CodecRegistry<dyn BaboonAnyJsonCodec>,
 }
 
 impl Default for AbstractBaboonJsonCodecsImpl {
@@ -484,7 +318,7 @@ impl Default for AbstractBaboonJsonCodecsImpl {
 
 impl AbstractBaboonJsonCodecsImpl {
     pub fn new() -> Self {
-        AbstractBaboonJsonCodecsImpl { codecs: HashMap::new() }
+        AbstractBaboonJsonCodecsImpl { codecs: CodecRegistry::new() }
     }
 
     pub fn register<F: FnOnce() -> Arc<dyn BaboonAnyJsonCodec> + Send + 'static>(
@@ -492,16 +326,16 @@ impl AbstractBaboonJsonCodecsImpl {
         id: &str,
         thunk: F,
     ) {
-        self.codecs.insert(id.to_string(), LazyCodec::new(thunk));
+        self.codecs.register(id, thunk);
     }
 
     pub fn try_find(&self, id: &str) -> Option<Arc<dyn BaboonAnyJsonCodec>> {
-        self.codecs.get(id).map(|lazy| (*lazy.get()).clone())
+        self.codecs.try_find(id)
     }
 }
 
 pub struct AbstractBaboonUebaCodecsImpl {
-    codecs: HashMap<String, LazyCodec<Arc<dyn BaboonAnyBinCodec>>>,
+    codecs: CodecRegistry<dyn BaboonAnyBinCodec>,
 }
 
 impl Default for AbstractBaboonUebaCodecsImpl {
@@ -512,7 +346,7 @@ impl Default for AbstractBaboonUebaCodecsImpl {
 
 impl AbstractBaboonUebaCodecsImpl {
     pub fn new() -> Self {
-        AbstractBaboonUebaCodecsImpl { codecs: HashMap::new() }
+        AbstractBaboonUebaCodecsImpl { codecs: CodecRegistry::new() }
     }
 
     pub fn register<F: FnOnce() -> Arc<dyn BaboonAnyBinCodec> + Send + 'static>(
@@ -520,17 +354,31 @@ impl AbstractBaboonUebaCodecsImpl {
         id: &str,
         thunk: F,
     ) {
-        self.codecs.insert(id.to_string(), LazyCodec::new(thunk));
+        self.codecs.register(id, thunk);
     }
 
     pub fn try_find(&self, id: &str) -> Option<Arc<dyn BaboonAnyBinCodec>> {
-        self.codecs.get(id).map(|lazy| (*lazy.get()).clone())
+        self.codecs.try_find(id)
     }
 }
 
 // --- BaboonCodecsFacade ---
 
+/// How a reader treats JSON payloads written by a NEWER domain version than it registers.
+/// `Lossless`: decode only when the envelope's `$uv` (byte-identical bound) reaches a registered
+/// version — the pre-`$rv` behavior. `Tolerant`: additionally honor `$rv` (json-additive bound):
+/// decode with that version's codec, silently dropping fields this reader does not know.
+/// Re-encoding intermediaries must use `Lossless` or they truncate data for downstream consumers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForwardReadPolicy {
+    Lossless,
+    Tolerant,
+}
+
 pub struct BaboonCodecsFacade {
+    /// Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+    /// bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
+    forward_read_policy: Mutex<ForwardReadPolicy>,
     versions_codecs_json: Mutex<HashMap<BaboonDomainVersion, Arc<LazyCodec<Arc<AbstractBaboonJsonCodecsImpl>>>>>,
     versions_codecs_bin: Mutex<HashMap<BaboonDomainVersion, Arc<LazyCodec<Arc<AbstractBaboonUebaCodecsImpl>>>>>,
     versions_meta: Mutex<HashMap<BaboonDomainVersion, Arc<LazyCodec<Arc<dyn BaboonAnyMeta>>>>>,
@@ -560,12 +408,21 @@ impl Default for BaboonCodecsFacade {
 impl BaboonCodecsFacade {
     pub fn new() -> Self {
         BaboonCodecsFacade {
+            forward_read_policy: Mutex::new(ForwardReadPolicy::Tolerant),
             versions_codecs_json: Mutex::new(HashMap::new()),
             versions_codecs_bin: Mutex::new(HashMap::new()),
             versions_meta: Mutex::new(HashMap::new()),
             versions_conversions: Mutex::new(HashMap::new()),
             domain_versions: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn forward_read_policy(&self) -> ForwardReadPolicy {
+        *self.forward_read_policy.lock().expect("forward_read_policy mutex poisoned")
+    }
+
+    pub fn set_forward_read_policy(&self, policy: ForwardReadPolicy) {
+        *self.forward_read_policy.lock().expect("forward_read_policy mutex poisoned") = policy;
     }
 
     pub fn latest(&self, domain: &str) -> Result<BaboonVersion, BaboonCodecError> {
@@ -841,7 +698,8 @@ impl BaboonCodecsFacade {
         type_meta: &BaboonTypeMeta,
         exact: bool,
     ) -> Result<Arc<dyn BaboonAnyBinCodec>, BaboonCodecError> {
-        let resolved = self.resolve_version(type_meta, exact)?;
+        // v1 envelopes carry readable_min == min_compat, so the policy only bites on v2 envelopes (and JSON)
+        let resolved = self.resolve_version(type_meta, exact, self.forward_read_policy() == ForwardReadPolicy::Tolerant)?;
         let table = {
             let codecs = self.versions_codecs_bin.lock().expect("mutex poisoned");
             codecs
@@ -868,7 +726,8 @@ impl BaboonCodecsFacade {
         type_meta: &BaboonTypeMeta,
         exact: bool,
     ) -> Result<Arc<dyn BaboonAnyJsonCodec>, BaboonCodecError> {
-        let resolved = self.resolve_version(type_meta, exact)?;
+        let tolerant = self.forward_read_policy() == ForwardReadPolicy::Tolerant;
+        let resolved = self.resolve_version(type_meta, exact, tolerant)?;
         let table = {
             let codecs = self.versions_codecs_json.lock().expect("mutex poisoned");
             codecs
@@ -897,31 +756,46 @@ impl BaboonCodecsFacade {
         &self,
         type_meta: &BaboonTypeMeta,
         exact: bool,
+        tolerant: bool,
     ) -> Result<BaboonDomainVersion, BaboonCodecError> {
-        let versions = {
+        let bounds = {
             let map = self.domain_versions.lock().expect("mutex poisoned");
-            map.get(&type_meta.domain_identifier).cloned()
+            map.get(&type_meta.domain_identifier).and_then(|versions| {
+                Some((versions.first()?.clone(), versions.last()?.clone()))
+            })
         };
-        let versions = versions.filter(|v| !v.is_empty()).ok_or_else(|| {
+        let (min_version, max_version) = bounds.ok_or_else(|| {
             BaboonCodecError::codec_not_found(format!(
                 "Unknown domain {}.",
                 type_meta.domain_identifier
             ))
         })?;
 
-        let min_version = &versions[0];
-        let max_version = &versions[versions.len() - 1];
-
         let lookup_version = type_meta.version_ref();
         let lookup_v = lookup_version.version()?;
         let max_v = max_version.version()?;
         let min_v = min_version.version()?;
 
-        let model_version = match type_meta.version_min_compat() {
-            Some(min_compat) if lookup_v > max_v => min_compat,
-            _ => lookup_version,
-        };
-        let model_v = model_version.version()?;
+        if !exact && lookup_v > max_v {
+            // a payload from a NEWER version than we register. The oldest version whose codec may
+            // decode it is the bound the writer published (byte-identical or, under its Tolerant
+            // policy, prefix-readable), or — for tolerant JSON reads — the json-additive bound.
+            // Forward-readability is monotone along the version chain, so once the bound reaches a
+            // registered version our newest codec reads the payload (losing at most the fields
+            // appended after our version).
+            let lower_bound = if tolerant { type_meta.version_readable_min() } else { type_meta.version_min_compat() };
+            if let Some(bound) = lower_bound {
+                if bound.version()? <= max_v {
+                    return Ok(max_version.clone());
+                }
+            }
+            return Err(BaboonCodecError::codec_not_found(format!(
+                "Unsupported domain version '{}'.",
+                lookup_version
+            )));
+        }
+        let model_version = lookup_version;
+        let model_v = lookup_v;
 
         if exact && model_v == max_v {
             return Ok(model_version);
@@ -934,10 +808,10 @@ impl BaboonCodecsFacade {
             return Ok(model_version);
         }
         if model_v >= min_v && model_v < max_v {
-            return self.resolve_max_compat(&model_version, max_version, &type_meta.type_identifier);
+            return self.resolve_max_compat(&model_version, &max_version, &type_meta.type_identifier);
         }
         if model_v < min_v {
-            return self.resolve_max_compat(min_version, max_version, &type_meta.type_identifier);
+            return self.resolve_max_compat(&min_version, &max_version, &type_meta.type_identifier);
         }
         Err(BaboonCodecError::codec_not_found(format!(
             "Unsupported domain version '{}'.",
@@ -998,7 +872,46 @@ impl BaboonCodecsFacade {
     ///
     /// Codegen invariant (mirrors Scala BaboonRuntimeShared.scala:138 / C# BaboonTypeMeta.cs:110):
     /// `baboon_same_in_versions_dyn()` is non-empty. Index `[0]` here panics on violation.
-    fn type_meta_from(&self, value: &dyn BaboonGeneratedDyn, is_adt_trait: bool) -> BaboonTypeMeta {
+    /// Envelope for a UEBA payload written under `ctx`: `type_meta_from` with
+    /// `domain_version_min_compat` lowered to the prefix bound of the context's index mode when the
+    /// writer policy is `Tolerant`, or with both bounds under v2. Fails fast when the value lacks
+    /// the tier.
+    fn bin_type_meta(&self, value: &dyn BaboonGeneratedDyn, is_adt_trait: bool, ctx: &BaboonCodecContext) -> Result<BaboonTypeMeta, BaboonCodecError> {
+        let mut meta = self.type_meta_from(value, is_adt_trait)?;
+        let v2 = ctx.envelope_version() == BaboonEnvelopeVersion::V2;
+        if v2 || ctx.forward_write_policy() == ForwardWritePolicy::Tolerant {
+            let tier = if ctx.use_indices() {
+                BaboonTypeMeta::UEBA_PREFIX_ANY_MODE_TIER
+            } else {
+                BaboonTypeMeta::UEBA_PREFIX_COMPACT_TIER
+            };
+            let bound = Self::min_reader_bound(value, tier)?;
+            if v2 {
+                // V2 carries both bounds; the writer policy is irrelevant
+                meta.meta_version = BaboonTypeMeta::META_VERSION_2;
+                meta.domain_version_readable_min = bound;
+            } else {
+                meta.domain_version_min_compat = bound;
+            }
+        }
+        Ok(meta)
+    }
+
+    fn min_reader_bound(value: &dyn BaboonGeneratedDyn, tier: &str) -> Result<String, BaboonCodecError> {
+        value
+            .baboon_min_reader_version_dyn(tier)
+            .map(std::borrow::Cow::into_owned)
+            .ok_or_else(|| {
+                BaboonCodecError::encoder_failure(format!(
+                    "baboon_min_reader_versions_dyn lacks '{}' for type [{}.{}]",
+                    tier,
+                    value.baboon_domain_identifier_dyn(),
+                    value.baboon_type_identifier_dyn()
+                ))
+            })
+    }
+
+    fn type_meta_from(&self, value: &dyn BaboonGeneratedDyn, is_adt_trait: bool) -> Result<BaboonTypeMeta, BaboonCodecError> {
         let type_identifier = if is_adt_trait {
             match value.as_adt_member_meta_dyn() {
                 Some(adt) => adt.baboon_adt_type_identifier_dyn(),
@@ -1007,23 +920,25 @@ impl BaboonCodecsFacade {
         } else {
             value.baboon_type_identifier_dyn().to_string()
         };
-        let same_in = value.baboon_same_in_versions_dyn();
+        let same_in = value.baboon_first_same_in_version_dyn();
         // PR-08-D02 fail-fast invariant: codegen must always emit a non-empty same-in-versions
         // list. A panic here surfaces a generator regression (not a recoverable user error).
         assert!(
-            !same_in.is_empty(),
+            same_in.is_some(),
             "BaboonGeneratedDyn::baboon_same_in_versions_dyn returned empty; codegen invariant violated for [{}.{}]",
             value.baboon_domain_identifier_dyn(),
             value.baboon_type_identifier_dyn()
         );
-        let min_compat = same_in[0].clone();
-        BaboonTypeMeta::new(
+        let min_compat = same_in.expect("checked above").into_owned();
+        let readable_min = Self::min_reader_bound(value, BaboonTypeMeta::JSON_READABLE_TIER)?;
+        Ok(BaboonTypeMeta::new(
             BaboonTypeMeta::META_VERSION,
             value.baboon_domain_identifier_dyn(),
             value.baboon_domain_version_dyn(),
             min_compat,
             type_identifier,
         )
+        .with_readable_min(readable_min))
     }
 
     pub fn encode_to_bin_with_override(
@@ -1046,7 +961,7 @@ impl BaboonCodecsFacade {
         type_meta_override: Option<&BaboonTypeMeta>,
         is_adt_trait: bool,
     ) -> Result<Vec<u8>, BaboonCodecError> {
-        let type_meta = self.type_meta_from(value, is_adt_trait);
+        let type_meta = self.bin_type_meta(value, is_adt_trait, ctx)?;
         let codec = self.get_bin_codec(&type_meta, true)?;
         let effective = type_meta_override.unwrap_or(&type_meta);
         let mut buf = Vec::new();
@@ -1087,7 +1002,7 @@ impl BaboonCodecsFacade {
         type_meta_override: Option<&BaboonTypeMeta>,
         is_adt_trait: bool,
     ) -> Result<serde_json::Value, BaboonCodecError> {
-        let type_meta = self.type_meta_from(value, is_adt_trait);
+        let type_meta = self.type_meta_from(value, is_adt_trait)?;
         let codec = self.get_json_codec(&type_meta, true)?;
         let content = codec
             .encode_json_dyn(&BaboonCodecContext::Compact, value)
@@ -1390,4 +1305,3 @@ impl BaboonCodecsFacade {
         }
     }
 }
-

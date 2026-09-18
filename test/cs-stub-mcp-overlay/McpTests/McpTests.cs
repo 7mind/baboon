@@ -125,6 +125,14 @@ namespace McpTest
         private McpToolsMcpServer<object?> MakeServer()
             => new McpToolsMcpServer<object?>(MakeFakeInvoke());
 
+        [Test]
+        public void ToolSchemasReturnedToCallersDoNotMutateGeneratedRegistry()
+        {
+            var server = MakeServer();
+            server.Tools[0].InputSchema["callerMutation"] = true;
+            Assert.That(server.Tools[0].InputSchema["callerMutation"], Is.Null);
+        }
+
         // Helper: send one JSON-RPC request and assert a response was returned.
         private static JsonRpcResponse Send(
             McpToolsMcpServer<object?> server,

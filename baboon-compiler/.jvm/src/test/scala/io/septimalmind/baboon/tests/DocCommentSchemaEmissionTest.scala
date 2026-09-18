@@ -43,7 +43,7 @@ abstract class DocCommentGraphqlEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboo
       codecTestIterations = 0
     ),
     language = GqlOptions(
-      pragmas = Map.empty,
+      pragmas = Map.empty
     ),
   )
 
@@ -224,7 +224,7 @@ abstract class DocCommentOpenapiEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboo
       codecTestIterations = 0
     ),
     language = OasOptions(
-      pragmas = Map.empty,
+      pragmas = Map.empty
     ),
   )
 
@@ -279,7 +279,9 @@ abstract class DocCommentOpenapiEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboo
 
           // Type-level description on DocItem component
           assert(
-            schemaFile.contains("\"description\": \"A simple item with field-level docs.\""),
+            io.circe.parser
+              .parse(schemaFile).toOption.get.hcursor.downField("components").downField("schemas")
+              .downField("m30_sc_docs_DocItem").get[String]("description").toOption.contains("A simple item with field-level docs."),
             s"Expected type-level description on DocItem schema.\n$schemaFile",
           )
         }
@@ -299,7 +301,10 @@ abstract class DocCommentOpenapiEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboo
 
           // Field-level description on DocItem.name property
           assert(
-            schemaFile.contains("\"description\": \"Display name of the item.\""),
+            io.circe.parser
+              .parse(schemaFile).toOption.get.hcursor.downField("components").downField("schemas")
+              .downField("m30_sc_docs_DocItem").downField("properties").downField("name")
+              .get[String]("description").toOption.contains("Display name of the item."),
             s"Expected field description on DocItem.name property.\n$schemaFile",
           )
           // price has both prefix and suffix docs
@@ -327,7 +332,9 @@ abstract class DocCommentOpenapiEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboo
           }.getOrElse(fail(s"DocSeverity schema not found in OpenAPI output. Paths: ${all.map(_._1)}"))
 
           assert(
-            schemaFile.contains("\"description\": \"Severity levels.\""),
+            io.circe.parser
+              .parse(schemaFile).toOption.get.hcursor.downField("components").downField("schemas")
+              .downField("m30_sc_docs_DocSeverity").get[String]("description").toOption.contains("Severity levels."),
             s"Expected type-level description on DocSeverity schema.\n$schemaFile",
           )
         }
@@ -346,11 +353,16 @@ abstract class DocCommentOpenapiEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboo
           }.getOrElse(fail(s"DocOk ADT arm schema not found in OpenAPI output. Paths: ${all.map(_._1)}"))
 
           assert(
-            schemaFile.contains("\"description\": \"Successful payload variant.\""),
+            io.circe.parser
+              .parse(schemaFile).toOption.get.hcursor.downField("components").downField("schemas")
+              .downField("m30_sc_docs_DocResult_DocOk").get[String]("description").toOption.contains("Successful payload variant."),
             s"Expected arm-level description on DocOk schema.\n$schemaFile",
           )
           assert(
-            schemaFile.contains("\"description\": \"the carried payload\""),
+            io.circe.parser
+              .parse(schemaFile).toOption.get.hcursor.downField("components").downField("schemas")
+              .downField("m30_sc_docs_DocResult_DocOk").downField("properties").downField("value")
+              .get[String]("description").toOption.contains("the carried payload"),
             s"Expected field description on DocOk.value property.\n$schemaFile",
           )
         }
@@ -370,12 +382,17 @@ abstract class DocCommentOpenapiEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboo
 
           // DocPage has a type-level doc; its fields (items, total) have none.
           assert(
-            schemaFile.contains("\"description\": \"Paged doc results.\""),
+            io.circe.parser
+              .parse(schemaFile).toOption.get.hcursor.downField("components").downField("schemas")
+              .downField("m30_sc_docs_DocPage").get[String]("description").toOption.contains("Paged doc results."),
             s"Expected type-level description on DocPage schema.\n$schemaFile",
           )
           // Fields without docs must not produce `"description": ""`
           assert(
-            !schemaFile.contains("\"description\": \"\","),
+            io.circe.parser
+              .parse(schemaFile).toOption.get.hcursor.downField("components").downField("schemas")
+              .downField("m30_sc_docs_DocPage").downField("properties").focus.get.asObject.get.values
+              .forall(_.hcursor.downField("description").focus.isEmpty),
             s"Unexpected empty description on a field in DocPage schema.\n$schemaFile",
           )
         }

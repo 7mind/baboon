@@ -47,6 +47,11 @@ namespace Baboon.Runtime.Shared
 
         public abstract string TypeId();
 
+        protected virtual string TargetTypeId()
+        {
+            return TypeId();
+        }
+
         public Type TypeFrom()
         {
             return typeof(TFrom);
@@ -59,9 +64,14 @@ namespace Baboon.Runtime.Shared
 
         protected void ValidateBaboonType(object? obj)
         {
+            ValidateBaboonType(obj, false);
+        }
+
+        private void ValidateBaboonType(object? obj, bool validateTarget)
+        {
             if (obj is IBaboonGenerated bgf)
             {
-                var tid = TypeId();
+                var tid = validateTarget ? TargetTypeId() : TypeId();
                 var conversionTypeIsExactType = tid == bgf.BaboonTypeIdentifier();
                 if (obj is IBaboonAdtMemberMeta bga)
                 {
@@ -90,7 +100,7 @@ namespace Baboon.Runtime.Shared
             if (ConversionValidationEnabled())
             {
               ValidateBaboonType(from);
-              ValidateBaboonType(result);
+              ValidateBaboonType(result, true);
             }
             return result;
         }

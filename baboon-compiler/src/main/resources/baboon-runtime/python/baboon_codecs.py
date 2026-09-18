@@ -3,6 +3,8 @@
 
 
 from abc import ABC, abstractmethod
+import json
+from enum import Enum
 from typing import Any, Optional, TypeVar, Generic
 
 from pydantic import BaseModel
@@ -52,7 +54,11 @@ class BaboonStreamCodec(BaboonCodec[T], Generic[T, TIn, TOut]):
         raise NotImplementedError
 
 class BaboonJsonCodec(BaboonValueCodec[T, TCodec], BaboonSingleton[TCodec]):
-    pass
+    def encode_value(self, context: 'BaboonCodecContext', value: T) -> Any:
+        return json.loads(self.encode(context, value))
+
+    def decode_value(self, context: 'BaboonCodecContext', value: Any) -> T:
+        return self.decode(context, json.dumps(value))
 
 class BaboonBinCodec(BaboonStreamCodec[T, 'LEDataInputStream', 'LEDataOutputStream'], BaboonSingleton[TCodec]):
     pass
@@ -137,6 +143,34 @@ class NoBinEncoderGeneratedAdt(BaboonBinCodecGeneratedAdt[T, TCodec]):
             f"is deprecated, encoder was not generated"
         )
 
+class ForwardWritePolicy(Enum):
+    """Which lower bound the WRITER publishes as the UEBA envelope's `domain_version_min_compat`
+    (the v1 binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope
+    integration (UEBA)").
+
+    - STRICT: the byte-identical bound (`baboon_same_in_versions[0]`) -- the default.
+    - TOLERANT: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+      payloads, `prefix-any-mode` for indexed ones). Readers older than the writer then decode the
+      payload with their newest codec, dropping the appended fields they do not know. A reader
+      cannot distinguish such an envelope from a byte-identical one, so re-encoding intermediaries
+      must run at the writer's version or newer.
+    """
+    STRICT = "strict"
+    TOLERANT = "tolerant"
+
+
+class BaboonEnvelopeVersion(Enum):
+    """Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+
+    - V1 (default): single bound slot (`domain_version_min_compat`), value chosen by `ForwardWritePolicy`.
+    - V2: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for
+      the payload's index mode; the reader's `ForwardReadPolicy` then applies to binary exactly as it
+      does to JSON. Only readers that know v2 can decode it.
+    """
+    V1 = "v1"
+    V2 = "v2"
+
+
 class BaboonCodecContext:
     # `Indexed`/`Compact`/`Default` are stable class-attribute singletons assigned after the
     # class body. Generator-emitted code may use `ctx is BaboonCodecContext.Indexed`-style
@@ -147,8 +181,12 @@ class BaboonCodecContext:
     Compact: 'BaboonCodecContext'
     Default: 'BaboonCodecContext'
 
-    def __init__(self, use_indices: bool, facade: Optional[Any] = None):
+    def __init__(self, use_indices: bool, facade: Optional[Any] = None,
+                 forward_write_policy: ForwardWritePolicy = ForwardWritePolicy.STRICT,
+                 envelope_version: BaboonEnvelopeVersion = BaboonEnvelopeVersion.V1):
         self.use_indices = use_indices
+        self.forward_write_policy = forward_write_policy
+        self.envelope_version = envelope_version
         # `facade` is threaded through generated codec calls so the `any`-feature cross-format
         # conversion (UEBA <-> JSON) can resolve codecs by `(domain, version, typeid)` from an
         # `AnyMeta` envelope. `None` for the bare `Compact`/`Indexed` singletons; `with_facade`
@@ -172,6 +210,12 @@ class BaboonCodecContext:
     def with_facade(cls, use_indices: bool, facade) -> 'BaboonCodecContext':
         return cls(use_indices, facade)
 
+    @classmethod
+    def custom(cls, use_indices: bool, forward_write_policy: ForwardWritePolicy,
+               envelope_version: BaboonEnvelopeVersion, facade) -> 'BaboonCodecContext':
+        """Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade."""
+        return cls(use_indices, facade, forward_write_policy, envelope_version)
+
 
 # Stable singletons — `is`-equality preserved across all uses (PR 10.1).
 BaboonCodecContext.Indexed = BaboonCodecContext(True)
@@ -187,9 +231,17 @@ class BaboonBinCodecIndexed(ABC):
     def index_elements_count(self, ctx: BaboonCodecContext) -> int: ...
 
     def read_index(self, ctx: BaboonCodecContext, wire: 'LEDataInputStream') -> list[BaboonIndexEntry]:
+        result: list[BaboonIndexEntry] = []
+        self._read_index(ctx, wire, result)
+        return result
+
+    def consume_index(self, ctx: BaboonCodecContext, wire: 'LEDataInputStream') -> int:
+        return self._read_index(ctx, wire, None)
+
+    def _read_index(self, ctx: BaboonCodecContext, wire: 'LEDataInputStream', entries: Optional[list[BaboonIndexEntry]]) -> int:
         header = wire.read_byte()
         is_indexed = (header & 0b00000001) != 0
-        result: list[BaboonIndexEntry] = []
+        count = 0
 
         prev_offset = 0
         prev_len = 0
@@ -197,18 +249,22 @@ class BaboonBinCodecIndexed(ABC):
         if is_indexed:
             left = self.index_elements_count(ctx)
             while left > 0:
-                offset = wire.read_u32()
-                length = wire.read_u32()
+                offset = wire.read_i32()
+                length = wire.read_i32()
 
-                assert length > 0, "Length must be positive"
-                assert offset >= prev_offset + prev_len, f"Offset violation: {offset} < {prev_offset + prev_len}"
+                if length <= 0:
+                    raise ValueError(f"Invalid UEBA index length: {length}")
+                if offset < prev_offset + prev_len:
+                    raise ValueError(f"Invalid UEBA index offset: {offset}")
 
-                result.append(BaboonIndexEntry(offset=offset, length=length))
+                if entries is not None:
+                    entries.append(BaboonIndexEntry(offset=offset, length=length))
+                count += 1
                 left -= 1
                 prev_offset = offset
                 prev_len = length
 
-        return result
+        return count
 
 class AbstractBaboonCodecs:
     def __init__(self):

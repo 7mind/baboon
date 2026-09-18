@@ -32,7 +32,8 @@ class T155LocksDeterministicSerializationTest extends AnyWordSpec {
     locks = Map(
       pkgZeta  -> List(VersionLock(v200, SigId("sig-z2")), VersionLock(v100, SigId("sig-z1"))),
       pkgAlpha -> List(VersionLock(v1100, SigId("sig-a3")), VersionLock(v100, SigId("sig-a1")), VersionLock(v120, SigId("sig-a2"))),
-    )
+    ),
+    scheme = Locks.CurrentScheme,
   )
 
   "Locks encoder" should {

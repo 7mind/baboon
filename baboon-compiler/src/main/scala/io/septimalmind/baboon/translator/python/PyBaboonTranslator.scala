@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyModuleId
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, DomainProductTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage, Domain, DomainMember, EvolutionStep}
 import izumi.distage.Subcontext
 import izumi.functional.bio.{Error2, F}
@@ -83,10 +83,10 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           val metaAlias   = s"BaboonMetadata$suffix"
           val runtimeMod  = s".${vPrefix}baboon_runtime"
           val metadataMod = s".${vPrefix}baboon_metadata"
-          val jsonImport  =
+          val jsonImport =
             if (isLatest) s"from $runtimeMod import BaboonCodecsJson, BaboonCodecsUeba"
             else s"from $runtimeMod import BaboonCodecsJson as $jsonAlias, BaboonCodecsUeba as $uebaAlias"
-          val metaImport  =
+          val metaImport =
             if (isLatest) s"from $metadataMod import BaboonMetadata"
             else s"from $metadataMod import BaboonMetadata as $metaAlias"
           (jsonImport, metaImport, jsonAlias, uebaAlias, metaAlias, version.v.toString)
@@ -98,9 +98,9 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
         case (_, _, jsonAlias, uebaAlias, metaAlias, versionStr) =>
           q"""self.register(
              |    $baboonDomainVersion("$domainIdStr", "$versionStr"),
-             |    codecs_json=lambda: ${jsonAlias}.instance(),
-             |    codecs_bin=lambda: ${uebaAlias}.instance(),
-             |    meta=lambda: ${metaAlias}(),
+             |    codecs_json=lambda: $jsonAlias.instance(),
+             |    codecs_bin=lambda: $uebaAlias.instance(),
+             |    meta=lambda: $metaAlias(),
              |)""".stripMargin
       }
 
@@ -417,14 +417,17 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
   private def generateMeta(domain: Domain, lineage: BaboonLineage): Out[List[PyDefnTranslator.Output]] = {
     val basename = pyFileTools.basename(domain, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q""""${tid.toString}": [${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}]"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q""""${tid.toString}": [${versions.map(s => q"\"$s\"").join(", ")}]"""
+    }
+
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s""""$v": "$tier"""" }.mkString(", ")
+        q""""${tid.toString}": {$pairs}"""
+    }
 
     val metaTree =
       q"""class BaboonMetadata($baboonMeta):
@@ -432,9 +435,18 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
          |        self.unmodified: dict[str, list[str]] = {
          |            ${entries.join(",\n").shift(12).trim}
          |        }
+         |        self.forward_readable: dict[str, dict[str, str]] = {
+         |            ${forwardEntries.join(",\n").shift(12).trim}
+         |        }
          |
          |    def unmodified_since(self, type_id_string: $pyStr) -> $pyList[$pyStr]:
          |        return self.unmodified.get(type_id_string, [])
+         |
+         |    def same_in_versions(self, type_id_string: $pyStr) -> $pyList[$pyStr]:
+         |        return self.unmodified_since(type_id_string)
+         |
+         |    def forward_readable_versions(self, type_id_string: $pyStr) -> $pyDict[$pyStr, $pyStr]:
+         |        return self.forward_readable.get(type_id_string, {})
          |
          |""".stripMargin
 
@@ -453,14 +465,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     p: CompilerProduct,
     translate: DomainMember.User => F[NEList[BaboonIssue], List[PyDefnTranslator.Output]],
   ): F[NEList[BaboonIssue], List[PyDefnTranslator.Output]] = {
-    if (target.output.products.contains(p)) {
-      F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-        case (_, defn: DomainMember.User) => translate(defn)
-        case _                            => F.pure(List.empty)
-      }
-    } else {
-      F.pure(List.empty)
-    }
+    DomainProductTranslator.translate(domain, target.output.products, p, translate)
   }
 }
 

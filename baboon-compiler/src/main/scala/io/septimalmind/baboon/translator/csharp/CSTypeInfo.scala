@@ -78,11 +78,11 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
                       val ownerAdt = dom.defs.meta.nodes(o.id).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Adt]
                       val allowedUpgrades =
                         possibleAdtUpgrades(ownerAdt, version, lineage, higher)
+                      lazy val upgradeVersions = possibleUpgrades(o.id, version, lineage).toSet
 
                       allowedUpgrades.filter {
                         higherTwinVersion =>
-                          val upgradeVersions = possibleUpgrades(o.id, version, lineage)
-                          val hardCriterion   = upgradeVersions.contains(higherTwinVersion)
+                          val hardCriterion = upgradeVersions.contains(higherTwinVersion)
                           hardCriterion
                       }
                     } else {
@@ -102,7 +102,8 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
 
   private def possibleAdtUpgrades(adt: Typedef.Adt, version: Version, lineage: BaboonLineage, higher: List[Version]): List[Version] = {
     // maximum version to which EVERY branch can be upgraded
-    val maxUpgrade = higher.filter(mh => adt.members.map(m => possibleUpgrades(m, version, lineage, checkOwner = false)).forall(_.contains(mh)))
+    lazy val branchUpgrades = adt.members.map(m => possibleUpgrades(m, version, lineage, checkOwner = false).toSet)
+    val maxUpgrade          = higher.filter(mh => branchUpgrades.forall(_.contains(mh)))
     maxUpgrade
   }
 

@@ -11,6 +11,21 @@ package baboon.runtime.shared {
     def baboonDomainVersion: String
     def baboonDomainIdentifier: String
     def baboonSameInVersions: List[String]
+
+    /** Forward-readability: newer domain versions whose encoded data THIS
+      * version's codec can decode, mapped to the guarantee tier
+      * ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+      * The prefix-* tiers hold only for top-level framed UEBA reads where the
+      * caller discards the cursor after decoding.
+      */
+    def baboonForwardReadable: Map[String, String]
+
+    /** Writer-side inverse of [[baboonForwardReadable]]: guarantee tier -> oldest
+      * domain version whose codec can decode THIS version's encoding of this type.
+      * The "identical" bound equals `baboonSameInVersions.head`; the "json-additive"
+      * bound is what the JSON envelope publishes as `$rv`.
+      */
+    def baboonMinReaderVersions: Map[String, String]
     def baboonTypeIdentifier: String
 
     final def domainVersion: BaboonDomainVersion = BaboonDomainVersion(baboonDomainIdentifier, baboonDomainVersion)
@@ -25,6 +40,11 @@ package baboon.runtime.shared {
 
   trait BaboonMeta {
     def sameInVersions(typeId: String): List[String]
+
+    /** Forward-readability per type: newer version -> guarantee tier
+      * (see [[BaboonGenerated.baboonForwardReadable]]).
+      */
+    def forwardReadableVersions(typeId: String): Map[String, String]
   }
 
   trait BaboonEnum[T] {
@@ -335,6 +355,12 @@ package baboon.runtime.shared {
     domainVersion: String,
     domainVersionMinCompat: String,
     typeIdentifier: String,
+    /** Oldest domain version whose JSON codec can decode the payload under the
+      * json-additive contract (tolerant key lookup; fields unknown to that version
+      * are dropped). Always <= domainVersionMinCompat. Published as `$rv` when it
+      * differs from the (effective) minCompat; the binary v1 envelope does not carry it.
+      */
+    domainVersionReadableMin: String,
   ) {
     def version: BaboonDomainVersion = BaboonDomainVersion(domainIdentifier, domainVersion)
     def versionMinCompat: Option[BaboonDomainVersion] = {
@@ -342,6 +368,13 @@ package baboon.runtime.shared {
         case v if v.isEmpty          => None
         case v if v == domainVersion => None
         case _                       => Some(BaboonDomainVersion(domainIdentifier, domainVersionMinCompat))
+      }
+    }
+    def versionReadableMin: Option[BaboonDomainVersion] = {
+      domainVersionReadableMin match {
+        case v if v.isEmpty          => versionMinCompat
+        case v if v == domainVersion => None
+        case _                       => Some(BaboonDomainVersion(domainIdentifier, domainVersionReadableMin))
       }
     }
 
@@ -355,6 +388,23 @@ package baboon.runtime.shared {
   }
 
   object BaboonTypeMeta {
+    /** Tier key of the JSON envelope's readable-min bound in `baboonMinReaderVersions`. */
+    final val JSON_READABLE_TIER: String = "json-additive"
+    /** Tier keys of the UEBA prefix bounds in `baboonMinReaderVersions`, per index mode. */
+    final val UEBA_PREFIX_COMPACT_TIER: String  = "prefix-compact"
+    final val UEBA_PREFIX_ANY_MODE_TIER: String = "prefix-any-mode"
+
+    /** Five-field form: readable-min defaults to minCompat (no forward-read beyond byte-identity). */
+    def apply(
+      metaVersion: Byte,
+      domainIdentifier: String,
+      domainVersion: String,
+      domainVersionMinCompat: String,
+      typeIdentifier: String,
+    ): BaboonTypeMeta = {
+      BaboonTypeMeta(metaVersion, domainIdentifier, domainVersion, domainVersionMinCompat, typeIdentifier, domainVersionMinCompat)
+    }
+
     /* Codecs discovery with ADTs check to ensure that ADTs is encoded with a codec type desired by the user.
      *
      * - If user is trying to encode ADT branch with the base type we should encode it with ADT meta header:
@@ -368,13 +418,42 @@ package baboon.runtime.shared {
         case _                                          => value.baboonTypeIdentifier
       }
 
+      val readableMin = value.baboonMinReaderVersions.getOrElse(
+        JSON_READABLE_TIER,
+        throw BaboonCodecException.EncoderFailure(s"baboonMinReaderVersions lacks '$JSON_READABLE_TIER' for type ${value.baboonTypeIdentifier}"),
+      )
       new BaboonTypeMeta(
         META_VERSION,
         value.baboonDomainIdentifier,
         value.baboonDomainVersion,
         value.baboonSameInVersions.head,
         typeIdentifier,
+        readableMin,
       )
+    }
+
+    /** Envelope for a UEBA payload written under `ctx`.
+      *   - V1 layout: `from(value)`, with `domainVersionMinCompat` lowered to the prefix bound of the
+      *     context's index mode when the writer policy is Tolerant (the single slot must carry it).
+      *   - V2 layout: both bounds travel — `domainVersionMinCompat` stays byte-identical and
+      *     `domainVersionReadableMin` carries the prefix bound; the writer policy is irrelevant.
+      */
+    def forBin[T <: BaboonGenerated: ClassTag](value: T, ctx: BaboonCodecContext): BaboonTypeMeta = {
+      val meta = from(value)
+      val tier = if (ctx.useIndices) UEBA_PREFIX_ANY_MODE_TIER else UEBA_PREFIX_COMPACT_TIER
+      def prefixBound: String = value.baboonMinReaderVersions.getOrElse(
+        tier,
+        throw BaboonCodecException.EncoderFailure(s"baboonMinReaderVersions lacks '$tier' for type ${value.baboonTypeIdentifier}"),
+      )
+      ctx.envelopeVersion match {
+        case BaboonEnvelopeVersion.V2 =>
+          meta.copy(metaVersion = BaboonTypeMetaCodec.META_VERSION_2, domainVersionReadableMin = prefixBound)
+        case BaboonEnvelopeVersion.V1 =>
+          ctx.forwardWritePolicy match {
+            case ForwardWritePolicy.Strict   => meta
+            case ForwardWritePolicy.Tolerant => meta.copy(domainVersionMinCompat = prefixBound)
+          }
+      }
     }
 
     private def typeIsTrait[T](implicit ct: ClassTag[T]): Boolean = {
@@ -391,16 +470,32 @@ package baboon.runtime.shared {
   }
 
   object BaboonTypeMetaCodec {
-    private val META_VERSION_1: Byte = 1
-    val META_VERSION: Byte           = META_VERSION_1
+    val META_VERSION_1: Byte = 1
+    val META_VERSION_2: Byte = 2
+    /** Layout written by default (binary) and always (JSON `$mv`). */
+    val META_VERSION: Byte = META_VERSION_1
+
+    /** v2 flags byte (codec-envelope.md §2.1.3): bit 0 — minCompat follows; bit 1 — readableMin follows. */
+    private val V2_FLAG_MIN_COMPAT: Int   = 0x01
+    private val V2_FLAG_READABLE_MIN: Int = 0x02
+    private val V2_FLAGS_MASK: Int        = V2_FLAG_MIN_COMPAT | V2_FLAG_READABLE_MIN
 
     private val META_VERSION_KEY              = "$mv"
     private val DOMAIN_IDENTIFIER_KEY         = "$d"
     private val DOMAIN_VERSION_KEY            = "$v"
     private val DOMAIN_VERSION_MIN_COMPAT_KEY = "$uv"
+    private val DOMAIN_VERSION_READABLE_KEY   = "$rv"
     private val TYPE_IDENTIFIER_KEY           = "$t"
 
     def writeBin(meta: BaboonTypeMeta, writer: LEDataOutputStream): Unit = {
+      meta.metaVersion match {
+        case META_VERSION_1 => writeBinV1(meta, writer)
+        case META_VERSION_2 => writeBinV2(meta, writer)
+        case other          => throw BaboonCodecException.EncoderFailure(s"Unsupported binary envelope metaVersion $other")
+      }
+    }
+
+    private def writeBinV1(meta: BaboonTypeMeta, writer: LEDataOutputStream): Unit = {
       writer.write(META_VERSION_1.toInt)
       BaboonBinTools.writeString(writer, meta.domainIdentifier)
       BaboonBinTools.writeString(writer, meta.domainVersion)
@@ -413,6 +508,22 @@ package baboon.runtime.shared {
       BaboonBinTools.writeString(writer, meta.typeIdentifier)
     }
 
+    // v2: `02 | domainId | domainVersion | flags | [minCompat] | [readableMin] | typeId`; each bound is
+    // elided exactly as in JSON (minCompat when == domainVersion, readableMin when == effective minCompat)
+    private def writeBinV2(meta: BaboonTypeMeta, writer: LEDataOutputStream): Unit = {
+      val minCompat      = if (meta.domainVersionMinCompat.isEmpty) meta.domainVersion else meta.domainVersionMinCompat
+      val readableMin    = if (meta.domainVersionReadableMin.isEmpty) minCompat else meta.domainVersionReadableMin
+      val hasMinCompat   = minCompat != meta.domainVersion
+      val hasReadableMin = readableMin != minCompat
+      writer.write(META_VERSION_2.toInt)
+      BaboonBinTools.writeString(writer, meta.domainIdentifier)
+      BaboonBinTools.writeString(writer, meta.domainVersion)
+      writer.write((if (hasMinCompat) V2_FLAG_MIN_COMPAT else 0) | (if (hasReadableMin) V2_FLAG_READABLE_MIN else 0))
+      if (hasMinCompat) BaboonBinTools.writeString(writer, minCompat)
+      if (hasReadableMin) BaboonBinTools.writeString(writer, readableMin)
+      BaboonBinTools.writeString(writer, meta.typeIdentifier)
+    }
+
     def writeJson(meta: BaboonTypeMeta): Json = {
       // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
       // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
@@ -422,16 +533,33 @@ package baboon.runtime.shared {
         DOMAIN_VERSION_KEY    -> Json.fromString(meta.domainVersion),
         TYPE_IDENTIFIER_KEY   -> Json.fromString(meta.typeIdentifier),
       )
-      if (meta.domainVersion != meta.domainVersionMinCompat) {
+      val withMinCompat = if (meta.domainVersion != meta.domainVersionMinCompat) {
         json.mapObject(_.add(DOMAIN_VERSION_MIN_COMPAT_KEY, Json.fromString(meta.domainVersionMinCompat)))
       } else json
+      // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+      if (meta.domainVersionReadableMin.nonEmpty && meta.domainVersionReadableMin != meta.domainVersionMinCompat) {
+        withMinCompat.mapObject(_.add(DOMAIN_VERSION_READABLE_KEY, Json.fromString(meta.domainVersionReadableMin)))
+      } else withMinCompat
     }
 
     def readMeta(reader: LEDataInputStream): Option[BaboonTypeMeta] = {
-      val metaVersion = reader.readByte()
-      if (metaVersion == META_VERSION_1) {
-        readMetaV1(reader)
-      } else None
+      reader.readByte() match {
+        case META_VERSION_1 => readMetaV1(reader)
+        case META_VERSION_2 => readMetaV2(reader)
+        case _              => None
+      }
+    }
+
+    private def readMetaV2(reader: LEDataInputStream): Option[BaboonTypeMeta] = {
+      val domainIdentifier = BaboonBinTools.readString(reader)
+      val domainVersion    = BaboonBinTools.readString(reader)
+      val flags            = reader.readByte().toInt
+      // unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+      if ((flags & ~V2_FLAGS_MASK) != 0) return None
+      val minCompat      = if ((flags & V2_FLAG_MIN_COMPAT) != 0) BaboonBinTools.readString(reader) else domainVersion
+      val readableMin    = if ((flags & V2_FLAG_READABLE_MIN) != 0) BaboonBinTools.readString(reader) else minCompat
+      val typeIdentifier = BaboonBinTools.readString(reader)
+      Some(BaboonTypeMeta(META_VERSION_2, domainIdentifier, domainVersion, minCompat, typeIdentifier, readableMin))
     }
 
     def readMeta(json: Json): Option[BaboonTypeMeta] = {
@@ -454,7 +582,10 @@ package baboon.runtime.shared {
     private def readMetaV1(reader: LEDataInputStream): Option[BaboonTypeMeta] = {
       val domainIdentifier       = BaboonBinTools.readString(reader)
       val domainVersion          = BaboonBinTools.readString(reader)
-      val domainVersionMinCompat = if (reader.readByte() == 1) BaboonBinTools.readString(reader) else domainVersion
+      val hasMinCompat = reader.readByte()
+      // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+      if (hasMinCompat != 0 && hasMinCompat != 1) return None
+      val domainVersionMinCompat = if (hasMinCompat == 1) BaboonBinTools.readString(reader) else domainVersion
       val typeIdentifier         = BaboonBinTools.readString(reader)
 
       Some(
@@ -477,12 +608,16 @@ package baboon.runtime.shared {
         domainVersionMinCompat <- cursor
           .downField(DOMAIN_VERSION_MIN_COMPAT_KEY)
           .focus.fold[Either[DecodingFailure, String]](Right(domainVersion))(_.as[String])
+        domainVersionReadableMin <- cursor
+          .downField(DOMAIN_VERSION_READABLE_KEY)
+          .focus.fold[Either[DecodingFailure, String]](Right(domainVersionMinCompat))(_.as[String])
       } yield BaboonTypeMeta(
         META_VERSION_1,
         domainIdentifier,
         domainVersion,
         domainVersionMinCompat,
         typeIdentifier,
+        domainVersionReadableMin,
       )).toOption
     }
   }

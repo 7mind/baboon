@@ -16,6 +16,182 @@
 import 'dart:typed_data';
 
 import 'baboon_runtime.dart';
+import 'baboon_codecs_facade.dart';
+
+Object? encodeAnyJsonField(
+    BaboonCodecContext ctx,
+    int expectedKind,
+    String? staticDomain,
+    String? staticVersion,
+    String? staticTypeid,
+    AnyOpaque value,
+) {
+  if (value.meta.kind != expectedKind) {
+    throw BaboonEncoderFailure(
+      'any: meta-kind 0x' + (value.meta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
+      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
+    );
+  }
+  Object? anyInner;
+  switch (value) {
+    case AnyOpaqueJson(:final json):
+      anyInner = json;
+    case AnyOpaqueUeba(:final meta, :final bytes):
+      final anyFacadeBase = ctx.facade;
+      if (anyFacadeBase == null) {
+        throw BaboonEncoderFailure(
+          'Cannot encode AnyOpaqueUeba into JSON without a facade reference. '
+          'Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), '
+          'or supply AnyOpaqueJson directly.',
+        );
+      }
+      // Downcast to the concrete facade — the marker base is empty by design (PR 8.1
+      // import-cycle break). Construction goes through BaboonCodecContext.withFacade
+      // which only accepts BaboonCodecsFacadeBase, but real callers pass BaboonCodecsFacade.
+      final anyFacade = anyFacadeBase as BaboonCodecsFacade;
+      final anyConvResult = anyFacade.uebaToJson(
+        meta,
+        bytes,
+        staticDomain: staticDomain,
+        staticVersion: staticVersion,
+        staticTypeid: staticTypeid,
+      );
+      switch (anyConvResult) {
+        case BaboonLeft(:final value):
+          throw value;
+        case BaboonRight(:final value):
+          anyInner = value;
+      }
+  }
+  final anyEnvelope = AnyMetaCodec.writeJson(value.meta);
+  anyEnvelope[AnyMetaCodec.ANY_CONTENT_KEY] = anyInner;
+  return anyEnvelope;
+}
+
+AnyOpaque decodeAnyJsonField(int expectedKind, Object? wire) {
+  if (wire is! Map) {
+    throw BaboonDecoderFailure('any: JSON envelope must be an object');
+  }
+  final anyMetaResult = AnyMetaCodec.readJson(wire);
+  final AnyMeta anyMeta;
+  switch (anyMetaResult) {
+    case BaboonLeft(:final value):
+      throw value;
+    case BaboonRight(:final value):
+      anyMeta = value;
+  }
+  if (anyMeta.kind != expectedKind) {
+    throw BaboonDecoderFailure(
+      'any: wire kind 0x' + (anyMeta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
+      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
+    );
+  }
+  if (!wire.containsKey(AnyMetaCodec.ANY_CONTENT_KEY)) {
+    throw BaboonDecoderFailure(
+      "any: JSON envelope missing '" + AnyMetaCodec.ANY_CONTENT_KEY + "' content key",
+    );
+  }
+  final anyContent = wire[AnyMetaCodec.ANY_CONTENT_KEY];
+  return AnyOpaqueJson(anyMeta, anyContent);
+}
+
+void encodeAnyUebaField(
+    BaboonCodecContext ctx,
+    BaboonBinWriter writer,
+    int expectedKind,
+    String? staticDomain,
+    String? staticVersion,
+    String? staticTypeid,
+    AnyOpaque value,
+) {
+  if (value.meta.kind != expectedKind) {
+    throw BaboonEncoderFailure(
+      'any: meta-kind 0x' + (value.meta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
+      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
+    );
+  }
+  Uint8List anyBlob;
+  switch (value) {
+    case AnyOpaqueUeba(:final bytes):
+      anyBlob = bytes;
+    case AnyOpaqueJson(:final meta, :final json):
+      final anyFacadeBase = ctx.facade;
+      if (anyFacadeBase == null) {
+        throw BaboonEncoderFailure(
+          'Cannot encode AnyOpaqueJson into UEBA without a facade reference. '
+          'Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), '
+          'or supply AnyOpaqueUeba directly.',
+        );
+      }
+      // Downcast to the concrete facade — the marker base is empty by design (PR 8.1
+      // import-cycle break). Construction goes through BaboonCodecContext.withFacade
+      // which only accepts BaboonCodecsFacadeBase, but real callers pass BaboonCodecsFacade.
+      final anyFacade = anyFacadeBase as BaboonCodecsFacade;
+      final anyConvResult = anyFacade.jsonToUebaBytes(
+        meta,
+        json,
+        staticDomain: staticDomain,
+        staticVersion: staticVersion,
+        staticTypeid: staticTypeid,
+      );
+      switch (anyConvResult) {
+        case BaboonLeft(:final value):
+          throw value;
+        case BaboonRight(:final value):
+          anyBlob = value;
+      }
+  }
+  // Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
+  final anyMetaBuf = BaboonBinWriter();
+  AnyMetaCodec.writeBin(value.meta, anyMetaBuf);
+  final anyMetaBytes = anyMetaBuf.toBytes();
+  final anyTotalLength = 4 + anyMetaBytes.length + anyBlob.length;
+  writer.writeI32(anyTotalLength);
+  writer.writeI32(anyMetaBytes.length);
+  writer.writeAll(anyMetaBytes);
+  writer.writeAll(anyBlob);
+}
+
+AnyOpaque decodeAnyUebaField(BaboonBinReader wire, int expectedKind) {
+  final anyTotalLength = wire.readI32();
+  if (anyTotalLength < 0) {
+    throw BaboonDecoderFailure(
+      'any: negative total-length $anyTotalLength',
+    );
+  }
+  final anyMetaLength = wire.readI32();
+  if (anyMetaLength < 0) {
+    throw BaboonDecoderFailure(
+      'any: negative meta-length $anyMetaLength',
+    );
+  }
+  if (anyTotalLength < 4 + anyMetaLength) {
+    throw BaboonDecoderFailure(
+      'any: total-length $anyTotalLength smaller than 4 + meta-length $anyMetaLength',
+    );
+  }
+  final anyReadResult = AnyMetaCodec.readBinWithLength(wire);
+  final anyMeta = anyReadResult.$1;
+  final anyBytesRead = anyReadResult.$2;
+  if (anyBytesRead > anyMetaLength) {
+    throw BaboonDecoderFailure(
+      'any: meta bytes-read $anyBytesRead exceeded meta-length window $anyMetaLength',
+    );
+  }
+  if (anyBytesRead < anyMetaLength) {
+    // Forward-compat: skip future meta-extension bytes within the meta-length window.
+    wire.skipBytes(anyMetaLength - anyBytesRead);
+  }
+  if (anyMeta.kind != expectedKind) {
+    throw BaboonDecoderFailure(
+      'any: wire kind 0x' + (anyMeta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
+      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
+    );
+  }
+  final anyBlobLen = anyTotalLength - 4 - anyMetaLength;
+  final anyBlob = wire.readNBytes(anyBlobLen);
+  return AnyOpaqueUeba(anyMeta, anyBlob);
+}
 
 // --- AnyMeta -----------------------------------------------------------------------------------
 

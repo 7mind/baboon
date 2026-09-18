@@ -29,7 +29,18 @@ import 'baboon_runtime.dart';
 
 const String _CONTENT_JSON_KEY = r'$c';
 
+/// How a reader treats JSON payloads written by a NEWER domain version than it registers.
+/// lossless: decode only when the envelope's `$uv` (byte-identical bound) reaches a registered
+/// version — the pre-`$rv` behavior. tolerant: additionally honor `$rv` (json-additive bound):
+/// decode with that version's codec, silently dropping fields this reader does not know.
+/// Re-encoding intermediaries must use lossless or they truncate data for downstream consumers.
+enum ForwardReadPolicy { lossless, tolerant }
+
 class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
+  /// Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+  /// bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
+  ForwardReadPolicy forwardReadPolicy = ForwardReadPolicy.tolerant;
+
   final Map<BaboonDomainVersion, Lazy<AbstractBaboonJsonCodecs>> _versionsCodecsJson = {};
   final Map<BaboonDomainVersion, Lazy<AbstractBaboonUebaCodecs>> _versionsCodecsBin = {};
   final Map<BaboonDomainVersion, Lazy<AbstractBaboonConversions>> _versionsConversions = {};
@@ -226,7 +237,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
   }) {
     final BaboonTypeMeta typeMeta;
     try {
-      typeMeta = BaboonTypeMeta.from(value, useAdtIdentifier: useAdtIdentifier);
+      typeMeta = BaboonTypeMeta.forBin(value, ctx, useAdtIdentifier: useAdtIdentifier);
     } catch (e) {
       return BaboonLeft(BaboonEncoderFailure('Cannot derive type meta from value: $e', e));
     }
@@ -564,16 +575,18 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
 
   // ----- private dispatch -------------------------------------------------------------------
 
+  // v1 envelopes carry readableMin == minCompat, so the policy only bites on v2 envelopes (and JSON)
   BaboonEither<BaboonCodecException, BaboonCodecData> _getBinCodec(BaboonTypeMeta typeMeta, {required bool exact}) =>
-      _getCodec(_versionsCodecsBin, typeMeta, exact);
+      _getCodec(_versionsCodecsBin, typeMeta, exact, forwardReadPolicy == ForwardReadPolicy.tolerant);
 
   BaboonEither<BaboonCodecException, BaboonCodecData> _getJsonCodec(BaboonTypeMeta typeMeta, {required bool exact}) =>
-      _getCodec(_versionsCodecsJson, typeMeta, exact);
+      _getCodec(_versionsCodecsJson, typeMeta, exact, forwardReadPolicy == ForwardReadPolicy.tolerant);
 
   BaboonEither<BaboonCodecException, BaboonCodecData> _getCodec<TCodecs extends AbstractBaboonCodecs>(
     Map<BaboonDomainVersion, Lazy<TCodecs>> versionsCodecs,
     BaboonTypeMeta typeMeta,
     bool exact,
+    bool tolerant,
   ) {
     final versions = _domainVersions[typeMeta.domainIdentifier];
     if (versions == null || versions.isEmpty) {
@@ -583,15 +596,24 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
     final minVersion = versions.first;
     final maxVersion = versions.last;
 
-    final lookupVersion = typeMeta.versionRef();
-    final minCompat = typeMeta.versionMinCompat();
-    final modelVersion = (minCompat != null && lookupVersion.version.compareTo(maxVersion.version) > 0)
-        ? minCompat
-        : lookupVersion;
-
+    final modelVersion = typeMeta.versionRef();
     final modelV = modelVersion.version;
     final maxV = maxVersion.version;
     final minV = minVersion.version;
+
+    if (!exact && modelV.compareTo(maxV) > 0) {
+      // a payload from a NEWER version than we register. The oldest version whose codec may
+      // decode it is the bound the writer published (byte-identical or, under its Tolerant
+      // policy, prefix-readable), or — for tolerant JSON reads — the json-additive bound.
+      // Forward-readability is monotone along the version chain, so once the bound reaches a
+      // registered version our newest codec reads the payload (losing at most the fields
+      // appended after our version).
+      final lowerBound = tolerant ? typeMeta.versionReadableMin() : typeMeta.versionMinCompat();
+      if (lowerBound != null && lowerBound.version.compareTo(maxV) <= 0) {
+        return _getCodecExact(versionsCodecs, maxVersion, typeMeta.typeIdentifier);
+      }
+      return BaboonLeft(BaboonCodecNotFound("Unsupported domain version '$modelVersion'."));
+    }
 
     if (exact && modelV.compareTo(maxV) == 0) {
       return _getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier);

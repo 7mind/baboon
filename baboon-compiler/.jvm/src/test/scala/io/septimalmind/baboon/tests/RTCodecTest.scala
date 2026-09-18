@@ -293,12 +293,28 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
                       )
                   }
 
-                  // Compare
-                  _ <- F.fromEither {
-                    if (uebaBytes == reEncodedBytes) {
-                      Right(())
-                    } else {
-                      Left(new RuntimeException(s"Roundtrip failed for $fileName: byte arrays differ"))
+                  // Compare. Byte-exact is the norm; the one legitimate difference is the `tso`/`tsu`
+                  // kind byte: C# writes its `DateTimeKind` (Local when the offset matches the writer's
+                  // TimeZoneInfo.Local), the converter emulates that with Java's zone rules, and the two
+                  // engines disagree on the local offset of arbitrary instants (7mind/baboon#91). JSON
+                  // cannot carry the kind, so when the bytes differ the round trip must still be
+                  // structurally lossless and of identical length.
+                  _ <- {
+                    if (uebaBytes == reEncodedBytes) F.unit
+                    else {
+                      for {
+                        reDecoded <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), typeId, reEncodedBytes).leftMap {
+                          err =>
+                            BaboonIssue.Translation(
+                              TranslationIssue
+                                .TranslationBug()(Issue.IssueContext(SourceFilePosition.unknown, new RuntimeException(s"Re-decode failed for $fileName (typeId=$typeId): $err")))
+                            )
+                        }
+                        _ <- F.fromEither {
+                          if (uebaBytes.length == reEncodedBytes.length && reDecoded == jsonContent) Right(())
+                          else Left(new RuntimeException(s"Roundtrip failed for $fileName: byte arrays differ and the re-decoded value is not equal"))
+                        }
+                      } yield ()
                     }
                   }
                 } yield ()

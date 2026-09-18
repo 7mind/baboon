@@ -8,7 +8,7 @@ import io.septimalmind.baboon.translator.swift.SwTypes.*
 import io.septimalmind.baboon.translator.swift.SwValue.SwType
 import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
+import io.septimalmind.baboon.translator.{AnyFieldPlan, UebaLayoutPlan, UebaLengthCheckRenderer}
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -19,6 +19,7 @@ class SwUEBACodecGenerator(
   evo: BaboonEvolution,
   swDomainTreeTools: SwDomainTreeTools,
 ) extends SwCodecTranslator {
+  private val layout = new UebaLayoutPlan(domain)
 
   override def translate(
     defn: DomainMember.User,
@@ -63,7 +64,7 @@ class SwUEBACodecGenerator(
     val isEncoderEnabled = domain.version == evo.latest
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
-        val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
+        val varlens = layout.indexedFields(d)
         val comment = varlens.map(f => q"// ${f.toString}").joinN()
         q"""$comment
            |return ${varlens.size.toString}""".stripMargin
@@ -99,15 +100,13 @@ class SwUEBACodecGenerator(
          |}""".stripMargin
     )
 
-    val anyHelpers: List[TextTree[SwValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
-
     val baseMethods = encoderMethods ++ decoderMethods
       ++ branchDecoder.map {
         body =>
           q"""func decodeBranch(_ ctx: $baboonCodecContext, _ reader: $baboonBinReader) throws -> $localName {
              |    ${body.shift(4).trim}
              |}""".stripMargin
-      }.toList ++ List(indexGetter) ++ anyHelpers
+      }.toList ++ List(indexGetter)
 
     val cName = codecName(srcRef)
 
@@ -256,22 +255,9 @@ class SwUEBACodecGenerator(
 
     val fdec = dtoDec(name, fields.map(_._2))
 
-    def adtBranchIndex(id: TypeId.User) = {
-      domain.defs.meta
-        .nodes(id)
-        .asInstanceOf[DomainMember.User]
-        .defn
-        .asInstanceOf[Typedef.Adt]
-        .dataMembers(domain)
-        .zipWithIndex
-        .find(_._1 == dto.id)
-        .get
-        ._2
-    }
-
     val enc = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
 
         q"""writer.writeU8(${idx.toString})
            |$fenc""".stripMargin
@@ -280,9 +266,9 @@ class SwUEBACodecGenerator(
 
     val dec = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
-        val idx = adtBranchIndex(id)
+        val idx = layout.adtBranchIndex(id, dto.id)
         q"""let marker = reader.readU8()
-           |assert(marker == ${idx.toString})
+           |guard marker == ${idx.toString} else { throw BaboonCodecError.invalidInput("Unexpected UEBA ADT branch marker: " + String(marker)) }
            |return try decodeBranch(ctx, reader)""".stripMargin
       case _ => fdec
     }
@@ -296,16 +282,16 @@ class SwUEBACodecGenerator(
       q"""${fields.join(",\n").shift(4).trim}"""
     }
 
-    q"""let index = try readIndex(ctx, reader)
-       |if ctx.useIndices { assert(index.count == indexElementsCount) }
+    q"""let indexCount = try consumeIndex(ctx, reader)
+       |if ctx.useIndices && indexCount != indexElementsCount { throw BaboonCodecError.invalidInput("Unexpected UEBA index count: " + String(indexCount)) }
        |return ${name.asDeclName}(
        |    $fieldAssignments
        |)""".stripMargin
   }
 
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[SwValue], TextTree[SwValue], TextTree[SwValue])] = {
-    dto.fields.map {
-      field =>
+    layout.fields(dto).map {
+      case UebaLayoutPlan.FieldLayout(field, length) =>
         val escaped             = trans.escapeSwiftKeyword(field.name.name)
         val fieldRef            = q"value.$escaped"
         val enc                 = mkEncoder(field.tpe, fieldRef, q"writer")
@@ -313,7 +299,7 @@ class SwUEBACodecGenerator(
         val (decoder, mayThrow) = mkDecoder(field.tpe)
         val decodeTree          = if (mayThrow) q"$escaped: try $decoder" else q"$escaped: $decoder"
 
-        val w = domain.refMeta(field.tpe).len match {
+        val w = length match {
           case BinReprLen.Fixed(bytes) =>
             q"""do {
                |    // ${field.toString}
@@ -321,39 +307,36 @@ class SwUEBACodecGenerator(
                |    ${bufferEnc.shift(4).trim}
                |    let after = buffer.position
                |    let length = after - before
-               |    assert(length == ${bytes.toString})
+               |    ${lengthChecks(BinReprLen.Fixed(bytes)).shift(4).trim}
                |}""".stripMargin
 
           case v: BinReprLen.Variable =>
-            val sanityChecks = v match {
-              case BinReprLen.Unknown() =>
-                q"""assert(after >= before, "Got after=\\(after), before=\\(before)")"""
-
-              case BinReprLen.Alternatives(variants) =>
-                q"""assert([${variants.mkString(", ")}].contains(length), "Got length=\\(length)")"""
-
-              case BinReprLen.Range(min, max) =>
-                (
-                  Seq(q"""assert(length >= ${min.toString}, "Got length=\\(length)")""") ++
-                  max.toSeq.map(m => q"""assert(length <= ${m.toString}, "Got length=\\(length)")""")
-                ).joinN()
-            }
+            val sanityChecks = lengthChecks(v)
 
             q"""do {
                |    // ${field.toString}
                |    let before = buffer.position
+               |    guard before <= ${UebaLayoutPlan.MaxIndexValue.toString} else { fatalError("UEBA index offset exceeds i32") }
                |    writer.writeI32(Int32(before))
                |    ${bufferEnc.shift(4).trim}
                |    let after = buffer.position
                |    let length = after - before
-               |    writer.writeI32(Int32(length))
                |    ${sanityChecks.shift(4).trim}
+               |    writer.writeI32(Int32(length))
                |}""".stripMargin
         }
 
         (enc, decodeTree, w)
     }
   }
+
+  private def lengthChecks(length: BinReprLen): TextTree[SwValue] =
+    UebaLengthCheckRenderer.render[SwValue](
+      length,
+      equalTo = bytes => q"length == ${bytes.toString}",
+      oneOf   = bytes => q"[${bytes.mkString(", ")}].contains(length)",
+      enforce = condition => q"""guard $condition else { fatalError("Invalid UEBA field length: " + String(length)) }""",
+    )
 
   // Returns (expression, mayThrow). `mayThrow` is true when the expression contains a top-level
   // throwing call that needs `try` at the parent site (e.g. inside a closure body or ternary).
@@ -362,26 +345,8 @@ class SwUEBACodecGenerator(
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit   => (q"reader.readBool()", false)
-              case TypeId.Builtins.i08   => (q"reader.readI8()", false)
-              case TypeId.Builtins.i16   => (q"reader.readI16()", false)
-              case TypeId.Builtins.i32   => (q"reader.readI32()", false)
-              case TypeId.Builtins.i64   => (q"reader.readI64()", false)
-              case TypeId.Builtins.u08   => (q"reader.readU8()", false)
-              case TypeId.Builtins.u16   => (q"reader.readU16()", false)
-              case TypeId.Builtins.u32   => (q"reader.readU32()", false)
-              case TypeId.Builtins.u64   => (q"reader.readU64()", false)
-              case TypeId.Builtins.f32   => (q"reader.readF32()", false)
-              case TypeId.Builtins.f64   => (q"reader.readF64()", false)
-              case TypeId.Builtins.f128  => (q"reader.readDecimal()", false)
-              case TypeId.Builtins.str   => (q"reader.readString()", true)
-              case TypeId.Builtins.bytes => (q"reader.readBytes()", true)
-              case TypeId.Builtins.uid   => (q"reader.readUuid()", true)
-              case TypeId.Builtins.tsu   => (q"reader.readTsu()", false)
-              case TypeId.Builtins.tso   => (q"reader.readTso()", false)
-              case o                     => throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+            val decoded = SwScalarCodecs.uebaDecode(s, q"reader")
+            (decoded.expression, decoded.mayThrow)
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
             (q"$targetTpe.instance.decode(ctx, reader)", true)
@@ -420,27 +385,7 @@ class SwUEBACodecGenerator(
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit   => q"$wref.writeBool($ref)"
-              case TypeId.Builtins.i08   => q"$wref.writeI8($ref)"
-              case TypeId.Builtins.i16   => q"$wref.writeI16($ref)"
-              case TypeId.Builtins.i32   => q"$wref.writeI32($ref)"
-              case TypeId.Builtins.i64   => q"$wref.writeI64($ref)"
-              case TypeId.Builtins.u08   => q"$wref.writeU8($ref)"
-              case TypeId.Builtins.u16   => q"$wref.writeU16($ref)"
-              case TypeId.Builtins.u32   => q"$wref.writeU32($ref)"
-              case TypeId.Builtins.u64   => q"$wref.writeU64($ref)"
-              case TypeId.Builtins.f32   => q"$wref.writeF32($ref)"
-              case TypeId.Builtins.f64   => q"$wref.writeF64($ref)"
-              case TypeId.Builtins.f128  => q"$wref.writeDecimal($ref)"
-              case TypeId.Builtins.str   => q"$wref.writeString($ref)"
-              case TypeId.Builtins.bytes => q"$wref.writeBytes($ref)"
-              case TypeId.Builtins.uid   => q"$wref.writeUuid($ref)"
-              case TypeId.Builtins.tsu   => q"$wref.writeTsu($ref)"
-              case TypeId.Builtins.tso   => q"$wref.writeTso($ref)"
-              case o =>
-                throw new RuntimeException(s"BUG: Unexpected type: $o")
-            }
+            SwScalarCodecs.uebaEncode(s, wref, ref)
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
             q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
@@ -481,190 +426,14 @@ class SwUEBACodecGenerator(
     }
   }
 
-  // Deep walk (mirrors Scala/C#/Rust/Kotlin/Java/TS/Dart hasAnyField): a codec class needs the
-  // any-field helpers if any direct or nested-via-Constructor-arg field has type `any`.
-  private def hasAnyField(defn: DomainMember.User): Boolean = {
-    def hasAny(tpe: TypeRef): Boolean = tpe match {
-      case _: TypeRef.Any         => true
-      case _: TypeRef.Scalar      => false
-      case c: TypeRef.Constructor => c.args.exists(hasAny)
-    }
-    defn.defn match {
-      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
-      case _              => false
-    }
-  }
-
-  // Encode delegates to the per-codec-class `encodeAnyField` helper. This site wires the expected
-  // kind byte and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
-  // See `anyStaticFallbacks` for the per-variant table.
   private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[SwValue], wref: TextTree[SwValue]): TextTree[SwValue] = {
-    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
-    val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
-    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
-    q"encodeAnyField(ctx, $wref, $expectedHex, $staticDom, $staticVer, $staticTid, $ref)"
+    val args = SwAnyFieldRendering.arguments(AnyFieldPlan.forField(a, domain))
+    q"BaboonRuntime.BaboonAnyUebaFieldCodec.encodeAnyField(ctx, $wref, $args, $ref)"
   }
 
-  // Decode delegates to the per-codec-class `decodeAnyField` helper, returning an `AnyOpaque`
-  // (the helper's return type is `AnyOpaque` since Swift enums don't have separate per-case
-  // surface types — the `.ueba` discriminator is in the value itself).
   private def mkAnyDecoder(a: TypeRef.Any): TextTree[SwValue] = {
-    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
-    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
-    q"decodeAnyField(reader, $expectedHex)"
-  }
-
-  // Static fallbacks for the cross-format facade helpers (`jsonToUebaBytes`/`uebaToJson`). The
-  // wire `meta` may omit components that are pinned by the field's static declaration; the codec
-  // emits whatever is statically known so the facade can fill the gaps. See
-  // `BaboonCodecsFacade.buildSyntheticTypeMeta` for the merge semantics. Per spec table:
-  //   A=(nil,nil,nil), B=(currentDomain,nil,nil), C=(currentDomain,currentVersion,nil),
-  //   D1=(nil,nil,underlyingFqid), D2=(currentDomain,nil,underlyingFqid),
-  //   D3=(currentDomain,currentVersion,underlyingFqid).
-  // Duplicated across Scala/C#/Rust/Kotlin/Java/TS/Dart — extraction deferred (textual emission
-  // diverges by language flavor; see PR 4.2 ledger entry's DRY analysis). 11th instance.
-  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[SwValue], TextTree[SwValue], TextTree[SwValue]) = {
-    val none                     = q"nil"
-    def some(s: String)          = q""""$s""""
-    val currentDomain: String    = domain.id.toString
-    val currentDomainVer: String = domain.version.v.toString
-    val typeidStatic = a.underlying match {
-      case Some(u) => some(u.id.toString)
-      case None    => none
-    }
-    val (domainStatic, versionStatic) = a.variant match {
-      case AnyVariant.Global  => (none, none)
-      case AnyVariant.ThisDom => (some(currentDomain), none)
-      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
-    }
-    (domainStatic, versionStatic, typeidStatic)
-  }
-
-  // Per-codec-class helpers consolidating the any-field framing, kind-check, and
-  // buffer-then-write / read-then-skip paths — emitted at most once per codec class that has any
-  // any-bearing field. Mirrors `JvUEBACodecGenerator.anyFieldHelpers` /
-  // `DtUEBACodecGenerator.anyFieldHelpers`. Wire layout (locked, see
-  // docs/drafts/20260424-1738-any-opaque-fields.md §"Wire format"):
-  //   length:i32 | meta-length:i32 | meta-kind:u8 | meta-strings | blob
-  //
-  // Swift `encode` on `BaboonBinCodecBase` is non-throwing (see `baboon_runtime.swift`); the
-  // helper uses `preconditionFailure` for unrecoverable conditions (kind mismatch, missing
-  // facade, facade-returned failure). This mirrors the existing Swift type-erasure pattern in
-  // `AnyBaboonBinEncoder.encodeAnyValue`. The `decodeAnyField` helper IS `throws` since the
-  // base `decode(...)` is `throws`.
-  //
-  // PR-12-D01 lesson applied: explicit non-negative sanity check on BOTH `anyTotalLength` AND
-  // `anyMetaLength` before any size arithmetic. Swift `Int32` is signed; a malicious wire
-  // `0xFFFF_FFFF` decodes to `-1`, and `Data.subdata(in: 0..<-1)` would trap.
-  //
-  // Cast-via-`as`: `ctx.facade` returns `BaboonCodecsFacadeBase?` (PR 9.1 import-cycle break).
-  // The concrete facade carries `jsonToUebaBytes`; the cast is safe because
-  // `BaboonCodecContext.withFacade` is the only construction path and accepts the same hierarchy.
-  private def anyFieldHelpers: TextTree[SwValue] = {
-    q"""private func encodeAnyField(
-       |    _ ctx: $baboonCodecContext,
-       |    _ writer: $baboonBinWriter,
-       |    _ expectedKind: UInt8,
-       |    _ staticDomain: String?,
-       |    _ staticVersion: String?,
-       |    _ staticTypeid: String?,
-       |    _ value: $baboonAnyOpaque
-       |) {
-       |    if value.meta.kind != expectedKind {
-       |        preconditionFailure(
-       |            "any: meta-kind 0x\\(String(format: \"%02x\", value.meta.kind & 0xFF)) " +
-       |            "does not match field-declared 0x\\(String(format: \"%02x\", expectedKind & 0xFF))"
-       |        )
-       |    }
-       |    let anyBlob: Data
-       |    switch value {
-       |    case .ueba(_, let bytes):
-       |        anyBlob = bytes
-       |    case .json(let jsonMeta, let jsonValue):
-       |        guard let anyFacadeBase = ctx.facade else {
-       |            preconditionFailure(
-       |                "Cannot encode AnyOpaque.json into UEBA without a facade reference. " +
-       |                "Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), " +
-       |                "or supply AnyOpaque.ueba directly."
-       |            )
-       |        }
-       |        // Downcast to the concrete facade — the marker base is empty by design (PR 9.1
-       |        // import-cycle break). Construction goes through BaboonCodecContext.withFacade
-       |        // which only accepts BaboonCodecsFacadeBase, but real callers pass BaboonCodecsFacade.
-       |        guard let anyFacade = anyFacadeBase as? $baboonCodecsFacade else {
-       |            preconditionFailure(
-       |                "BaboonCodecContext.facade is not a BaboonCodecsFacade: " +
-       |                "\\(type(of: anyFacadeBase))"
-       |            )
-       |        }
-       |        let anyConvResult = anyFacade.jsonToUebaBytes(
-       |            jsonMeta,
-       |            jsonValue,
-       |            staticDomain: staticDomain,
-       |            staticVersion: staticVersion,
-       |            staticTypeid: staticTypeid
-       |        )
-       |        switch anyConvResult {
-       |        case .failure(let err):
-       |            preconditionFailure("any: jsonToUebaBytes failed: \\(err)")
-       |        case .success(let bytes):
-       |            anyBlob = bytes
-       |        }
-       |    }
-       |    // Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
-       |    let anyMetaBuf = $baboonBinWriter()
-       |    $baboonAnyMetaCodec.writeBin(value.meta, anyMetaBuf)
-       |    let anyMetaBytes = anyMetaBuf.toData()
-       |    let anyTotalLength = Int32(4 + anyMetaBytes.count + anyBlob.count)
-       |    writer.writeI32(anyTotalLength)
-       |    writer.writeI32(Int32(anyMetaBytes.count))
-       |    writer.writeAll(anyMetaBytes)
-       |    writer.writeAll(anyBlob)
-       |}
-       |
-       |private func decodeAnyField(_ wire: $baboonBinReader, _ expectedKind: UInt8) throws -> $baboonAnyOpaque {
-       |    let anyTotalLength = wire.readI32()
-       |    if anyTotalLength < 0 {
-       |        throw $baboonCodecException.decoderFailure(
-       |            "any: negative total-length \\(anyTotalLength)",
-       |            nil
-       |        )
-       |    }
-       |    let anyMetaLength = wire.readI32()
-       |    if anyMetaLength < 0 {
-       |        throw $baboonCodecException.decoderFailure(
-       |            "any: negative meta-length \\(anyMetaLength)",
-       |            nil
-       |        )
-       |    }
-       |    if anyTotalLength < 4 + anyMetaLength {
-       |        throw $baboonCodecException.decoderFailure(
-       |            "any: total-length \\(anyTotalLength) smaller than 4 + meta-length \\(anyMetaLength)",
-       |            nil
-       |        )
-       |    }
-       |    let (anyMeta, anyBytesRead) = try $baboonAnyMetaCodec.readBinWithLength(wire)
-       |    if anyBytesRead > Int(anyMetaLength) {
-       |        throw $baboonCodecException.decoderFailure(
-       |            "any: meta bytes-read \\(anyBytesRead) exceeded meta-length window \\(anyMetaLength)",
-       |            nil
-       |        )
-       |    }
-       |    if anyBytesRead < Int(anyMetaLength) {
-       |        // Forward-compat: skip future meta-extension bytes within the meta-length window.
-       |        wire.skipBytes(Int(anyMetaLength) - anyBytesRead)
-       |    }
-       |    if anyMeta.kind != expectedKind {
-       |        throw $baboonCodecException.decoderFailure(
-       |            "any: wire kind 0x\\(String(format: \"%02x\", anyMeta.kind & 0xFF)) " +
-       |            "does not match field-declared 0x\\(String(format: \"%02x\", expectedKind & 0xFF))",
-       |            nil
-       |        )
-       |    }
-       |    let anyBlobLen = Int(anyTotalLength) - 4 - Int(anyMetaLength)
-       |    let anyBlob = wire.readNBytes(anyBlobLen)
-       |    return .ueba(meta: anyMeta, bytes: anyBlob)
-       |}""".stripMargin
+    val kind = SwAnyFieldRendering.kind(AnyFieldPlan.forField(a, domain))
+    q"BaboonRuntime.BaboonAnyUebaFieldCodec.decodeAnyField(reader, $kind)"
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[SwValue]] = {

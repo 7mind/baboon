@@ -23,8 +23,22 @@ case class VersionLock(
 )
 
 case class Locks(
-  locks: Map[Pkg, List[VersionLock]]
+  locks: Map[Pkg, List[VersionLock]],
+  scheme: Int,
 )
+
+object Locks {
+  /** Version of the signature-hashing scheme. Signatures produced by different
+    * schemes are incomparable: a mismatch means "cannot check drift", never
+    * "drift detected". History:
+    *   1 — original deepId hashing (order-erasing: dependency repr lines were
+    *       sorted per field);
+    *   2 — order- and structure-sensitive deep hashing (dependency reprs kept
+    *       contiguous and ordered, field type-refs included, ADT branch order
+    *       preserved).
+    */
+  final val CurrentScheme: Int = 2
+}
 
 object LockCodecs {
   implicit lazy val pkgKeyEncoder: KeyEncoder[Pkg]       = KeyEncoder.encodeKeyString.contramap(_.toString)
@@ -33,7 +47,16 @@ object LockCodecs {
   implicit lazy val sigidCodec: Codec[SigId]             = Codec.from(Decoder.decodeString.map(s => SigId(s)), Encoder.encodeString.contramap(_.value))
   implicit lazy val versionLockCodec: Codec[VersionLock] = deriveCodec
 
-  private lazy val locksDecoder: Decoder[Locks] = deriveCodec[Locks]
+  // pre-scheme lockfiles carry no "scheme" key: treat them as scheme 1
+  private lazy val locksDecoder: Decoder[Locks] = Decoder.instance {
+    c =>
+      for {
+        locks  <- c.downField("locks").as[Map[Pkg, List[VersionLock]]]
+        scheme <- c.downField("scheme").as[Option[Int]]
+      } yield {
+        Locks(locks, scheme.getOrElse(1))
+      }
+  }
   private lazy val locksEncoder: Encoder[Locks] = Encoder.instance { locks =>
     val fields = locks.locks.toSeq
       .sortBy { case (pkg, _) => pkg.toString }
@@ -41,7 +64,7 @@ object LockCodecs {
         val sortedVersions = versions.sortBy(_.version)(using Version.ordering).map(versionLockCodec.apply)
         pkgKeyEncoder(pkg) -> Json.arr(sortedVersions*)
       }
-    Json.obj("locks" -> Json.obj(fields*))
+    Json.obj("scheme" -> Json.fromInt(locks.scheme), "locks" -> Json.obj(fields*))
   }
   implicit lazy val lockscodec: Codec[Locks] = Codec.from(locksDecoder, locksEncoder)
 

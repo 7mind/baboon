@@ -17,12 +17,44 @@ import type { BaboonCodecsFacade } from "./BaboonCodecsFacade";
  *
  * Mirrors PR 6.1 (Java) plumbing — Q6 option (a) in the design plan.
  */
+/**
+ * Which lower bound the WRITER publishes as the UEBA envelope's `domainVersionMinCompat` (the v1
+ * binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration
+ * (UEBA)").
+ *   - Strict: the byte-identical bound (`baboonSameInVersions()[0]`) — the default.
+ *   - Tolerant: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+ *     payloads, `prefix-any-mode` for indexed ones). Readers older than the writer then decode the
+ *     payload with their newest codec, dropping the appended fields they do not know. A reader
+ *     cannot distinguish such an envelope from a byte-identical one, so re-encoding intermediaries
+ *     must run at the writer's version or newer.
+ */
+export enum ForwardWritePolicy {
+    Strict = "strict",
+    Tolerant = "tolerant",
+}
+
+/**
+ * Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+ *   - V1 (default): single bound slot (`domainVersionMinCompat`), value chosen by `ForwardWritePolicy`.
+ *   - V2: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for
+ *     the payload's index mode; the reader's `ForwardReadPolicy` then applies to binary exactly as it
+ *     does to JSON. Only readers that know v2 can decode it.
+ */
+export enum BaboonEnvelopeVersion {
+    V1 = "v1",
+    V2 = "v2",
+}
+
 export class BaboonCodecContext {
     private readonly _useIndices: boolean;
+    private readonly _forwardWritePolicy: ForwardWritePolicy;
+    private readonly _envelopeVersion: BaboonEnvelopeVersion;
     private readonly _facade: BaboonCodecsFacade | undefined;
 
-    private constructor(useIndices: boolean, facade: BaboonCodecsFacade | undefined) {
+    private constructor(useIndices: boolean, forwardWritePolicy: ForwardWritePolicy, envelopeVersion: BaboonEnvelopeVersion, facade: BaboonCodecsFacade | undefined) {
         this._useIndices = useIndices;
+        this._forwardWritePolicy = forwardWritePolicy;
+        this._envelopeVersion = envelopeVersion;
         this._facade = facade;
     }
 
@@ -30,16 +62,29 @@ export class BaboonCodecContext {
         return this._useIndices;
     }
 
+    public get forwardWritePolicy(): ForwardWritePolicy {
+        return this._forwardWritePolicy;
+    }
+
+    public get envelopeVersion(): BaboonEnvelopeVersion {
+        return this._envelopeVersion;
+    }
+
     public get facade(): BaboonCodecsFacade | undefined {
         return this._facade;
     }
 
-    public static readonly Indexed: BaboonCodecContext = new BaboonCodecContext(true, undefined);
-    public static readonly Compact: BaboonCodecContext = new BaboonCodecContext(false, undefined);
+    public static readonly Indexed: BaboonCodecContext = new BaboonCodecContext(true, ForwardWritePolicy.Strict, BaboonEnvelopeVersion.V1, undefined);
+    public static readonly Compact: BaboonCodecContext = new BaboonCodecContext(false, ForwardWritePolicy.Strict, BaboonEnvelopeVersion.V1, undefined);
     public static readonly Default: BaboonCodecContext = BaboonCodecContext.Compact;
 
     public static withFacade(useIndices: boolean, facade: BaboonCodecsFacade): BaboonCodecContext {
-        return new BaboonCodecContext(useIndices, facade);
+        return new BaboonCodecContext(useIndices, ForwardWritePolicy.Strict, BaboonEnvelopeVersion.V1, facade);
+    }
+
+    /** Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade. */
+    public static custom(useIndices: boolean, forwardWritePolicy: ForwardWritePolicy, envelopeVersion: BaboonEnvelopeVersion, facade: BaboonCodecsFacade | undefined): BaboonCodecContext {
+        return new BaboonCodecContext(useIndices, forwardWritePolicy, envelopeVersion, facade);
     }
 }
 
@@ -47,10 +92,12 @@ export class BaboonCodecContext {
 
 export class BaboonBinWriter {
     private buf: Uint8Array;
+    private view: DataView;
     private pos: number;
 
     constructor(initialCapacity: number = 256) {
         this.buf = new Uint8Array(initialCapacity);
+        this.view = new DataView(this.buf.buffer);
         this.pos = 0;
     }
 
@@ -63,12 +110,67 @@ export class BaboonBinWriter {
             const newBuf = new Uint8Array(newCap);
             newBuf.set(this.buf.subarray(0, this.pos));
             this.buf = newBuf;
+            this.view = new DataView(newBuf.buffer);
         }
     }
 
     writeByte(value: number): void {
         this.ensureCapacity(1);
         this.buf[this.pos++] = value & 0xFF;
+    }
+
+    writeI8(value: number): void {
+        this.ensureCapacity(1);
+        this.view.setInt8(this.pos, value);
+        this.pos += 1;
+    }
+
+    writeI16(value: number): void {
+        this.ensureCapacity(2);
+        this.view.setInt16(this.pos, value, true);
+        this.pos += 2;
+    }
+
+    writeI32(value: number): void {
+        this.ensureCapacity(4);
+        this.view.setInt32(this.pos, value, true);
+        this.pos += 4;
+    }
+
+    writeI64(value: bigint): void {
+        this.ensureCapacity(8);
+        this.view.setBigInt64(this.pos, value, true);
+        this.pos += 8;
+    }
+
+    writeU16(value: number): void {
+        this.ensureCapacity(2);
+        this.view.setUint16(this.pos, value, true);
+        this.pos += 2;
+    }
+
+    writeU32(value: number): void {
+        this.ensureCapacity(4);
+        this.view.setUint32(this.pos, value, true);
+        this.pos += 4;
+    }
+
+    writeU64(value: bigint): void {
+        this.ensureCapacity(8);
+        this.view.setBigUint64(this.pos, value, true);
+        this.pos += 8;
+    }
+
+    writeF32(value: number): void {
+        this.ensureCapacity(4);
+        this.view.setFloat32(this.pos, value, true);
+        this.pos += 4;
+    }
+
+    writeF64(value: number): void {
+        this.ensureCapacity(8);
+        this.view.setFloat64(this.pos, value, true);
+        this.pos += 8;
     }
 
     writeBytes(data: Uint8Array): void {
@@ -115,6 +217,9 @@ export class BaboonBinReader {
     readBytes(length: number): Uint8Array {
         const slice = this.buf.slice(this.pos, this.pos + length);
         this.pos += length;
+        if (Object.getPrototypeOf(this.buf) === Uint8Array.prototype && this.buf.slice === Uint8Array.prototype.slice) {
+            return slice;
+        }
         return new Uint8Array(slice);
     }
 
@@ -326,6 +431,20 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 export class BinTools {
+    static consumeIndex(reader: BaboonBinReader, expectedElements: number): number {
+        const header = reader.readByte();
+        if ((header & 1) === 0) return 0;
+        let previousEnd = 0;
+        for (let i = 0; i < expectedElements; i++) {
+            const offset = reader.readI32();
+            const length = reader.readI32();
+            if (length <= 0) throw new BaboonDecoderFailure("Invalid UEBA index length: " + length);
+            if (offset < previousEnd) throw new BaboonDecoderFailure("Invalid UEBA index offset: " + offset);
+            previousEnd = offset + length;
+        }
+        return expectedElements;
+    }
+
     // --- Writers ---
 
     static writeBool(writer: BaboonBinWriter, value: boolean): void {
@@ -337,27 +456,19 @@ export class BinTools {
     }
 
     static writeI8(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(1);
-        new DataView(buf).setInt8(0, value);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeI8(value);
     }
 
     static writeI16(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(2);
-        new DataView(buf).setInt16(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeI16(value);
     }
 
     static writeI32(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(4);
-        new DataView(buf).setInt32(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeI32(value);
     }
 
     static writeI64(writer: BaboonBinWriter, value: bigint): void {
-        const buf = new ArrayBuffer(8);
-        new DataView(buf).setBigInt64(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeI64(value);
     }
 
     static writeU8(writer: BaboonBinWriter, value: number): void {
@@ -365,33 +476,23 @@ export class BinTools {
     }
 
     static writeU16(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(2);
-        new DataView(buf).setUint16(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeU16(value);
     }
 
     static writeU32(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(4);
-        new DataView(buf).setUint32(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeU32(value);
     }
 
     static writeU64(writer: BaboonBinWriter, value: bigint): void {
-        const buf = new ArrayBuffer(8);
-        new DataView(buf).setBigUint64(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeU64(value);
     }
 
     static writeF32(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(4);
-        new DataView(buf).setFloat32(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeF32(value);
     }
 
     static writeF64(writer: BaboonBinWriter, value: number): void {
-        const buf = new ArrayBuffer(8);
-        new DataView(buf).setFloat64(0, value, true);
-        writer.writeBytes(new Uint8Array(buf));
+        writer.writeF64(value);
     }
 
     static writeDecimal(writer: BaboonBinWriter, value: BaboonDecimal): void {
@@ -638,6 +739,20 @@ export interface BaboonGenerated {
     baboonDomainVersion(): string
     baboonDomainIdentifier(): string
     baboonSameInVersions(): string[]
+    /**
+     * Forward-readability: newer domain versions whose encoded data THIS version's codec can
+     * decode, mapped to the guarantee tier
+     * ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+     * The prefix-* tiers hold only for top-level framed UEBA reads where the caller discards
+     * the cursor after decoding.
+     */
+    baboonForwardReadable(): { readonly [version: string]: string }
+    /**
+     * Writer-side inverse of `baboonForwardReadable`: guarantee tier -> oldest domain version
+     * whose codec can decode THIS version's encoding of this type. The "identical" bound
+     * equals `baboonSameInVersions()[0]`; the "json-additive" bound is published as `$rv`.
+     */
+    baboonMinReaderVersions(): { readonly [tier: string]: string }
     baboonTypeIdentifier(): string
 }
 
@@ -697,49 +812,52 @@ export interface IBaboonUebaService<R = Promise<Uint8Array>> {
     invoke(method: BaboonMethodId, data: Uint8Array, ctx: BaboonCodecContext): R;
 }
 
-export class JsonMuxer<R = Promise<string>> {
-    private readonly table = new Map<string, IBaboonJsonService<R>>();
-    constructor(...services: IBaboonJsonService<R>[]) {
-        for (const s of services) this.register(s);
-    }
-    register(service: IBaboonJsonService<R>): void {
+class ServiceRegistry<S extends { readonly serviceName: string }> {
+    private readonly table = new Map<string, S>();
+
+    register(service: S): void {
         if (this.table.has(service.serviceName)) {
             throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
         }
         this.table.set(service.serviceName, service);
     }
-    invoke(method: BaboonMethodId, data: string, ctx: BaboonCodecContext): R {
+
+    resolve(method: BaboonMethodId): S {
         const service = this.table.get(method.serviceName);
-        if (service === undefined) {
-            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
-        }
+        if (service === undefined) throw new BaboonWiringException({ tag: 'NoMatchingService', method });
+        return service;
+    }
+
+    names(): readonly string[] { return Array.from(this.table.keys()); }
+}
+
+export class JsonMuxer<R = Promise<string>> {
+    private readonly table = new ServiceRegistry<IBaboonJsonService<R>>();
+    constructor(...services: IBaboonJsonService<R>[]) {
+        for (const s of services) this.register(s);
+    }
+    register(service: IBaboonJsonService<R>): void { this.table.register(service); }
+    invoke(method: BaboonMethodId, data: string, ctx: BaboonCodecContext): R {
+        const service = this.table.resolve(method);
         return service.invoke(method, data, ctx);
     }
     serviceNames(): readonly string[] {
-        return Array.from(this.table.keys());
+        return this.table.names();
     }
 }
 
 export class UebaMuxer<R = Promise<Uint8Array>> {
-    private readonly table = new Map<string, IBaboonUebaService<R>>();
+    private readonly table = new ServiceRegistry<IBaboonUebaService<R>>();
     constructor(...services: IBaboonUebaService<R>[]) {
         for (const s of services) this.register(s);
     }
-    register(service: IBaboonUebaService<R>): void {
-        if (this.table.has(service.serviceName)) {
-            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
-        }
-        this.table.set(service.serviceName, service);
-    }
+    register(service: IBaboonUebaService<R>): void { this.table.register(service); }
     invoke(method: BaboonMethodId, data: Uint8Array, ctx: BaboonCodecContext): R {
-        const service = this.table.get(method.serviceName);
-        if (service === undefined) {
-            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
-        }
+        const service = this.table.resolve(method);
         return service.invoke(method, data, ctx);
     }
     serviceNames(): readonly string[] {
-        return Array.from(this.table.keys());
+        return this.table.names();
     }
 }
 
@@ -760,48 +878,32 @@ export interface IBaboonUebaServiceCtx<Ctx, R = Promise<Uint8Array>> {
 }
 
 export class JsonMuxerCtx<Ctx, R = Promise<string>> {
-    private readonly table = new Map<string, IBaboonJsonServiceCtx<Ctx, R>>();
+    private readonly table = new ServiceRegistry<IBaboonJsonServiceCtx<Ctx, R>>();
     constructor(...services: IBaboonJsonServiceCtx<Ctx, R>[]) {
         for (const s of services) this.register(s);
     }
-    register(service: IBaboonJsonServiceCtx<Ctx, R>): void {
-        if (this.table.has(service.serviceName)) {
-            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
-        }
-        this.table.set(service.serviceName, service);
-    }
+    register(service: IBaboonJsonServiceCtx<Ctx, R>): void { this.table.register(service); }
     invoke(method: BaboonMethodId, data: string, ctx: Ctx, codecCtx: BaboonCodecContext): R {
-        const service = this.table.get(method.serviceName);
-        if (service === undefined) {
-            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
-        }
+        const service = this.table.resolve(method);
         return service.invoke(method, data, ctx, codecCtx);
     }
     serviceNames(): readonly string[] {
-        return Array.from(this.table.keys());
+        return this.table.names();
     }
 }
 
 export class UebaMuxerCtx<Ctx, R = Promise<Uint8Array>> {
-    private readonly table = new Map<string, IBaboonUebaServiceCtx<Ctx, R>>();
+    private readonly table = new ServiceRegistry<IBaboonUebaServiceCtx<Ctx, R>>();
     constructor(...services: IBaboonUebaServiceCtx<Ctx, R>[]) {
         for (const s of services) this.register(s);
     }
-    register(service: IBaboonUebaServiceCtx<Ctx, R>): void {
-        if (this.table.has(service.serviceName)) {
-            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
-        }
-        this.table.set(service.serviceName, service);
-    }
+    register(service: IBaboonUebaServiceCtx<Ctx, R>): void { this.table.register(service); }
     invoke(method: BaboonMethodId, data: Uint8Array, ctx: Ctx, codecCtx: BaboonCodecContext): R {
-        const service = this.table.get(method.serviceName);
-        if (service === undefined) {
-            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
-        }
+        const service = this.table.resolve(method);
         return service.invoke(method, data, ctx, codecCtx);
     }
     serviceNames(): readonly string[] {
-        return Array.from(this.table.keys());
+        return this.table.names();
     }
 }
 
@@ -1019,6 +1121,13 @@ export class BaboonTypeMeta {
     public readonly domainVersion: string;
     public readonly domainVersionMinCompat: string;
     public readonly typeIdentifier: string;
+    /**
+     * Oldest domain version whose JSON codec can decode the payload under the json-additive
+     * contract (tolerant key lookup; fields unknown to that version are dropped). Always
+     * <= domainVersionMinCompat. Published as `$rv` when it differs from the effective
+     * minCompat; the binary v1 envelope does not carry it. Defaults to minCompat.
+     */
+    public readonly domainVersionReadableMin: string;
 
     constructor(
         metaVersion: number,
@@ -1026,13 +1135,20 @@ export class BaboonTypeMeta {
         domainVersion: string,
         domainVersionMinCompat: string,
         typeIdentifier: string,
+        domainVersionReadableMin: string = domainVersionMinCompat,
     ) {
         this.metaVersion = metaVersion;
         this.domainIdentifier = domainIdentifier;
         this.domainVersion = domainVersion;
         this.domainVersionMinCompat = domainVersionMinCompat;
         this.typeIdentifier = typeIdentifier;
+        this.domainVersionReadableMin = domainVersionReadableMin;
     }
+
+    public static readonly JSON_READABLE_TIER = "json-additive";
+    /** Tier keys of the UEBA prefix bounds in `baboonMinReaderVersions()`, per index mode. */
+    public static readonly UEBA_PREFIX_COMPACT_TIER = "prefix-compact";
+    public static readonly UEBA_PREFIX_ANY_MODE_TIER = "prefix-any-mode";
 
     public versionRef(): BaboonDomainVersion {
         return new BaboonDomainVersion(this.domainIdentifier, this.domainVersion);
@@ -1049,6 +1165,16 @@ export class BaboonTypeMeta {
             return undefined;
         }
         return new BaboonDomainVersion(this.domainIdentifier, this.domainVersionMinCompat);
+    }
+
+    public versionReadableMin(): BaboonDomainVersion | undefined {
+        if (!this.domainVersionReadableMin) {
+            return this.versionMinCompat();
+        }
+        if (this.domainVersionReadableMin === this.domainVersion) {
+            return undefined;
+        }
+        return new BaboonDomainVersion(this.domainIdentifier, this.domainVersionReadableMin);
     }
 
     public writeBin(writer: BaboonBinWriter): void {
@@ -1083,12 +1209,61 @@ export class BaboonTypeMeta {
                 `baboonSameInVersions() is empty for type ${value.baboonTypeIdentifier()}`,
             );
         }
+        const readableMin = value.baboonMinReaderVersions()[BaboonTypeMeta.JSON_READABLE_TIER];
+        if (readableMin === undefined) {
+            throw new BaboonException(
+                `baboonMinReaderVersions() lacks '${BaboonTypeMeta.JSON_READABLE_TIER}' for type ${value.baboonTypeIdentifier()}`,
+            );
+        }
         return new BaboonTypeMeta(
             BaboonTypeMetaCodec.META_VERSION,
             value.baboonDomainIdentifier(),
             value.baboonDomainVersion(),
             sameIn[0]!,
             typeIdentifier,
+            readableMin,
+        );
+    }
+
+    /**
+     * Envelope for a UEBA payload written under `ctx`.
+     *   - V1 layout: `from(value)`, with `domainVersionMinCompat` lowered to the prefix bound of the
+     *     context's index mode when the writer policy is Tolerant (the single slot must carry it).
+     *   - V2 layout: both bounds travel — `domainVersionMinCompat` stays byte-identical and
+     *     `domainVersionReadableMin` carries the prefix bound; the writer policy is irrelevant.
+     */
+    public static forBin(value: BaboonGenerated, ctx: BaboonCodecContext, useAdtIdentifier: boolean = false): BaboonTypeMeta {
+        const meta = BaboonTypeMeta.from(value, useAdtIdentifier);
+        const prefixBound = (): string => {
+            const tier = ctx.useIndices ? BaboonTypeMeta.UEBA_PREFIX_ANY_MODE_TIER : BaboonTypeMeta.UEBA_PREFIX_COMPACT_TIER;
+            const bound = value.baboonMinReaderVersions()[tier];
+            if (bound === undefined) {
+                throw new BaboonException(
+                    `baboonMinReaderVersions() lacks '${tier}' for type ${value.baboonTypeIdentifier()}`,
+                );
+            }
+            return bound;
+        };
+        if (ctx.envelopeVersion === BaboonEnvelopeVersion.V2) {
+            return new BaboonTypeMeta(
+                BaboonTypeMetaCodec.META_VERSION_2,
+                meta.domainIdentifier,
+                meta.domainVersion,
+                meta.domainVersionMinCompat,
+                meta.typeIdentifier,
+                prefixBound(),
+            );
+        }
+        if (ctx.forwardWritePolicy === ForwardWritePolicy.Strict) {
+            return meta;
+        }
+        return new BaboonTypeMeta(
+            meta.metaVersion,
+            meta.domainIdentifier,
+            meta.domainVersion,
+            prefixBound(),
+            meta.typeIdentifier,
+            meta.domainVersionReadableMin,
         );
     }
 
@@ -1113,22 +1288,39 @@ export class BaboonTypeMeta {
             && this.domainIdentifier === other.domainIdentifier
             && this.domainVersion === other.domainVersion
             && this.domainVersionMinCompat === other.domainVersionMinCompat
+            && this.domainVersionReadableMin === other.domainVersionReadableMin
             && this.typeIdentifier === other.typeIdentifier;
     }
 }
 
 export class BaboonTypeMetaCodec {
     public static readonly META_VERSION_1: number = 1;
+    public static readonly META_VERSION_2: number = 2;
+    /** Layout written by default (binary) and always (JSON `$mv`). */
     public static readonly META_VERSION: number = BaboonTypeMetaCodec.META_VERSION_1;
+
+    /** v2 flags byte (codec-envelope.md §2.1.3): bit 0 — minCompat follows; bit 1 — readableMin follows. */
+    private static readonly V2_FLAG_MIN_COMPAT = 0x01;
+    private static readonly V2_FLAG_READABLE_MIN = 0x02;
+    private static readonly V2_FLAGS_MASK = BaboonTypeMetaCodec.V2_FLAG_MIN_COMPAT | BaboonTypeMetaCodec.V2_FLAG_READABLE_MIN;
 
     public static readonly META_VERSION_KEY = "$mv";
     public static readonly DOMAIN_IDENTIFIER_KEY = "$d";
     public static readonly DOMAIN_VERSION_KEY = "$v";
     public static readonly DOMAIN_VERSION_MIN_COMPAT_KEY = "$uv";
+    public static readonly DOMAIN_VERSION_READABLE_KEY = "$rv";
     public static readonly TYPE_IDENTIFIER_KEY = "$t";
 
     public static writeBin(meta: BaboonTypeMeta, writer: BaboonBinWriter): void {
-        BinTools.writeByte(writer, BaboonTypeMetaCodec.META_VERSION & 0xFF);
+        switch (meta.metaVersion) {
+            case BaboonTypeMetaCodec.META_VERSION_1: BaboonTypeMetaCodec.writeBinV1(meta, writer); return;
+            case BaboonTypeMetaCodec.META_VERSION_2: BaboonTypeMetaCodec.writeBinV2(meta, writer); return;
+            default: throw new BaboonException(`Unsupported binary envelope metaVersion ${meta.metaVersion}`);
+        }
+    }
+
+    private static writeBinV1(meta: BaboonTypeMeta, writer: BaboonBinWriter): void {
+        BinTools.writeByte(writer, BaboonTypeMetaCodec.META_VERSION_1);
         BinTools.writeString(writer, meta.domainIdentifier);
         BinTools.writeString(writer, meta.domainVersion);
         if (meta.domainVersion === meta.domainVersionMinCompat) {
@@ -1140,13 +1332,49 @@ export class BaboonTypeMetaCodec {
         BinTools.writeString(writer, meta.typeIdentifier);
     }
 
+    // v2: `02 | domainId | domainVersion | flags | [minCompat] | [readableMin] | typeId`; each bound is
+    // elided exactly as in JSON (minCompat when == domainVersion, readableMin when == effective minCompat)
+    private static writeBinV2(meta: BaboonTypeMeta, writer: BaboonBinWriter): void {
+        const minCompat = meta.domainVersionMinCompat || meta.domainVersion;
+        const readableMin = meta.domainVersionReadableMin || minCompat;
+        const hasMinCompat = minCompat !== meta.domainVersion;
+        const hasReadableMin = readableMin !== minCompat;
+        BinTools.writeByte(writer, BaboonTypeMetaCodec.META_VERSION_2);
+        BinTools.writeString(writer, meta.domainIdentifier);
+        BinTools.writeString(writer, meta.domainVersion);
+        BinTools.writeByte(writer, (hasMinCompat ? BaboonTypeMetaCodec.V2_FLAG_MIN_COMPAT : 0) | (hasReadableMin ? BaboonTypeMetaCodec.V2_FLAG_READABLE_MIN : 0));
+        if (hasMinCompat) BinTools.writeString(writer, minCompat);
+        if (hasReadableMin) BinTools.writeString(writer, readableMin);
+        BinTools.writeString(writer, meta.typeIdentifier);
+    }
+
     public static readBin(reader: BaboonBinReader): BaboonTypeMeta | undefined {
         const metaVersion = BinTools.readByte(reader);
-        if (metaVersion !== BaboonTypeMetaCodec.META_VERSION_1) return undefined;
+        switch (metaVersion) {
+            case BaboonTypeMetaCodec.META_VERSION_1: return BaboonTypeMetaCodec.readBinV1(reader);
+            case BaboonTypeMetaCodec.META_VERSION_2: return BaboonTypeMetaCodec.readBinV2(reader);
+            default: return undefined;
+        }
+    }
 
+    private static readBinV2(reader: BaboonBinReader): BaboonTypeMeta | undefined {
+        const domainIdentifier = BinTools.readString(reader);
+        const domainVersion = BinTools.readString(reader);
+        const flags = BinTools.readByte(reader);
+        // unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+        if ((flags & ~BaboonTypeMetaCodec.V2_FLAGS_MASK) !== 0) return undefined;
+        const minCompat = (flags & BaboonTypeMetaCodec.V2_FLAG_MIN_COMPAT) !== 0 ? BinTools.readString(reader) : domainVersion;
+        const readableMin = (flags & BaboonTypeMetaCodec.V2_FLAG_READABLE_MIN) !== 0 ? BinTools.readString(reader) : minCompat;
+        const typeIdentifier = BinTools.readString(reader);
+        return new BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION_2, domainIdentifier, domainVersion, minCompat, typeIdentifier, readableMin);
+    }
+
+    private static readBinV1(reader: BaboonBinReader): BaboonTypeMeta | undefined {
         const domainIdentifier = BinTools.readString(reader);
         const domainVersion = BinTools.readString(reader);
         const hasMinCompat = BinTools.readByte(reader);
+        // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+        if (hasMinCompat !== 0 && hasMinCompat !== 1) return undefined;
         const domainVersionMinCompat = hasMinCompat === 1 ? BinTools.readString(reader) : domainVersion;
         const typeIdentifier = BinTools.readString(reader);
 
@@ -1169,6 +1397,10 @@ export class BaboonTypeMetaCodec {
         obj[BaboonTypeMetaCodec.TYPE_IDENTIFIER_KEY] = meta.typeIdentifier;
         if (meta.domainVersion !== meta.domainVersionMinCompat) {
             obj[BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY] = meta.domainVersionMinCompat;
+        }
+        // `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+        if (meta.domainVersionReadableMin && meta.domainVersionReadableMin !== meta.domainVersionMinCompat) {
+            obj[BaboonTypeMetaCodec.DOMAIN_VERSION_READABLE_KEY] = meta.domainVersionReadableMin;
         }
         return obj;
     }
@@ -1206,8 +1438,10 @@ export class BaboonTypeMetaCodec {
 
         const uvNode = obj[BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY];
         const uv = typeof uvNode === "string" ? uvNode : v;
+        const rvNode = obj[BaboonTypeMetaCodec.DOMAIN_VERSION_READABLE_KEY];
+        const rv = typeof rvNode === "string" ? rvNode : uv;
 
-        return new BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t);
+        return new BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t, rv);
     }
 }
 
@@ -1240,6 +1474,8 @@ export interface BaboonJsonCodec<T> extends BaboonCodecData {
 
 export interface BaboonMeta {
     sameInVersions(typeId: string): string[];
+    /** Forward-readability per type: newer version -> guarantee tier (see BaboonGenerated.baboonForwardReadable). */
+    forwardReadableVersions(typeId: string): { readonly [version: string]: string };
 }
 
 // --- AbstractBaboonCodecs registry base ---

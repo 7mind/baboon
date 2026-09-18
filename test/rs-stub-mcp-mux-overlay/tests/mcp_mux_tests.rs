@@ -34,6 +34,8 @@ use baboon_rs_stub::baboon_mcp_server::{
     IBaboonRoutableMcpServer, McpJsonInvoke, json_rpc_error_codes,
 };
 use baboon_rs_stub::baboon_runtime::BaboonCodecContext;
+#[path = "runtime_dispatch_tests.rs"]
+mod runtime_dispatch_tests;
 use baboon_rs_stub::baboon_service_wiring::BaboonMethodId;
 
 use baboon_rs_stub::mcp::mux::stub::baboon_service_rt::BaboonServiceRtDefault;

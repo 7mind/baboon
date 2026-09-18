@@ -24,6 +24,14 @@ object BaboonDomainCodecs {
 
   implicit def nelist[T: Encoder]: Encoder[NEList[T]] = Encoder.encodeList[T].contramap(_.toList)
 
+  implicit lazy val forwardCompatTierEncoder: Encoder[ForwardCompatTier] = Encoder.encodeString.contramap(_.wireName)
+  implicit lazy val forwardReadableEncoder: Encoder[ForwardReadable] = Encoder.encodeJson.contramap {
+    fr =>
+      Json.fromValues(fr.readable.toList.map {
+        case (v, tier) => Json.obj("v" -> versionEncoder(v), "tier" -> forwardCompatTierEncoder(tier))
+      })
+  }
+
   implicit lazy val fieldEncoder: Encoder[Field] = Encoder.encodeJson.contramap {
     f =>
       Json.obj("field" -> Json.fromString(f.name.name), "type" -> Json.fromString(f.tpe.toString))

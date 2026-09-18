@@ -1,7 +1,8 @@
 package io.septimalmind.baboon.translator.java
 
 import distage.Id
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.ValueConversionPlan
 import io.septimalmind.baboon.translator.java.JvBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.java.JvTypes.*
 import io.septimalmind.baboon.translator.java.JvValue.JvPackageId
@@ -36,77 +37,33 @@ class JvConversionTranslator[F[+_, +_]: Error2](
   private val srcVer = srcDom.version
   type Out[T] = F[NEList[BaboonIssue], T]
 
-  private def transfer(newTpe: TypeRef, oldRef: TextTree[JvValue], depth: Int, maybeOldTpe: Option[TypeRef] = None): TextTree[JvValue] = {
+  private def transfer(tpe: TypeRef, oldRef: TextTree[JvValue], depth: Int): TextTree[JvValue] =
+    transfer(tpe, oldRef, depth, tpe)
+
+  private def transfer(newTpe: TypeRef, oldRef: TextTree[JvValue], depth: Int, oldTpe: TypeRef): TextTree[JvValue] =
+    renderTransfer(ValueConversionPlan(oldTpe, newTpe), oldRef, depth)
+
+  private def renderTransfer(plan: ValueConversionPlan, oldRef: TextTree[JvValue], depth: Int): TextTree[JvValue] = {
     import io.septimalmind.baboon.translator.FQNSymbol.*
+    import ValueConversionPlan.*
 
-    val oldTpe         = maybeOldTpe.getOrElse(newTpe)
-    val newTypeRefTree = trans.asJvRef(newTpe, domain, evo)
-    val oldTypeRefTree = trans.asJvRef(oldTpe, srcDom, evo).fullyQualified
-
-    (newTpe, oldTpe) match {
-      case (c: TypeRef.Constructor, s: TypeRef.Scalar) =>
-        val headTransfer = transfer(c.args.head, oldRef, depth + 1, Some(s))
-        c.id match {
-          case TypeId.Builtins.opt =>
-            q"$jvOptional.of($headTransfer)"
-          case TypeId.Builtins.lst =>
-            q"$jvList.of($headTransfer)"
-          case TypeId.Builtins.set =>
-            q"$jvSet.of($headTransfer)"
-          case _ =>
-            throw new IllegalStateException(s"Unsupported constructor type: ${c.id}")
-        }
-
-      case (ns: TypeRef.Scalar, os: TypeRef.Scalar) =>
-        transferScalar(oldRef, newTypeRefTree, oldTypeRefTree, ns, os)
-      case (TypeRef.Scalar(_), c: TypeRef.Constructor) =>
-        throw new IllegalStateException(s"Unsupported scalar to constructor conversion: ${c.id}")
-      case (cn: TypeRef.Constructor, co: TypeRef.Constructor) =>
-        transferConstructor(oldRef, depth, cn, co)
-      // `any` payload is opaque (bytes / JsonNode); we never auto-convert between `any` and a
-      // non-`any` type (validator forbids it). When both old and new are `any` AND their (variant,
-      // underlying) pair is identical, copy the reference as-is — the surface ADT is the same
-      // `AnyOpaque` and the wire bytes carry their own meta header, independent of the schema
-      // version of the containing DTO. Variant or underlying changes are breaking per spec
-      // §Evolution and should have been rejected by `BaboonRules.incompatibleAdditions`; we emit a
-      // defensive throw in case that layer is ever loosened.
-      case (newA: TypeRef.Any, oldA: TypeRef.Any) =>
-        if (newA == oldA) oldRef
-        else
-          throw new IllegalStateException(
-            s"BUG: conversion of `any` field across variant or underlying change is breaking and should have been rejected by BaboonRules.incompatibleAdditions: $oldA -> $newA"
-          )
-      case (_: TypeRef.Any, other) =>
-        throw new IllegalStateException(s"BUG: cannot auto-convert field of type $other to `any` (not allowed by evolution rules)")
-      case (other, _: TypeRef.Any) =>
-        throw new IllegalStateException(s"BUG: cannot auto-convert `any` field to type $other (not allowed by evolution rules)")
-    }
-  }
-
-  private def transferConstructor(
-    oldRef: TextTree[JvValue],
-    depth: Int,
-    cn: TypeRef.Constructor,
-    co: TypeRef.Constructor,
-  ): TextTree[JvValue] = {
     val tmp = q"e${depth.toString}"
-    cn match {
-      case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
-        q"$oldRef.stream().map($tmp -> ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))}).toList()"
-
-      case c: TypeRef.Constructor if c.id == TypeId.Builtins.map =>
-        val keyRef   = c.args.head
-        val valueRef = c.args.last
-        val kv       = q"$tmp.getKey()"
-        val vv       = q"$tmp.getValue()"
-
-        q"$oldRef.entrySet().stream().collect(java.util.stream.Collectors.toMap($tmp -> ${transfer(keyRef, kv, depth + 1, Some(co.args.head))}, $tmp -> ${transfer(valueRef, vv, depth + 1, Some(co.args.last))}))"
-      case c: TypeRef.Constructor if c.id == TypeId.Builtins.set =>
-        q"$oldRef.stream().map($tmp -> ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))}).collect(java.util.stream.Collectors.toSet())"
-      case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
-        q"$oldRef.map($tmp -> ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))})"
-      case c =>
-        throw new IllegalStateException(s"Unsupported constructor type: ${c.id}")
+    plan match {
+      case Scalar(source, target) =>
+        val newTypeRefTree = trans.asJvRef(target, domain, evo)
+        val oldTypeRefTree = trans.asJvRef(source, srcDom, evo).fullyQualified
+        transferScalar(oldRef, newTypeRefTree, oldTypeRefTree, target, source)
+      case CopyOpaque => oldRef
+      case WrapOptional(element) => q"$jvOptional.of(${renderTransfer(element, oldRef, depth + 1)})"
+      case WrapList(element)     => q"$jvList.of(${renderTransfer(element, oldRef, depth + 1)})"
+      case WrapSet(element)      => q"$jvSet.of(${renderTransfer(element, oldRef, depth + 1)})"
+      case MapOptional(element) => q"$oldRef.map($tmp -> ${renderTransfer(element, tmp, depth + 1)})"
+      case MapList(element)     => q"$oldRef.stream().map($tmp -> ${renderTransfer(element, tmp, depth + 1)}).toList()"
+      case MapSet(element)      => q"$oldRef.stream().map($tmp -> ${renderTransfer(element, tmp, depth + 1)}).collect(java.util.stream.Collectors.toSet())"
+      case MapEntries(key, value) =>
+        val kv = q"$tmp.getKey()"
+        val vv = q"$tmp.getValue()"
+        q"$oldRef.entrySet().stream().collect(java.util.stream.Collectors.toMap($tmp -> ${renderTransfer(key, kv, depth + 1)}, $tmp -> ${renderTransfer(value, vv, depth + 1)}))"
     }
   }
 
@@ -239,7 +196,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
               oldId =>
                 val oldT  = trans.asJvType(oldId, srcDom, evo).fullyQualified
                 val newId = c.branchMapping.getOrElse(oldId.name.name, oldId)
-                q"if (from instanceof $oldT x) { return ${transfer(TypeRef.Scalar(newId), q"x", 1, Some(TypeRef.Scalar(oldId)))}; }"
+                q"if (from instanceof $oldT x) { return ${transfer(TypeRef.Scalar(newId), q"x", 1, TypeRef.Scalar(oldId))}; }"
             }
 
             val classDef = q"""public final class $className
@@ -297,7 +254,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
                         }
                       case _ => throw new IllegalStateException("WrapIntoCollection target must be a constructor type")
                     }
-                  case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"from.$fld()", 1, Some(o.oldTpe))
+                  case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"from.$fld()", 1, o.oldTpe)
                   case o: FieldOp.SwapCollectionType => swapCollType(q"from.$fld()", o, 0)
                   case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"from.${o.sourceFieldName.name}()", 1)
                   case o: FieldOp.Redef =>
@@ -315,7 +272,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
                           case _ => throw new IllegalStateException("WrapIntoCollection target must be a constructor type")
                         }
                       case m: FieldOp.ExpandPrecision =>
-                        transfer(m.newTpe, srcFieldRef, 1, Some(m.oldTpe))
+                        transfer(m.newTpe, srcFieldRef, 1, m.oldTpe)
                       case m: FieldOp.SwapCollectionType =>
                         swapCollType(srcFieldRef, m, 0)
                     }
@@ -344,11 +301,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
             List(RenderedConversion(fname, tools.inPkg(pkg.parts.toSeq, classDef), Some(regtree), None))
         }
 
-        if (false) {
-          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
-        } else {
-          F.pure(rendered)
-        }
+        F.pure(rendered): Out[List[RenderedConversion]]
     }
   }
 
@@ -359,30 +312,30 @@ class JvConversionTranslator[F[+_, +_]: Error2](
 
     (oldId, newId) match {
       case (TypeId.Builtins.opt, TypeId.Builtins.lst) =>
-        q"""$fieldRef.map(e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).stream().toList()"""
+        q"""$fieldRef.map(e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)}).stream().toList()"""
       case (TypeId.Builtins.opt, TypeId.Builtins.set) =>
-        q"""$fieldRef.map(e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).stream().collect(java.util.stream.Collectors.toSet())"""
+        q"""$fieldRef.map(e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)}).stream().collect(java.util.stream.Collectors.toSet())"""
       case (TypeId.Builtins.opt, TypeId.Builtins.opt) =>
-        q"""$fieldRef.map(e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))})"""
+        q"""$fieldRef.map(e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)})"""
 
       case (TypeId.Builtins.lst, TypeId.Builtins.lst) =>
-        q"""$fieldRef.stream().map(e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).toList()"""
+        q"""$fieldRef.stream().map(e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)}).toList()"""
       case (TypeId.Builtins.lst, TypeId.Builtins.set) =>
-        q"""$fieldRef.stream().map(e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).collect(java.util.stream.Collectors.toSet())"""
+        q"""$fieldRef.stream().map(e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)}).collect(java.util.stream.Collectors.toSet())"""
 
       case (TypeId.Builtins.set, TypeId.Builtins.lst) =>
-        q"""$fieldRef.stream().map(e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).toList()"""
+        q"""$fieldRef.stream().map(e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)}).toList()"""
       case (TypeId.Builtins.set, TypeId.Builtins.set) =>
-        q"""$fieldRef.stream().map(e -> ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).collect(java.util.stream.Collectors.toSet())"""
+        q"""$fieldRef.stream().map(e -> ${transfer(newArgs.head, tmp, depth, oldArgs.head)}).collect(java.util.stream.Collectors.toSet())"""
 
       case (TypeId.Builtins.map, TypeId.Builtins.map) =>
         val kv = q"entry.getKey()"
         val vv = q"entry.getValue()"
-        q"""$fieldRef.entrySet().stream().collect(java.util.stream.Collectors.toMap(entry -> ${transfer(newArgs.head, kv, 1, Some(oldArgs.head))}, entry -> ${transfer(
+        q"""$fieldRef.entrySet().stream().collect(java.util.stream.Collectors.toMap(entry -> ${transfer(newArgs.head, kv, 1, oldArgs.head)}, entry -> ${transfer(
             newArgs.last,
             vv,
             1,
-            Some(oldArgs.last),
+            oldArgs.last,
           )}))"""
       case _ =>
         throw new IllegalStateException("Unsupported collection swap")

@@ -5,12 +5,12 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.scl.ScTypes.*
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources, scl}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources, scl}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import io.septimalmind.baboon.translator.BaboonRuntimeResources
+import io.septimalmind.baboon.translator.{BaboonRuntimeResources, DomainProductTranslator}
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -67,9 +67,9 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     if (!target.language.generateDomainFacade || !target.output.products.contains(CompilerProduct.Conversion)) {
       F.pure(List.empty)
     } else {
-      val domainPkg    = trans.toScPkg(lineage.pkg, lineage.evolution.latest, omitVersion = true)
-      val domainIdStr  = lineage.pkg.path.mkString(".")
-      val facadeName   = "Domain" + lineage.pkg.path.map(s => s.capitalize).mkString + "Facade"
+      val domainPkg   = trans.toScPkg(lineage.pkg, lineage.evolution.latest, omitVersion = true)
+      val domainIdStr = lineage.pkg.path.mkString(".")
+      val facadeName  = "Domain" + lineage.pkg.path.map(s => s.capitalize).mkString + "Facade"
 
       val withMeta = target.language.writeEvolutionDict
 
@@ -80,9 +80,9 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           // identically-named singletons (`BaboonCodecsJson` / `…Ueba` / `BaboonMetadata`); a
           // simple import would collide and the renderer would silently use the same singleton
           // for every register call. Forcing FQN-with-_root_ sidesteps the import collector.
-          val verPath        = versionedPkg.parts.mkString(".")
-          val jsonCodecsRef  = q"_root_.$verPath.BaboonCodecsJson"
-          val uebaCodecsRef  = q"_root_.$verPath.BaboonCodecsUeba"
+          val verPath       = versionedPkg.parts.mkString(".")
+          val jsonCodecsRef = q"_root_.$verPath.BaboonCodecsJson"
+          val uebaCodecsRef = q"_root_.$verPath.BaboonCodecsUeba"
           val domainVersionExpr =
             q"""$baboonDomainVersion("$domainIdStr", "${version.v.toString}")"""
           // `locally { … }` wrapper avoids Scala 2.13 + `-Wconf:any:error` rejection of
@@ -104,7 +104,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
 
       val facadeWrapped = scTreeTools.inNs(domainPkg.parts.toSeq, facadeTree)
       val basename      = lineage.pkg.path.map(_.toLowerCase).mkString("/")
-      val facadeOutput  = ScDefnTranslator.Output(
+      val facadeOutput = ScDefnTranslator.Output(
         s"$basename/$facadeName.scala",
         facadeWrapped,
         domainPkg,
@@ -119,16 +119,8 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     domain: Domain,
     p: CompilerProduct,
     translate: DomainMember.User => F[NEList[BaboonIssue], List[ScDefnTranslator.Output]],
-  ): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]] = {
-    if (target.output.products.contains(p)) {
-      F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-        case (_, defn: DomainMember.User) => translate(defn)
-        case _                            => F.pure(List.empty)
-      }
-    } else {
-      F.pure(List.empty)
-    }
-  }
+  ): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]] =
+    DomainProductTranslator.translate(domain, target.output.products, p, translate)
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[ScDefnTranslator.Output]] = {
     val evo = lineage.evolution
@@ -170,23 +162,34 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     val basename = scFiles.basename(domain, lineage.evolution)
     val pkg      = trans.toScPkg(domain.id, domain.version, lineage.evolution)
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q"""unmodified.put("${tid.toString}", $scList(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}))"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q"""unmodified.put("${tid.toString}", $scList(${versions.map(s => q"\"$s\"").join(", ")}))"""
+    }
+
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s""""$v" -> "$tier"""" }.mkString(", ")
+        q"""forwardReadable.put("${tid.toString}", ${ScTypes.scMap.fullyQualified}($pairs))"""
+    }
 
     val metaTree =
       q"""object BaboonMetadata extends $baboonMeta {
          |  private val unmodified = ${scMutMap.fullyQualified}.empty[$scString, $scList[$scString]]
-         |  
+         |
          |  ${entries.joinN().shift(2).trim}
+         |
+         |  private val forwardReadable = ${scMutMap.fullyQualified}.empty[$scString, ${ScTypes.scMap.fullyQualified}[$scString, $scString]]
+         |
+         |  ${forwardEntries.joinN().shift(2).trim}
          |
          |  def sameInVersions(typeId: String): List[String] = {
          |      unmodified(typeId)
+         |  }
+         |
+         |  def forwardReadableVersions(typeId: String): ${ScTypes.scMap.fullyQualified}[$scString, $scString] = {
+         |      forwardReadable(typeId)
          |  }
          |}""".stripMargin
 
@@ -237,12 +240,13 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       .distinct
 
     val (samePkg, otherPkg) = usedTypes.partition(_.pkg.parts.startsWith(o.pkg.parts))
+    val nameCounts          = usedTypes.groupMapReduce(tpe => (tpe.name, tpe.inObject))(_ => 1)(_ + _)
 
     val (sameNameOtherPkgs, diffNameOtherPkgs) =
-      otherPkg.partition(tpe => usedTypes.count(used => used.name == tpe.name && used.inObject == tpe.inObject) > 1)
+      otherPkg.partition(tpe => nameCounts((tpe.name, tpe.inObject)) > 1)
 
     val (sameNameThisPkg, diffNameThisPkg) =
-      samePkg.partition(tpe => usedTypes.count(used => used.name == tpe.name && used.inObject == tpe.inObject) > 1)
+      samePkg.partition(tpe => nameCounts((tpe.name, tpe.inObject)) > 1)
 
     val sameNameSet = (sameNameThisPkg ++ sameNameOtherPkgs).toSet
 
@@ -304,6 +308,8 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     if (target.output.products.contains(CompilerProduct.Runtime)) {
       F.pure(
         List(
+          rt("BaboonAnyBinCodec.scala", "baboon-runtime/scala/BaboonAnyBinCodec.scala"),
+          rt("BaboonAnyJsonCodec.scala", "baboon-runtime/scala/BaboonAnyJsonCodec.scala"),
           rt("BaboonAnyOpaque.scala", "baboon-runtime/scala/BaboonAnyOpaque.scala"),
           rt("BaboonByteString.scala", "baboon-runtime/scala/BaboonByteString.scala", _.replace("""[\\s:-]""", """[\\\\s:-]""")),
           rt("BaboonCodecs.scala", "baboon-runtime/scala/BaboonCodecs.scala"),

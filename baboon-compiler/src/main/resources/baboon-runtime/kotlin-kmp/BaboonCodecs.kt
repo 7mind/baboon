@@ -11,8 +11,31 @@ interface BaboonCodecData {
     val baboonTypeIdentifier: String
 }
 
+/**
+ * Which lower bound the WRITER publishes as the UEBA envelope's `domainVersionMinCompat` (the v1
+ * binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration (UEBA)").
+ *   - Strict: the byte-identical bound (`baboonSameInVersions.first()`) — the default.
+ *   - Tolerant: the prefix-read bound for the chosen index mode (`prefix-compact` for compact
+ *     payloads, `prefix-any-mode` for indexed ones). Readers older than the writer then decode the
+ *     payload with their newest codec, dropping the appended fields they do not know. A reader
+ *     cannot distinguish such an envelope from a byte-identical one, so re-encoding intermediaries
+ *     must run at the writer's version or newer.
+ */
+enum class ForwardWritePolicy { Strict, Tolerant }
+
+/**
+ * Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+ *   - V1 (default): single bound slot (`domainVersionMinCompat`), value chosen by `ForwardWritePolicy`.
+ *   - V2: JSON-equivalent layout carrying both the byte-identical bound and the prefix-read bound for
+ *     the payload's index mode; the reader's `ForwardReadPolicy` then applies to binary exactly as it
+ *     does to JSON. Only readers that know v2 can decode it.
+ */
+enum class BaboonEnvelopeVersion { V1, V2 }
+
 interface BaboonCodecContext {
     val useIndices: Boolean
+    val forwardWritePolicy: ForwardWritePolicy get() = ForwardWritePolicy.Strict
+    val envelopeVersion: BaboonEnvelopeVersion get() = BaboonEnvelopeVersion.V1
 
     /** Optional facade reference, threaded through generated codec calls so the `any`-feature
      *  cross-format conversion (UEBA ↔ JSON) can resolve codecs by `(domain, version, typeid)`
@@ -28,6 +51,15 @@ interface BaboonCodecContext {
             object : BaboonCodecContext {
                 override val useIndices: Boolean = useIndices
                 override val facade: BaboonCodecsFacade = baboonFacade
+            }
+
+        /** Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade. */
+        fun custom(indices: Boolean, policy: ForwardWritePolicy, envelope: BaboonEnvelopeVersion, baboonFacade: BaboonCodecsFacade?): BaboonCodecContext =
+            object : BaboonCodecContext {
+                override val useIndices: Boolean = indices
+                override val forwardWritePolicy: ForwardWritePolicy = policy
+                override val envelopeVersion: BaboonEnvelopeVersion = envelope
+                override val facade: BaboonCodecsFacade? = baboonFacade
             }
     }
 

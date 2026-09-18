@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.typescript
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.IdentifierFieldKind
 import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAdtMemberMeta, tsBaboonDecoderFailure, tsBaboonEncoderFailure, tsBaboonGenerated, tsBaboonGeneratedLatest, tsBaboonIdReprBitToString, tsBaboonIdReprBytesToHex, tsBaboonIdReprCursor, tsBaboonIdReprEscapeStr, tsBaboonIdReprIsCanonicalUid, tsBaboonIdReprParseBit, tsBaboonIdReprParseBytesHex, tsBaboonIdReprParseFieldName, tsBaboonIdReprParseHeader, tsBaboonIdReprParseTso, tsBaboonIdReprParseTsu, tsBaboonIdReprTsoToString, tsBaboonIdReprTsuToString, tsBaboonIdReprU64ToString, tsBaboonRuntimeShared}
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.typescript.TsValue.TsType
@@ -22,18 +23,23 @@ trait TsDefnTranslator[F[+_, +_]] {
 }
 
 object TsDefnTranslator {
+  final case class ExportedSymbol(name: String, typeOnly: Boolean)
+
   final case class Output(
     path: String,
     tree: TextTree[TsValue],
     module: TsValue.TsModuleId,
     product: CompilerProduct,
-    doNotModify: Boolean = false,
-    isBarrel: Boolean    = false,
+    doNotModify: Boolean                  = false,
+    isBarrel: Boolean                     = false,
+    imports: List[TsType]                 = Nil,
+    exports: Option[List[ExportedSymbol]] = None,
   )
 
   final case class DefnRepr(
     defn: TextTree[TsValue],
     codecs: List[TextTree[TsValue]],
+    exports: List[ExportedSymbol] = Nil,
   )
 
   class TsDefnTranslatorImpl[F[+_, +_]: Applicative2](
@@ -55,7 +61,7 @@ object TsDefnTranslator {
       */
     private def prependDocs(docs: Docs, tree: TextTree[TsValue]): TextTree[TsValue] = {
       val block = tsTrees.renderDocs(docs, "")
-      if (block.isEmpty) tree else q"${block}$tree"
+      if (block.isEmpty) tree else q"$block$tree"
     }
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -97,6 +103,7 @@ object TsDefnTranslator {
           repr.defn,
           typeTranslator.toTsModule(defn.id, domain, evo, tsFileTools.definitionsBasePkg),
           CompilerProduct.Definition,
+          exports = Some(repr.exports),
         )
       ) ++ wiring ++ client
       F.pure(all)
@@ -117,17 +124,16 @@ object TsDefnTranslator {
       val tsTypeRef = typeTranslator.asTsType(defn.id, domain, evo, tsFileTools.definitionsBasePkg)
       val srcRef    = typeTranslator.asTsTypeKeepForeigns(defn.id, domain, evo, tsFileTools.definitionsBasePkg)
 
-      val codecTrees =
+      val renderedCodecs =
         codecs.toList
-          .flatMap(t => t.translate(defn, tsTypeRef, srcRef).toList)
-          .map(obsoletePrevious)
+          .flatMap(t => t.translate(defn, tsTypeRef, srcRef).map(tree => (obsoletePrevious(tree), ExportedSymbol(t.codecName(srcRef).name, typeOnly = false))))
 
       val repr = makeRepr(defn, tsTypeRef, isLatestVersion)
 
       val defnWithDocs = prependDocs(defn.docs, repr.defn)
-      val allDefs      = (List(defnWithDocs) ++ codecTrees).joinNN()
+      val allDefs      = (List(defnWithDocs) ++ renderedCodecs.map(_._1)).joinNN()
 
-      DefnRepr(allDefs, Nil)
+      DefnRepr(allDefs, Nil, repr.exports ++ renderedCodecs.map(_._2))
     }
 
     private def makeRepr(
@@ -135,7 +141,7 @@ object TsDefnTranslator {
       name: TsValue.TsType,
       isLatestVersion: Boolean,
     ): DefnRepr = {
-      defn.defn match {
+      val repr = defn.defn match {
         case dto: Typedef.Dto    => makeDtoRepr(defn, dto, name, isLatestVersion)
         case e: Typedef.Enum     => makeEnumRepr(e)
         case adt: Typedef.Adt    => makeAdtRepr(defn, adt, name)
@@ -143,6 +149,25 @@ object TsDefnTranslator {
         case _: Typedef.Service  => makeServiceRepr(defn, name)
         case f: Typedef.Foreign  => makeForeignKeyCodecRepr(f, name)
       }
+      val declared = defn.defn match {
+        case dto: Typedef.Dto =>
+          List(ExportedSymbol(name.name, typeOnly = false)) ++
+          (if (dto.isIdentifier) List(ExportedSymbol(name.name.head.toLower.toString + name.name.tail + "Codec", typeOnly = false)) else Nil)
+        case _: Typedef.Enum =>
+          val enumName = typeTranslator.escapeTsKeyword(defn.id.name.name)
+          List(enumName, s"${enumName}_values", s"${enumName}_parse").map(ExportedSymbol(_, typeOnly = false))
+        case _: Typedef.Adt      => List(ExportedSymbol(name.name, typeOnly = false))
+        case _: Typedef.Contract => List(ExportedSymbol(name.name, typeOnly = true))
+        case _: Typedef.Service  => List(ExportedSymbol(typeTranslator.serviceInterfaceName(name.name), typeOnly = true))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Typescript) match {
+            case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.Custom)) =>
+              val foreignName = typeTranslator.asTsTypeKeepForeigns(f.id, domain, evo, tsFileTools.definitionsBasePkg).name
+              List(ExportedSymbol(s"${foreignName}_KeyCodec", typeOnly = true), ExportedSymbol(s"${foreignName}_KeyCodecHost", typeOnly = false))
+            case _ => Nil
+          }
+      }
+      repr.copy(exports = declared ++ repr.exports)
     }
 
     /** PR-I.1d (M24 Phase 3.1) — emit a `<Foreign>_KeyCodec` extension hook for
@@ -214,6 +239,14 @@ object TsDefnTranslator {
             fixtureTree,
             fixtureModule,
             CompilerProduct.Fixture,
+            exports = Some {
+              val base = s"random_${typeTranslator.camelToKebab(defn.id.name.name).replace('-', '_')}"
+              val names = defn.defn match {
+                case _: Typedef.Adt => List(base, s"${base}_json", s"${base}_all", s"${base}_json_all")
+                case _              => List(base, s"${base}_json")
+              }
+              names.map(ExportedSymbol(_, typeOnly = false))
+            },
           )
       }.toList)
     }
@@ -230,6 +263,7 @@ object TsDefnTranslator {
             testTree,
             testModule,
             CompilerProduct.Test,
+            exports = Some(Nil),
           )
       }.toList)
     }
@@ -277,7 +311,7 @@ object TsDefnTranslator {
 
       val getters = dto.fields.map {
         f =>
-          val tpe  = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
+          val tpe = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
           // The public getter is an accessor identifier; escape it for a keyword-named field
           // (`class` -> `class_`) so the codecs' `value.<getter>` reads (which assume the escaped
           // accessor name) resolve. The backing private field `_${name}` is `_`-prefixed and always
@@ -294,7 +328,8 @@ object TsDefnTranslator {
       // in with/fromPlain/codecs), so the rename is local: only the param declaration and its `this._x = x`
       // RHS reference must agree. The private field (`_${name}`) and all object-literal/member-access wire
       // keys keep the raw name, so the wire format is unchanged.
-      val constrcutorParams = dto.fields.map(f => q"${typeTranslator.escapeTsKeyword(f.name.name)}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
+      val constrcutorParams =
+        dto.fields.map(f => q"${typeTranslator.escapeTsKeyword(f.name.name)}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
 
       val constructorInside = fieldsNameAndType.map {
         case (n, _) =>
@@ -439,8 +474,7 @@ object TsDefnTranslator {
       // PascalCase members — existing fixtures byte-identical.
       val memberIdents = enum.members.toList.map {
         m =>
-          val pascal = EnumWireStyle.wireName(m.name)
-          if (lowercaseValues) typeTranslator.escapeTsKeyword(m.name) else pascal
+          typeTranslator.enumMemberIdentifier(m.name)
       }
       val branches = enum.members.toList.zip(memberIdents).map {
         case (m, ident) =>
@@ -497,6 +531,7 @@ object TsDefnTranslator {
            |${memberTrees.map(_.defn).toList.joinNN().trim}
            |""".stripMargin,
         Nil,
+        memberTrees.toList.flatMap(_.exports),
       )
     }
 
@@ -593,46 +628,6 @@ object TsDefnTranslator {
     //   - exported `<typeName>Codec` object literal with `parseRepr` /
     //     `parseReprCursor` static methods (Q-FU-4: NOT a static on the class —
     //     keeps `MyId.parseRepr` undiscoverable in autocomplete).
-    private sealed trait IdentifierFieldKind
-    private object IdentifierFieldKind {
-      case object Bit extends IdentifierFieldKind
-      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32 — number */
-      case object SignedLong extends IdentifierFieldKind /* i64 — bigint */
-      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 — number */
-      case object UnsignedLong extends IdentifierFieldKind /* u64 — bigint */
-      case object Str extends IdentifierFieldKind
-      case object Uid extends IdentifierFieldKind
-      case object Tsu extends IdentifierFieldKind
-      case object Tso extends IdentifierFieldKind
-      case object Bytes extends IdentifierFieldKind
-      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
-    }
-
-    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
-      tpe match {
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          import TypeId.Builtins.*
-          b match {
-            case `bit`                 => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` => IdentifierFieldKind.SignedInt
-            case `i64`                 => IdentifierFieldKind.SignedLong
-            case `u08` | `u16` | `u32` => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                 => IdentifierFieldKind.UnsignedLong
-            case `str`                 => IdentifierFieldKind.Str
-            case `uid`                 => IdentifierFieldKind.Uid
-            case `tsu`                 => IdentifierFieldKind.Tsu
-            case `tso`                 => IdentifierFieldKind.Tso
-            case `bytes`               => IdentifierFieldKind.Bytes
-            case other =>
-              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
-          }
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          IdentifierFieldKind.NestedId(uid)
-        case other =>
-          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
-      }
-    }
-
     private def signedTypeName(tpe: TypeRef): String = tpe match {
       case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
       case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
@@ -685,7 +680,7 @@ object TsDefnTranslator {
       val fieldExprs: List[TextTree[TsValue]] = dto.fields.map {
         f =>
           val srcFieldName = f.name.name
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val valueExpr    = renderFieldValueExprTs(srcFieldName, kind)
           q""""$srcFieldName:" + ($valueExpr)"""
       }
@@ -713,7 +708,7 @@ object TsDefnTranslator {
           val valVar       = s"${srcFieldName}_v"
           val resVar       = s"${srcFieldName}_r"
           val isLast       = idx == dto.fields.length - 1
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
 
           val parseHead =
             q"""const ${srcFieldName}_fnr = $tsBaboonIdReprParseFieldName(cursor, "$srcFieldName");

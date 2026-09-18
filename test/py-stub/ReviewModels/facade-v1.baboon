@@ -1,0 +1,5 @@
+model review.python.facade
+version "1.0.0"
+
+root data Stable { value: i32 }
+root data Evolving { value: i32 }

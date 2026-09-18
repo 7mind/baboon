@@ -113,6 +113,97 @@ impl fmt::Display for BaboonCodecError {
     }
 }
 
+pub mod any_field_codec {
+    pub fn encode_any_field(
+        ctx: &crate::baboon_runtime::BaboonCodecContext,
+        writer: &mut dyn std::io::Write,
+        expected_kind: u8,
+        static_domain: Option<&str>,
+        static_version: Option<&str>,
+        static_typeid: Option<&str>,
+        value: &crate::any_opaque::AnyOpaque,
+    ) -> std::io::Result<()> {
+        if value.meta().kind != expected_kind {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "any: meta-kind 0x{:02x} does not match field-declared 0x{:02x}",
+                    value.meta().kind, expected_kind
+                ),
+            ));
+        }
+        let any_blob: std::borrow::Cow<'_, [u8]> = match value {
+            crate::any_opaque::AnyOpaque::Ueba(u) => std::borrow::Cow::Borrowed(&u.bytes),
+            crate::any_opaque::AnyOpaque::Json(j) => {
+                let f = ctx.facade().ok_or_else(|| std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Cannot encode AnyOpaque::Json into UEBA without a facade reference. Construct the codec context via BaboonCodecContext::with_facade(use_indices, facade), or supply AnyOpaque::Ueba directly."
+                ))?;
+                std::borrow::Cow::Owned(f.json_to_ueba_bytes(&j.meta, &j.json, static_domain, static_version, static_typeid)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{}", e)))?)
+            }
+        };
+        // Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
+        let mut any_meta_buf: Vec<u8> = Vec::new();
+        crate::any_opaque::any_meta_codec::write_bin(value.meta(), &mut any_meta_buf)?;
+        let any_total_length: i32 = (4 + any_meta_buf.len() + any_blob.len()) as i32;
+        crate::baboon_runtime::bin_tools::write_i32(writer, any_total_length)?;
+        crate::baboon_runtime::bin_tools::write_i32(writer, any_meta_buf.len() as i32)?;
+        writer.write_all(&any_meta_buf)?;
+        writer.write_all(&any_blob)?;
+        Ok(())
+    }
+
+    pub fn decode_any_field(
+        wire: &mut dyn std::io::Read,
+        expected_kind: u8,
+    ) -> Result<crate::any_opaque::AnyOpaqueUeba, Box<dyn std::error::Error>> {
+        let any_total_length_i = crate::baboon_runtime::bin_tools::read_i32(wire)?;
+        if any_total_length_i < 0 {
+            return Err(format!(
+                "any: negative total-length {}", any_total_length_i
+            ).into());
+        }
+        let any_total_length = any_total_length_i as usize;
+        let any_meta_length_i = crate::baboon_runtime::bin_tools::read_i32(wire)?;
+        if any_meta_length_i < 0 {
+            return Err(format!(
+                "any: negative meta-length {}", any_meta_length_i
+            ).into());
+        }
+        let any_meta_length = any_meta_length_i as usize;
+        if any_total_length < 4 + any_meta_length {
+            return Err(format!(
+                "any: total-length {} smaller than 4 + meta-length {}",
+                any_total_length, any_meta_length
+            ).into());
+        }
+        let (any_meta, any_bytes_read) = crate::any_opaque::any_meta_codec::read_bin_with_length(wire)
+            .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+        if any_bytes_read > any_meta_length {
+            return Err(format!(
+                "any: meta-bytes-read {} exceeded meta-length window {}",
+                any_bytes_read, any_meta_length
+            ).into());
+        }
+        if any_bytes_read < any_meta_length {
+            // Forward-compat: skip future meta-extension bytes within the meta-length window.
+            let mut any_skip = vec![0u8; any_meta_length - any_bytes_read];
+            wire.read_exact(&mut any_skip)?;
+        }
+        if any_meta.kind != expected_kind {
+            return Err(format!(
+                "any: wire kind 0x{:02x} does not match field-declared 0x{:02x}",
+                any_meta.kind, expected_kind
+            ).into());
+        }
+        let any_blob_len = any_total_length - 4 - any_meta_length;
+        let mut any_blob = vec![0u8; any_blob_len];
+        wire.read_exact(&mut any_blob)?;
+        Ok(crate::any_opaque::AnyOpaqueUeba::new(any_meta, any_blob))
+    }
+}
+
 impl std::error::Error for BaboonCodecError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {

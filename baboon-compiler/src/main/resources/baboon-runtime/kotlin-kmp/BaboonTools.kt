@@ -256,5 +256,11 @@ class BaboonBinaryWriter {
 
     fun toByteArray(): ByteArray = buf.copyOf(pos)
 
+    fun writeTo(destination: BaboonBinaryWriter) {
+        destination.ensureCapacity(pos)
+        buf.copyInto(destination.buf, destination.pos, 0, pos)
+        destination.pos += pos
+    }
+
     fun size(): Int = pos
 }

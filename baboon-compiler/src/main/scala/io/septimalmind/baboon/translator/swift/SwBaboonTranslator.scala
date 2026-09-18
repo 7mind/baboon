@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.SwTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.swift.SwTypes.*
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, McpServerGeneratorHook, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, DomainProductTranslator, EvolutionMetadataPlan, McpServerGeneratorHook, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -66,14 +66,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     p: CompilerProduct,
     translate: DomainMember.User => F[NEList[BaboonIssue], List[SwDefnTranslator.Output]],
   ): F[NEList[BaboonIssue], List[SwDefnTranslator.Output]] = {
-    if (target.output.products.contains(p)) {
-      F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-        case (_, defn: DomainMember.User) => translate(defn)
-        case _                            => F.pure(List.empty)
-      }
-    } else {
-      F.pure(List.empty)
-    }
+    DomainProductTranslator.translate(domain, target.output.products, p, translate)
   }
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[SwDefnTranslator.Output]] = {
@@ -102,11 +95,9 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
             }
           }
           facade <- {
-            if (
-              target.language.generateDomainFacade &&
+            if (target.language.generateDomainFacade &&
               target.output.products.contains(CompilerProduct.Conversion) &&
-              domain.version == evo.latest
-            ) {
+              domain.version == evo.latest) {
               generateDomainFacade(domain, lineage)
             } else {
               F.pure(List.empty)
@@ -260,14 +251,17 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     val domainFileSuffix  = trans.toSnakeCase(domainSuffix)
     val metadataClassName = s"BaboonMetadata_$domainSuffix$versionSuffix"
 
-    val entries = lineage.evolution
-      .typesUnchangedSince(domain.version)
-      .toList
-      .sortBy(_._1.toString)
-      .map {
-        case (tid, version) =>
-          q""""${tid.toString}": [${version.sameIn.map(_.v.toString).map(s => q""""$s"""").toList.join(", ")}],"""
-      }
+    val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
+    val entries  = metadata.sameIn.map {
+      case EvolutionMetadataPlan.SameIn(tid, versions) =>
+        q""""${tid.toString}": [${versions.map(s => q""""$s"""").join(", ")}],"""
+    }
+
+    val forwardEntries = metadata.forwardReadable.map {
+      case EvolutionMetadataPlan.ForwardReadable(tid, readers) =>
+        val pairs = readers.map { case EvolutionMetadataPlan.ReaderVersion(v, tier) => s""""$v": "$tier"""" }.mkString(", ")
+        q""""${tid.toString}": [$pairs],"""
+    }
 
     val metaTree =
       q"""public class $metadataClassName {
@@ -275,8 +269,16 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
          |        ${entries.joinN().shift(8).trim}
          |    ]
          |
+         |    public static let forwardReadable: [String: [String: String]] = [
+         |        ${forwardEntries.joinN().shift(8).trim}
+         |    ]
+         |
          |    public func sameInVersions(_ typeId: String) -> [String] {
          |        return $metadataClassName.unmodified[typeId] ?? []
+         |    }
+         |
+         |    public func forwardReadableVersions(_ typeId: String) -> [String: String] {
+         |        return $metadataClassName.forwardReadable[typeId] ?? [:]
          |    }
          |}""".stripMargin
 
@@ -376,8 +378,10 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       F.pure(
         List(
           rt("BaboonRuntime/baboon_runtime.swift", "baboon-runtime/swift/baboon_runtime.swift"),
+          rt("BaboonRuntime/baboon_type_meta.swift", "baboon-runtime/swift/baboon_type_meta.swift"),
           rt("BaboonRuntime/baboon_service_wiring.swift", "baboon-runtime/swift/baboon_service_wiring.swift"),
           rt("BaboonRuntime/BaboonAnyOpaque.swift", "baboon-runtime/swift/BaboonAnyOpaque.swift"),
+          rt("BaboonRuntime/baboon_any_field_codec.swift", "baboon-runtime/swift/baboon_any_field_codec.swift"),
           rt("BaboonRuntime/BaboonCodecsFacade.swift", "baboon-runtime/swift/BaboonCodecsFacade.swift"),
           rt("BaboonRuntime/BaboonIdentifierRepr.swift", "baboon-runtime/swift/BaboonIdentifierRepr.swift"),
         )

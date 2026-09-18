@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.typescript
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.translator.typescript.TsTypes.*
 import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
+import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -11,6 +12,10 @@ class TsTypeTranslator(target: TsTarget) {
   private val mapsAsRecords: Boolean       = target.language.mapsAsRecords
   private val timestampsUtcMode: String    = target.language.timestampsUtcMode
   private val timestampsOffsetMode: String = target.language.timestampsOffsetMode
+
+  def enumMemberIdentifier(name: String): String = {
+    if (target.language.enumLowercaseValues) escapeTsKeyword(name) else EnumWireStyle.wireName(name)
+  }
 
   def asTsRef(
     tpe: TypeRef,
@@ -282,12 +287,14 @@ class TsTypeTranslator(target: TsTarget) {
 
   /** Reference to a service interface as a type. Bare mode imports the bare `Service` aliased to the
     * service name, so multi-service files (the dispatcher) don't collide. `svcType` must be the
-    * `asTsType` of the service id (its `.name` is the real service name, used as the alias). */
+    * `asTsType` of the service id (its `.name` is the real service name, used as the alias).
+    */
   def serviceInterfaceRef(svcType: TsType): TsType =
     if (bareServices) TsType(svcType.moduleId, "Service", alias = Some(svcType.name)) else svcType
 
   /** Reference to a wiring `invokeJson`/`invokeUeba` function, aliased to the prefixed name in bare
-    * mode. `wiringModule` is the service's `wiring.ts` module. */
+    * mode. `wiringModule` is the service's `wiring.ts` module.
+    */
   def serviceInvokeRef(wiringModule: TsModuleId, serviceName: String, json: Boolean): TsType = {
     val base = if (json) "invokeJson" else "invokeUeba"
     if (bareServices) TsType(wiringModule, base, alias = Some(s"${base}_$serviceName"))
@@ -301,8 +308,7 @@ class TsTypeTranslator(target: TsTarget) {
     */
   private def serviceSegmentIndex(names: List[String], domain: Domain): Option[Int] = {
     domain.defs.meta.nodes.valuesIterator.collectFirst {
-      case DomainMember.User(_, svc: Typedef.Service, _, _)
-          if {
+      case DomainMember.User(_, svc: Typedef.Service, _, _) if {
             val scope = svc.id.owner.asPseudoPkg.toList :+ svc.id.name.name
             names.startsWith(scope) && names.size > scope.size
           } =>

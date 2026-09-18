@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.swift
 
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.IdentifierFieldKind
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.swift.SwValue.SwType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -62,7 +63,7 @@ object SwDefnTranslator {
       */
     private def prependDocs(docs: Docs, tree: TextTree[SwValue]): TextTree[SwValue] = {
       val block = swTrees.renderDocs(docs, "")
-      if (block.isEmpty) tree else q"${block}$tree"
+      if (block.isEmpty) tree else q"$block$tree"
     }
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -86,27 +87,29 @@ object SwDefnTranslator {
         imports  = Set("BaboonRuntime"),
       )
 
-      val wiringOutput = wiringTranslator.translate(defn).map {
-        wiringTree =>
-          Output(
-            getOutputPath(defn, suffix = Some("_wiring")),
-            wiringTree,
-            getOutputModule(defn),
-            CompilerProduct.Definition,
-            imports = Set("BaboonRuntime"),
-          )
-      }.toList
+      val wiringOutput = wiringTranslator
+        .translate(defn).map {
+          wiringTree =>
+            Output(
+              getOutputPath(defn, suffix = Some("_wiring")),
+              wiringTree,
+              getOutputModule(defn),
+              CompilerProduct.Definition,
+              imports = Set("BaboonRuntime"),
+            )
+        }.toList
 
-      val clientOutput = wiringTranslator.translateClient(defn).map {
-        clientTree =>
-          Output(
-            getOutputPath(defn, suffix = Some("_client")),
-            clientTree,
-            getOutputModule(defn),
-            CompilerProduct.Definition,
-            imports = Set("BaboonRuntime"),
-          )
-      }.toList
+      val clientOutput = wiringTranslator
+        .translateClient(defn).map {
+          clientTree =>
+            Output(
+              getOutputPath(defn, suffix = Some("_client")),
+              clientTree,
+              getOutputModule(defn),
+              CompilerProduct.Definition,
+              imports = Set("BaboonRuntime"),
+            )
+        }.toList
 
       F.pure(mainOutput :: wiringOutput ::: clientOutput)
     }
@@ -400,14 +403,15 @@ object SwDefnTranslator {
       * type rather than a host primitive. Used only by the recursion-detection walk.
       */
     private def foreignAliasRef(uid: TypeId.User): Option[TypeRef] = {
-      domain.defs.meta.nodes.get(uid).collect {
-        case DomainMember.User(_, f: Typedef.Foreign, _, _) => f
-      }.flatMap {
-        f =>
-          f.bindings.valuesIterator.collectFirst {
-            case Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(ref)) => ref
-          }
-      }
+      domain.defs.meta.nodes
+        .get(uid).collect {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) => f
+        }.flatMap {
+          f =>
+            f.bindings.valuesIterator.collectFirst {
+              case Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(ref)) => ref
+            }
+        }
     }
 
     private def renderDto(
@@ -462,6 +466,8 @@ object SwDefnTranslator {
         "baboonDomainIdentifier",
         "baboonTypeIdentifier",
         "baboonSameInVersions",
+        "baboonForwardReadable",
+        "baboonMinReaderVersions",
         "baboonAdtTypeIdentifier",
       )
       val instanceForwarders = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.instanceForwarder)
@@ -536,44 +542,6 @@ object SwDefnTranslator {
     }
 
     // ----- Identifier toString + parseRepr emission (PR-57c) -----
-    private sealed trait IdentifierFieldKind
-    private object IdentifierFieldKind {
-      case object Bit extends IdentifierFieldKind
-      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
-      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong extends IdentifierFieldKind /* u64 */
-      case object Str extends IdentifierFieldKind
-      case object Uid extends IdentifierFieldKind
-      case object Tsu extends IdentifierFieldKind
-      case object Tso extends IdentifierFieldKind
-      case object Bytes extends IdentifierFieldKind
-      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
-    }
-
-    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
-      tpe match {
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          import TypeId.Builtins.*
-          b match {
-            case `bit`                         => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
-            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                         => IdentifierFieldKind.UnsignedLong
-            case `str`                         => IdentifierFieldKind.Str
-            case `uid`                         => IdentifierFieldKind.Uid
-            case `tsu`                         => IdentifierFieldKind.Tsu
-            case `tso`                         => IdentifierFieldKind.Tso
-            case `bytes`                       => IdentifierFieldKind.Bytes
-            case other =>
-              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
-          }
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          IdentifierFieldKind.NestedId(uid)
-        case other =>
-          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
-      }
-    }
-
     private def signedTypeName(tpe: TypeRef): String = tpe match {
       case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
       case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
@@ -621,11 +589,11 @@ object SwDefnTranslator {
 
     private def renderFieldValueExpr(swFieldName: String, kind: IdentifierFieldKind): TextTree[SwValue] = {
       kind match {
-        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.bitToString(self.$swFieldName)"
-        case IdentifierFieldKind.SignedInt        => q"String(self.$swFieldName)"
-        case IdentifierFieldKind.UnsignedSmallInt => q"String(self.$swFieldName)"
-        case IdentifierFieldKind.UnsignedLong     => q"$baboonIdRepr.u64ToString(self.$swFieldName)"
-        case IdentifierFieldKind.Str              => q"$baboonIdRepr.escapeStr(self.$swFieldName)"
+        case IdentifierFieldKind.Bit                                        => q"$baboonIdRepr.bitToString(self.$swFieldName)"
+        case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong => q"String(self.$swFieldName)"
+        case IdentifierFieldKind.UnsignedSmallInt                           => q"String(self.$swFieldName)"
+        case IdentifierFieldKind.UnsignedLong                               => q"$baboonIdRepr.u64ToString(self.$swFieldName)"
+        case IdentifierFieldKind.Str                                        => q"$baboonIdRepr.escapeStr(self.$swFieldName)"
         // UUID.uuidString in Foundation is uppercase; canonical lowercase per spec.
         case IdentifierFieldKind.Uid         => q"self.$swFieldName.uuidString.lowercased()"
         case IdentifierFieldKind.Tsu         => q"$baboonIdRepr.tsuToString(self.$swFieldName)"
@@ -644,7 +612,7 @@ object SwDefnTranslator {
         f =>
           val srcFieldName = f.name.name
           val swFieldName  = trans.escapeSwiftKeyword(srcFieldName)
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val valueExpr    = renderFieldValueExpr(swFieldName, kind)
           q""""$srcFieldName:" + ($valueExpr)"""
       }
@@ -673,7 +641,7 @@ object SwDefnTranslator {
           val valVar       = s"${swFieldName}_v"
           val resVar       = s"${swFieldName}_r"
           val isLast       = idx == dto.fields.length - 1
-          val kind         = identifierFieldKind(f.tpe)
+          val kind         = IdentifierFieldKind.classify(f.tpe)
           val tpe          = trans.asSwRef(f.tpe, domain, evo)
 
           val parseHead =
@@ -686,7 +654,7 @@ object SwDefnTranslator {
                  |let $resVar = $baboonIdRepr.parseBit($rawVar)
                  |if case .left(let l) = $resVar { return .left(l) }
                  |guard case .right(let $valVar) = $resVar else { return .left("internal: bit decode") }""".stripMargin
-            case IdentifierFieldKind.SignedInt =>
+            case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong =>
               val typeName   = signedTypeName(f.tpe)
               val rangeCheck = signedRangeCheck(f.tpe, "v_long")
               val narrow     = signedNarrow(f.tpe)
@@ -843,6 +811,8 @@ object SwDefnTranslator {
         "baboonDomainIdentifier",
         "baboonTypeIdentifier",
         "baboonSameInVersions",
+        "baboonForwardReadable",
+        "baboonMinReaderVersions",
       )
       val instanceForwarders = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.instanceForwarder)
 
@@ -910,6 +880,8 @@ object SwDefnTranslator {
         "baboonDomainIdentifier",
         "baboonTypeIdentifier",
         "baboonSameInVersions",
+        "baboonForwardReadable",
+        "baboonMinReaderVersions",
       )
       val instanceForwarders = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.instanceForwarder)
 
@@ -997,18 +969,18 @@ object SwDefnTranslator {
       // the no-codec backends never see it as a real symbol.
       val swFqName: SwValue => String = {
         case t: SwType if t.fq =>
-          val module = t.pkg.parts.head
+          val module  = t.pkg.parts.head
           val escaped = t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
           s"$module.$escaped"
-        case t: SwType        => t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
+        case t: SwType             => t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
         case n: SwValue.SwTypeName => trans.escapeSwiftKeyword(n.name)
       }
 
       val methods = service.methods.map {
         m =>
-          val in   = trans.asSwRef(m.sig, domain, evo)
-          val out  = m.out.map(trans.asSwRef(_, domain, evo))
-          val err  = m.err.map(trans.asSwRef(_, domain, evo))
+          val in  = trans.asSwRef(m.sig, domain, evo)
+          val out = m.out.map(trans.asSwRef(_, domain, evo))
+          val err = m.err.map(trans.asSwRef(_, domain, evo))
 
           // Bare-`out` cases (noErrors mode, or an err-free method) keep the
           // original `out` SwType subtree verbatim so the render codec still

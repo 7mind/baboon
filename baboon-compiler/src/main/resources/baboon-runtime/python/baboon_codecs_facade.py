@@ -1,3 +1,4 @@
+from enum import Enum
 import json
 from typing import Dict, List, Type, Tuple
 
@@ -19,10 +20,25 @@ TI = TypeVar("TI", bound=BaboonGenerated)
 TO = TypeVar("TO", bound=BaboonGeneratedLatest)
 
 
+class ForwardReadPolicy(Enum):
+    """How a reader treats JSON payloads written by a NEWER domain version than it registers.
+
+    LOSSLESS: decode only when the envelope's `$uv` (byte-identical bound) reaches a registered
+    version — the pre-`$rv` behavior. TOLERANT: additionally honor `$rv` (json-additive bound):
+    decode with that version's codec, silently dropping fields this reader does not know.
+    Re-encoding intermediaries must use LOSSLESS or they truncate data for downstream consumers.
+    """
+    LOSSLESS = "lossless"
+    TOLERANT = "tolerant"
+
+
 class BaboonCodecsFacade:
     CONTENT_JSON_KEY = "$c"
 
     def __init__(self):
+        # Forward-read policy for JSON `$rv` and for binary v2 `readableMin`. Binary v1 envelopes carry one
+        # bound whose meaning the WRITER fixed via `ForwardWritePolicy`; it is trusted whatever this policy says.
+        self.forward_read_policy: ForwardReadPolicy = ForwardReadPolicy.TOLERANT
         self.versions_codecs_json: Dict[BaboonDomainVersion, Lazy[AbstractBaboonJsonCodecs]] = {}
         self.versions_codecs_bin: Dict[BaboonDomainVersion, Lazy[AbstractBaboonUebaCodecs]] = {}
         self.versions_conversions: Dict[BaboonDomainVersion, Lazy[AbstractBaboonConversions]] = {}
@@ -103,7 +119,7 @@ class BaboonCodecsFacade:
                               writer: LEDataOutputStream,
                               value: TI,
                               type_meta_override: Optional[BaboonTypeMeta] = None):
-        type_meta = BaboonTypeMeta.from_instance(value)
+        type_meta = self._bin_type_meta(value, ctx)
         try:
             codec = self._get_bin_codec(type_meta, exact=True)
             meta = type_meta_override or type_meta
@@ -116,6 +132,26 @@ class BaboonCodecsFacade:
                 f"of version '{type_meta.domain_version}'.",
                 err
             )
+
+    @staticmethod
+    def _bin_type_meta(value: BaboonGenerated, ctx: BaboonCodecContext) -> BaboonTypeMeta:
+        """Envelope for a UEBA payload written under `ctx`: `from_instance(value)` with
+        `domain_version_min_compat` lowered to the prefix bound of the context's index mode when
+        the writer policy is TOLERANT."""
+        meta = BaboonTypeMeta.from_instance(value)
+        v2 = ctx.envelope_version == BaboonEnvelopeVersion.V2
+        if not v2 and ctx.forward_write_policy == ForwardWritePolicy.STRICT:
+            return meta
+        tier = BaboonTypeMeta.UEBA_PREFIX_ANY_MODE_TIER if ctx.use_indices else BaboonTypeMeta.UEBA_PREFIX_COMPACT_TIER
+        bound = value.baboon_min_reader_versions.get(tier)
+        if bound is None:
+            raise BaboonCodecException.EncoderFailure(
+                f"baboon_min_reader_versions lacks '{tier}' for type {value.baboon_type_identifier}")
+        if v2:
+            # V2 carries both bounds; the writer policy is irrelevant
+            return meta.model_copy(update={"meta_version": BaboonTypeMetaCodec.META_VERSION_2,
+                                           "domain_version_readable_min": bound})
+        return meta.model_copy(update={"domain_version_min_compat": bound})
 
     def decode_from_bin(self, reader: LEDataInputStream) -> BaboonGenerated:
         type_meta = BaboonTypeMeta.read_meta(reader)
@@ -163,7 +199,7 @@ class BaboonCodecsFacade:
         except Exception as e:
             raise BaboonCodecException.EncoderFailure(
                 f"Can not encode to json form type [{value.baboon_type_identifier}] "
-                f"of version '{value.domain_version}'.",
+                f"of version '{value.baboon_domain_version}'.",
                 e
             )
 
@@ -183,14 +219,14 @@ class BaboonCodecsFacade:
             )
 
     def decode_from_json_latest(self, value: str, target_type: Type[TO]) -> TO:
-        baboon = self.decode_from_json_string(value)
+        baboon = self.decode_from_json(value)
         return self.convert(baboon, target_type)
 
     def convert(self, value: BaboonGenerated, target_type: Type[TO]) -> TO:
         if type(value) is target_type:
             return value
 
-        domain_version = value.domain_version
+        domain_version = BaboonDomainVersion(value.baboon_domain_identifier, value.baboon_domain_version)
 
         versions = self.domain_versions.get(domain_version.domain_identifier, [])
         if not versions:
@@ -217,7 +253,8 @@ class BaboonCodecsFacade:
         from_model = value
 
         for to_version in versions:
-            if from_model.domain_version.version >= to_version.version:
+            from_version = BaboonDomainVersion(from_model.baboon_domain_identifier, from_model.baboon_domain_version)
+            if from_version.version >= to_version.version:
                 continue
 
             conversions = self.versions_conversions.get(to_version)
@@ -247,22 +284,26 @@ class BaboonCodecsFacade:
             except Exception as e:
                 raise BaboonCodecException.ConverterFailure(
                     f"Exception while converting type [{type(from_model).__name__}] "
-                    f"of version '{from_model.domain_version}' to version '{to_version}'.",
+                    f"of version '{from_version}' to version '{to_version}'.",
                     e
                 )
 
         return from_model
 
     def _get_bin_codec(self, type_meta: BaboonTypeMeta, exact: bool) -> BaboonBinCodec:
-        return self._get_codec(self.versions_codecs_bin, type_meta, exact)
+        # v1 envelopes carry readable_min == min_compat, so the policy only bites on v2 envelopes (and JSON)
+        return self._get_codec(self.versions_codecs_bin, type_meta, exact,
+                               tolerant=self.forward_read_policy == ForwardReadPolicy.TOLERANT)
 
     def _get_json_codec(self, type_meta: BaboonTypeMeta, exact: bool) -> BaboonJsonCodec:
-        return self._get_codec(self.versions_codecs_json, type_meta, exact)
+        return self._get_codec(self.versions_codecs_json, type_meta, exact,
+                               tolerant=self.forward_read_policy == ForwardReadPolicy.TOLERANT)
 
     def _get_codec(self,
                    versions_codecs: Dict[BaboonDomainVersion, Lazy],
                    type_meta: BaboonTypeMeta,
-                   exact: bool) -> BaboonCodecData:
+                   exact: bool,
+                   tolerant: bool) -> BaboonCodecData:
         versions = self.domain_versions.get(type_meta.domain_identifier, [])
         if not versions:
             raise BaboonCodecException.CodecNotFound(
@@ -274,9 +315,19 @@ class BaboonCodecsFacade:
         min_version = versions[0]
         max_version = versions[-1]
 
-        # it's a model of newer version than we have, we should find min compat version
-        if type_meta.version_min_compat and model_version.version > max_version.version:
-            model_version = type_meta.version_min_compat
+        if (not exact) and model_version.version > max_version.version:
+            # a payload from a NEWER version than we register. The oldest version whose codec may
+            # decode it is the bound the writer published (byte-identical or, under its Tolerant
+            # policy, prefix-readable), or -- for tolerant JSON reads -- the json-additive bound.
+            # Forward-readability is monotone along the version chain, so once the bound reaches a
+            # registered version our newest codec reads the payload (losing at most the fields
+            # appended after our version).
+            lower_bound = type_meta.version_readable_min if tolerant else type_meta.version_min_compat
+            if lower_bound and lower_bound.version <= max_version.version:
+                return self._get_codec_exact(versions_codecs, max_version, type_meta.type_identifier)
+            raise BaboonCodecException.CodecNotFound(
+                f"Unsupported domain version '{model_version}'."
+            )
 
         # it's a model of latest version, get last version codec
         if exact and model_version.version == max_version.version:
@@ -357,7 +408,8 @@ class BaboonCodecsFacade:
             versions = self.domain_versions[domain_id]
             if domain_version not in versions:
                 versions.append(domain_version)
-                versions.sort(key=lambda v: v.version.version)
+                # `BaboonDomainVersion.version` already is the comparable `Version`
+                versions.sort(key=lambda v: v.version)
 
     # ----- `any`-feature cross-format helpers (PR 10.1) -----------------------------------
 
@@ -368,6 +420,13 @@ class BaboonCodecsFacade:
         (`json_to_ueba_bytes` / `ueba_to_json`) which accept static fallbacks. PR-04-D02:
         errors thread through `BaboonEither` rather than raising.
         """
+        return self._decode_any(opaque, False)
+
+    def decode_any_value(self, opaque: AnyOpaque) -> BaboonEither:
+        """Decode native JSON content without interpreting string values as JSON text."""
+        return self._decode_any(opaque, True)
+
+    def _decode_any(self, opaque: AnyOpaque, native_json: bool) -> BaboonEither:
         meta = opaque.meta
         type_meta_result = self._build_synthetic_type_meta(meta, None, None, None)
         if isinstance(type_meta_result, BaboonLeft):
@@ -392,7 +451,11 @@ class BaboonCodecsFacade:
             elif isinstance(opaque, AnyOpaqueJson):
                 codec = self._get_json_codec(type_meta, exact=False)
                 try:
-                    return BaboonRight(codec.decode(BaboonCodecContext.Compact, opaque.json))
+                    # Preserve the legacy facade's JSON-text string input. The value API
+                    # is unambiguous for payloads whose native JSON value is itself a string.
+                    if not native_json and isinstance(opaque.json, str):
+                        return BaboonRight(codec.decode(BaboonCodecContext.Compact, opaque.json))
+                    return BaboonRight(codec.decode_value(BaboonCodecContext.Compact, opaque.json))
                 except Exception as e:
                     return BaboonLeft(
                         BaboonCodecException.DecoderFailure(

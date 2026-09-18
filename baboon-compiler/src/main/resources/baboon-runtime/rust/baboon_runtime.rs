@@ -10,6 +10,31 @@ use std::sync::Arc;
 // derived for this variant — the facade has no value-equality semantics; instead the rest of
 // the code matches exhaustively.
 
+/// Which lower bound the WRITER publishes as the UEBA envelope's `domain_version_min_compat` (the
+/// v1 binary envelope has a single bound slot; see docs/forward-compat.md, "Envelope integration
+/// (UEBA)"). `Strict`: the byte-identical bound (`baboon_same_in_versions_dyn()[0]`) — the
+/// default. `Tolerant`: the prefix-read bound for the chosen index mode (`prefix-compact` for
+/// compact payloads, `prefix-any-mode` for indexed ones); readers older than the writer then decode
+/// the payload with their newest codec, dropping the appended fields they do not know. A reader
+/// cannot distinguish such an envelope from a byte-identical one, so re-encoding intermediaries
+/// must run at the writer's version or newer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForwardWritePolicy {
+    Strict,
+    Tolerant,
+}
+
+/// Which top-level binary envelope layout the WRITER emits (docs/spec/codec-envelope.md §2.1).
+/// `V1` (default): single bound slot (`domain_version_min_compat`), value chosen by
+/// `ForwardWritePolicy`. `V2`: JSON-equivalent layout carrying both the byte-identical bound and the
+/// prefix-read bound for the payload's index mode; the reader's `ForwardReadPolicy` then applies to
+/// binary exactly as it does to JSON. Only readers that know v2 can decode it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BaboonEnvelopeVersion {
+    V1,
+    V2,
+}
+
 #[derive(Clone, Debug)]
 pub enum BaboonCodecContext {
     Default,
@@ -18,6 +43,13 @@ pub enum BaboonCodecContext {
     WithFacade {
         use_indices: bool,
         facade: Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>,
+    },
+    /// Fully specified context: index mode, writer-side forward policy, envelope layout and optional facade.
+    Custom {
+        use_indices: bool,
+        forward_write_policy: ForwardWritePolicy,
+        envelope_version: BaboonEnvelopeVersion,
+        facade: Option<Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>>,
     },
 }
 
@@ -31,6 +63,19 @@ impl PartialEq for BaboonCodecContext {
                 BaboonCodecContext::WithFacade { use_indices: a, facade: fa },
                 BaboonCodecContext::WithFacade { use_indices: b, facade: fb },
             ) => a == b && Arc::ptr_eq(fa, fb),
+            (
+                BaboonCodecContext::Custom { use_indices: a, forward_write_policy: pa, envelope_version: ea, facade: fa },
+                BaboonCodecContext::Custom { use_indices: b, forward_write_policy: pb, envelope_version: eb, facade: fb },
+            ) => {
+                a == b
+                    && pa == pb
+                    && ea == eb
+                    && match (fa, fb) {
+                        (None, None) => true,
+                        (Some(x), Some(y)) => Arc::ptr_eq(x, y),
+                        _ => false,
+                    }
+            }
             _ => false,
         }
     }
@@ -47,7 +92,24 @@ impl BaboonCodecContext {
         match self {
             BaboonCodecContext::Indexed => true,
             BaboonCodecContext::WithFacade { use_indices, .. } => *use_indices,
+            BaboonCodecContext::Custom { use_indices, .. } => *use_indices,
             _ => false,
+        }
+    }
+
+    /// Writer-side UEBA envelope bound policy; `Strict` for every context but `Custom`.
+    pub fn forward_write_policy(&self) -> ForwardWritePolicy {
+        match self {
+            BaboonCodecContext::Custom { forward_write_policy, .. } => *forward_write_policy,
+            _ => ForwardWritePolicy::Strict,
+        }
+    }
+
+    /// Writer-side binary envelope layout; `V1` for every context but `Custom`.
+    pub fn envelope_version(&self) -> BaboonEnvelopeVersion {
+        match self {
+            BaboonCodecContext::Custom { envelope_version, .. } => *envelope_version,
+            _ => BaboonEnvelopeVersion::V1,
         }
     }
 
@@ -57,6 +119,7 @@ impl BaboonCodecContext {
     pub fn facade(&self) -> Option<&Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>> {
         match self {
             BaboonCodecContext::WithFacade { facade, .. } => Some(facade),
+            BaboonCodecContext::Custom { facade, .. } => facade.as_ref(),
             _ => None,
         }
     }
@@ -66,6 +129,15 @@ impl BaboonCodecContext {
         facade: Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>,
     ) -> Self {
         BaboonCodecContext::WithFacade { use_indices, facade }
+    }
+
+    pub fn custom(
+        use_indices: bool,
+        forward_write_policy: ForwardWritePolicy,
+        envelope_version: BaboonEnvelopeVersion,
+        facade: Option<Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>>,
+    ) -> Self {
+        BaboonCodecContext::Custom { use_indices, forward_write_policy, envelope_version, facade }
     }
 }
 
@@ -87,24 +159,17 @@ pub trait BaboonBinCodecIndexed {
         let header = bin_tools::read_byte(reader)?;
         let is_indexed = (header & 0x01) != 0;
         let mut result = Vec::new();
-        let mut prev_offset: u32 = 0;
-        let mut prev_len: u32 = 0;
+        let mut previous_end: i64 = 0;
         if is_indexed {
             let mut left = Self::index_elements_count(ctx) as usize;
             while left > 0 {
-                let offset = bin_tools::read_i32(reader)? as u32;
-                let len = bin_tools::read_i32(reader)? as u32;
-                assert!(len > 0, "Length must be positive");
-                assert!(
-                    offset >= prev_offset + prev_len,
-                    "Offset violation: {} not >= {}",
-                    offset,
-                    prev_offset + prev_len
-                );
-                result.push(BaboonIndexEntry { offset, length: len });
+                let offset = bin_tools::read_i32(reader)?;
+                let len = bin_tools::read_i32(reader)?;
+                if len <= 0 { return Err(format!("Invalid UEBA index length: {}", len).into()); }
+                if i64::from(offset) < previous_end { return Err(format!("Invalid UEBA index offset: {}", offset).into()); }
+                previous_end = i64::from(offset) + i64::from(len);
+                result.push(BaboonIndexEntry { offset: offset as u32, length: len as u32 });
                 left -= 1;
-                prev_offset = offset;
-                prev_len = len;
             }
         }
         Ok((header, result))

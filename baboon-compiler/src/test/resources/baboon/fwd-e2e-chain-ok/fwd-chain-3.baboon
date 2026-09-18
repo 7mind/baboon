@@ -1,0 +1,13 @@
+model fwde2e.chain
+
+version "3.0.0"
+
+import "2.0.0" { * } without {
+  ChainAppend
+}
+
+root data ChainAppend {
+  a: i32
+  b: opt[str]
+  c: opt[str]
+}

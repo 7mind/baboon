@@ -13,10 +13,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
-from typing import TypeVar, Generic, Callable, Optional, Any
+from typing import TypeVar, Generic, Callable, Optional, Any, ClassVar
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
+
+from .baboon_exceptions import BaboonCodecException
 
 T = TypeVar("T")
 
@@ -42,6 +44,27 @@ class BaboonGenerated(ABC):
     def baboon_same_in_versions(self) -> list[str]:
         raise NotImplementedError
 
+    # Forward-readability: newer domain versions whose encoded data THIS version's
+    # codec can decode, mapped to the guarantee tier
+    # ("identical" | "prefix-any-mode" | "prefix-compact" | "json-additive").
+    # The prefix-* tiers hold only for top-level framed UEBA reads where the caller
+    # discards the cursor after decoding. Non-abstract default keeps hand-written
+    # stubs working; generated classes override it with a ClassVar.
+    @property
+    def baboon_forward_readable(self) -> dict[str, str]:
+        return {}
+
+    # Writer-side inverse of baboon_forward_readable: guarantee tier -> oldest domain
+    # version whose codec can decode THIS version's encoding of this type. The
+    # "identical" bound equals baboon_same_in_versions[0]; the "json-additive" bound is
+    # published as `$rv`, the prefix-* bounds feed the binary envelope. Abstract: the
+    # envelope writer fails fast when a tier is missing, so every implementation must
+    # provide all four (generated classes do so with a ClassVar).
+    @property
+    @abstractmethod
+    def baboon_min_reader_versions(self) -> dict[str, str]:
+        raise NotImplementedError
+
 class BaboonAdtMemberMeta(ABC):
     @property
     @abstractmethod
@@ -55,10 +78,15 @@ class BaboonAdtMemberMeta(ABC):
 
 
 class BaboonMeta(ABC):
-    @property
     @abstractmethod
-    def same_in_versions(self) -> list[str]:
+    def same_in_versions(self, type_id_string: str) -> list[str]:
         raise NotImplementedError
+
+    # Forward-readability per type: newer version -> guarantee tier (see
+    # BaboonGenerated.baboon_forward_readable). Non-abstract default keeps
+    # hand-written stubs working; generated BaboonMetadata overrides it.
+    def forward_readable_versions(self, type_id_string: str) -> dict[str, str]:
+        return {}
 
 
 class BaboonGeneratedLatest(BaboonGenerated):
@@ -264,7 +292,7 @@ class LEDataOutputStream:
             value >>= 7
             if value != 0:
                 current_byte |= 0x80
-            self.write_byte(current_byte)
+            self.write_ubyte(current_byte)
             if value == 0:
                 break
         self.stream.write(bytes_data)
@@ -293,7 +321,8 @@ class LEDataOutputStream:
         self.write_i64(cs_local_millis_0001)
         self.write_i64(offset_ms)
 
-        kind = 1 if offset_ms == 0 else 2
+        # docs/ueba-format.md: kind is a pure function of the offset (1 = UTC, 0 = otherwise)
+        kind = 1 if offset_ms == 0 else 0
         self.write_byte(kind)
 
     def write_bytes(self, b: bytes):
@@ -415,7 +444,7 @@ class Lazy(Generic[T]):
 
     @property
     def is_value_created(self) -> bool:
-        return self._value_ref is not None
+        return self._value is not None
 
 class BaboonSingleton(ABC, Generic[T]):
     _lazy_instance: Lazy[T]
@@ -504,6 +533,16 @@ class BaboonTypeMeta(BaseModel):
     domain_version: str
     domain_version_min_compat: str
     type_identifier: str
+    # Oldest domain version whose JSON codec can decode the payload under the json-additive
+    # contract (tolerant key lookup; fields unknown to that version are dropped). Always
+    # <= domain_version_min_compat. Published as `$rv` when it differs from the (effective)
+    # minCompat; the binary v1 envelope does not carry it. Empty means "= min_compat".
+    domain_version_readable_min: str = ""
+
+    JSON_READABLE_TIER: ClassVar[str] = "json-additive"
+    # Tier keys of the UEBA prefix bounds in `baboon_min_reader_versions`, per index mode.
+    UEBA_PREFIX_COMPACT_TIER: ClassVar[str] = "prefix-compact"
+    UEBA_PREFIX_ANY_MODE_TIER: ClassVar[str] = "prefix-any-mode"
 
     model_config = ConfigDict(
         frozen=True,
@@ -521,6 +560,18 @@ class BaboonTypeMeta(BaseModel):
             return None
         return BaboonDomainVersion(self.domain_identifier, self.domain_version_min_compat)
 
+    @property
+    def effective_readable_min(self) -> str:
+        return self.domain_version_readable_min or self.domain_version_min_compat
+
+    @property
+    def version_readable_min(self) -> Optional[BaboonDomainVersion]:
+        if not self.domain_version_readable_min:
+            return self.version_min_compat
+        if self.domain_version_readable_min == self.domain_version:
+            return None
+        return BaboonDomainVersion(self.domain_identifier, self.domain_version_readable_min)
+
     @staticmethod
     def from_instance(value: BaboonGenerated) -> 'BaboonTypeMeta':
         """Codecs discovery with ADTs check to ensure that ADTs is encoded with a codec type desired by the user.
@@ -535,12 +586,18 @@ class BaboonTypeMeta(BaseModel):
         else:
             type_identifier = value.baboon_type_identifier
 
+        min_compat = value.baboon_same_in_versions[0]
+        readable_min = value.baboon_min_reader_versions.get(BaboonTypeMeta.JSON_READABLE_TIER)
+        if readable_min is None:
+            raise BaboonCodecException.EncoderFailure(
+                f"baboon_min_reader_versions lacks '{BaboonTypeMeta.JSON_READABLE_TIER}' for type {value.baboon_type_identifier}")
         return BaboonTypeMeta(
             meta_version=BaboonTypeMetaCodec.META_VERSION,
             domain_identifier=value.baboon_domain_identifier,
             domain_version=value.baboon_domain_version,
-            domain_version_min_compat=value.baboon_same_in_versions[0],
+            domain_version_min_compat=min_compat,
             type_identifier=type_identifier,
+            domain_version_readable_min=readable_min,
         )
 
     def write_bin(self, writer: LEDataOutputStream) -> None:
@@ -560,16 +617,52 @@ class BaboonTypeMeta(BaseModel):
 
 class BaboonTypeMetaCodec:
     META_VERSION_1: int = 1
+    META_VERSION_2: int = 2
+    # Layout written by default (binary) and always (JSON `$mv`).
     META_VERSION: int = META_VERSION_1
+
+    # v2 flags byte (codec-envelope.md §2.1.3): bit 0 -- min_compat follows; bit 1 -- readable_min follows.
+    _V2_FLAG_MIN_COMPAT: int = 0x01
+    _V2_FLAG_READABLE_MIN: int = 0x02
+    _V2_FLAGS_MASK: int = _V2_FLAG_MIN_COMPAT | _V2_FLAG_READABLE_MIN
 
     META_VERSION_KEY = "$mv"
     DOMAIN_IDENTIFIER_KEY = "$d"
     DOMAIN_VERSION_KEY = "$v"
     DOMAIN_VERSION_MIN_COMPAT_KEY = "$uv"
+    DOMAIN_VERSION_READABLE_KEY = "$rv"
     TYPE_IDENTIFIER_KEY = "$t"
 
     @staticmethod
     def write_bin(meta: BaboonTypeMeta, writer: LEDataOutputStream) -> None:
+        if meta.meta_version == BaboonTypeMetaCodec.META_VERSION_1:
+            BaboonTypeMetaCodec._write_bin_v1(meta, writer)
+        elif meta.meta_version == BaboonTypeMetaCodec.META_VERSION_2:
+            BaboonTypeMetaCodec._write_bin_v2(meta, writer)
+        else:
+            raise BaboonCodecException.EncoderFailure(f"Unsupported binary envelope meta_version {meta.meta_version}")
+
+    @staticmethod
+    def _write_bin_v2(meta: BaboonTypeMeta, writer: LEDataOutputStream) -> None:
+        # v2: `02 | domain_id | domain_version | flags | [min_compat] | [readable_min] | type_id`; each bound
+        # is elided exactly as in JSON (min_compat when == domain_version, readable_min when == effective min_compat)
+        min_compat = meta.domain_version_min_compat or meta.domain_version
+        readable_min = meta.domain_version_readable_min or min_compat
+        has_min_compat = min_compat != meta.domain_version
+        has_readable_min = readable_min != min_compat
+        writer.write_byte(BaboonTypeMetaCodec.META_VERSION_2)
+        writer.write_str(meta.domain_identifier)
+        writer.write_str(meta.domain_version)
+        writer.write_byte((BaboonTypeMetaCodec._V2_FLAG_MIN_COMPAT if has_min_compat else 0)
+                          | (BaboonTypeMetaCodec._V2_FLAG_READABLE_MIN if has_readable_min else 0))
+        if has_min_compat:
+            writer.write_str(min_compat)
+        if has_readable_min:
+            writer.write_str(readable_min)
+        writer.write_str(meta.type_identifier)
+
+    @staticmethod
+    def _write_bin_v1(meta: BaboonTypeMeta, writer: LEDataOutputStream) -> None:
         # PR-23-D03 fix (PR 10.4): pre-existing bugs.
         #   1) `writer.write_string(writer, ...)` — there is no `write_string` method on
         #      `LEDataOutputStream`; the correct API is `write_str(s)` (single arg). The
@@ -602,6 +695,9 @@ class BaboonTypeMetaCodec:
 
         if meta.domain_version != meta.domain_version_min_compat:
             json_obj[BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY] = meta.domain_version_min_compat
+        # `$rv` is elided when it equals the effective `$uv`: unchanged types emit no new bytes
+        if meta.domain_version_readable_min and meta.domain_version_readable_min != meta.domain_version_min_compat:
+            json_obj[BaboonTypeMetaCodec.DOMAIN_VERSION_READABLE_KEY] = meta.domain_version_readable_min
 
         return json_obj
 
@@ -611,7 +707,32 @@ class BaboonTypeMetaCodec:
             meta_version = reader.read_byte()
             if meta_version == BaboonTypeMetaCodec.META_VERSION_1:
                 return BaboonTypeMetaCodec._read_meta_v1_bin(reader)
+            if meta_version == BaboonTypeMetaCodec.META_VERSION_2:
+                return BaboonTypeMetaCodec._read_meta_v2_bin(reader)
             return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _read_meta_v2_bin(reader: LEDataInputStream) -> Optional[BaboonTypeMeta]:
+        try:
+            domain_identifier = reader.read_string()
+            domain_version = reader.read_string()
+            flags = reader.read_byte()
+            # unknown flag bits are illegal; a lenient reader would misparse the strings that follow
+            if flags & ~BaboonTypeMetaCodec._V2_FLAGS_MASK:
+                return None
+            min_compat = reader.read_string() if flags & BaboonTypeMetaCodec._V2_FLAG_MIN_COMPAT else domain_version
+            readable_min = reader.read_string() if flags & BaboonTypeMetaCodec._V2_FLAG_READABLE_MIN else min_compat
+            type_identifier = reader.read_string()
+            return BaboonTypeMeta(
+                meta_version=BaboonTypeMetaCodec.META_VERSION_2,
+                domain_identifier=domain_identifier,
+                domain_version=domain_version,
+                domain_version_min_compat=min_compat,
+                type_identifier=type_identifier,
+                domain_version_readable_min=readable_min,
+            )
         except Exception:
             return None
 
@@ -650,6 +771,9 @@ class BaboonTypeMetaCodec:
             domain_version = reader.read_string()
 
             has_min_compat = reader.read_byte()
+            # codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
+            if has_min_compat not in (0, 1):
+                return None
             if has_min_compat == 1:
                 domain_version_min_compat = reader.read_string()
             else:
@@ -681,6 +805,10 @@ class BaboonTypeMetaCodec:
                 BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY,
                 domain_version
             )
+            domain_version_readable_min = json_obj.get(
+                BaboonTypeMetaCodec.DOMAIN_VERSION_READABLE_KEY,
+                domain_version_min_compat
+            )
 
             return BaboonTypeMeta(
                 meta_version=BaboonTypeMetaCodec.META_VERSION_1,
@@ -688,6 +816,7 @@ class BaboonTypeMetaCodec:
                 domain_version=domain_version,
                 domain_version_min_compat=domain_version_min_compat,
                 type_identifier=type_identifier,
+                domain_version_readable_min=domain_version_readable_min,
             )
         except Exception:
             return None
@@ -702,8 +831,4 @@ def baboon_unmodified_since_version(g: BaboonGenerated) -> str:
 
 
 def unmodified_since_version(meta: BaboonMeta, type_id: str) -> str:
-    # NOTE: The abstract BaboonMeta.same_in_versions property returns list[str] per
-    # its declaration, but concrete implementations (e.g. generated BaboonMetadata)
-    # return a callable(typeId) -> list[str] (matching C#/Scala sameInVersions(typeId)).
-    # We call it as a callable per the C# reference signature.
     return meta.same_in_versions(type_id)[0]

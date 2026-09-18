@@ -86,7 +86,7 @@ Shipped: M24 / PR-I.1a (Scala reference) → PR-I.1b (Java/Kotlin/KMP) → PR-I.
 ## Any fields
 
 > **Note:** the field-level `AnyMeta` envelope below is distinct from the
-> top-level `BaboonTypeMeta` envelope (the `{$mv,$d,$v,$t,$uv,$c}` block
+> top-level `BaboonTypeMeta` envelope (the `{$mv,$d,$v,$t,$uv,$rv,$c}` block
 > that wraps every value emitted through `BaboonCodecsFacade.encodeToJson`).
 > The top-level envelope is specified in
 > [`docs/spec/codec-envelope.md`](spec/codec-envelope.md).

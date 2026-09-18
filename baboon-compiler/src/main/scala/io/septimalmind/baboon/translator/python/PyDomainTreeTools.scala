@@ -44,8 +44,14 @@ object PyDomainTreeTools {
 
       val unmodifiedMethods = if (!isCodec) {
         val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id)
+        val forward         = evolution.typesForwardReadable(domain.version)(defn.id)
+        val forwardEntries  = forward.readable.toList.map { case (v, tier) => s""""${v.v.toString}": "${tier.wireName}"""" }.mkString(", ")
+        val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight)
+          .map { case (tier, v) => s""""${tier.wireName}": "${v.v.toString}"""" }.mkString(", ")
         List(
-          q"""baboon_same_in_versions: $pyClassVar[$pyList[$pyStr]] = [${unmodifiedSince.sameIn.map(v => q"\"${v.v.toString}\"").toList.join(", ")}]""".stripMargin
+          q"""baboon_same_in_versions: $pyClassVar[$pyList[$pyStr]] = [${unmodifiedSince.sameIn.map(v => q"\"${v.v.toString}\"").toList.join(", ")}]""".stripMargin,
+          q"""baboon_forward_readable: $pyClassVar[$pyDict[$pyStr, $pyStr]] = {$forwardEntries}""".stripMargin,
+          q"""baboon_min_reader_versions: $pyClassVar[$pyDict[$pyStr, $pyStr]] = {$minReaderEntries}""".stripMargin,
         )
       } else Nil
 

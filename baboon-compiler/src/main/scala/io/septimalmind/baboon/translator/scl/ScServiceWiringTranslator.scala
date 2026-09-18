@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerTarget.ScTarget
-import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceResultResolver}
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceMethodPlan, ServiceResultResolver}
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
@@ -26,6 +26,9 @@ object ScServiceWiringTranslator {
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "scala", target.language.serviceResult, target.language.pragmas)
+
+    private def methodPlan(method: Typedef.MethodDef): ServiceMethodPlan[TextTree[ScValue]] =
+      new ServiceMethodPlan(method, trans.asScRef(_, domain, evo), resolved, method.name.name)
 
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "scala", target.language.serviceContext, target.language.pragmas)
@@ -85,26 +88,7 @@ object ScServiceWiringTranslator {
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[ScValue]): TextTree[ScValue] = id match {
       case u: TypeId.User => q"${jsonCodecName(u)}.instance.decode($codecCtxRef, $wire).fold(throw _, identity)"
       case b: TypeId.BuiltinScalar =>
-        val decoder = b match {
-          case TypeId.Builtins.bit   => q"$circeDecodeBoolean"
-          case TypeId.Builtins.i08   => q"$baboonDecodeByte"
-          case TypeId.Builtins.i16   => q"$baboonDecodeShort"
-          case TypeId.Builtins.i32   => q"$baboonDecodeInt"
-          case TypeId.Builtins.i64   => q"$baboonDecodeLong"
-          case TypeId.Builtins.u08   => q"$baboonDecodeByte"
-          case TypeId.Builtins.u16   => q"$baboonDecodeShort"
-          case TypeId.Builtins.u32   => q"$baboonDecodeInt"
-          case TypeId.Builtins.u64   => q"$baboonDecodeLong"
-          case TypeId.Builtins.f32   => q"$circeDecodeFloat"
-          case TypeId.Builtins.f64   => q"$circeDecodeDouble"
-          case TypeId.Builtins.f128  => q"$baboonDecodeBigDecimalLenient"
-          case TypeId.Builtins.str   => q"$circeDecodeString"
-          case TypeId.Builtins.bytes => q"$baboonDecodeByteString"
-          case TypeId.Builtins.uid   => q"$circeDecodeUuid"
-          case TypeId.Builtins.tsu   => q"$baboonDecodeTsu"
-          case TypeId.Builtins.tso   => q"$baboonDecodeTso"
-          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
+        val decoder = ScScalarCodecEmitter.jsonDecoder(b)
         q"$decoder.decodeJson($wire).fold(e => throw e, identity)"
       case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
@@ -112,76 +96,21 @@ object ScServiceWiringTranslator {
     private def jsonEncodeExpr(id: TypeId, value: TextTree[ScValue]): TextTree[ScValue] = id match {
       case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode($codecCtxRef, $value)"
       case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.uid   => q"$circeJson.fromString($value.toString())"
-          case TypeId.Builtins.tsu   => q"$circeJson.fromString($baboonTimeFormats.formatTsu($value))"
-          case TypeId.Builtins.tso   => q"$circeJson.fromString($baboonTimeFormats.formatTso($value))"
-          case TypeId.Builtins.bit   => q"$circeJson.fromBoolean($value)"
-          case TypeId.Builtins.i08   => q"$circeJson.fromInt($value.toInt)"
-          case TypeId.Builtins.i16   => q"$circeJson.fromInt($value.toInt)"
-          case TypeId.Builtins.i32   => q"$circeJson.fromInt($value)"
-          case TypeId.Builtins.i64   => q"$circeJson.fromLong($value)"
-          case TypeId.Builtins.u08   => q"$circeJson.fromInt(java.lang.Byte.toUnsignedInt($value))"
-          case TypeId.Builtins.u16   => q"$circeJson.fromInt(java.lang.Short.toUnsignedInt($value))"
-          case TypeId.Builtins.u32   => q"$circeJson.fromLong(java.lang.Integer.toUnsignedLong($value))"
-          case TypeId.Builtins.u64   => q"$circeJson.fromBigInt($baboonBinTools.toUnsignedBigInt($value))"
-          case TypeId.Builtins.f32   => q"$circeJson.fromFloat($value).get"
-          case TypeId.Builtins.f64   => q"$circeJson.fromDouble($value).get"
-          case TypeId.Builtins.f128  => q"$circeJson.fromBigDecimal($value)"
-          case TypeId.Builtins.str   => q"$circeJson.fromString($value)"
-          case TypeId.Builtins.bytes => q"$circeJson.fromString($value.toHexString)"
-          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
+        ScScalarCodecEmitter.jsonEncode(b, value)
       case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaDecodeExpr(id: TypeId, br: TextTree[ScValue]): TextTree[ScValue] = id match {
       case u: TypeId.User => q"${uebaCodecName(u)}.instance.decode($codecCtxRef, $br).fold(throw _, identity)"
       case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit                       => q"$br.readBoolean()"
-          case TypeId.Builtins.i08                       => q"$br.readByte()"
-          case TypeId.Builtins.i16                       => q"$br.readShort()"
-          case TypeId.Builtins.i32                       => q"$br.readInt()"
-          case TypeId.Builtins.i64                       => q"$br.readLong()"
-          case TypeId.Builtins.u08                       => q"$br.readByte()"
-          case TypeId.Builtins.u16                       => q"$br.readShort()"
-          case TypeId.Builtins.u32                       => q"$br.readInt()"
-          case TypeId.Builtins.u64                       => q"$br.readLong()"
-          case TypeId.Builtins.f32                       => q"$br.readFloat()"
-          case TypeId.Builtins.f64                       => q"$br.readDouble()"
-          case TypeId.Builtins.f128                      => q"$baboonBinTools.readBigDecimal($br)"
-          case TypeId.Builtins.str                       => q"$baboonBinTools.readString($br)"
-          case TypeId.Builtins.bytes                     => q"$baboonBinTools.readByteString($br)"
-          case TypeId.Builtins.uid                       => q"$baboonBinTools.readUid($br)"
-          case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonBinTools.readTimestamp($br)"
-          case other                                     => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
+        ScScalarCodecEmitter.uebaDecode(b, br)
       case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
     private def uebaEncodeStmt(id: TypeId, bw: TextTree[ScValue], value: TextTree[ScValue]): TextTree[ScValue] = id match {
       case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode($codecCtxRef, $bw, $value)"
       case b: TypeId.BuiltinScalar =>
-        b match {
-          case TypeId.Builtins.bit                       => q"$bw.writeBoolean($value)"
-          case TypeId.Builtins.i08                       => q"$bw.writeByte($value.toInt)"
-          case TypeId.Builtins.i16                       => q"$bw.writeShort($value.toInt)"
-          case TypeId.Builtins.i32                       => q"$bw.writeInt($value)"
-          case TypeId.Builtins.i64                       => q"$bw.writeLong($value)"
-          case TypeId.Builtins.u08                       => q"$bw.writeByte($value.toInt)"
-          case TypeId.Builtins.u16                       => q"$bw.writeShort($value.toInt)"
-          case TypeId.Builtins.u32                       => q"$bw.writeInt($value)"
-          case TypeId.Builtins.u64                       => q"$bw.writeLong($value)"
-          case TypeId.Builtins.f32                       => q"$bw.writeFloat($value)"
-          case TypeId.Builtins.f64                       => q"$bw.writeDouble($value)"
-          case TypeId.Builtins.f128                      => q"$baboonBinTools.writeBigDecimal($bw, $value)"
-          case TypeId.Builtins.str                       => q"$baboonBinTools.writeString($bw, $value)"
-          case TypeId.Builtins.bytes                     => q"$baboonBinTools.writeByteString($bw, $value)"
-          case TypeId.Builtins.uid                       => q"$baboonBinTools.writeUid($bw, $value)"
-          case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonBinTools.writeTimestamp($bw, $value)"
-          case other                                     => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
-        }
+        ScScalarCodecEmitter.uebaEncode(b, bw, value)
       case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
@@ -284,7 +213,8 @@ object ScServiceWiringTranslator {
 
           val clientMethods = service.methods.flatMap {
             m =>
-              val outRefOpt = m.out.map(o => trans.asScRef(o, domain, evo))
+              val plan      = methodPlan(m)
+              val outRefOpt = plan.output
               val outFq     = outRefOpt.map(renderFq).getOrElse("Unit")
               val retType   = if (resolved.noErrors) outFq else ct(bweFq, outFq)
 
@@ -303,7 +233,7 @@ object ScServiceWiringTranslator {
                          |val bw = new $binaryOutput(oms)
                          |$encodeIn
                          |bw.flush()
-                         |val resp = transportUeba($ctxArgPass"$svcName", "${m.name.name}", oms.toByteArray)
+                         |val resp = transportUeba($ctxArgPass"$svcName", "${plan.methodName}", oms.toByteArray)
                          |val br = new $binaryInput(new java.io.ByteArrayInputStream(resp))
                          |$decodeOut""".stripMargin
                     } else {
@@ -311,13 +241,13 @@ object ScServiceWiringTranslator {
                          |val bw = new $binaryOutput(oms)
                          |$encodeIn
                          |bw.flush()
-                         |val resp = transportUeba($ctxArgPass"$svcName", "${m.name.name}", oms.toByteArray)
+                         |val resp = transportUeba($ctxArgPass"$svcName", "${plan.methodName}", oms.toByteArray)
                          |try {
                          |  val br = new $binaryInput(new java.io.ByteArrayInputStream(resp))
                          |  rt.pure[$bweFq, $outFq]($decodeOut)
                          |} catch {
                          |  case ex: Throwable =>
-                         |    rt.fail[$bweFq, $outFq]($bweFq.DecoderFailed($baboonMethodId("$svcName", "${m.name.name}"), ex))
+                         |    rt.fail[$bweFq, $outFq]($bweFq.DecoderFailed($baboonMethodId("$svcName", "${plan.methodName}"), ex))
                          |}""".stripMargin
                     }
                   case None =>
@@ -326,19 +256,19 @@ object ScServiceWiringTranslator {
                          |val bw = new $binaryOutput(oms)
                          |$encodeIn
                          |bw.flush()
-                         |val _ = transportUeba($ctxArgPass"$svcName", "${m.name.name}", oms.toByteArray)
+                         |val _ = transportUeba($ctxArgPass"$svcName", "${plan.methodName}", oms.toByteArray)
                          |()""".stripMargin
                     } else {
                       q"""val oms = new $byteArrayOutputStream()
                          |val bw = new $binaryOutput(oms)
                          |$encodeIn
                          |bw.flush()
-                         |val _ = transportUeba($ctxArgPass"$svcName", "${m.name.name}", oms.toByteArray)
+                         |val _ = transportUeba($ctxArgPass"$svcName", "${plan.methodName}", oms.toByteArray)
                          |rt.pure[$bweFq, Unit](())""".stripMargin
                     }
                 }
                 Some(
-                  q"""def ${m.name.name}(${ctxParamDecl}arg: ${trans.asScRef(m.sig, domain, evo)}): $retType = {
+                  q"""def ${plan.methodName}(${ctxParamDecl}arg: ${plan.input}): $retType = {
                      |  ${body.shift(2).trim}
                      |}""".stripMargin
                 )
@@ -351,33 +281,33 @@ object ScServiceWiringTranslator {
                     val decodeOut = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"wire")
                     if (resolved.noErrors) {
                       q"""val encoded = $encodeIn.noSpaces
-                         |val resp = transportJson($ctxArgPass"$svcName", "${m.name.name}", encoded)
+                         |val resp = transportJson($ctxArgPass"$svcName", "${plan.methodName}", encoded)
                          |val wire = io.circe.parser.parse(resp).fold(throw _, identity)
                          |$decodeOut""".stripMargin
                     } else {
                       q"""val encoded = $encodeIn.noSpaces
-                         |val resp = transportJson($ctxArgPass"$svcName", "${m.name.name}", encoded)
+                         |val resp = transportJson($ctxArgPass"$svcName", "${plan.methodName}", encoded)
                          |try {
                          |  val wire = io.circe.parser.parse(resp).fold(throw _, identity)
                          |  rt.pure[$bweFq, $outFq]($decodeOut)
                          |} catch {
                          |  case ex: Throwable =>
-                         |    rt.fail[$bweFq, $outFq]($bweFq.DecoderFailed($baboonMethodId("$svcName", "${m.name.name}"), ex))
+                         |    rt.fail[$bweFq, $outFq]($bweFq.DecoderFailed($baboonMethodId("$svcName", "${plan.methodName}"), ex))
                          |}""".stripMargin
                     }
                   case None =>
                     if (resolved.noErrors) {
                       q"""val encoded = $encodeIn.noSpaces
-                         |val _ = transportJson($ctxArgPass"$svcName", "${m.name.name}", encoded)
+                         |val _ = transportJson($ctxArgPass"$svcName", "${plan.methodName}", encoded)
                          |()""".stripMargin
                     } else {
                       q"""val encoded = $encodeIn.noSpaces
-                         |val _ = transportJson($ctxArgPass"$svcName", "${m.name.name}", encoded)
+                         |val _ = transportJson($ctxArgPass"$svcName", "${plan.methodName}", encoded)
                          |rt.pure[$bweFq, Unit](())""".stripMargin
                     }
                 }
                 Some(
-                  q"""def ${m.name.name}Json(${ctxParamDecl}arg: ${trans.asScRef(m.sig, domain, evo)}): $retType = {
+                  q"""def ${plan.methodName}Json(${ctxParamDecl}arg: ${plan.input}): $retType = {
                      |  ${body.shift(2).trim}
                      |}""".stripMargin
                 )
@@ -476,14 +406,14 @@ object ScServiceWiringTranslator {
     // renamed away. In `none` mode it stays `ctx`, keeping that output
     // byte-identical.
     private def svcCtxTypeName: Option[String] = resolvedCtx match {
-      case ResolvedServiceContext.NoContext               => None
-      case ResolvedServiceContext.AbstractContext(tn, _)  => Some(tn)
-      case ResolvedServiceContext.ConcreteContext(tn, _)  => Some(tn)
+      case ResolvedServiceContext.NoContext              => None
+      case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+      case ResolvedServiceContext.ConcreteContext(tn, _) => Some(tn)
     }
     private def svcCtxArgName: Option[String] = resolvedCtx match {
-      case ResolvedServiceContext.NoContext               => None
-      case ResolvedServiceContext.AbstractContext(_, pn)  => Some(pn)
-      case ResolvedServiceContext.ConcreteContext(_, pn)  => Some(pn)
+      case ResolvedServiceContext.NoContext              => None
+      case ResolvedServiceContext.AbstractContext(_, pn) => Some(pn)
+      case ResolvedServiceContext.ConcreteContext(_, pn) => Some(pn)
     }
     private def codecCtxName: String = resolvedCtx match {
       case ResolvedServiceContext.NoContext => "ctx"
@@ -506,7 +436,7 @@ object ScServiceWiringTranslator {
       case t: ScValue.ScType =>
         if (t.predef) t.name
         else {
-          val parts = (t.pkg.parts :+ t.name).toList
+          val parts    = (t.pkg.parts :+ t.name).toList
           val anchored = if (parts.headOption.contains("_root_")) parts else "_root_" :: parts
           anchored.mkString(".")
         }
@@ -586,7 +516,7 @@ object ScServiceWiringTranslator {
 
       q"""class $wrapperName$classTypeParams($ctorParamList) extends $implementsClause {
          |  val serviceName: String = "$svcName"
-         |  def invoke(method: $baboonMethodId, data: $wireType, ${ctxParamDecl}$codecCtxName: $baboonCodecContext): $retType =
+         |  def invoke(method: $baboonMethodId, data: $wireType, $ctxParamDecl$codecCtxName: $baboonCodecContext): $retType =
          |    ${svcName}Wiring.$invokerFn($callArgs)
          |}""".stripMargin
     }
@@ -621,6 +551,7 @@ object ScServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
+          val plan     = methodPlan(m)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val encodeOutput = m.out match {
@@ -633,11 +564,11 @@ object ScServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"val result = impl.${m.name.name}(${ctxArgPass}decoded)"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded)"
+            case Some(_) => q"val result = impl.${plan.methodName}(${ctxArgPass}decoded)"
+            case None    => q"impl.${plan.methodName}(${ctxArgPass}decoded)"
           }
 
-          q"""case "${m.name.name}" =>
+          q"""case "${plan.methodName}" =>
              |  val wire = io.circe.parser.parse(data).fold(throw _, identity)
              |  val decoded = $decodeIn
              |  $callExpr
@@ -648,7 +579,7 @@ object ScServiceWiringTranslator {
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
-         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): String = {
+         |  $ctxParamDecl$codecCtxName: $baboonCodecContext): String = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
          |    case _ =>
@@ -661,6 +592,7 @@ object ScServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
+          val plan     = methodPlan(m)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
           val encodeOutput = m.out match {
@@ -676,11 +608,11 @@ object ScServiceWiringTranslator {
           }
 
           val callExpr = m.out match {
-            case Some(_) => q"val result = impl.${m.name.name}(${ctxArgPass}decoded)"
-            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded)"
+            case Some(_) => q"val result = impl.${plan.methodName}(${ctxArgPass}decoded)"
+            case None    => q"impl.${plan.methodName}(${ctxArgPass}decoded)"
           }
 
-          q"""case "${m.name.name}" =>
+          q"""case "${plan.methodName}" =>
              |  val ims = new java.io.ByteArrayInputStream(data)
              |  val br = new $binaryInput(ims)
              |  val decoded = $decodeIn
@@ -692,7 +624,7 @@ object ScServiceWiringTranslator {
          |  method: $baboonMethodId,
          |  data: Array[Byte],
          |  impl: $svcName$svcTypeArg,
-         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): Array[Byte] = {
+         |  $ctxParamDecl$codecCtxName: $baboonCodecContext): Array[Byte] = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
          |    case _ =>
@@ -744,7 +676,8 @@ object ScServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inRef    = trans.asScRef(m.sig, domain, evo)
+          val plan     = methodPlan(m)
+          val inRef    = plan.input
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val decodeStep =
@@ -756,17 +689,17 @@ object ScServiceWiringTranslator {
                |    rt.fail[$bweFq, $inRef]($bweFq.DecoderFailed(method, ex))
                |}""".stripMargin
 
-          val hasErrType = m.err.isDefined && !resolved.noErrors
+          val hasErrType = plan.hasError
 
           val callAndEncodeStep = m.out match {
             case Some(outRef) =>
-              val outType   = trans.asScRef(outRef, domain, evo)
+              val outType   = plan.output.get
               val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
 
               val callBody = if (hasErrType) {
-                val errType = trans.asScRef(m.err.get, domain, evo)
+                val errType = plan.error.get
                 q"""try {
-                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  val callResult = impl.${plan.methodName}(${ctxArgPass}v)
                    |  rt.leftMap[$errType, $outType, $bweFq](
                    |    callResult, err => $bweFq.CallFailed(method, err))
                    |} catch {
@@ -775,7 +708,7 @@ object ScServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  rt.pure[$bweFq, $outType](impl.${m.name.name}(${ctxArgPass}v))
+                   |  rt.pure[$bweFq, $outType](impl.${plan.methodName}(${ctxArgPass}v))
                    |} catch {
                    |  case ex: Throwable =>
                    |    rt.fail[$bweFq, $outType]($bweFq.CallFailed(method, ex))
@@ -797,9 +730,9 @@ object ScServiceWiringTranslator {
 
             case None =>
               val callBody = if (hasErrType) {
-                val errType = trans.asScRef(m.err.get, domain, evo)
+                val errType = plan.error.get
                 q"""try {
-                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  val callResult = impl.${plan.methodName}(${ctxArgPass}v)
                    |  rt.leftMap[$errType, Unit, $bweFq](
                    |    callResult, err => $bweFq.CallFailed(method, err))
                    |} catch {
@@ -808,7 +741,7 @@ object ScServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  impl.${m.name.name}(${ctxArgPass}v)
+                   |  impl.${plan.methodName}(${ctxArgPass}v)
                    |  rt.pure[$bweFq, Unit](())
                    |} catch {
                    |  case ex: Throwable =>
@@ -822,7 +755,7 @@ object ScServiceWiringTranslator {
                  |})""".stripMargin
           }
 
-          q"""case "${m.name.name}" =>
+          q"""case "${plan.methodName}" =>
              |  ${decodeStep.shift(2).trim}
              |  ${callAndEncodeStep.shift(2).trim}""".stripMargin
       }.join("\n")
@@ -832,7 +765,7 @@ object ScServiceWiringTranslator {
          |  data: String,
          |  impl: $svcName$svcTypeArg,
          |  rt: $iBaboonServiceRtFq$rtTypeArg,
-         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): $wiringRetType = {
+         |  $ctxParamDecl$codecCtxName: $baboonCodecContext): $wiringRetType = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
          |    case _ =>
@@ -847,7 +780,8 @@ object ScServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inRef    = trans.asScRef(m.sig, domain, evo)
+          val plan     = methodPlan(m)
+          val inRef    = plan.input
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
           val decodeStep =
@@ -860,17 +794,17 @@ object ScServiceWiringTranslator {
                |    rt.fail[$bweFq, $inRef]($bweFq.DecoderFailed(method, ex))
                |}""".stripMargin
 
-          val hasErrType = m.err.isDefined && !resolved.noErrors
+          val hasErrType = plan.hasError
 
           val callAndEncodeStep = m.out match {
             case Some(outRef) =>
-              val outType = trans.asScRef(outRef, domain, evo)
+              val outType = plan.output.get
               val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
 
               val callBody = if (hasErrType) {
-                val errType = trans.asScRef(m.err.get, domain, evo)
+                val errType = plan.error.get
                 q"""try {
-                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  val callResult = impl.${plan.methodName}(${ctxArgPass}v)
                    |  rt.leftMap[$errType, $outType, $bweFq](
                    |    callResult, err => $bweFq.CallFailed(method, err))
                    |} catch {
@@ -879,7 +813,7 @@ object ScServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  rt.pure[$bweFq, $outType](impl.${m.name.name}(${ctxArgPass}v))
+                   |  rt.pure[$bweFq, $outType](impl.${plan.methodName}(${ctxArgPass}v))
                    |} catch {
                    |  case ex: Throwable =>
                    |    rt.fail[$bweFq, $outType]($bweFq.CallFailed(method, ex))
@@ -904,9 +838,9 @@ object ScServiceWiringTranslator {
 
             case None =>
               val callBody = if (hasErrType) {
-                val errType = trans.asScRef(m.err.get, domain, evo)
+                val errType = plan.error.get
                 q"""try {
-                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  val callResult = impl.${plan.methodName}(${ctxArgPass}v)
                    |  rt.leftMap[$errType, Unit, $bweFq](
                    |    callResult, err => $bweFq.CallFailed(method, err))
                    |} catch {
@@ -915,7 +849,7 @@ object ScServiceWiringTranslator {
                    |}""".stripMargin
               } else {
                 q"""try {
-                   |  impl.${m.name.name}(${ctxArgPass}v)
+                   |  impl.${plan.methodName}(${ctxArgPass}v)
                    |  rt.pure[$bweFq, Unit](())
                    |} catch {
                    |  case ex: Throwable =>
@@ -929,7 +863,7 @@ object ScServiceWiringTranslator {
                  |})""".stripMargin
           }
 
-          q"""case "${m.name.name}" =>
+          q"""case "${plan.methodName}" =>
              |  ${decodeStep.shift(2).trim}
              |  ${callAndEncodeStep.shift(2).trim}""".stripMargin
       }.join("\n")
@@ -939,7 +873,7 @@ object ScServiceWiringTranslator {
          |  data: Array[Byte],
          |  impl: $svcName$svcTypeArg,
          |  rt: $iBaboonServiceRtFq$rtTypeArg,
-         |  ${ctxParamDecl}$codecCtxName: $baboonCodecContext): $wiringRetType = {
+         |  $ctxParamDecl$codecCtxName: $baboonCodecContext): $wiringRetType = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
          |    case _ =>
