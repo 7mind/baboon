@@ -14,37 +14,77 @@ encoded data the V-version codec can decode, each with a **guarantee tier**.
 data-dependent luck (e.g. "works unless the new enum member is sent") never
 qualifies.
 
-## Tiers
+## Per-format readability
 
-Linearly ordered; every tier implies all guarantees of the tiers below it.
+The two wire formats forgive different things, and neither set contains the
+other. UEBA identifies a field, an enum member or an ADT branch by its
+**position** and never writes its name, so a declared rename leaves the bytes
+untouched. JSON identifies the same things by **name** and is blind to
+position, so it forgives insertion and reordering and breaks on a rename. A
+single linear scale cannot describe that, so each step is resolved on two
+independent axes and chains compose by weakening each axis on its own.
 
-| tier (wire name) | guarantee |
+| UEBA axis | guarantee |
 |---|---|
-| `identical` | byte-identical encoding: both formats, any nesting position |
-| `prefix-any-mode` | UEBA: prefix-read of compact **and** indexed blobs (all appended fields fixed-length); JSON: any position |
-| `prefix-compact` | UEBA: prefix-read of **compact** blobs only (some appended field is variable-length); JSON: any position |
-| `json-additive` | JSON only, any nesting position |
+| `Full` | the old decoder consumes the whole value: byte-identical UEBA encoding |
+| `PrefixAnyMode` | prefix-read of compact **and** indexed blobs (every appended field is fixed-length) |
+| `PrefixCompact` | prefix-read of **compact** blobs only (some appended field is variable-length) |
 | *(absent)* | no guarantee |
 
-What earns each tier (per evolution step, composed over contiguous chains by
-taking the minimum):
+| JSON axis | guarantee |
+|---|---|
+| readable | every old key still carries that same field's value, at any position |
+| *(absent)* | no guarantee |
 
-- `identical` — own fields ordered-equal and every codec-relevant dependency
-  identical.
-- `prefix-*` — the old field sequence is a strict prefix of the new one
-  (names and types equal, additions only at the tail), **and every other type
-  in the old version's dependency closure is byte-identical**. Any nested
-  change would desync the outer sequential read.
-- `json-additive` — all old fields present with identical types (additions at
-  any position, reordering allowed), dependencies at least `json-additive`.
-  Sound because every generated JSON decoder is a tolerant reader (key lookup;
-  unknown keys ignored — verified in all 9 backends, including serde without
-  `deny_unknown_fields` and pydantic's default `extra='ignore'`).
+What earns each axis, per evolution step:
 
-Never forward-readable: field removals or type changes (forward reads narrow),
-field renames (JSON key changes), enum member additions/reordering (positional
-`u8` discriminants / unknown names), ADT branch additions, foreign-type
-changes, type renames.
+- UEBA `Full` — the positional type sequence is unchanged, and every position
+  whose name changed is a rename declared with `was` naming exactly the field
+  that occupied it.
+- UEBA `Prefix*` — the old positional sequence is a prefix of the new one under
+  the same rule, with additions only at the tail. `PrefixAnyMode` when every
+  appended field is fixed-length, `PrefixCompact` otherwise.
+- JSON readable — every old field still exists under its own name with the same
+  type, and no new field has taken that name over from a different field via
+  `was`. Additions at any position and reordering are fine. Sound because every
+  generated JSON decoder is a tolerant reader (key lookup; unknown keys ignored,
+  verified in all 9 backends, including serde without `deny_unknown_fields` and
+  pydantic's default `extra='ignore'`).
+
+Dependencies propagate per axis too: a nested value must be UEBA byte-identical
+for the outer sequential read to stay in sync, and JSON-readable for the outer
+JSON read to survive. A dependency that merely prefix-reads would leave the
+outer cursor mid-value.
+
+Never forward-readable in either format: field removals, field type changes
+(forward reads narrow), enum member additions, ADT branch additions,
+foreign-type changes, type renames.
+
+### Wire names
+
+`baboonForwardReadable` and the `forwardReadable` block of `baboon-meta.json`
+name the resolved pair. A `ueba-` prefix means the guarantee holds for UEBA
+only and that the JSON encoding of that step is **not** readable:
+
+| name | UEBA | JSON | typical cause |
+|---|---|---|---|
+| `identical` | Full | yes | nothing changed |
+| `ueba-identical` | Full | no | a declared rename |
+| `prefix-any-mode` | PrefixAnyMode | yes | fixed-length tail append |
+| `ueba-prefix-any-mode` | PrefixAnyMode | no | rename plus fixed-length tail append |
+| `prefix-compact` | PrefixCompact | yes | variable-length tail append |
+| `ueba-prefix-compact` | PrefixCompact | no | rename plus variable-length tail append |
+| `json-additive` | absent | yes | mid-position insert, reorder |
+
+`baboonMinReaderVersions` is keyed by capability, not by the pair, and its four
+keys are unchanged. Each is resolved from its own axis, so a rename lowers
+`prefix-compact` and `prefix-any-mode` while leaving `json-additive` alone, and
+a mid-position insert does the reverse. `identical` still means byte-identical
+in both formats and still equals the type's `sameIn` head.
+
+**No envelope change was needed for any of this.** A rename sits at the
+strongest UEBA tier, and both the v1 and the v2 binary envelopes already carry
+a bound the writer computes per format.
 
 ## The prefix-* client contract
 
@@ -467,6 +507,13 @@ Two consequences of scheme 2:
   `$rv`: a facade registering only 1.0.0 decodes 2.0.0 envelopes under
   `Tolerant` exactly where `$rv` allows, refuses under `Lossless`, and refuses
   when no bound was published; `$rv` elision and `readMeta` round-trip.
+- `test/sc-stub/.../ForwardCompatRenameSpec.scala` — the per-format split over the
+  shared `fwd-e2e-rename-ok` model: the renamed field's UEBA payload matches the
+  1.0.0 layout byte for byte while the JSON key moves; the writer publishes
+  `prefix-compact` and `prefix-any-mode` back to 1.0.0 and holds `json-additive`
+  at 2.0.0; a 1.0.0 reader decodes the 2.0.0 UEBA envelope under both v1-Tolerant
+  and v2; the default Strict v1 writer still publishes nothing, so that reader
+  refuses; and JSON refuses under either read policy.
 - `test/sc-stub/.../BinEnvelopeV2Spec.scala` and
   `test/ts-stub/.../BinEnvelopeV2.test.ts` — envelope v2: a hand-assembled v2
   envelope decodes under `Tolerant` and is refused under `Lossless` (fail-first:
@@ -501,6 +548,11 @@ Two consequences of scheme 2:
 
 ## Known gaps
 
+- **ADT branch renames and type renames are not classified.** They change the
+  TypeId, so the renamed type is absent both from the version intersection the
+  comparator walks and from its dependents' dependency sets, which collapses
+  both axes. Field renames and enum member renames keep their owner's TypeId and
+  are handled. Lifting this needs rename-aware dependency resolution.
 - **`prefix-any-mode` has no runtime end-to-end test.** The tier requires an
   appended *fixed-length* field, and every fixed-length scalar is
   non-defaultable, so such a step needs a hand-written conversion — which the
@@ -516,6 +568,9 @@ Closed gaps, kept for the record:
   other seven runtimes failed fast. All ten now fail fast (encoder failure),
   `baboonMinReaderVersions` has no default in any runtime's base type, and each
   of the three has a regression test with a hand-written value lacking the tiers.
+- *Per-format range splitting* used to be out of scope, so a declared rename was
+  classified unreadable in both formats even though UEBA bytes do not move. Each
+  step is now resolved per format; see "Per-format readability" above.
 - *Timestamp kind byte round trips* (https://github.com/7mind/baboon/issues/91):
   the C# `RpDateTime` keeps carrying its `DateTimeKind` on the wire (Local when
   the offset matches the writer's zone) — this is intentional and unchanged, as
@@ -530,5 +585,5 @@ Closed gaps, kept for the record:
 
 UEBA format evolution (on-wire index count + body length + skipping decoder)
 that would make appended fields unconditionally UEBA-safe; an `opt`-removal
-tier (decodes as `None` but silently lossy); per-format range splitting for
-renames (byte-invisible to UEBA, breaking for JSON).
+tier (decodes as `None` but silently lossy); JSON alias emission that would make
+renames readable there too, at the cost of duplicate keys in the payload.

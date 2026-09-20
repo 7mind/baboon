@@ -1,0 +1,20 @@
+// Forward-compatibility end-to-end fixture: a declared FIELD RENAME
+// (docs/forward-compat.md, "Per-format readability").
+//
+// UEBA identifies fields by position and never puts a name on the wire, so the
+// rename below leaves the bytes untouched and a 1.0.0 codec reads a 2.0.0 blob.
+// JSON identifies fields by name, so the same step is unreadable there. This is
+// the one case where the two formats' guarantees are incomparable, and the
+// fixture pins both halves.
+//
+// A pure rename is an auto-derivable conversion (FieldOp.Rename), so this model
+// is safe to keep in the shared model-dir: no stub carries a manual conversion.
+
+model fwde2e.rename
+
+version "1.0.0"
+
+root data RenamedHolder {
+  a: i32
+  b: str
+}

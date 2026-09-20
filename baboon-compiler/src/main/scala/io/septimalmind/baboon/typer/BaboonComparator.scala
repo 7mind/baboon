@@ -174,12 +174,12 @@ object BaboonComparator {
       domainVersions: NEMap[Version, Domain],
       ascendingVersions: List[Version],
     ): Map[Version, Map[TypeId, ForwardReadable]] = {
-      val steps: Map[Version, Map[TypeId, ForwardCompatTier]] =
+      val steps: Map[Version, Map[TypeId, ForwardGuarantee]] =
         ascendingVersions
           .sliding(2)
           .collect {
             case from :: to :: Nil =>
-              (from, stepForwardTiers(domainVersions(from), domainVersions(to)))
+              (from, stepForwardGuarantees(domainVersions(from), domainVersions(to)))
           }
           .toMap
 
@@ -197,44 +197,45 @@ object BaboonComparator {
                 val tail = successor match {
                   case Some((stepTiers, nextRuns)) =>
                     (stepTiers.get(id), nextRuns.get(id)) match {
-                      case (Some(stepTier), Some(nextRun)) =>
-                        nextRun.readable.toList.map { case (v, t) => (v, ForwardCompatTier.min(t, stepTier)) }
+                      case (Some(stepGuarantee), Some(nextRun)) =>
+                        nextRun.readable.toList
+                          .map { case (v, g) => (v, g.meet(stepGuarantee)) }
+                          .takeWhile(_._2.nonEmpty)
                       case _ =>
                         List.empty
                     }
                   case None =>
                     List.empty
                 }
-                (id, ForwardReadable(id, version, NEList.unsafeFrom((version, ForwardCompatTier.Identical: ForwardCompatTier) :: tail)))
+                (id, ForwardReadable(id, version, NEList.unsafeFrom((version, ForwardGuarantee.identical) :: tail)))
             }
 
             acc.updated(version, entries)
         }
     }
 
-    /** Per-step (prev -> last) forward-readability tier for every type kept under
-      * the same TypeId in both versions. Absent key = not forward-readable.
-      * Combines the type's own structural tier with a fixpoint over its
+    /** Per-step (prev -> last) forward-readability for every type kept under the same
+      * TypeId in both versions. Absent key = not forward-readable in either format.
+      * Combines the type's own structural guarantee with a fixpoint over its
       * codec-relevant dependencies in the OLD version (the types the old decoder
-      * actually touches): PREFIX_* requires all dependencies byte-identical;
-      * JSON_ADDITIVE requires all dependencies at least JSON-readable.
+      * actually touches). The two axes propagate independently: the outer UEBA read
+      * stays in sync only while every nested value is UEBA byte-identical, and the
+      * outer JSON read survives only while every nested value is JSON-readable.
       */
-    private def stepForwardTiers(prev: Domain, last: Domain): Map[TypeId, ForwardCompatTier] = {
-      import ForwardCompatTier.*
-
+    private def stepForwardGuarantees(prev: Domain, last: Domain): Map[TypeId, ForwardGuarantee] = {
       val kept = prev.defs.meta.nodes.keySet.intersect(last.defs.meta.nodes.keySet)
 
-      val own: Map[TypeId, Option[ForwardCompatTier]] = kept.map {
+      val own: Map[TypeId, ForwardGuarantee] = kept.map {
         id =>
-          val tier = (prev.defs.meta.nodes(id), last.defs.meta.nodes(id)) match {
+          val guarantee = (prev.defs.meta.nodes(id), last.defs.meta.nodes(id)) match {
             case (_: DomainMember.Builtin, _: DomainMember.Builtin) =>
-              Some(Identical)
+              ForwardGuarantee.identical
             case (o: DomainMember.User, n: DomainMember.User) =>
-              ownForwardTier(o.defn, n.defn, prev, last)
+              ownForwardGuarantee(o.defn, n.defn, prev, last)
             case _ =>
-              None
+              ForwardGuarantee.none
           }
-          (id, tier)
+          (id, guarantee)
       }.toMap
 
       // codec-relevant direct dependencies in the OLD version: what the old decoder touches
@@ -261,40 +262,64 @@ object BaboonComparator {
       while (changed) {
         changed = false
         current = current.map {
-          case (id, tier) =>
-            val next = tier.flatMap {
-              ownTier =>
-                val depTiers = deps(id).toList.map(dep => current.getOrElse(dep, None))
-                if (depTiers.exists(_.isEmpty)) {
-                  None
-                } else if (depTiers.forall(_.contains(Identical))) {
-                  Some(ownTier)
-                } else {
-                  // some dependency is readable but not byte-identical: JSON-only
-                  Some(ForwardCompatTier.min(ownTier, JsonAdditive))
-                }
-            }
-            if (next != tier) changed = true
+          case (id, guarantee) =>
+            val depGuarantees = deps(id).toList.map(dep => current.getOrElse(dep, ForwardGuarantee.none))
+            val next = ForwardGuarantee(
+              // a nested value that merely prefix-reads would leave the outer cursor
+              // mid-value; only byte-identical nesting keeps the outer read in sync
+              ueba = if (depGuarantees.forall(_.ueba.contains(UebaRead.Full))) guarantee.ueba else None,
+              json = guarantee.json && depGuarantees.forall(_.json),
+            )
+            if (next != guarantee) changed = true
             (id, next)
         }
       }
 
-      current.collect { case (id, Some(tier)) => (id, tier) }
+      current.filter(_._2.nonEmpty)
     }
 
-    /** The type's OWN structural forward tier for one step, ignoring dependencies.
-      * Order-sensitive where the UEBA wire is (field order, enum/ADT member order).
+    /** The type's OWN structural forward-readability for one step, ignoring
+      * dependencies, resolved separately for the two wire formats.
+      *
+      * UEBA identifies members by position and never puts a name on the wire, so a
+      * rename declared with `was` is invisible to it. JSON identifies members by
+      * name and is blind to position, so it forgives exactly the opposite set of
+      * changes. Neither subsumes the other.
+      *
+      * Renames of a TYPE (rather than of a field or an enum member) are not handled
+      * here: they change the TypeId, so the renamed type is absent from the
+      * intersection the caller iterates and from its dependents' dependency sets,
+      * which collapses both axes. That needs rename-aware dependency resolution.
       */
-    private def ownForwardTier(o: Typedef.User, n: Typedef.User, prev: Domain, last: Domain): Option[ForwardCompatTier] = {
-      import ForwardCompatTier.*
+    private def ownForwardGuarantee(o: Typedef.User, n: Typedef.User, prev: Domain, last: Domain): ForwardGuarantee = {
       (o, n) match {
         case (d1: Typedef.Dto, d2: Typedef.Dto) =>
-          val f1 = d1.fields.map(f => (f.name, f.tpe))
-          val f2 = d2.fields.map(f => (f.name, f.tpe))
-          if (f1 == f2) {
-            Some(Identical)
-          } else if (f2.startsWith(f1)) {
-            val appended = d2.fields.drop(f1.size)
+          // `prevName` is carried forward by every later version, so it only denotes a
+          // rename performed by THIS step while it still names a field of the old type.
+          val oldFieldNames = d1.fields.map(_.name).toSet
+          def renamedAtThisStep(nf: Field): Option[FieldName] =
+            nf.prevName.filter(prev => prev != nf.name && oldFieldNames.contains(prev))
+
+          // JSON: every old key must still carry that same old field's value. A new
+          // field that took the name over from a different field via `was` would hand
+          // the old reader the wrong value, so it does not count.
+          val json = d1.fields.forall {
+            of => d2.fields.exists(nf => nf.name == of.name && nf.tpe == of.tpe && renamedAtThisStep(nf).isEmpty)
+          }
+
+          // UEBA: the position is the identity. A name change at a position is
+          // invisible on the wire, and sound exactly when it is a declared rename of
+          // the field that occupied that position.
+          val prefixAligned = d2.fields.size >= d1.fields.size && d1.fields.zip(d2.fields).forall {
+            case (of, nf) => of.tpe == nf.tpe && (of.name == nf.name || renamedAtThisStep(nf).contains(of.name))
+          }
+
+          val ueba = if (!prefixAligned) {
+            None
+          } else if (d2.fields.size == d1.fields.size) {
+            Some(UebaRead.Full)
+          } else {
+            val appended = d2.fields.drop(d1.fields.size)
             val allFixed = appended.forall {
               f =>
                 last.refMeta(f.tpe).len match {
@@ -302,50 +327,54 @@ object BaboonComparator {
                   case _                   => false
                 }
             }
-            Some(if (allFixed) PrefixAnyMode else PrefixCompact)
-          } else if (f1.toSet.subsetOf(f2.toSet)) {
-            // additions at arbitrary positions and/or reordering: JSON readers
-            // look fields up by key; UEBA is positional and breaks
-            Some(JsonAdditive)
-          } else {
-            None
+            Some(if (allFixed) UebaRead.PrefixAnyMode else UebaRead.PrefixCompact)
           }
 
+          ForwardGuarantee(ueba, json)
+
         case (e1: Typedef.Enum, e2: Typedef.Enum) =>
-          val m1 = e1.members.toList.map(m => (m.name, m.const))
-          val m2 = e2.members.toList.map(m => (m.name, m.const))
-          if (m1 == m2) {
-            Some(Identical)
-          } else if (e1.members.toList.map(_.name).toSet == e2.members.toList.map(_.name).toSet) {
-            // same member set, different order or consts: JSON encodes names;
-            // UEBA discriminants are positional and break
-            Some(JsonAdditive)
-          } else {
-            // added members are unreadable by the old decoder when actually sent;
-            // removed/renamed members shift UEBA discriminants
-            None
+          val m1 = e1.members.toList
+          val m2 = e2.members.toList
+
+          // As for fields, `prevName` survives into later versions and only denotes a
+          // rename performed by THIS step.
+          val oldMemberNames = m1.map(_.name).toSet
+          def renamedAtThisStep(m: EnumMember): Option[String] =
+            m.prevName.filter(prev => prev != m.name && oldMemberNames.contains(prev))
+
+          // JSON encodes the member name. An added member is unreadable once it is
+          // actually sent, so the name sets must match exactly; a member that has
+          // taken over another member's name would decode to the wrong constant.
+          val json = m1.map(_.name).toSet == m2.map(_.name).toSet &&
+            m2.forall(m => renamedAtThisStep(m).isEmpty)
+
+          // UEBA encodes the positional index, so a rename in place is invisible.
+          // Explicit `const` values never reach the wire, but they stay in the
+          // comparison so a const-only change keeps its existing classification.
+          val uebaFull = m1.size == m2.size && m1.zip(m2).forall {
+            case (a, b) => a.const == b.const && (a.name == b.name || renamedAtThisStep(b).contains(a.name))
           }
+
+          ForwardGuarantee(Option.when(uebaFull)(UebaRead.Full), json)
 
         case (a1: Typedef.Adt, a2: Typedef.Adt) =>
           val b1 = a1.dataMembers(prev)
           val b2 = a2.dataMembers(last)
-          if (b1 == b2) {
-            Some(Identical)
-          } else if (b2.toSet.subsetOf(b1.toSet)) {
-            // branches only removed: the new writer emits only branches the old
-            // reader knows by name (JSON); UEBA branch indices are positional and shift
-            Some(JsonAdditive)
-          } else {
-            None
-          }
+
+          // JSON tags a branch by its name: the new writer must only emit branches
+          // the old reader already knows.
+          val json = b2.toSet.subsetOf(b1.toSet)
+          // UEBA encodes the positional branch index. A branch rename is a type
+          // rename, excluded above.
+          ForwardGuarantee(Option.when(b1 == b2)(UebaRead.Full), json)
 
         case (f1: Typedef.Foreign, f2: Typedef.Foreign) =>
           // hand-written codecs: only byte-level sameness is derivable
-          if (f1 == f2) Some(Identical) else None
+          if (f1 == f2) ForwardGuarantee.identical else ForwardGuarantee.none
 
         case _ =>
           // Contract/Service carry no codecs; kind changes are unreadable
-          None
+          ForwardGuarantee.none
       }
     }
 

@@ -1,0 +1,12 @@
+model fwde2e.rename
+
+version "2.0.0"
+
+import "1.0.0" { * } without {
+  RenamedHolder
+}
+
+root data RenamedHolder {
+  a: i32
+  r: str was b
+}

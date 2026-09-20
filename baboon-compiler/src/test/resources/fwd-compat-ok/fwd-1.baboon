@@ -113,3 +113,33 @@ data MapCarrier {
 root data MapSwapHost {
   c: MapCarrier
 }
+
+// v2 renames a field in place. UEBA identifies fields by position and never puts
+// a name on the wire, so the bytes are unchanged; JSON keys by name, so the old
+// codec cannot find the value -> UEBA-only readability.
+root data RenameField {
+  a: i32
+  b: str
+}
+
+// v2 renames, v3 appends a variable-length field: the chain meets to a UEBA
+// prefix read with JSON already gone.
+root data RenameThenAppend {
+  a: i32
+}
+
+enum EnumRenamed {
+  A
+  B
+}
+
+// dep enum renames a member: the positional discriminants are unchanged, so the
+// host keeps its UEBA axis and loses only JSON
+root data EnumRenamedHost {
+  e: EnumRenamed
+}
+
+// own structure unchanged, dep renames a field: same asymmetry one level up
+root data HostOfRename {
+  dep: RenameField
+}

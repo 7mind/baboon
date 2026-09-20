@@ -15,6 +15,16 @@ final class ForwardCompatComparatorTest extends ForwardCompatComparatorTestBase[
 abstract class ForwardCompatComparatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] extends BaboonTest[F] {
   import ForwardCompatTier.*
 
+  // `ForwardCompatTier` values are the capability KEYS published in
+  // `baboonMinReaderVersions`; a step or a chain carries a `ForwardGuarantee`,
+  // which resolves the two wire formats independently.
+  private val GIdentical          = ForwardGuarantee.identical
+  private val GPrefixAnyMode      = ForwardGuarantee(Some(UebaRead.PrefixAnyMode), json = true)
+  private val GPrefixCompact      = ForwardGuarantee(Some(UebaRead.PrefixCompact), json = true)
+  private val GJsonAdditive       = ForwardGuarantee.jsonOnly
+  private val GUebaIdentical      = ForwardGuarantee(Some(UebaRead.Full), json = false)
+  private val GUebaPrefixCompact  = ForwardGuarantee(Some(UebaRead.PrefixCompact), json = false)
+
   private def loadFwd(loader: BaboonLoader[F]): F[NEList[BaboonIssue], BaboonFamily] = {
     val root = IzResources
       .getPath("fwd-compat-ok")
@@ -32,7 +42,7 @@ abstract class ForwardCompatComparatorTestBase[F[+_, +_]: Error2: TagKK: BaboonT
     family.domains.toMap.values.find(_.pkg.toString == "fwdcompat.model").get.evolution
   }
 
-  private def runOf(evo: BaboonEvolution, version: String, typeName: String): List[(String, ForwardCompatTier)] = {
+  private def runOf(evo: BaboonEvolution, version: String, typeName: String): List[(String, ForwardGuarantee)] = {
     val entries = evo.typesForwardReadable(Version.parse(version)).collect {
       case (id: TypeId.User, fr) if id.name.name == typeName => fr
     }.toList
@@ -49,42 +59,103 @@ abstract class ForwardCompatComparatorTestBase[F[+_, +_]: Error2: TagKK: BaboonT
           val evo = evolutionOf(family)
 
           // fixed-length append: readable in both UEBA modes (top-level framed reads)
-          assert(runOf(evo, "1.0.0", "AppendFixed") == List(("1.0.0", Identical), ("1.1.0", PrefixAnyMode), ("1.2.0", PrefixAnyMode)))
+          assert(runOf(evo, "1.0.0", "AppendFixed") == List(("1.0.0", GIdentical), ("1.1.0", GPrefixAnyMode), ("1.2.0", GPrefixAnyMode)))
 
           // variable-length appends: compact blobs only, composed across two steps
-          assert(runOf(evo, "1.0.0", "AppendVar") == List(("1.0.0", Identical), ("1.1.0", PrefixCompact), ("1.2.0", PrefixCompact)))
-          assert(runOf(evo, "1.1.0", "AppendVar") == List(("1.1.0", Identical), ("1.2.0", PrefixCompact)))
+          assert(runOf(evo, "1.0.0", "AppendVar") == List(("1.0.0", GIdentical), ("1.1.0", GPrefixCompact), ("1.2.0", GPrefixCompact)))
+          assert(runOf(evo, "1.1.0", "AppendVar") == List(("1.1.0", GIdentical), ("1.2.0", GPrefixCompact)))
 
           // mid-position insertion: JSON only; run ends when a field is removed in 1.2.0
-          assert(runOf(evo, "1.0.0", "MidInsert") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive)))
-          assert(runOf(evo, "1.1.0", "MidInsert") == List(("1.1.0", Identical)))
+          assert(runOf(evo, "1.0.0", "MidInsert") == List(("1.0.0", GIdentical), ("1.1.0", GJsonAdditive)))
+          assert(runOf(evo, "1.1.0", "MidInsert") == List(("1.1.0", GIdentical)))
 
           // field removal / field type change: not forward-readable
-          assert(runOf(evo, "1.0.0", "Removed") == List(("1.0.0", Identical)))
-          assert(runOf(evo, "1.0.0", "Changed") == List(("1.0.0", Identical)))
+          assert(runOf(evo, "1.0.0", "Removed") == List(("1.0.0", GIdentical)))
+          assert(runOf(evo, "1.0.0", "Changed") == List(("1.0.0", GIdentical)))
 
           // own structure unchanged but a dependency appends: capped at JSON
-          assert(runOf(evo, "1.0.0", "HostOfAppend") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive), ("1.2.0", JsonAdditive)))
+          assert(runOf(evo, "1.0.0", "HostOfAppend") == List(("1.0.0", GIdentical), ("1.1.0", GJsonAdditive), ("1.2.0", GJsonAdditive)))
 
           // fully unchanged closure: byte-identical throughout
-          assert(runOf(evo, "1.0.0", "HostOfUnchanged") == List(("1.0.0", Identical), ("1.1.0", Identical), ("1.2.0", Identical)))
-          assert(runOf(evo, "1.0.0", "Stable") == List(("1.0.0", Identical), ("1.1.0", Identical), ("1.2.0", Identical)))
+          assert(runOf(evo, "1.0.0", "HostOfUnchanged") == List(("1.0.0", GIdentical), ("1.1.0", GIdentical), ("1.2.0", GIdentical)))
+          assert(runOf(evo, "1.0.0", "Stable") == List(("1.0.0", GIdentical), ("1.1.0", GIdentical), ("1.2.0", GIdentical)))
 
           // enum gains a member: unreadable (new values would throw), host follows
-          assert(runOf(evo, "1.0.0", "EnumGrows") == List(("1.0.0", Identical)))
-          assert(runOf(evo, "1.0.0", "EnumGrowsHost") == List(("1.0.0", Identical)))
+          assert(runOf(evo, "1.0.0", "EnumGrows") == List(("1.0.0", GIdentical)))
+          assert(runOf(evo, "1.0.0", "EnumGrowsHost") == List(("1.0.0", GIdentical)))
 
           // enum members reordered: JSON encodes names, UEBA discriminants are positional
-          assert(runOf(evo, "1.0.0", "EnumReorder") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive), ("1.2.0", JsonAdditive)))
-          assert(runOf(evo, "1.0.0", "EnumReorderHost") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive), ("1.2.0", JsonAdditive)))
+          assert(runOf(evo, "1.0.0", "EnumReorder") == List(("1.0.0", GIdentical), ("1.1.0", GJsonAdditive), ("1.2.0", GJsonAdditive)))
+          assert(runOf(evo, "1.0.0", "EnumReorderHost") == List(("1.0.0", GIdentical), ("1.1.0", GJsonAdditive), ("1.2.0", GJsonAdditive)))
 
           // recursive DTO appending a field: self-dependency demotes PREFIX to JSON
-          assert(runOf(evo, "1.0.0", "Recur") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive), ("1.2.0", JsonAdditive)))
+          assert(runOf(evo, "1.0.0", "Recur") == List(("1.0.0", GIdentical), ("1.1.0", GJsonAdditive), ("1.2.0", GJsonAdditive)))
 
           // ADT branch appends a field: the branch itself is prefix-readable,
           // the ADT (whose decode nests the branch) is capped at JSON
-          assert(runOf(evo, "1.0.0", "L") == List(("1.0.0", Identical), ("1.1.0", PrefixCompact), ("1.2.0", PrefixCompact)))
-          assert(runOf(evo, "1.0.0", "Sum") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive), ("1.2.0", JsonAdditive)))
+          assert(runOf(evo, "1.0.0", "L") == List(("1.0.0", GIdentical), ("1.1.0", GPrefixCompact), ("1.2.0", GPrefixCompact)))
+          assert(runOf(evo, "1.0.0", "Sum") == List(("1.0.0", GIdentical), ("1.1.0", GJsonAdditive), ("1.2.0", GJsonAdditive)))
+        }
+    }
+
+    "resolve the two wire formats independently: renames are UEBA-only, repositions are JSON-only" in {
+      (loader: BaboonLoader[F]) =>
+        for {
+          family <- loadFwd(loader)
+        } yield {
+          val evo = evolutionOf(family)
+
+          // A declared field rename never reaches the UEBA wire, so the bytes are
+          // unchanged; the JSON key moved, so the old codec cannot find the value.
+          assert(runOf(evo, "1.0.0", "RenameField") == List(("1.0.0", GIdentical), ("1.1.0", GUebaIdentical), ("1.2.0", GUebaIdentical)))
+
+          // Rename then variable-length append: the axes weaken independently, so
+          // the chain keeps a compact-mode UEBA prefix read and no JSON at all.
+          assert(runOf(evo, "1.0.0", "RenameThenAppend") == List(("1.0.0", GIdentical), ("1.1.0", GUebaIdentical), ("1.2.0", GUebaPrefixCompact)))
+          assert(runOf(evo, "1.1.0", "RenameThenAppend") == List(("1.1.0", GIdentical), ("1.2.0", GPrefixCompact)))
+
+          // Enum members are positional u8 discriminants in UEBA and names in JSON.
+          assert(runOf(evo, "1.0.0", "EnumRenamed") == List(("1.0.0", GIdentical), ("1.1.0", GUebaIdentical), ("1.2.0", GUebaIdentical)))
+
+          // A nested value that is UEBA byte-identical keeps its dependents' UEBA
+          // axis alive; only their JSON axis dies with it.
+          assert(runOf(evo, "1.0.0", "EnumRenamedHost") == List(("1.0.0", GIdentical), ("1.1.0", GUebaIdentical), ("1.2.0", GUebaIdentical)))
+          assert(runOf(evo, "1.0.0", "HostOfRename") == List(("1.0.0", GIdentical), ("1.1.0", GUebaIdentical), ("1.2.0", GUebaIdentical)))
+
+          // The mirror image, already supported: a mid-position insert keeps JSON
+          // and loses UEBA. Neither tier implies the other.
+          assert(runOf(evo, "1.0.0", "MidInsert") == List(("1.0.0", GIdentical), ("1.1.0", GJsonAdditive)))
+        }
+    }
+
+    "publish per-format bounds: a renamed field lowers the UEBA bounds and leaves the JSON bound alone" in {
+      (loader: BaboonLoader[F]) =>
+        for {
+          family <- loadFwd(loader)
+        } yield {
+          val evo = evolutionOf(family)
+          val v1  = Version.parse("1.0.0")
+          val v2  = Version.parse("1.1.0")
+          val v3  = Version.parse("1.2.0")
+
+          def idOf(typeName: String): TypeId = {
+            evo.typesForwardReadable(v1).keys.collectFirst { case id: TypeId.User if id.name.name == typeName => id: TypeId }.get
+          }
+
+          // This is the bound the binary envelope publishes. A 1.0.0 reader can decode
+          // 1.2.0 UEBA bytes for a renamed field; a 1.0.0 JSON reader cannot, and the
+          // `json-additive` bound correctly stops at the rename.
+          assert(evo.minReaders(v3, idOf("RenameField")) == Map(Identical -> v2, PrefixAnyMode -> v1, PrefixCompact -> v1, JsonAdditive -> v2))
+          assert(evo.minReaders(v3, idOf("EnumRenamed")) == Map(Identical -> v2, PrefixAnyMode -> v1, PrefixCompact -> v1, JsonAdditive -> v2))
+          assert(evo.minReaders(v3, idOf("HostOfRename")) == Map(Identical -> v2, PrefixAnyMode -> v1, PrefixCompact -> v1, JsonAdditive -> v2))
+
+          // Rename then variable-length append: only the compact-mode UEBA bound reaches
+          // back past the rename. `prefix-any-mode` stops at the writer because the
+          // appended field is variable-length, and `json-additive` stops at the rename.
+          assert(evo.minReaders(v3, idOf("RenameThenAppend")) == Map(Identical -> v3, PrefixAnyMode -> v3, PrefixCompact -> v1, JsonAdditive -> v2))
+
+          // The mirror image: a mid-position insert lowers only the JSON bound.
+          assert(evo.minReaders(v2, idOf("MidInsert")) == Map(Identical -> v2, PrefixAnyMode -> v2, PrefixCompact -> v2, JsonAdditive -> v1))
         }
     }
 
@@ -118,10 +189,10 @@ abstract class ForwardCompatComparatorTestBase[F[+_, +_]: Error2: TagKK: BaboonT
           assert(twins("Stable").contains(v2))
 
           // forward tiers for the new fixtures (order-sensitive computation, unaffected by hashing)
-          assert(runOf(evo, "1.0.0", "SumReorder") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive), ("1.2.0", JsonAdditive)))
-          assert(runOf(evo, "1.0.0", "SumReorderHost") == List(("1.0.0", Identical), ("1.1.0", JsonAdditive), ("1.2.0", JsonAdditive)))
-          assert(runOf(evo, "1.0.0", "MapCarrier") == List(("1.0.0", Identical)))
-          assert(runOf(evo, "1.0.0", "MapSwapHost") == List(("1.0.0", Identical)))
+          assert(runOf(evo, "1.0.0", "SumReorder") == List(("1.0.0", GIdentical), ("1.1.0", GJsonAdditive), ("1.2.0", GJsonAdditive)))
+          assert(runOf(evo, "1.0.0", "SumReorderHost") == List(("1.0.0", GIdentical), ("1.1.0", GJsonAdditive), ("1.2.0", GJsonAdditive)))
+          assert(runOf(evo, "1.0.0", "MapCarrier") == List(("1.0.0", GIdentical)))
+          assert(runOf(evo, "1.0.0", "MapSwapHost") == List(("1.0.0", GIdentical)))
         }
     }
 
@@ -181,7 +252,7 @@ abstract class ForwardCompatComparatorTestBase[F[+_, +_]: Error2: TagKK: BaboonT
                   assert(fr.typeId == id)
                   assert(fr.in == version)
                   // head is always the own version at IDENTICAL
-                  assert(fr.readable.head == ((version, Identical)))
+                  assert(fr.readable.head == ((version, GIdentical)))
                   // versions strictly ascending
                   val vs = fr.readable.toList.map(_._1)
                   assert(vs == vs.sorted(Version.ordering) && vs.distinct == vs)
@@ -203,15 +274,15 @@ abstract class ForwardCompatComparatorTestBase[F[+_, +_]: Error2: TagKK: BaboonT
                 case (id, fr) =>
                   val twins = evo.typesUnchangedSince(version)(id).higherTwins(version).toSet
                   fr.readable.toList.drop(1).foreach {
-                    case (v, tier) =>
-                      if (tier == Identical) {
+                    case (v, guarantee) =>
+                      if (guarantee == GIdentical) {
                         assert(twins.contains(v), s"$id@$version: forward-Identical $v must be a sameIn twin")
                       }
                   }
               }
           }
 
-          assert(runOf(evo, "1.0.0", "EnumReorderHost").tail.forall(_._2 == JsonAdditive))
+          assert(runOf(evo, "1.0.0", "EnumReorderHost").tail.forall(_._2 == GJsonAdditive))
         }
     }
   }
