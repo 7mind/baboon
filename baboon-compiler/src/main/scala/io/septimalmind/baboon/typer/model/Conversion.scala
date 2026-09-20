@@ -43,7 +43,8 @@ object Conversion {
   }
 
   object FieldOp {
-    case class Transfer(targetField: Field) extends FieldOp
+    /** `sourceTpe` is the field's type as the OLD version spells it; see [[DtoOp.KeepField]]. */
+    case class Transfer(targetField: Field, sourceTpe: TypeRef) extends FieldOp
 
     case class InitializeWithDefault(targetField: Field) extends FieldOp
 

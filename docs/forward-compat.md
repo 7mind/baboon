@@ -548,11 +548,13 @@ Two consequences of scheme 2:
 
 ## Known gaps
 
-- **ADT branch renames and type renames are not classified.** They change the
-  TypeId, so the renamed type is absent both from the version intersection the
-  comparator walks and from its dependents' dependency sets, which collapses
-  both axes. Field renames and enum member renames keep their owner's TypeId and
-  are handled. Lifting this needs rename-aware dependency resolution.
+- **A renamed type has no forward bound of its own.** Its hosts do (see the
+  closed gap below), but a top-level payload is identified by the typeId in its
+  envelope, and no runtime resolves a renamed one: `Domain.renames` is not
+  emitted into generated metadata at all. Lifting this means publishing the
+  rename map and resolving typeIds in the decode path of all ten runtimes -- a
+  metadata addition on the scale of the envelope-v2 work, worth doing only when
+  a ROOT type actually has to be renamed with old readers still decoding.
 - **`prefix-any-mode` has no runtime end-to-end test.** The tier requires an
   appended *fixed-length* field, and every fixed-length scalar is
   non-defaultable, so such a step needs a hand-written conversion — which the
@@ -562,6 +564,22 @@ Two consequences of scheme 2:
   lower the bound for a variable-length append.
 
 Closed gaps, kept for the record:
+
+- *A renamed type used to collapse both axes for everything that referenced it*,
+  and additionally broke conversion derivation for its hosts. Neither format puts
+  a nested value's type name on the wire -- UEBA is positional, and JSON tags a
+  DTO field by the FIELD name -- so renaming a nested type moves no byte of its
+  host's payload. Type equivalence is now rename-aware for one step, which
+  restores the host's forward bound AND makes its conversion auto-derivable again
+  (it routes the old value through the renamed type's own conversion, instead of
+  reading as an incompatible type change and forcing a hand-written conversion on
+  every host). The renamed type itself still gets no bound, which falls out of
+  keying the step by the OLD id: hosts resolve their dependency while the chain
+  finds no successor under that id. For an ADT the two axes part company --
+  renames resolve on the UEBA side, whose discriminator is the branch INDEX, and
+  deliberately not on the JSON side, whose discriminator is the branch NAME, so a
+  branch rename yields `ueba-identical`. Fixtures: `rename-nested-ok` (compiled by
+  all nine codegen lanes) and `RenameSoundnessTest`.
 
 - *Missing-tier handling* used to differ: Python, Swift and Rust fell back to
   the byte-identical bound when `baboonMinReaderVersions` lacked a tier, the

@@ -226,7 +226,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
                 val fld       = KtTypeTranslator.escapeKtKeyword(f.name.name)
                 val localName = KtTypeTranslator.escapeKtKeyword(f.name.name.toLowerCase)
                 val expr = op match {
-                  case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"_from.$fld", 1)
+                  case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"_from.$fld", 1, o.sourceTpe)
                   case o: FieldOp.InitializeWithDefault =>
                     o.targetField.tpe match {
                       case TypeRef.Constructor(id, _) =>

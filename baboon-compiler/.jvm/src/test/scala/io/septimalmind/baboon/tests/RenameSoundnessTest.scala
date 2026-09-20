@@ -6,7 +6,7 @@ import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, EvolutionIssue}
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
 import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model.Conversion.{CopyEnumByName, CustomConversionRequired, DtoConversion, FieldOp, RemovedTypeNoConversion}
-import io.septimalmind.baboon.typer.model.{BaboonFamily, Conversion, DerivationFailure, DomainMember, EvolutionStep, Field, Pkg, Typedef, Version}
+import io.septimalmind.baboon.typer.model.{BaboonFamily, Conversion, DerivationFailure, DomainMember, EvolutionStep, Field, Pkg, TypeId, Typedef, Version}
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.reflect.TagKK
@@ -56,6 +56,15 @@ abstract class RenameSoundnessTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
       case one :: Nil => one
       case other      => fail(s"expected exactly one dto named $name in $version, got $other")
     }
+  }
+
+  private def forwardRun(family: BaboonFamily, pkg: String, at: String, typeName: String): List[(String, String)] = {
+    val lineage = family.domains.toMap(Pkg(NEList.unsafeFrom(pkg.split('.').toList)))
+    val entries = lineage.evolution.typesForwardReadable(Version.parse(at)).collect {
+      case (id: TypeId.User, fr) if id.name.name == typeName => fr
+    }.toList
+    assert(entries.size == 1, s"expected exactly one type named $typeName at $at, got $entries")
+    entries.head.readable.toList.map { case (v, g) => (v.toString, g.wireName) }
   }
 
   private def renames(c: DtoConversion): Set[(String, String)] = c.ops.collect {
@@ -365,6 +374,66 @@ abstract class RenameSoundnessTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
         load(manager, "v1.baboon" -> v1).map {
           family =>
             assert(family.domains.toMap.keySet.exists(_.toString == "rsnd.single"))
+        }
+    }
+
+    "keep a host's forward bound when a nested type is renamed" in {
+      (manager: BaboonFamilyManager[F]) =>
+        // Neither format puts a nested value's type name on the wire, so renaming `Leaf` moves no
+        // byte of a `Host` payload. The host must keep its bound; the renamed type must not get one
+        // of its own, because a top-level payload is identified by the typeId in its envelope.
+        val v1 = """model rsnd.nestedrename
+                   |version "1.0.0"
+                   |data Leaf : derived[json], derived[ueba] { a: i32 }
+                   |root data Host : derived[json], derived[ueba] { l: Leaf  b: i32 }
+                   |""".stripMargin
+        val v2 = """model rsnd.nestedrename
+                   |version "1.1.0"
+                   |import "1.0.0" { * } without { Leaf Host }
+                   |data Renamed : was[Leaf], derived[json], derived[ueba] { a: i32 }
+                   |root data Host : derived[json], derived[ueba] { l: Renamed  b: i32 }
+                   |""".stripMargin
+        load(manager, "v1.baboon" -> v1, "v2.baboon" -> v2).map {
+          family =>
+            assert(
+              forwardRun(family, "rsnd.nestedrename", "1.0.0", "Host") ==
+              List(("1.0.0", "identical"), ("1.1.0", "identical"))
+            )
+            assert(forwardRun(family, "rsnd.nestedrename", "1.0.0", "Leaf") == List(("1.0.0", "identical")))
+        }
+    }
+
+    "read a renamed ADT branch in UEBA but not in JSON" in {
+      (manager: BaboonFamilyManager[F]) =>
+        // UEBA writes the branch INDEX, JSON writes the branch NAME. Renaming a branch in place
+        // moves no UEBA byte and breaks the JSON discriminator, so the two axes must part company.
+        val v1 = """model rsnd.branchrename
+                   |version "1.0.0"
+                   |root adt A : derived[json], derived[ueba] {
+                   |   data X { a: i32 }
+                   |   data Y { b: str }
+                   |}
+                   |""".stripMargin
+        val v2 = """model rsnd.branchrename
+                   |version "1.1.0"
+                   |import "1.0.0" { * } without { A }
+                   |root adt A : derived[json], derived[ueba] {
+                   |   data X2 : was[X] { a: i32 }
+                   |   data Y { b: str }
+                   |}
+                   |""".stripMargin
+        load(manager, "v1.baboon" -> v1, "v2.baboon" -> v2).map {
+          family =>
+            assert(
+              forwardRun(family, "rsnd.branchrename", "1.0.0", "A") ==
+              List(("1.0.0", "identical"), ("1.1.0", "ueba-identical"))
+            )
+            // the untouched branch keeps both axes; the renamed one gets no bound of its own
+            assert(
+              forwardRun(family, "rsnd.branchrename", "1.0.0", "Y") ==
+              List(("1.0.0", "identical"), ("1.1.0", "identical"))
+            )
+            assert(forwardRun(family, "rsnd.branchrename", "1.0.0", "X") == List(("1.0.0", "identical")))
         }
     }
 

@@ -29,7 +29,7 @@ final class OpDiffFormatter(useColor: Boolean) {
       s"$red- ${f.name.name}$reset: ${formatTypeRef(f.tpe)}"
     case DtoOp.ChangeField(f, newType) =>
       s"$yellow~ ${f.name.name}$reset: ${formatTypeRef(f.tpe)} -> ${formatTypeRef(newType)}"
-    case DtoOp.KeepField(f, modification) =>
+    case DtoOp.KeepField(f, _, modification) =>
       s"$dim= ${f.name.name}$reset: ${formatTypeRef(f.tpe)} (${formatModification(modification)})"
     case DtoOp.RenameField(oldField, newField, modification) =>
       val typeChangeStr = if (oldField.tpe != newField.tpe) {

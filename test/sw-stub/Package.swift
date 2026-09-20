@@ -96,6 +96,16 @@ let package = Package(
             dependencies: ["BaboonRuntime", "Fwde2eRename_v1_0_0"],
             path: "Sources/Fwde2eRename"
         ),
+        .target(
+            name: "RnnestedModel_v1_0_0",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/RnnestedModel_v1_0_0"
+        ),
+        .target(
+            name: "RnnestedModel",
+            dependencies: ["BaboonRuntime", "RnnestedModel_v1_0_0"],
+            path: "Sources/RnnestedModel"
+        ),
 
         // ----- Single-version fixtures ----------------------------------------------------------
         .target(
@@ -341,6 +351,11 @@ let package = Package(
             name: "Fwde2eRenameTests",
             dependencies: ["BaboonRuntime", "Fwde2eRename"],
             path: "Tests/BaboonTests/Fwde2eRename"
+        ),
+        .testTarget(
+            name: "RnnestedModelTests",
+            dependencies: ["BaboonRuntime", "RnnestedModel"],
+            path: "Tests/BaboonTests/RnnestedModel"
         ),
         .testTarget(
             name: "MyOkExtractedContractsTests",
