@@ -76,11 +76,16 @@ object BaboonRules {
               .contains(id) || (isRenamed && hasDiff)
 
             defn match {
-              case d: Typedef.Dto if sameLocalStruct =>
+              case _: Typedef.Dto if sameLocalStruct =>
+                // Field ops describe how to populate the TARGET, and `Field` equality includes
+                // `prevName`, which may differ between the two versions even when the local
+                // structure does not (a stale `was` annotation being dropped, for instance).
+                // Keying the ops off the source fields would then leave a target field unmapped.
+                val targetDto = last.defs.meta.nodes(targetTpe).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Dto]
                 F.pure(
                   DtoConversion(
                     id,
-                    d.fields.map(f => FieldOp.Transfer(f)),
+                    targetDto.fields.map(f => FieldOp.Transfer(f)),
                     Set.empty,
                     targetTpe,
                   )

@@ -571,6 +571,22 @@ Closed gaps, kept for the record:
 - *Per-format range splitting* used to be out of scope, so a declared rename was
   classified unreadable in both formats even though UEBA bytes do not move. Each
   step is now resolved per format; see "Per-format readability" above.
+- *Declared renames were unsound in two ways*, both caused by a `was` annotation
+  surviving into every later version of a type while a version pair only ever
+  sees two adjacent versions. (1) A carried-forward annotation was rejected as a
+  typo: after `r: str was b` in 1.1.0, editing the type again in 1.2.0 failed
+  with `InvalidFieldRename` because 1.1.0 no longer has a `b`. Ancestry is now
+  validated once per package against every earlier version, and each pair
+  honours a `prevName` only while it still names a member of the version it
+  compares against. (2) A rename whose target name the previous version also used
+  — a name swap, or a rename onto the name of a field being dropped — was counted
+  as both "kept" and "renamed", yielding two conflicting ops for one target
+  field; and a swap that preserves field order leaves `shallowId` (sorted) and
+  `deepId` (positional) both intact, so the type was classified unchanged and the
+  declared move was ignored outright. A type declaring an effective rename is now
+  classified as locally modified, and the kept/removed/added sets subtract the
+  rename's source and target names on both ends, in the comparator and in the
+  conversion validator alike. Covered by `RenameSoundnessTest`.
 - *Timestamp kind byte round trips* (https://github.com/7mind/baboon/issues/91):
   the C# `RpDateTime` keeps carrying its `DateTimeKind` on the wire (Local when
   the offset matches the writer's zone) — this is intentional and unchanged, as

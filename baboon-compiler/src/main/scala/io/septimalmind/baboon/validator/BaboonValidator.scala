@@ -1026,7 +1026,14 @@ object BaboonValidator {
                     case f: FieldOp.Rename => f.sourceFieldName
                     case f: FieldOp.Redef  => f.sourceFieldName
                   }.toSet
-                  removals = oldFieldNames.diff(newFieldNames).diff(renamedSources)
+                  renamedTargets = c.ops.collect {
+                    case f: FieldOp.Rename => f.targetField.name
+                    case f: FieldOp.Redef  => f.targetField.name
+                  }.toSet
+                  // A renamed field is accounted for by its rename op on both ends, so neither its
+                  // source nor its target name participates in the removal set. Subtracting only the
+                  // sources would hide the removal of an old field whose name a rename took over.
+                  removals = oldFieldNames.diff(renamedSources).diff(newFieldNames.diff(renamedTargets))
                   _ <- F.when(removals != removedFields)(
                     F.fail(
                       BaboonIssue.of(

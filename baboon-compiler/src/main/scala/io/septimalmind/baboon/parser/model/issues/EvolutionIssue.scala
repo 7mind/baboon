@@ -134,7 +134,7 @@ object EvolutionIssue {
     (issue: InvalidFieldRename) => {
       s"""Invalid field rename in type ${issue.typeId.toString}:
          |   Field '${issue.newFieldName.name}' was declared as renamed from '${issue.prevFieldName.name}',
-         |   but '${issue.prevFieldName.name}' does not exist in the previous version.
+         |   but no earlier version of this type has a field named '${issue.prevFieldName.name}'.
          |""".stripMargin
     }
 
@@ -142,7 +142,7 @@ object EvolutionIssue {
     (issue: InvalidEnumMemberRename) => {
       s"""Invalid enum member rename in type ${issue.typeId.toString}:
          |   Member '${issue.newMemberName}' was declared as renamed from '${issue.prevMemberName}',
-         |   but '${issue.prevMemberName}' does not exist in the previous version.
+         |   but no earlier version of this type has a member named '${issue.prevMemberName}'.
          |""".stripMargin
     }
 }
