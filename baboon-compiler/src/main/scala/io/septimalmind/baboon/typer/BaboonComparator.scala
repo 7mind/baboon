@@ -46,6 +46,7 @@ object BaboonComparator {
       )
 
       for {
+        _ <- validateRenameAncestry(versions)
         indexedDiffs <-
           if (sortedVersions.size == 1) { F.pure(List.empty) }
           else {
@@ -378,6 +379,92 @@ object BaboonComparator {
       }
     }
 
+    /**
+      * True when the new version of `id` declares a `was` rename that still names a field or enum
+      * member of the previous version. Such a rename is honoured by the per-pair diffs, so the type
+      * must not be reported as structurally unchanged.
+      */
+    private def hasEffectiveRename(last: Domain, prev: Domain, id: TypeId): Boolean = {
+      (last.defs.meta.nodes.get(id), prev.defs.meta.nodes.get(id)) match {
+        case (Some(DomainMember.User(_, nd: Typedef.Dto, _, _)), Some(DomainMember.User(_, od: Typedef.Dto, _, _))) =>
+          val oldNames = od.fields.map(_.name).toSet
+          nd.fields.exists(f => f.prevName.exists(was => was != f.name && oldNames.contains(was)))
+        case (Some(DomainMember.User(_, ne: Typedef.Enum, _, _)), Some(DomainMember.User(_, oe: Typedef.Enum, _, _))) =>
+          val oldNames = oe.members.map(_.name).toSet
+          ne.members.exists(m => m.prevName.exists(was => was != m.name && oldNames.contains(was)))
+        case _ =>
+          false
+      }
+    }
+
+    private def renameableNames(domain: Domain, id: TypeId.User): Set[String] = {
+      domain.defs.meta.nodes.get(id) match {
+        case Some(DomainMember.User(_, dto: Typedef.Dto, _, _))  => dto.fields.map(_.name.name).toSet
+        case Some(DomainMember.User(_, enm: Typedef.Enum, _, _)) => enm.members.map(_.name).toSet
+        case _                                                   => Set.empty
+      }
+    }
+
+    /**
+      * A `was` annotation survives into every later version of a type, so an individual version pair
+      * cannot tell a carried-forward annotation apart from a typo: at the 1.1.0 -> 1.2.0 step the
+      * field renamed in 1.1.0 still says `was b` while 1.1.0 no longer has a `b`. Ancestry is
+      * therefore validated here, where every version of the package is visible, and the per-pair
+      * diffs honour a `prevName` only while it still names a member of the version they compare
+      * against.
+      */
+    private def validateRenameAncestry(
+      versions: NEMap[Version, Domain]
+    ): F[NEList[BaboonIssue], Unit] = {
+      val ascending = versions.keySet.toList.sorted(Version.ordering)
+      // names carried by a type's lineage in all versions strictly preceding the keyed one
+      val history = mutable.HashMap.empty[(Version, TypeId.User), Set[String]]
+
+      val issues = ascending.zipWithIndex.flatMap {
+        case (version, idx) =>
+          val domain = versions(version)
+
+          domain.defs.meta.nodes.values.toList.flatMap {
+            case DomainMember.User(_, defn: Typedef.User, _, _) =>
+              val ancestralNames = if (idx == 0) {
+                Set.empty[String]
+              } else {
+                val prevVersion = ascending(idx - 1)
+                val prevId      = domain.renames.getOrElse(defn.id, defn.id)
+                history.getOrElse((prevVersion, prevId), Set.empty[String]) ++
+                renameableNames(versions(prevVersion), prevId)
+              }
+              history.put((version, defn.id), ancestralNames)
+
+              if (ancestralNames.isEmpty) {
+                // the type has no ancestor to have been renamed from; no pair diff looks at it either
+                List.empty
+              } else {
+                defn match {
+                  case dto: Typedef.Dto =>
+                    dto.fields.flatMap {
+                      field =>
+                        field.prevName
+                          .filterNot(prev => ancestralNames.contains(prev.name))
+                          .map(prev => EvolutionIssue.InvalidFieldRename(dto.id, field.name, prev))
+                    }
+                  case enm: Typedef.Enum =>
+                    enm.members.toList.flatMap {
+                      member =>
+                        member.prevName
+                          .filterNot(ancestralNames.contains)
+                          .map(prev => EvolutionIssue.InvalidEnumMemberRename(enm.id, member.name, prev))
+                    }
+                  case _ => List.empty
+                }
+              }
+            case _ => List.empty
+          }
+      }
+
+      F.traverseAccumErrors(issues)(issue => F.fail(BaboonIssue.of(issue))).map(_ => ())
+    }
+
     override def compare(
       last: Domain,
       prev: Domain,
@@ -415,11 +502,18 @@ object BaboonComparator {
       val added   = newTypes.diff(oldTypes).diff(renamedNewIds)
       val removed = oldTypes.diff(newTypes).diff(renamedOldIds)
 
+      // A `was` rename that still names a member of the previous version is a real change even when
+      // both structural signatures stay put: `shallowId` sorts `name:type` and `deepId` is
+      // positional, so a declared name swap is invisible to both. Such a type must be classified as
+      // locally modified so that it reaches `diffDtos`/`diffEnums` and the rename becomes a
+      // conversion op instead of a positional transfer.
+      val declaredRenames = kept.filter(id => hasEffectiveRename(last, prev, id))
+
       val unmodified = kept.filter {
         id =>
           last.typeMeta(id).shallowId == prev.typeMeta(id).shallowId &&
           last.typeMeta(id).deepId == prev.typeMeta(id).deepId
-      }
+      }.diff(declaredRenames)
 
       val changed = kept.diff(unmodified)
 
@@ -435,14 +529,12 @@ object BaboonComparator {
       // same dependencies, different local structure
       val shallowModified = partiallyModified.filter {
         id =>
-          last.typeMeta(id).shallowId != prev.typeMeta(id).shallowId
+          last.typeMeta(id).shallowId != prev.typeMeta(id).shallowId ||
+          declaredRenames.contains(id)
       }
 
       // same local structure, different dependencies
-      val deepModified = partiallyModified.filter {
-        id =>
-          last.typeMeta(id).deepId != prev.typeMeta(id).deepId
-      }
+      val deepModified = partiallyModified.diff(shallowModified)
 
       assert(shallowModified.intersect(deepModified).isEmpty)
       assert(shallowModified.intersect(fullyModified).isEmpty)
@@ -541,45 +633,38 @@ object BaboonComparator {
 
       val names1 = members1.keySet
       val names2 = members2.keySet
-      val invalidRenames = e2.members.toList.flatMap {
+
+      // `prevName` is carried forward by every later version of a type, so here it denotes a rename
+      // only while it still names a member of the version we compare against. Ancestry of a stale
+      // annotation is validated once per package in `evolve`.
+      val renamedMembers = e2.members.toList.flatMap {
         newMember =>
           newMember.prevName.flatMap {
             prevName =>
-              if (!members1.contains(prevName)) {
-                Some(EvolutionIssue.InvalidEnumMemberRename(e2.id, newMember.name, prevName))
-              } else {
-                None
-              }
+              members1.get(prevName).map(oldMember => (newMember.name, (oldMember, newMember)))
           }.toList
-      }
+      }.toMap
 
-      for {
-        _ <- F.traverseAccumErrors(invalidRenames)(issue => F.fail(BaboonIssue.of(issue)))
-      } yield {
-        val renamedMembers = e2.members.toList.flatMap {
-          newMember =>
-            newMember.prevName.flatMap {
-              prevName =>
-                members1.get(prevName).map(oldMember => (newMember.name, (oldMember, newMember)))
-            }.toList
-        }.toMap
+      val renamedNewNames = renamedMembers.keySet
+      val renamedOldNames = renamedMembers.values.map(_._1.name).toSet
 
-        val renamedNewNames = renamedMembers.keySet
-        val renamedOldNames = renamedMembers.values.map(_._1.name).toSet
+      // A renamed member is accounted for by its rename op alone: a declared name swap or a rename
+      // onto a name the previous version also used would otherwise be both "kept" and "renamed".
+      val survivors1 = names1.diff(renamedOldNames)
+      val survivors2 = names2.diff(renamedNewNames)
 
-        val removedMembers = names1.diff(names2).diff(renamedOldNames)
-        val addedMembers   = names2.diff(names1).diff(renamedNewNames)
-        val keptMembers    = names1.intersect(names2)
+      val removedMembers = survivors1.diff(survivors2)
+      val addedMembers   = survivors2.diff(survivors1)
+      val keptMembers    = survivors1.intersect(survivors2)
 
-        val ops = List(
-          removedMembers.map(id => EnumOp.RemoveBranch(members1(id))),
-          addedMembers.map(id => EnumOp.AddBranch(members2(id))),
-          keptMembers.map(id => EnumOp.KeepBranch(members2(id))),
-          renamedMembers.values.map { case (_, newMember) => EnumOp.KeepBranch(newMember) },
-        ).flatten
+      val ops = List(
+        removedMembers.map(id => EnumOp.RemoveBranch(members1(id))),
+        addedMembers.map(id => EnumOp.AddBranch(members2(id))),
+        keptMembers.map(id => EnumOp.KeepBranch(members2(id))),
+        renamedMembers.values.map { case (_, newMember) => EnumOp.KeepBranch(newMember) },
+      ).flatten
 
-        TypedefDiff.EnumDiff(ops)
-      }
+      F.pure(TypedefDiff.EnumDiff(ops))
     }
 
     private def diffAdts(
@@ -675,71 +760,63 @@ object BaboonComparator {
       val names1 = members1.keySet
       val names2 = members2.keySet
 
-      val invalidRenames = d2.fields.flatMap {
+      // `prevName` is carried forward by every later version of a type, so here it denotes a rename
+      // only while it still names a field of the version we compare against. Ancestry of a stale
+      // annotation is validated once per package in `evolve`.
+      val renamedFields: Map[FieldName, (Field, Field)] = d2.fields.flatMap {
         newField =>
           newField.prevName.flatMap {
             prevName =>
-              if (!members1.contains(prevName)) {
-                Some(EvolutionIssue.InvalidFieldRename(d2.id, newField.name, prevName))
-              } else {
-                None
-              }
+              members1.get(prevName).map(oldField => (newField.name, (oldField, newField)))
           }
+      }.toMap
+
+      val renamedNewNames = renamedFields.keySet
+      val renamedOldNames = renamedFields.values.map(_._1.name).toSet
+
+      // A renamed field is accounted for by its rename op alone: a declared name swap or a rename
+      // onto a name the previous version also used would otherwise be both "kept" and "renamed",
+      // producing two conflicting ops for one target field.
+      val survivors1 = names1.diff(renamedOldNames)
+      val survivors2 = names2.diff(renamedNewNames)
+
+      val removedMembers = survivors1.diff(survivors2)
+      val addedMembers   = survivors2.diff(survivors1)
+      val keptMembers    = survivors1.intersect(survivors2)
+
+      val keptFields = keptMembers.map(name => (members1(name), members2(name)))
+      val changedFields = keptFields.filter {
+        case (f1, f2) =>
+          f1.tpe != f2.tpe
+      }
+      val unchangedFields = keptFields.filter {
+        case (f1, f2) =>
+          f1.tpe == f2.tpe
+      }.map {
+        case (_, f2) =>
+          val directRefs = enquiries.explode(f2.tpe)
+          val modification =
+            figureOutModification(changes, directRefs)
+
+          DtoOp.KeepField(f2, modification)
       }
 
-      for {
-        _ <- F.traverseAccumErrors(invalidRenames)(issue => F.fail(BaboonIssue.of(issue)))
-      } yield {
-        val renamedFields: Map[FieldName, (Field, Field)] = d2.fields.flatMap {
-          newField =>
-            newField.prevName.flatMap {
-              prevName =>
-                members1.get(prevName).map(oldField => (newField.name, (oldField, newField)))
-            }
-        }.toMap
-
-        val renamedNewNames = renamedFields.keySet
-        val renamedOldNames = renamedFields.values.map(_._1.name).toSet
-
-        val removedMembers = names1.diff(names2).diff(renamedOldNames)
-        val addedMembers   = names2.diff(names1).diff(renamedNewNames)
-
-        val keptMembers = names1.intersect(names2)
-
-        val keptFields = keptMembers.map(name => (members1(name), members2(name)))
-        val changedFields = keptFields.filter {
-          case (f1, f2) =>
-            f1.tpe != f2.tpe
-        }
-        val unchangedFields = keptFields.filter {
-          case (f1, f2) =>
-            f1.tpe == f2.tpe
-        }.map {
-          case (_, f2) =>
-            val directRefs = enquiries.explode(f2.tpe)
-            val modification =
-              figureOutModification(changes, directRefs)
-
-            DtoOp.KeepField(f2, modification)
-        }
-
-        val renamedFieldOps = renamedFields.values.map {
-          case (oldField, newField) =>
-            val directRefs   = enquiries.explode(newField.tpe)
-            val modification = figureOutModification(changes, directRefs)
-            DtoOp.RenameField(oldField, newField, modification)
-        }
-
-        val ops = List(
-          removedMembers.map(id => DtoOp.RemoveField(members1(id))),
-          addedMembers.map(id => DtoOp.AddField(members2(id))),
-          changedFields.map(id => DtoOp.ChangeField(id._1, id._2.tpe)),
-          unchangedFields,
-          renamedFieldOps,
-        ).flatten
-
-        TypedefDiff.DtoDiff(ops)
+      val renamedFieldOps = renamedFields.values.map {
+        case (oldField, newField) =>
+          val directRefs   = enquiries.explode(newField.tpe)
+          val modification = figureOutModification(changes, directRefs)
+          DtoOp.RenameField(oldField, newField, modification)
       }
+
+      val ops = List(
+        removedMembers.map(id => DtoOp.RemoveField(members1(id))),
+        addedMembers.map(id => DtoOp.AddField(members2(id))),
+        changedFields.map(id => DtoOp.ChangeField(id._1, id._2.tpe)),
+        unchangedFields,
+        renamedFieldOps,
+      ).flatten
+
+      F.pure(TypedefDiff.DtoDiff(ops))
     }
 
     private def diffServices(
