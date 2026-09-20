@@ -31,6 +31,12 @@ object EvolutionIssue {
 
   case class InvalidEnumMemberRename(typeId: TypeId, newMemberName: String, prevMemberName: String) extends EvolutionIssue
 
+  /** The `was` clause names a type no earlier version of the package ever defined. */
+  case class InvalidTypeRename(typeId: TypeId, prevTypeId: TypeId) extends EvolutionIssue
+
+  /** The `was` clause names a type this version still defines, so nothing was renamed away. */
+  case class RenameSourceStillPresent(typeId: TypeId, prevTypeId: TypeId) extends EvolutionIssue
+
   implicit val brokenComparisonPrinter: IssuePrinter[BrokenComparison] =
     new BugPrinter[BrokenComparison] {
       override def errorMessage(bug: BrokenComparison): String = {
@@ -135,6 +141,24 @@ object EvolutionIssue {
       s"""Invalid field rename in type ${issue.typeId.toString}:
          |   Field '${issue.newFieldName.name}' was declared as renamed from '${issue.prevFieldName.name}',
          |   but no earlier version of this type has a field named '${issue.prevFieldName.name}'.
+         |""".stripMargin
+    }
+
+  implicit val invalidTypeRenamePrinter: IssuePrinter[InvalidTypeRename] =
+    (issue: InvalidTypeRename) => {
+      s"""Invalid type rename: ${issue.typeId.toString}
+         |   was declared as renamed from ${issue.prevTypeId.toString},
+         |   but no earlier version of this package defines that type.
+         |""".stripMargin
+    }
+
+  implicit val renameSourceStillPresentPrinter: IssuePrinter[RenameSourceStillPresent] =
+    (issue: RenameSourceStillPresent) => {
+      s"""Invalid type rename: ${issue.typeId.toString}
+         |   was declared as renamed from ${issue.prevTypeId.toString},
+         |   but that type still exists in this version.
+         |   A rename moves a type off its old identity; declare the old type as removed,
+         |   or point the `was` clause at a type this version no longer defines.
          |""".stripMargin
     }
 

@@ -5,8 +5,8 @@ import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, EvolutionIssue}
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
 import io.septimalmind.baboon.typer.BaboonFamilyManager
-import io.septimalmind.baboon.typer.model.Conversion.{CopyEnumByName, DtoConversion, FieldOp}
-import io.septimalmind.baboon.typer.model.{BaboonFamily, Conversion, DomainMember, EvolutionStep, Field, Pkg, Typedef, Version}
+import io.septimalmind.baboon.typer.model.Conversion.{CopyEnumByName, CustomConversionRequired, DtoConversion, FieldOp, RemovedTypeNoConversion}
+import io.septimalmind.baboon.typer.model.{BaboonFamily, Conversion, DerivationFailure, DomainMember, EvolutionStep, Field, Pkg, Typedef, Version}
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.reflect.TagKK
@@ -209,6 +209,162 @@ abstract class RenameSoundnessTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
               c.ops.map(_.targetField).toSet == fieldsOf(family, "rsnd.dropped", "1.2.0", "T").toSet,
               s"ops: ${c.ops}",
             )
+        }
+    }
+
+    "treat an ADT branch whose name a rename takes over as removed" in {
+      (manager: BaboonFamilyManager[F]) =>
+        // The model says the branch now called `X` IS the old `Y`, and the old `X` is gone. The old
+        // `X` therefore has nowhere to go: the ADT conversion cannot be derived, and no conversion
+        // may be emitted that maps the old `X` onto the new one.
+        val v1 = """model rsnd.branchtakeover
+                   |version "1.0.0"
+                   |root adt A {
+                   |   data X { a: i32 }
+                   |   data Y { a: i32 }
+                   |}
+                   |""".stripMargin
+        val v2 = """model rsnd.branchtakeover
+                   |version "1.1.0"
+                   |import "1.0.0" { * } without { A }
+                   |root adt A {
+                   |   data X : was[Y] { a: i32 }
+                   |}
+                   |""".stripMargin
+        load(manager, "v1.baboon" -> v1, "v2.baboon" -> v2).map {
+          family =>
+            val convs = conversionsOf(family, "rsnd.branchtakeover", "1.0.0", "1.1.0")
+
+            assert(
+              convs.exists {
+                case c: CustomConversionRequired =>
+                  c.sourceTpe.name.name == "A" && c.reason.isInstanceOf[DerivationFailure.AdtBranchRemoved]
+                case _ => false
+              },
+              s"expected AdtBranchRemoved for A; got $convs",
+            )
+            assert(
+              convs.exists {
+                case c: RemovedTypeNoConversion => c.sourceTpe.name.name == "X"
+                case _                          => false
+              },
+              s"expected the old X branch to be reported removed; got $convs",
+            )
+            assert(
+              !convs.exists {
+                case c: DtoConversion => c.sourceTpe.name.name == "X" && c.targetTpe.name.name == "X"
+                case _                => false
+              },
+              s"the old X must not be converted into the new X; got $convs",
+            )
+            assert(
+              convs.exists {
+                case c: DtoConversion => c.sourceTpe.name.name == "Y" && c.targetTpe.name.name == "X"
+                case _                => false
+              },
+              s"expected the declared Y -> X branch conversion; got $convs",
+            )
+        }
+    }
+
+    "reject a declared swap of two ADT branch names" in {
+      (manager: BaboonFamilyManager[F]) =>
+        // Both declared sources still exist under their own TypeIds in the new version, so there is
+        // nothing to map one onto the other. Discarding the annotations silently, as the rename
+        // filter did on its own, loses the declaration without a word.
+        val v1 = """model rsnd.branchswap
+                   |version "1.0.0"
+                   |root adt A {
+                   |   data X { a: i32 }
+                   |   data Y { b: str }
+                   |}
+                   |""".stripMargin
+        val v2 = """model rsnd.branchswap
+                   |version "1.1.0"
+                   |import "1.0.0" { * } without { A }
+                   |root adt A {
+                   |   data X : was[Y] { b: str }
+                   |   data Y : was[X] { a: i32 }
+                   |}
+                   |""".stripMargin
+        F.attempt(load(manager, "v1.baboon" -> v1, "v2.baboon" -> v2)).map {
+          case Left(issues) =>
+            val renames = issues.toList.collect {
+              case BaboonIssue.Evolution(i: EvolutionIssue.RenameSourceStillPresent) =>
+                (i.typeId.name.name, i.prevTypeId.name.name)
+            }.toSet
+            assert(renames == Set(("X", "Y"), ("Y", "X")), s"expected both directions reported; got $issues")
+          case Right(_) =>
+            fail("expected RenameSourceStillPresent, but the model compiled clean")
+        }
+    }
+
+    "reject a type rename from a type no earlier version ever defined" in {
+      (manager: BaboonFamilyManager[F]) =>
+        val v1 = """model rsnd.typetypo
+                   |version "1.0.0"
+                   |root data T { a: i32 }
+                   |""".stripMargin
+        val v2 = """model rsnd.typetypo
+                   |version "1.1.0"
+                   |import "1.0.0" { * }
+                   |root data U : was[Ghost] { a: i32 }
+                   |""".stripMargin
+        F.attempt(load(manager, "v1.baboon" -> v1, "v2.baboon" -> v2)).map {
+          case Left(issues) =>
+            assert(
+              issues.toList.exists {
+                case BaboonIssue.Evolution(i: EvolutionIssue.InvalidTypeRename) =>
+                  i.typeId.name.name == "U" && i.prevTypeId.name.name == "Ghost"
+                case _ => false
+              },
+              s"expected InvalidTypeRename for U was[Ghost]; got $issues",
+            )
+          case Right(_) =>
+            fail("expected InvalidTypeRename, but the model compiled clean")
+        }
+    }
+
+    "reject a field rename on a type that has no earlier version" in {
+      (manager: BaboonFamilyManager[F]) =>
+        // `Fresh` is introduced in 1.1.0 and is not a rename target, so `was b` names nothing.
+        val v1 = """model rsnd.freshtype
+                   |version "1.0.0"
+                   |root data T { a: i32 }
+                   |""".stripMargin
+        val v2 = """model rsnd.freshtype
+                   |version "1.1.0"
+                   |import "1.0.0" { * }
+                   |root data Fresh { r: str was b }
+                   |""".stripMargin
+        F.attempt(load(manager, "v1.baboon" -> v1, "v2.baboon" -> v2)).map {
+          case Left(issues) =>
+            assert(
+              issues.toList.exists {
+                case BaboonIssue.Evolution(i: EvolutionIssue.InvalidFieldRename) => i.typeId.name.name == "Fresh"
+                case _                                                           => false
+              },
+              s"expected InvalidFieldRename for Fresh; got $issues",
+            )
+          case Right(_) =>
+            fail("expected InvalidFieldRename, but the model compiled clean")
+        }
+    }
+
+    "accept a `was` clause in a single-version model" in {
+      (manager: BaboonFamilyManager[F]) =>
+        // `BaboonSchemeRenderer` emits one version at a time and the result must load back, so a
+        // lone version carrying a rename is a real artifact. There is nothing there for the clause
+        // to have been renamed away from, so the clause carries no claim to check.
+        val v1 = """model rsnd.single
+                   |version "1.0.0"
+                   |root data T { a: i32  r: str was b }
+                   |enum E { B2 : was[B] }
+                   |root data H { e: E }
+                   |""".stripMargin
+        load(manager, "v1.baboon" -> v1).map {
+          family =>
+            assert(family.domains.toMap.keySet.exists(_.toString == "rsnd.single"))
         }
     }
 

@@ -587,6 +587,39 @@ Closed gaps, kept for the record:
   classified as locally modified, and the kept/removed/added sets subtract the
   rename's source and target names on both ends, in the comparator and in the
   conversion validator alike. Covered by `RenameSoundnessTest`.
+- *The same two hazards existed for ADT branch renames* (a branch declared
+  `data X : was[Y]`) and were fixed in the same way
+  (https://github.com/7mind/baboon/issues/92). A branch rename onto a name the
+  previous version also used hid the removal of the branch that used to carry
+  that name, so `AdtBranchRemoved` never fired and an old value of the dropped
+  branch was silently reinterpreted as the renamed one; both `diffAdts` arms and
+  the type-level kept/added/removed sets now subtract a rename's two ends before
+  intersecting, which also stops a conversion being derived from the old type
+  onto the id the rename took over. A declared *swap* of two branch names cannot
+  be honoured at all — both declared sources keep their own TypeIds in the new
+  version, so there is nothing to map one onto the other — and was previously
+  discarded with no diagnostic; it is now rejected with
+  `EvolutionIssue.RenameSourceStillPresent`, reported per direction. This applies
+  to any declared type rename whose source is still defined in the new version,
+  not only to ADT branches.
+- *A `was` clause naming something that never existed is now an error at every
+  level.* Field and enum-member clauses were already checked; a type-level
+  `was[Other]` naming a type no earlier version of the package declares was
+  discarded in silence, and so was a field clause on a type introduced by the
+  version that carries it. Both now fail, with `InvalidTypeRename` and
+  `InvalidFieldRename`/`InvalidEnumMemberRename` respectively. "Earlier version"
+  means any strictly-preceding one, so an annotation carried forward by later
+  versions still passes. Two cases are deliberately exempt:
+  - *the oldest version of a package*, where a clause makes no checkable claim.
+    `BaboonSchemeRenderer` emits one version at a time and the rendered source
+    must load back (`SchemeRoundtripTest`), so a lone version containing a rename
+    has to stay legal.
+  - *an ancestor that was only ever an excluded declaration.* A type no root
+    reaches is dropped from `defs` and survives only as an id in `excludedIds`,
+    so its members are not observable — `m20-was-propagation` renames a branch of
+    an `adt` that `root adt Outer` absorbs structurally. Existence is therefore
+    judged against declared ids (retained plus excluded) while member names are
+    judged only against shapes some version actually retained.
 - *Timestamp kind byte round trips* (https://github.com/7mind/baboon/issues/91):
   the C# `RpDateTime` keeps carrying its `DateTimeKind` on the wire (Local when
   the offset matches the writer's zone) — this is intentional and unchanged, as
