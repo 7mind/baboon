@@ -419,25 +419,57 @@ object BaboonComparator {
       val ascending = versions.keySet.toList.sorted(Version.ordering)
       // names carried by a type's lineage in all versions strictly preceding the keyed one
       val history = mutable.HashMap.empty[(Version, TypeId.User), Set[String]]
+      // Every type id DECLARED by a version strictly preceding the one being validated. A type that
+      // no root reaches is dropped from `defs` and only its id survives, in `excludedIds` -- it was
+      // still declared, and a `was` clause naming it is not a typo.
+      val everDeclared = mutable.HashSet.empty[TypeId]
+      // The subset whose shape we actually saw, i.e. that some earlier version retained. Only for
+      // those can we judge whether a field or member name existed.
+      val everRetained = mutable.HashSet.empty[TypeId]
 
       val issues = ascending.zipWithIndex.flatMap {
         case (version, idx) =>
           val domain = versions(version)
 
-          domain.defs.meta.nodes.values.toList.flatMap {
+          // A declared type rename must name a type this package used to define. `was` clauses are
+          // carried forward by later versions just like field ones, so "used to define" spans every
+          // earlier version, not only the immediately preceding one.
+          //
+          // The oldest version is exempt: there is nothing there to have been renamed away, so a
+          // `was` clause carries no claim this pass could check. Single-version models are a real
+          // artifact -- `BaboonSchemeRenderer` emits one version at a time and the result must load
+          // back -- so rejecting them would break rendering a version that contains a rename.
+          val renameIssues = if (idx == 0) {
+            List.empty
+          } else {
+            domain.renames.toList.collect {
+              case (newId, oldId) if !everDeclared.contains(oldId) =>
+                EvolutionIssue.InvalidTypeRename(newId, oldId)
+            }
+          }
+
+          val memberIssues = domain.defs.meta.nodes.values.toList.flatMap {
             case DomainMember.User(_, defn: Typedef.User, _, _) =>
+              val ancestorId = domain.renames.getOrElse(defn.id, defn.id)
               val ancestralNames = if (idx == 0) {
                 Set.empty[String]
               } else {
                 val prevVersion = ascending(idx - 1)
-                val prevId      = domain.renames.getOrElse(defn.id, defn.id)
-                history.getOrElse((prevVersion, prevId), Set.empty[String]) ++
-                renameableNames(versions(prevVersion), prevId)
+                history.getOrElse((prevVersion, ancestorId), Set.empty[String]) ++
+                renameableNames(versions(prevVersion), ancestorId)
               }
               history.put((version, defn.id), ancestralNames)
 
-              if (ancestralNames.isEmpty) {
-                // the type has no ancestor to have been renamed from; no pair diff looks at it either
+              // The package has earlier versions but none of them declared this type's lineage: the
+              // type is introduced here and is not a rename target, so any `was` clause on it names
+              // something that never existed. The oldest version is exempt, as above.
+              val neverExisted = idx > 0 && !everDeclared.contains(ancestorId)
+              // We saw the ancestor's shape, so `ancestralNames` is authoritative. When the ancestor
+              // was only ever an excluded (unreachable) declaration we cannot see its members at all,
+              // and staying quiet is the only honest option.
+              val shapeKnown = everRetained.contains(ancestorId)
+
+              if (!neverExisted && !shapeKnown) {
                 List.empty
               } else {
                 defn match {
@@ -460,6 +492,12 @@ object BaboonComparator {
               }
             case _ => List.empty
           }
+
+          everRetained ++= domain.defs.meta.nodes.keySet
+          everDeclared ++= domain.defs.meta.nodes.keySet
+          everDeclared ++= domain.excludedIds
+
+          renameIssues ++ memberIssues
       }
 
       F.traverseAccumErrors(issues)(issue => F.fail(BaboonIssue.of(issue))).map(_ => ())
@@ -477,6 +515,16 @@ object BaboonComparator {
         case (newId, oldId) =>
           newTypes.contains(newId) && oldTypes.contains(oldId) && !newTypes.contains(oldId)
       }
+      // A declared rename whose source is still defined in the new version cannot be honoured: both
+      // ids keep their own identity, so there is nothing to map one onto the other and the
+      // classification below would compare each id against its own namesake. This covers a declared
+      // branch/type name swap. Rejecting is the only sound answer -- silently discarding the
+      // annotation, as the filter above does on its own, loses the declaration without a word.
+      val renamesOntoLiveTypes = last.renames.toList.collect {
+        case (newId, oldId) if newTypes.contains(newId) && oldTypes.contains(oldId) && newTypes.contains(oldId) =>
+          EvolutionIssue.RenameSourceStillPresent(newId, oldId)
+      }
+
       val explicitSources = explicitRenames.values.toSet
       // Moving an ADT changes its branches' owner IDs even when their names stay the same.
       val branchRenames = explicitRenames.toList.flatMap {
@@ -498,9 +546,16 @@ object BaboonComparator {
       val renamedNewIds = validRenames.keySet.asInstanceOf[Set[TypeId]]
       val renamedOldIds = validRenames.values.toSet.asInstanceOf[Set[TypeId]]
 
-      val kept    = newTypes.intersect(oldTypes)
-      val added   = newTypes.diff(oldTypes).diff(renamedNewIds)
-      val removed = oldTypes.diff(newTypes).diff(renamedOldIds)
+      // A renamed type is accounted for by its rename alone. Subtracting the rename's ends before
+      // intersecting matters when a rename takes over the id of a type that also exists on the other
+      // side: the old type of that id is genuinely gone, and pairing it with its own namesake would
+      // both hide its removal and derive a conversion the rename says is wrong.
+      val survivingNew = newTypes.diff(renamedNewIds)
+      val survivingOld = oldTypes.diff(renamedOldIds)
+
+      val kept    = survivingNew.intersect(survivingOld)
+      val added   = survivingNew.diff(survivingOld)
+      val removed = survivingOld.diff(survivingNew)
 
       // A `was` rename that still names a member of the previous version is a real change even when
       // both structural signatures stay put: `shallowId` sorts `name:type` and `deepId` is
@@ -560,6 +615,7 @@ object BaboonComparator {
       )
 
       for {
+        _ <- F.traverseAccumErrors(renamesOntoLiveTypes)(issue => F.fail(BaboonIssue.of(issue)))
         // Compute diffs for types that kept the same ID
         keptDiffs <- F.traverseAccumErrors(changed.toList) {
           id =>
@@ -687,11 +743,18 @@ object BaboonComparator {
           case (newId, oldId) if newId.name != oldId.name => (oldId.name.name, newId.name.name)
         }
 
-        val names1       = members1ByName.keySet
-        val names2       = members2ByName.keySet
-        val removedNames = names1.diff(names2).diff(renamedByName.keySet)
-        val addedNames   = names2.diff(names1).diff(renamedByName.values.toSet)
-        val keptNames    = names1.intersect(names2)
+        val names1 = members1ByName.keySet
+        val names2 = members2ByName.keySet
+
+        // A renamed branch is accounted for by its rename op alone: a rename onto a name the
+        // previous version also used would otherwise be both "kept" and "renamed", and the removal
+        // of the branch that used to carry that name would be cancelled out.
+        val survivors1 = names1.diff(renamedByName.keySet)
+        val survivors2 = names2.diff(renamedByName.values.toSet)
+
+        val removedNames = survivors1.diff(survivors2)
+        val addedNames   = survivors2.diff(survivors1)
+        val keptNames    = survivors1.intersect(survivors2)
 
         val keptMembers = keptNames.map {
           name =>
@@ -721,11 +784,16 @@ object BaboonComparator {
         val members1 = a1.members.toSet
         val members2 = a2.members.toSet
 
-        val renamedOld     = branchRenames.values.toSet
-        val renamedNew     = branchRenames.keySet
-        val removedMembers = members1.diff(members2).diff(renamedOld)
-        val addedMembers   = members2.diff(members1).diff(renamedNew)
-        val keptMembers = members1.intersect(members2).map {
+        val renamedOld = branchRenames.values.toSet
+        val renamedNew = branchRenames.keySet
+
+        // See the by-name arm: a renamed branch takes no part in the kept/removed/added sets.
+        val survivors1 = members1.diff(renamedOld)
+        val survivors2 = members2.diff(renamedNew)
+
+        val removedMembers = survivors1.diff(survivors2)
+        val addedMembers   = survivors2.diff(survivors1)
+        val keptMembers = survivors1.intersect(survivors2).map {
           ref =>
             val modification =
               figureOutModification(changes, Set(ref))
