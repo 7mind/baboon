@@ -25,8 +25,8 @@ class EvolutionMetadataPlanTest extends AnyFlatSpec with Matchers {
       TypeId.Builtins.str -> UnmodifiedSince(TypeId.Builtins.str, v2, NEList(v1, v2)),
     )),
     Map(v2 -> Map(
-      z     -> ForwardReadable(z, v2, NEList(v2 -> ForwardCompatTier.Identical, v10 -> ForwardCompatTier.JsonAdditive)),
-      typeA -> ForwardReadable(typeA, v2, NEList(v2 -> ForwardCompatTier.Identical)),
+      z     -> ForwardReadable(z, v2, NEList(v2 -> ForwardGuarantee.identical, v10 -> ForwardGuarantee.jsonOnly)),
+      typeA -> ForwardReadable(typeA, v2, NEList(v2 -> ForwardGuarantee.identical)),
     )),
   )
 

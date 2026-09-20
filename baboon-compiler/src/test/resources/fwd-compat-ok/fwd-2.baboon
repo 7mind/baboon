@@ -14,6 +14,9 @@ import "1.0.0" { * } without {
   EnumReorder
   Recur
   Sum
+  RenameField
+  RenameThenAppend
+  EnumRenamed
 }
 
 root data AppendFixed {
@@ -79,4 +82,18 @@ root adt SumReorder {
 
 data MapCarrier {
   mc: map[str, i32]
+}
+
+root data RenameField {
+  a: i32
+  r: str was b
+}
+
+root data RenameThenAppend {
+  r: i32 was a
+}
+
+enum EnumRenamed {
+  A
+  B2 : was[B]
 }

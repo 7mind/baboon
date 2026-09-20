@@ -86,6 +86,16 @@ let package = Package(
             dependencies: ["BaboonRuntime", "Fwde2eChain_v1_0_0", "Fwde2eChain_v2_0_0"],
             path: "Sources/Fwde2eChain"
         ),
+        .target(
+            name: "Fwde2eRename_v1_0_0",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/Fwde2eRename_v1_0_0"
+        ),
+        .target(
+            name: "Fwde2eRename",
+            dependencies: ["BaboonRuntime", "Fwde2eRename_v1_0_0"],
+            path: "Sources/Fwde2eRename"
+        ),
 
         // ----- Single-version fixtures ----------------------------------------------------------
         .target(
@@ -326,6 +336,11 @@ let package = Package(
             name: "Fwde2eChainTests",
             dependencies: ["BaboonRuntime", "Fwde2eChain"],
             path: "Tests/BaboonTests/Fwde2eChain"
+        ),
+        .testTarget(
+            name: "Fwde2eRenameTests",
+            dependencies: ["BaboonRuntime", "Fwde2eRename"],
+            path: "Tests/BaboonTests/Fwde2eRename"
         ),
         .testTarget(
             name: "MyOkExtractedContractsTests",

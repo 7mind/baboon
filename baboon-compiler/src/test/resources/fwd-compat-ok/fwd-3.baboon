@@ -5,6 +5,7 @@ version "1.2.0"
 import "1.1.0" { * } without {
   AppendVar
   MidInsert
+  RenameThenAppend
 }
 
 root data AppendVar {
@@ -16,4 +17,9 @@ root data AppendVar {
 root data MidInsert {
   a: i32
   m: i32
+}
+
+root data RenameThenAppend {
+  r: i32
+  s: str
 }

@@ -11,23 +11,28 @@ case class BaboonEvolution(
   typesForwardReadable: Map[Version, Map[TypeId, ForwardReadable]],
 ) {
   /** Inverse of [[typesForwardReadable]], from the WRITER's point of view: for a type
-    * as encoded by `version`, the oldest reader version that can decode it at each
-    * tier or better. Readers form a contiguous range per tier (a shorter chain is a
-    * sub-chain), so one lower bound per tier is exact. The `Identical` bound equals
-    * the type's `sameIn` head.
+    * as encoded by `version`, the oldest reader version that can decode it under each
+    * capability. Readers form a contiguous range per capability (a shorter chain is a
+    * sub-chain), so one lower bound per capability is exact. The `Identical` bound
+    * equals the type's `sameIn` head.
+    *
+    * Capabilities are resolved independently, so a chain that is UEBA-readable but
+    * not JSON-readable (a declared rename) publishes the `prefix-*` bounds and
+    * withholds `json-additive`, and a chain that is JSON-readable but not
+    * UEBA-readable (a reorder or a mid-position insert) does the reverse.
     */
   def minReaders(version: Version, id: TypeId): Map[ForwardCompatTier, Version] = {
     val readers = typesForwardReadable.toList.collect {
       case (readerVersion, types) if readerVersion <= version =>
-        types.get(id).flatMap(_.tierFor(version)).map(tier => (readerVersion, tier))
+        types.get(id).flatMap(_.tierFor(version)).map(guarantee => (readerVersion, guarantee))
     }.flatten
 
     ForwardCompatTier.all.flatMap {
-      tier =>
+      cap =>
         readers
-          .collect { case (readerVersion, readerTier) if readerTier.weight >= tier.weight => readerVersion }
+          .collect { case (readerVersion, guarantee) if guarantee.grants(cap) => readerVersion }
           .minOption(Version.ordering)
-          .map(v => (tier, v))
+          .map(v => (cap, v))
     }.toMap
   }
   override def toString: String = {
