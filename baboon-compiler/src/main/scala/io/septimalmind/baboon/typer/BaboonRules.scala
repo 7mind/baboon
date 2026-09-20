@@ -85,7 +85,7 @@ object BaboonRules {
                 F.pure(
                   DtoConversion(
                     id,
-                    targetDto.fields.map(f => FieldOp.Transfer(f)),
+                    targetDto.fields.map(f => FieldOp.Transfer(f, f.tpe)),
                     Set.empty,
                     targetTpe,
                   )
@@ -121,7 +121,7 @@ object BaboonRules {
                     case None if isRenamed =>
                       // Renamed without structural changes - treat all fields as transfers
                       val newDefn = last.defs.meta.nodes(targetTpe).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Dto]
-                      F.pure(newDefn.fields.map(f => DtoOp.KeepField(f, RefModification.Unchanged)).toList)
+                      F.pure(newDefn.fields.map(f => DtoOp.KeepField(f, f.tpe, RefModification.Unchanged)).toList)
                     case None =>
                       F.fail(
                         BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(TypedefDiff.DtoDiff(List.empty), "DTODiff"))
@@ -186,7 +186,7 @@ object BaboonRules {
                     }
 
                   keepFields = ops.collect {
-                    case op: DtoOp.KeepField => FieldOp.Transfer(op.f)
+                    case op: DtoOp.KeepField => FieldOp.Transfer(op.f, op.sourceTpe)
                   }
 
                   renames = ops.collect { case op: DtoOp.RenameField => op }.toSet

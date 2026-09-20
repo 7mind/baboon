@@ -204,8 +204,8 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                 val op  = ops(f)
                 val fld = toSnakeCase(f.name.name)
                 val expr = op match {
-                  case _: FieldOp.Transfer =>
-                    transferField(f.name, f.tpe, f.tpe)
+                  case o: FieldOp.Transfer =>
+                    transferField(f.name, o.sourceTpe, f.tpe)
                   case o: FieldOp.InitializeWithDefault =>
                     o.targetField.tpe match {
                       case TypeRef.Constructor(id, _) =>

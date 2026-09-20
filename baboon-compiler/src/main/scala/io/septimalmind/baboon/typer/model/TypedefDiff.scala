@@ -25,7 +25,12 @@ object DtoOp {
   case class AddField(f: Field) extends DtoOp
   case class RemoveField(f: Field) extends DtoOp
   case class ChangeField(f: Field, newType: TypeRef) extends DtoOp
-  case class KeepField(f: Field, modification: RefModification) extends DtoOp
+  /** `sourceTpe` is the field's type as the OLD version spells it. It differs from `f.tpe` only
+    * when the field's type was renamed by this step; neither wire format puts a nested value's type
+    * name on the wire, so such a field is unchanged as data while still needing the old spelling to
+    * address the source value.
+    */
+  case class KeepField(f: Field, sourceTpe: TypeRef, modification: RefModification) extends DtoOp
   case class RenameField(oldField: Field, newField: Field, modification: RefModification) extends DtoOp
 }
 

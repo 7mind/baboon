@@ -112,7 +112,7 @@ abstract class IdentifierConversionTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
             s"Expected all ops to be Transfer for data→id; got: ${dtoConv.ops}",
           )
 
-          val transferredFields = dtoConv.ops.collect { case FieldOp.Transfer(f) => f.name.name }
+          val transferredFields = dtoConv.ops.collect { case FieldOp.Transfer(f, _) => f.name.name }
           assert(
             transferredFields.contains("u"),
             s"Expected field `u` to be transferred; got: $transferredFields",
@@ -162,7 +162,7 @@ abstract class IdentifierConversionTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
             s"Expected all ops to be Transfer for id→data; got: ${dtoConv.ops}",
           )
 
-          val transferredFields = dtoConv.ops.collect { case FieldOp.Transfer(f) => f.name.name }
+          val transferredFields = dtoConv.ops.collect { case FieldOp.Transfer(f, _) => f.name.name }
           assert(
             transferredFields.contains("u"),
             s"Expected field `u` to be transferred; got: $transferredFields",

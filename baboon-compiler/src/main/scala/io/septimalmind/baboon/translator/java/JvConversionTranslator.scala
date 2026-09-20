@@ -229,7 +229,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
                 val op  = ops(f)
                 val fld = f.name.name
                 val expr = op match {
-                  case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"from.$fld()", 1)
+                  case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"from.$fld()", 1, o.sourceTpe)
                   case o: FieldOp.InitializeWithDefault =>
                     o.targetField.tpe match {
                       case TypeRef.Constructor(id, args) =>

@@ -250,7 +250,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                 val fld          = escapeScKeyword(f.name.name)
                 val localVarName = escapeScKeyword(f.name.name.toLowerCase)
                 val expr = op match {
-                  case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"_from.$fld", 1)
+                  case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"_from.$fld", 1, Some(o.sourceTpe))
                   case o: FieldOp.InitializeWithDefault =>
                     o.targetField.tpe match {
                       case TypeRef.Constructor(id, args) =>

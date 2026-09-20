@@ -1,0 +1,17 @@
+model rnnested.model
+
+version "2.0.0"
+
+import "1.0.0" { * } without {
+  Leaf
+  Host
+}
+
+data Renamed : was[Leaf] {
+  a: i32
+}
+
+root data Host {
+  l: Renamed
+  b: str
+}

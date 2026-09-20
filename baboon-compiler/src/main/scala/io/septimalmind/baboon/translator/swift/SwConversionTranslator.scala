@@ -281,7 +281,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                 val fld   = trans.escapeSwiftKeyword(f.name.name)
                 val ftype = trans.asSwRef(f.tpe, domain, evo)
                 val expr = op match {
-                  case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"from.$fld", 1)
+                  case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"from.$fld", 1, Some(o.sourceTpe))
                   case o: FieldOp.InitializeWithDefault =>
                     o.targetField.tpe match {
                       case TypeRef.Constructor(id, _) =>

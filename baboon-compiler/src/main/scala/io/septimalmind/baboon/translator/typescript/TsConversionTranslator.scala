@@ -227,8 +227,8 @@ class TsConversionTranslator[F[+_, +_]: Error2](
                 val op  = ops(f)
                 val fld = f.name.name
                 op match {
-                  case _: FieldOp.Transfer =>
-                    transfer(f.tpe, f.tpe, q"from.$fld")
+                  case o: FieldOp.Transfer =>
+                    transfer(o.sourceTpe, f.tpe, q"from.$fld")
                   case o: FieldOp.InitializeWithDefault =>
                     o.targetField.tpe match {
                       case tpe: TypeRef.Constructor => emptyCollection(tpe)

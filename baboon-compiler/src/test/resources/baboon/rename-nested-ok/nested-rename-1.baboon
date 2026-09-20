@@ -1,0 +1,26 @@
+// Evolution fixture: a TYPE RENAME of a nested type, with the host keeping its own name.
+//
+// Neither wire format puts a nested value's type name on the wire -- UEBA is positional and JSON
+// tags a DTO field by the FIELD name, not the type -- so renaming `Leaf` moves no byte of a `Host`
+// payload. Two properties depend on that and are pinned here for every backend:
+//
+//   1. `Host`'s conversion stays auto-derivable, routing the old `Leaf` through the renamed type's
+//      own conversion. Before rename-aware type equivalence the field read as a type CHANGE and
+//      every host of a renamed type needed a hand-written conversion.
+//   2. `Host` keeps its forward-readability bound across the step (docs/forward-compat.md).
+//
+// Both conversions are auto-derivable, so this model is safe in the shared model-dir: no stub
+// carries a manual conversion for it.
+
+model rnnested.model
+
+version "1.0.0"
+
+data Leaf {
+  a: i32
+}
+
+root data Host {
+  l: Leaf
+  b: str
+}

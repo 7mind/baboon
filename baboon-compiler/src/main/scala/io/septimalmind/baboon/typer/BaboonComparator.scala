@@ -215,32 +215,48 @@ object BaboonComparator {
         }
     }
 
-    /** Per-step (prev -> last) forward-readability for every type kept under the same
-      * TypeId in both versions. Absent key = not forward-readable in either format.
-      * Combines the type's own structural guarantee with a fixpoint over its
-      * codec-relevant dependencies in the OLD version (the types the old decoder
-      * actually touches). The two axes propagate independently: the outer UEBA read
-      * stays in sync only while every nested value is UEBA byte-identical, and the
-      * outer JSON read survives only while every nested value is JSON-readable.
+    /** Per-step (prev -> last) forward-readability, keyed by the type's id in the OLD
+      * version. Absent key = not forward-readable in either format. Combines the
+      * type's own structural guarantee with a fixpoint over its codec-relevant
+      * dependencies in the OLD version (the types the old decoder actually touches).
+      * The two axes propagate independently: the outer UEBA read stays in sync only
+      * while every nested value is UEBA byte-identical, and the outer JSON read
+      * survives only while every nested value is JSON-readable.
+      *
+      * A type renamed by this step is paired with its new counterpart and keyed by its
+      * OLD id, because that is the id every reference in the old version points at. It
+      * therefore still propagates into its hosts -- a nested value carries no type name
+      * in either format, so renaming it moves no bytes. It gets no forward bound of its
+      * own: `computeForwardReadable` looks the successor run up by the same old id,
+      * finds nothing under it in the newer version, and stops the chain. That is the
+      * right answer, since a top-level payload is identified by the typeId in its
+      * envelope and no runtime resolves a renamed one.
       */
     private def stepForwardGuarantees(prev: Domain, last: Domain): Map[TypeId, ForwardGuarantee] = {
-      val kept = prev.defs.meta.nodes.keySet.intersect(last.defs.meta.nodes.keySet)
+      // declared renames of this step, keyed by the id the old version uses
+      val renamedTo: Map[TypeId, TypeId] = last.renames.collect {
+        case (newId, oldId) if prev.defs.meta.nodes.contains(oldId) && last.defs.meta.nodes.contains(newId) =>
+          (oldId: TypeId, newId: TypeId)
+      }
 
-      val own: Map[TypeId, ForwardGuarantee] = kept.map {
-        id =>
-          val guarantee = (prev.defs.meta.nodes(id), last.defs.meta.nodes(id)) match {
+      val counterpart: Map[TypeId, TypeId] =
+        prev.defs.meta.nodes.keySet.intersect(last.defs.meta.nodes.keySet).map(id => (id, id)).toMap ++ renamedTo
+
+      val own: Map[TypeId, ForwardGuarantee] = counterpart.map {
+        case (oldId, newId) =>
+          val guarantee = (prev.defs.meta.nodes(oldId), last.defs.meta.nodes(newId)) match {
             case (_: DomainMember.Builtin, _: DomainMember.Builtin) =>
               ForwardGuarantee.identical
             case (o: DomainMember.User, n: DomainMember.User) =>
-              ownForwardGuarantee(o.defn, n.defn, prev, last)
+              ownForwardGuarantee(o.defn, n.defn, prev, last, renamedTo)
             case _ =>
               ForwardGuarantee.none
           }
-          (id, guarantee)
-      }.toMap
+          (oldId, guarantee)
+      }
 
       // codec-relevant direct dependencies in the OLD version: what the old decoder touches
-      val deps: Map[TypeId, Set[TypeId]] = kept.map {
+      val deps: Map[TypeId, Set[TypeId]] = counterpart.keySet.map {
         id =>
           val d = prev.defs.meta.nodes(id) match {
             case _: DomainMember.Builtin => Set.empty[TypeId]
@@ -287,12 +303,21 @@ object BaboonComparator {
       * name and is blind to position, so it forgives exactly the opposite set of
       * changes. Neither subsumes the other.
       *
-      * Renames of a TYPE (rather than of a field or an enum member) are not handled
-      * here: they change the TypeId, so the renamed type is absent from the
-      * intersection the caller iterates and from its dependents' dependency sets,
-      * which collapses both axes. That needs rename-aware dependency resolution.
+      * `renamedTo` maps an old TypeId to the id that replaced it in this step, so a
+      * reference to a renamed type compares equal to the reference that replaced it.
+      * Neither format puts a nested value's type name on the wire, so that equality is
+      * sound for a DTO field type. It is NOT applied to the JSON side of an ADT, whose
+      * branch name IS the discriminator.
       */
-    private def ownForwardGuarantee(o: Typedef.User, n: Typedef.User, prev: Domain, last: Domain): ForwardGuarantee = {
+    private def ownForwardGuarantee(
+      o: Typedef.User,
+      n: Typedef.User,
+      prev: Domain,
+      last: Domain,
+      renamedTo: Map[TypeId, TypeId],
+    ): ForwardGuarantee = {
+      def sameType(oldRef: TypeRef, newRef: TypeRef): Boolean = substituteRenames(oldRef, renamedTo) == newRef
+
       (o, n) match {
         case (d1: Typedef.Dto, d2: Typedef.Dto) =>
           // `prevName` is carried forward by every later version, so it only denotes a
@@ -305,14 +330,14 @@ object BaboonComparator {
           // field that took the name over from a different field via `was` would hand
           // the old reader the wrong value, so it does not count.
           val json = d1.fields.forall {
-            of => d2.fields.exists(nf => nf.name == of.name && nf.tpe == of.tpe && renamedAtThisStep(nf).isEmpty)
+            of => d2.fields.exists(nf => nf.name == of.name && sameType(of.tpe, nf.tpe) && renamedAtThisStep(nf).isEmpty)
           }
 
           // UEBA: the position is the identity. A name change at a position is
           // invisible on the wire, and sound exactly when it is a declared rename of
           // the field that occupied that position.
           val prefixAligned = d2.fields.size >= d1.fields.size && d1.fields.zip(d2.fields).forall {
-            case (of, nf) => of.tpe == nf.tpe && (of.name == nf.name || renamedAtThisStep(nf).contains(of.name))
+            case (of, nf) => sameType(of.tpe, nf.tpe) && (of.name == nf.name || renamedAtThisStep(nf).contains(of.name))
           }
 
           val ueba = if (!prefixAligned) {
@@ -362,12 +387,16 @@ object BaboonComparator {
           val b1 = a1.dataMembers(prev)
           val b2 = a2.dataMembers(last)
 
-          // JSON tags a branch by its name: the new writer must only emit branches
-          // the old reader already knows.
+          // JSON tags a branch by its name: the new writer must only emit branches the old
+          // reader already knows. A renamed branch is a new name on the wire, so renames
+          // deliberately do NOT resolve here.
           val json = b2.toSet.subsetOf(b1.toSet)
-          // UEBA encodes the positional branch index. A branch rename is a type
-          // rename, excluded above.
-          ForwardGuarantee(Option.when(b1 == b2)(UebaRead.Full), json)
+          // UEBA encodes the positional branch index and never the name, so a branch
+          // renamed in place is invisible to it.
+          val uebaFull = b1.size == b2.size && b1.zip(b2).forall {
+            case (ob, nb) => renamedTo.getOrElse(ob, ob) == nb
+          }
+          ForwardGuarantee(Option.when(uebaFull)(UebaRead.Full), json)
 
         case (f1: Typedef.Foreign, f2: Typedef.Foreign) =>
           // hand-written codecs: only byte-level sameness is derivable
@@ -395,6 +424,19 @@ object BaboonComparator {
         case _ =>
           false
       }
+    }
+
+    /** `ref` as the old version spells it, rewritten with this step's declared renames. */
+    private def substituteRenames(ref: TypeRef, renamedTo: Map[TypeId, TypeId]): TypeRef = ref match {
+      case TypeRef.Scalar(id) =>
+        renamedTo.get(id) match {
+          case Some(s: TypeId.Scalar) => TypeRef.Scalar(s)
+          case _                      => ref
+        }
+      case c: TypeRef.Constructor =>
+        c.copy(args = c.args.map(a => substituteRenames(a, renamedTo)))
+      case a: TypeRef.Any =>
+        a.copy(underlying = a.underlying.map(u => substituteRenames(u, renamedTo)))
     }
 
     private def renameableNames(domain: Domain, id: TypeId.User): Set[String] = {
@@ -852,21 +894,28 @@ object BaboonComparator {
       val addedMembers   = survivors2.diff(survivors1)
       val keptMembers    = survivors1.intersect(survivors2)
 
+      // A field whose type was renamed by this step is unchanged as data: neither format puts a
+      // nested value's type name on the wire. It stays a KeepField, carrying the old spelling so the
+      // generated conversion can address the source value and route it through the renamed type's
+      // own conversion.
+      val renamedTo: Map[TypeId, TypeId] = changes.renamed.map { case (newId, oldId) => (oldId: TypeId, newId: TypeId) }
+      def sameType(oldRef: TypeRef, newRef: TypeRef): Boolean = substituteRenames(oldRef, renamedTo) == newRef
+
       val keptFields = keptMembers.map(name => (members1(name), members2(name)))
       val changedFields = keptFields.filter {
         case (f1, f2) =>
-          f1.tpe != f2.tpe
+          !sameType(f1.tpe, f2.tpe)
       }
       val unchangedFields = keptFields.filter {
         case (f1, f2) =>
-          f1.tpe == f2.tpe
+          sameType(f1.tpe, f2.tpe)
       }.map {
-        case (_, f2) =>
+        case (f1, f2) =>
           val directRefs = enquiries.explode(f2.tpe)
           val modification =
             figureOutModification(changes, directRefs)
 
-          DtoOp.KeepField(f2, modification)
+          DtoOp.KeepField(f2, f1.tpe, modification)
       }
 
       val renamedFieldOps = renamedFields.values.map {

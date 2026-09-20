@@ -186,7 +186,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
             val srcAttrName = escapePyKeyword(fieldName)
             val fieldRef    = q"_from.$srcAttrName"
             val expr = op match {
-              case o: FieldOp.Transfer => transfer(o.targetField.tpe, fieldRef)
+              case o: FieldOp.Transfer => transfer(o.targetField.tpe, fieldRef, Some(o.sourceTpe))
 
               case o: FieldOp.InitializeWithDefault =>
                 o.targetField.tpe match {
@@ -234,7 +234,11 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
                   case m: FieldOp.SwapCollectionType => swapCollType(srcFieldRef, m)
                 }
             }
-            val fieldType = asVersionedIfUserTpe(field.tpe)
+            // The local holds the CONVERTED value, so it is annotated with the target field's type
+            // in the TARGET domain. Resolving it in `srcDom` named the old version's class for a
+            // new-version value, and crashed outright once the type was a rename target with no
+            // old-domain counterpart.
+            val fieldType = typeTranslator.asPyRef(field.tpe, domain, evolution, pyFileTools.definitionsBasePkg)
             // Local variable name: use lowercase of the keyword-escaped attribute name.
             val localVarName = escapePyKeyword(fieldName).toLowerCase
             q"$localVarName: $fieldType = $expr"

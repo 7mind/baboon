@@ -220,7 +220,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                   val fieldRef = q"_from.$baseRef"
                   val initExpr = op match {
                     case o: FieldOp.Transfer =>
-                      val recConv = transfer(o.targetField.tpe, fieldRef, 0)
+                      val recConv = transfer(o.targetField.tpe, fieldRef, 0, maybeOldTpe = Some(o.sourceTpe))
 
                       o.targetField.tpe match {
                         case _: TypeRef.Scalar =>
