@@ -28,9 +28,9 @@ object JvCodecFixtureTranslator {
   final class Impl(
     target: JvTarget,
     translator: JvTypeTranslator,
+    domainTypes: JvDomainTypes,
     enquiries: BaboonEnquiries,
     domain: Domain,
-    evo: BaboonEvolution,
   ) extends JvCodecFixtureTranslator {
 
     override def translate(
@@ -86,7 +86,7 @@ object JvCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[JvValue] = {
-      val fullType = translator.toJvTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = domainTypes.toJvTypeRefKeepForeigns(dto.id)
 
       def body(format: FixtureFormat): TextTree[JvValue] = {
         val generatedFields = dto.fields.map(f => genType(f.tpe, format))
@@ -108,7 +108,7 @@ object JvCodecFixtureTranslator {
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[JvValue] = {
-      val fullType = translator.toJvTypeRefKeepForeigns(adt.id, domain, evo)
+      val fullType = domainTypes.toJvTypeRefKeepForeigns(adt.id)
       val members = adt.members.toList
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }

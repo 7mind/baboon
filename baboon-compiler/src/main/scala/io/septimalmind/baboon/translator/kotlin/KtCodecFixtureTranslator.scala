@@ -18,6 +18,7 @@ object KtCodecFixtureTranslator {
   final class Impl(
     target: KtTarget,
     translator: KtTypeTranslator,
+    domainTypes: KtDomainTypes,
     enquiries: BaboonEnquiries,
     domain: Domain,
     evo: BaboonEvolution,
@@ -89,7 +90,7 @@ object KtCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[KtValue] = {
-      val fullType = translator.toKtTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = domainTypes.toKtTypeRefKeepForeigns(dto.id)
 
       def body(format: FixtureFormat): TextTree[KtValue] = {
         val generatedFields = dto.fields.map(f => genType(f.tpe, format))

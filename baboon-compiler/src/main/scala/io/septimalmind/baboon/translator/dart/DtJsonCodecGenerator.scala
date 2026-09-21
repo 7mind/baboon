@@ -13,6 +13,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class DtJsonCodecGenerator(
   trans: DtTypeTranslator,
+  domainTypes: DtDomainTypes,
   target: DtTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -110,7 +111,7 @@ class DtJsonCodecGenerator(
     val branches = adt.dataMembers(domain).map {
       m =>
         val branchName = m.name.name
-        val fqBranch   = trans.toDtTypeRefKeepForeigns(m, domain, evo)
+        val fqBranch   = domainTypes.toDtTypeRefKeepForeigns(m)
         val branchRef  = q"branchVal"
 
         val routedBranchEncoder = q"${codecName(fqBranch)}.instance.encode(ctx, $branchRef)"
@@ -221,7 +222,7 @@ class DtJsonCodecGenerator(
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
                       // PR-I.1d (M24 Phase 3.1): Custom-foreign map keys route through
                       // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
-                      val srcRef = trans.toDtTypeRefKeepForeigns(uid, domain, evo)
+                      val srcRef = domainTypes.toDtTypeRefKeepForeigns(uid)
                       val host   = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost", importAs = Some(trans.toSnakeCase(srcRef.name)))
                       q"$host.instance.encodeKey($ref)"
                     case None =>
@@ -264,7 +265,7 @@ class DtJsonCodecGenerator(
                   case _ => ref
                 }
               case _ =>
-                val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                val targetTpe = codecName(domainTypes.toDtTypeRefKeepForeigns(u))
                 q"$targetTpe.instance.encode(ctx, $ref)"
             }
           case o =>
@@ -309,11 +310,11 @@ class DtJsonCodecGenerator(
                     // Custom-mapped Dart type (mirrors TS `$ref as <TsType>` shape). No per-
                     // foreign `<F>_JsonCodec` class is emitted (PR-I.1d-N03).
                     case _ =>
-                      val dartType = trans.asDtRef(TypeRef.Scalar(u), domain, evo)
+                      val dartType = domainTypes.asDtRef(TypeRef.Scalar(u))
                       q"$ref as $dartType"
                   }
                 case _ =>
-                  val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                  val targetTpe = codecName(domainTypes.toDtTypeRefKeepForeigns(u))
                   q"$targetTpe.instance.decode(ctx, $ref)"
               }
             case o =>
@@ -360,7 +361,7 @@ class DtJsonCodecGenerator(
                 case ud: DomainMember.User =>
                   ud.defn match {
                     case _: Typedef.Enum =>
-                      val targetTpe = trans.toDtTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe = domainTypes.toDtTypeRefKeepForeigns(u)
                       q"$targetTpe.parse($ref)!"
                     case f: Typedef.Foreign =>
                       f.bindings.get(BaboonLang.Dart) match {
@@ -371,7 +372,7 @@ class DtJsonCodecGenerator(
                           // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
                           // `on Exception catch (e)` (NOT broader): keeps fail-fast on Error /
                           // ControlThrowable parity (PR-I-D01 pattern guidance).
-                          val srcRef = trans.toDtTypeRefKeepForeigns(u, domain, evo)
+                          val srcRef = domainTypes.toDtTypeRefKeepForeigns(u)
                           val host   = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost", importAs = Some(trans.toSnakeCase(srcRef.name)))
                           q"""(() { try { return $host.instance.decodeKey($ref); } on Exception catch (e) { throw $baboonDecoderFailure('malformed key: ' + $ref, e); } })()"""
                         case None =>
@@ -381,13 +382,13 @@ class DtJsonCodecGenerator(
                     // PR-F (M24): throw BaboonDecoderFailure on Left for cross-language
                     // malformed-key consistency (replaces unchecked cast).
                     case d: Typedef.Dto if d.isIdentifier =>
-                      val targetTpe   = trans.toDtTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe   = domainTypes.toDtTypeRefKeepForeigns(u)
                       val nestedCodec = DtValue.DtType(targetTpe.pkg, s"${targetTpe.name}Codec", importAs = Some(trans.toSnakeCase(targetTpe.name)))
                       q"""(switch ($nestedCodec.parseRepr($ref)) { $baboonRight<String, $targetTpe>(:final value) => value, _ => throw $baboonDecoderFailure('malformed key: ' + $ref) })"""
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct (named arg).
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                       val inner     = d.fields.head
-                      val targetTpe = trans.toDtTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe = domainTypes.toDtTypeRefKeepForeigns(u)
                       val innerDec  = decodeKey(inner.tpe, ref)
                       val dartName  = trans.escapeDartKeyword(inner.name.name)
                       q"$targetTpe($dartName: $innerDec)"

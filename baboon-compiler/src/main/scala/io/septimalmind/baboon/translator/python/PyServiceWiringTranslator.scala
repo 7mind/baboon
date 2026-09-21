@@ -21,6 +21,7 @@ object PyServiceWiringTranslator {
   class Impl(
     target: PyTarget,
     typeTranslator: PyTypeTranslator,
+    domainTypes: PyDomainTypes,
     codecs: Set[PyCodecTranslator],
     domain: Domain,
     evolution: BaboonEvolution,
@@ -202,8 +203,8 @@ object PyServiceWiringTranslator {
 
           val clientMethods = service.methods.flatMap {
             m =>
-              val inType                      = typeTranslator.asPyRef(m.sig, domain, evolution, fileTools.definitionsBasePkg)
-              val outType                     = m.out.map(o => typeTranslator.asPyRef(o, domain, evolution, fileTools.definitionsBasePkg))
+              val inType                      = domainTypes.asPyRef(m.sig, fileTools.definitionsBasePkg)
+              val outType                     = m.out.map(o => domainTypes.asPyRef(o, fileTools.definitionsBasePkg))
               val retAnnot: TextTree[PyValue] = outType.getOrElse(q"None")
 
               val uebaMethod = if (hasUeba) {
@@ -509,7 +510,7 @@ object PyServiceWiringTranslator {
 
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[PyValue] = {
       val svcName = service.id.name.name
-      val svcType = typeTranslator.asPyType(service.id, domain, evolution, fileTools.definitionsBasePkg)
+      val svcType = domainTypes.asPyType(service.id, fileTools.definitionsBasePkg)
 
       val jsonFn =
         if (hasActiveJsonCodecs(service))
@@ -655,7 +656,7 @@ object PyServiceWiringTranslator {
 
     private def generateErrorsWiring(service: Typedef.Service): TextTree[PyValue] = {
       val svcName = service.id.name.name
-      val svcType = typeTranslator.asPyType(service.id, domain, evolution, fileTools.definitionsBasePkg)
+      val svcType = domainTypes.asPyType(service.id, fileTools.definitionsBasePkg)
 
       val jsonFn =
         if (hasActiveJsonCodecs(service))

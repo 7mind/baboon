@@ -25,9 +25,9 @@ object TsCodecFixtureTranslator {
 
   final class TsCodecFixtureTranslatorImpl(
     translator: TsTypeTranslator,
+    domainTypes: TsDomainTypes,
     enquiries: BaboonEnquiries,
     domain: Domain,
-    evo: BaboonEvolution,
     tsFileTools: TsFileTools,
   ) extends TsCodecFixtureTranslator {
 
@@ -47,7 +47,7 @@ object TsCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[TsValue] = {
-      val fullType = translator.asTsTypeKeepForeigns(dto.id, domain, evo, tsFileTools.definitionsBasePkg)
+      val fullType = domainTypes.asTsTypeKeepForeigns(dto.id, tsFileTools.definitionsBasePkg)
 
       def body(format: FixtureFormat): TextTree[TsValue] = {
         val generatedFields = dto.fields.map(f => q"${genType(f.tpe, format)},")
@@ -66,7 +66,7 @@ object TsCodecFixtureTranslator {
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[TsValue] = {
-      val adtName = translator.asTsType(adt.id, domain, evo, tsFileTools.definitionsBasePkg)
+      val adtName = domainTypes.asTsType(adt.id, tsFileTools.definitionsBasePkg)
       val members = adt.members.toList
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
@@ -106,7 +106,7 @@ object TsCodecFixtureTranslator {
     }
 
     private def doTranslateDtoPrivate(dto: Typedef.Dto): TextTree[TsValue] = {
-      val fullType = translator.asTsTypeKeepForeigns(dto.id, domain, evo, tsFileTools.definitionsBasePkg)
+      val fullType = domainTypes.asTsTypeKeepForeigns(dto.id, tsFileTools.definitionsBasePkg)
 
       def body(format: FixtureFormat): TextTree[TsValue] = {
         val generatedFields = dto.fields.map(f => q"${genType(f.tpe, format)},")
@@ -133,7 +133,7 @@ object TsCodecFixtureTranslator {
     }
 
     private def fixtureFnRef(id: TypeId.User, format: FixtureFormat): TsValue.TsType = {
-      val userType      = translator.asTsTypeKeepForeigns(id, domain, evo, tsFileTools.fixturesBasePkg)
+      val userType      = domainTypes.asTsTypeKeepForeigns(id, tsFileTools.fixturesBasePkg)
       val partsList     = userType.moduleId.path
       val fixtureModule = TsValue.TsModuleId(partsList.init :+ (partsList.last + ".fixture"))
       TsValue.TsType(fixtureModule, fixtureFnName(id, format))
@@ -212,13 +212,13 @@ object TsCodecFixtureTranslator {
         case TypeId.Builtins.bytes => q"rnd.nextBytes()"
         case TypeId.Builtins.uid   => q"rnd.nextUid()"
         case TypeId.Builtins.tsu =>
-          translator.asTsType(TypeId.Builtins.tsu, domain, evo) match {
+          domainTypes.asTsType(TypeId.Builtins.tsu) match {
             case TsTypes.tsString => q"rnd.nextTsu().toISOString()"
             case TsTypes.tsDate   => q"rnd.nextTsu().date"
             case _                => q"rnd.nextTsu()"
           }
         case TypeId.Builtins.tso =>
-          translator.asTsType(TypeId.Builtins.tso, domain, evo) match {
+          domainTypes.asTsType(TypeId.Builtins.tso) match {
             case TsTypes.tsString => q"rnd.nextTso().toISOString()"
             case TsTypes.tsDate   => q"rnd.nextTso().date"
             case _                => q"rnd.nextTso()"
@@ -226,7 +226,7 @@ object TsCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
-          val enumType   = translator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
+          val enumType   = domainTypes.asTsType(u, tsFileTools.definitionsBasePkg)
           val enumValues = TsValue.TsType(enumType.moduleId, s"${enumType.name}_values")
           q"rnd.mkEnum($enumValues)"
         case u: TypeId.User =>

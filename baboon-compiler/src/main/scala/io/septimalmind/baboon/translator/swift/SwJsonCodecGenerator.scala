@@ -12,6 +12,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class SwJsonCodecGenerator(
   trans: SwTypeTranslator,
+  domainTypes: SwDomainTypes,
   target: SwTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -110,7 +111,7 @@ class SwJsonCodecGenerator(
       m =>
         val branchName = m.name.name
         val caseName   = trans.escapeSwiftKeyword(branchName.head.toLower.toString + branchName.tail)
-        val fqBranch   = trans.toSwTypeRefKeepForeigns(m, domain, evo)
+        val fqBranch   = domainTypes.toSwTypeRefKeepForeigns(m)
 
         val routedBranchEncoder = q"${codecName(fqBranch)}.instance.encode(ctx, branchVal)"
         val branchEncoder = if (target.language.wrappedAdtBranchCodecs) {
@@ -231,7 +232,7 @@ class SwJsonCodecGenerator(
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       encodeKey(aliasedRef, ref)
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
-                      val srcRef = trans.toSwTypeRefKeepForeigns(uid, domain, evo)
+                      val srcRef = domainTypes.toSwTypeRefKeepForeigns(uid)
                       val host   = SwValue.SwType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
                       q"$host.instance.encodeKey($ref)"
                     case None =>
@@ -257,7 +258,7 @@ class SwJsonCodecGenerator(
         id match {
           case b: TypeId.BuiltinScalar => SwScalarCodecs.jsonEncode(b, ref)
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
+            val targetTpe = codecName(domainTypes.toSwTypeRefKeepForeigns(u))
             q"$targetTpe.instance.encode(ctx, $ref)"
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
@@ -297,7 +298,7 @@ class SwJsonCodecGenerator(
               val decoded = SwScalarCodecs.jsonDecode(b, ref)
               (decoded.expression, decoded.mayThrow)
             case u: TypeId.User =>
-              val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
+              val targetTpe = codecName(domainTypes.toSwTypeRefKeepForeigns(u))
               (q"$targetTpe.instance.decode(ctx, $ref)", true)
             case o =>
               throw new RuntimeException(s"BUG: Unexpected type: $o")
@@ -374,7 +375,7 @@ class SwJsonCodecGenerator(
                     case _: Typedef.Enum =>
                       // PR-F (M24): throw BaboonCodecException.decoderFailure on parse failure
                       // for cross-language malformed-key consistency (replaces forced unwrap).
-                      val targetTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe = domainTypes.toSwTypeRefKeepForeigns(u)
                       (
                         q"""{ () throws -> $targetTpe in guard let __r = $targetTpe.parse($ref) else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""",
                         true,
@@ -389,7 +390,7 @@ class SwJsonCodecGenerator(
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                           decodeKey(aliasedRef, ref)
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
-                          val foreignTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                          val foreignTpe = domainTypes.toSwTypeRefKeepForeigns(u)
                           val host       = SwValue.SwType(foreignTpe.pkg, s"${foreignTpe.name}_KeyCodecHost")
                           (
                             q"""{ () throws -> $foreignTpe in do { return try $host.instance.decodeKey($ref) } catch let e { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", e) } }()""",
@@ -402,7 +403,7 @@ class SwJsonCodecGenerator(
                     // PR-F (M24): throw BaboonCodecException.decoderFailure on .left for
                     // cross-language malformed-key consistency (replaces fatalError).
                     case d: Typedef.Dto if d.isIdentifier =>
-                      val targetTpe   = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe   = domainTypes.toSwTypeRefKeepForeigns(u)
                       val nestedCodec = SwValue.SwType(targetTpe.pkg, s"${targetTpe.name}Codec")
                       (
                         q"""{ () throws -> $targetTpe in guard case .right(let __r) = $nestedCodec.parseRepr($ref) else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""",
@@ -411,7 +412,7 @@ class SwJsonCodecGenerator(
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                       val inner                = d.fields.head
-                      val targetTpe            = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe            = domainTypes.toSwTypeRefKeepForeigns(u)
                       val (innerDec, innerThr) = decodeKey(inner.tpe, ref)
                       (q"$targetTpe(${inner.name.name}: $innerDec)", innerThr)
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")

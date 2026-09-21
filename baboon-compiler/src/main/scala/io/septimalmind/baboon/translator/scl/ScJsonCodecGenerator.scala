@@ -12,7 +12,7 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class ScJsonCodecGenerator(
-  trans: ScTypeTranslator,
+  domainTypes: ScDomainTypes,
   target: ScTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -270,8 +270,8 @@ class ScJsonCodecGenerator(
                       // impl is identity for stringy foreigns; non-stringy foreigns
                       // require host registration before first use.
                       val keyCodecHost = ScValue.ScType(
-                        trans.toScTypeRefKeepForeigns(uid, domain, evo).pkg,
-                        s"${trans.toScTypeRefKeepForeigns(uid, domain, evo).name}_KeyCodec",
+                        domainTypes.toScTypeRefKeepForeigns(uid).pkg,
+                        s"${domainTypes.toScTypeRefKeepForeigns(uid).name}_KeyCodec",
                       )
                       q"$keyCodecHost.instance.encodeKey($ref)"
                     case None =>
@@ -306,11 +306,11 @@ class ScJsonCodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkEncoder(aliasedRef, ref)
                   case _ =>
-                    val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                    val targetTpe = codecName(domainTypes.toScTypeRefKeepForeigns(u))
                     q"$targetTpe.instance.encode(ctx, $ref)"
                 }
               case _ =>
-                val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                val targetTpe = codecName(domainTypes.toScTypeRefKeepForeigns(u))
                 q"$targetTpe.instance.encode(ctx, $ref)"
             }
           case o =>
@@ -389,7 +389,7 @@ class ScJsonCodecGenerator(
                       // `<X>_JsonCodec` ScType (harvested by the ScType-only import collector,
                       // ScBaboonTranslator.renderTree) instead of a bare string-concatenated
                       // suffix that never resolves from a nested package (D5).
-                      val targetTpe = codecName(trans.toScTypeRefKeepForeigns(uid, domain, evo))
+                      val targetTpe = codecName(domainTypes.toScTypeRefKeepForeigns(uid))
                       // PR-F (M24): malformed map-key consistency — replace silent `.toOption`
                       // with explicit Right/Left match that throws BaboonCodecException.DecoderFailure
                       // on Left so cross-language behaviour is uniform.
@@ -404,20 +404,20 @@ class ScJsonCodecGenerator(
                           // uniform across stringy and non-stringy foreigns: the host's
                           // decodeKey is invoked, and any thrown exception is normalized
                           // to BaboonCodecException.DecoderFailure (PR-F invariant).
-                          val targetTpe    = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                          val targetTpe    = domainTypes.toScTypeRefKeepForeigns(uid)
                           val keyCodecHost = ScValue.ScType(targetTpe.pkg, s"${targetTpe.name}_KeyCodec")
                           q"""$circeKeyDecoder.instance(s => try { Some($keyCodecHost.instance.decodeKey(s)) } catch { case e: Exception => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s", e) })"""
                       }
                     // M19/PR-60: id types — call the parser-based round trip.
                     // PR-F (M24): throw BaboonCodecException.DecoderFailure on parse failure.
                     case d: Typedef.Dto if d.isIdentifier =>
-                      val targetTpe   = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                      val targetTpe   = domainTypes.toScTypeRefKeepForeigns(uid)
                       val nestedCodec = ScValue.ScType(targetTpe.pkg, s"${targetTpe.name}Codec", targetTpe.inObject)
                       q"""$circeKeyDecoder.instance(s => $nestedCodec.parseRepr(s) match { case Right(v) => Some(v); case Left(_) => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s") })"""
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                       val inner       = d.fields.head
-                      val targetTpe   = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                      val targetTpe   = domainTypes.toScTypeRefKeepForeigns(uid)
                       val innerKeyDec = getKeyDecoder(inner.tpe)
                       q"$circeKeyDecoder.instance(s => $innerKeyDec.apply(s).map(v => $targetTpe(${inner.name.name} = v)))"
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
@@ -447,11 +447,11 @@ class ScJsonCodecGenerator(
                       // bare string suffix on the foreign type leaves it unimported and
                       // additionally drags the companion-less foreign type into the import
                       // set (D4).
-                      val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                      val targetTpe = codecName(domainTypes.toScTypeRefKeepForeigns(u))
                       q"$targetTpe.circeDecoder"
                   }
                 case _ =>
-                  val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                  val targetTpe = codecName(domainTypes.toScTypeRefKeepForeigns(u))
                   q"$targetTpe.circeDecoder"
               }
           }

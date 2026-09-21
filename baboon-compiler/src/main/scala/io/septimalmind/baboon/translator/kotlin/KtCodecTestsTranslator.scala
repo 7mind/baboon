@@ -20,6 +20,7 @@ object KtCodecTestsTranslator {
   final class Impl(
     codecs: Set[KtCodecTranslator],
     typeTranslator: KtTypeTranslator,
+    domainTypes: KtDomainTypes,
     logger: BLogger,
     enquiries: BaboonEnquiries,
     target: KtTarget,
@@ -57,8 +58,8 @@ object KtCodecTestsTranslator {
       // `AnyOpaqueJson`-bearing fixture (`randomJson`). Each fixture matches its codec's native
       // any-field branch so round-trip avoids cross-format conversion and never needs a
       // `BaboonCodecContext.withFacade` ctx.
-      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
-      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
+      val uebaFixture = makeFixture(definition, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           case jsonCodec: KtJsonCodecGenerator =>
@@ -135,16 +136,14 @@ object KtCodecTestsTranslator {
 
     private def makeFixture(
       definition: DomainMember.User,
-      domain: Domain,
-      evolution: BaboonEvolution,
       useJsonAny: Boolean,
     ): TextTree[KtValue] = {
       val randomMethod    = if (useJsonAny) "randomJson" else "random"
       val randomAllMethod = if (useJsonAny) "randomAllJson" else "randomAll"
       definition.defn match {
         case e: Typedef.Enum => q"val fixture = rnd.randomElement(${e.id.name.name}.all())"
-        case _: Typedef.Adt  => q"val fixtures = ${typeTranslator.asKtType(definition.id, domain, evolution)}_Fixture.$randomAllMethod(rnd)"
-        case _               => q"val fixture = ${typeTranslator.asKtType(definition.id, domain, evolution)}_Fixture.$randomMethod(rnd)"
+        case _: Typedef.Adt  => q"val fixtures = ${domainTypes.asKtType(definition.id)}_Fixture.$randomAllMethod(rnd)"
+        case _               => q"val fixture = ${domainTypes.asKtType(definition.id)}_Fixture.$randomMethod(rnd)"
       }
     }
 

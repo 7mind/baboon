@@ -18,9 +18,9 @@ object SwServiceWiringTranslator {
   class Impl(
     target: SwTarget,
     trans: SwTypeTranslator,
+    domainTypes: SwDomainTypes,
     codecs: Set[SwCodecTranslator],
     domain: Domain,
-    evo: BaboonEvolution,
   ) extends SwServiceWiringTranslator {
 
     // Async axis. When enabled the service protocol methods (emitted in
@@ -126,13 +126,13 @@ object SwServiceWiringTranslator {
     }
 
     private def jsonCodecName(typeId: TypeId.User): SwType = {
-      val srcRef       = trans.toSwTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef       = domainTypes.toSwTypeRefKeepForeigns(typeId)
       val baseFileName = srcRef.importAs.getOrElse(trans.toSnakeCase(srcRef.name))
       SwType(srcRef.pkg, s"${srcRef.name}_JsonCodec", srcRef.fq, importAs = Some(baseFileName))
     }
 
     private def uebaCodecName(typeId: TypeId.User): SwType = {
-      val srcRef       = trans.toSwTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef       = domainTypes.toSwTypeRefKeepForeigns(typeId)
       val baseFileName = srcRef.importAs.getOrElse(trans.toSnakeCase(srcRef.name))
       SwType(srcRef.pkg, s"${srcRef.name}_UebaCodec", srcRef.fq, importAs = Some(baseFileName))
     }
@@ -256,8 +256,8 @@ object SwServiceWiringTranslator {
 
           val clientMethods: Seq[TextTree[SwValue]] = service.methods.flatMap {
             m =>
-              val inRef   = trans.asSwRef(m.sig, domain, evo)
-              val retType = m.out.map(o => trans.asSwRef(o, domain, evo))
+              val inRef   = domainTypes.asSwRef(m.sig)
+              val retType = m.out.map(o => domainTypes.asSwRef(o))
               val retDecl = retType.map(t => q" -> $t").getOrElse(q"")
 
               val uebaMethod = if (hasUeba) {
@@ -348,7 +348,7 @@ object SwServiceWiringTranslator {
       * resolve.
       */
     private def serviceImplType(service: Typedef.Service): TextTree[SwValue] =
-      q"${trans.toSwTypeRefKeepForeigns(service.id, domain, evo)}"
+      q"${domainTypes.toSwTypeRefKeepForeigns(service.id)}"
 
     private def svcCtxParamName: Option[String] = resolvedCtx match {
       case ResolvedServiceContext.NoContext              => None
@@ -553,7 +553,7 @@ object SwServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inRef    = trans.asSwRef(m.sig, domain, evo)
+          val inRef    = domainTypes.asSwRef(m.sig)
           val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
           if (isAsync) generateErrorsJsonCaseAsync(m, inRef, decodeIn)
           else generateErrorsJsonCaseSync(m, inRef, decodeIn)
@@ -691,7 +691,7 @@ object SwServiceWiringTranslator {
           val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
 
           val callStep = if (hasErrType) {
-            q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
+            q"""let output: ${ctTree(q"$baboonWiringError", domainTypes.asSwRef(outRef))}
                |do {
                |    let callResult = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    output = rt.leftMap(
@@ -700,7 +700,7 @@ object SwServiceWiringTranslator {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
                |}""".stripMargin
           } else {
-            q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
+            q"""let output: ${ctTree(q"$baboonWiringError", domainTypes.asSwRef(outRef))}
                |do {
                |    let callResultValue = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    output = rt.pure(callResultValue)
@@ -753,7 +753,7 @@ object SwServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inRef    = trans.asSwRef(m.sig, domain, evo)
+          val inRef    = domainTypes.asSwRef(m.sig)
           val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"reader")
           if (isAsync) generateErrorsUebaCaseAsync(m, inRef, decodeIn)
           else generateErrorsUebaCaseSync(m, inRef, decodeIn)
@@ -879,7 +879,7 @@ object SwServiceWiringTranslator {
           val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"v")
 
           val callStep = if (hasErrType) {
-            q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
+            q"""let output: ${ctTree(q"$baboonWiringError", domainTypes.asSwRef(outRef))}
                |do {
                |    let callResult = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    output = rt.leftMap(
@@ -888,7 +888,7 @@ object SwServiceWiringTranslator {
                |    return rt.fail($baboonWiringError.callFailed(method, error))
                |}""".stripMargin
           } else {
-            q"""let output: ${ctTree(q"$baboonWiringError", trans.asSwRef(outRef, domain, evo))}
+            q"""let output: ${ctTree(q"$baboonWiringError", domainTypes.asSwRef(outRef))}
                |do {
                |    let callResultValue = try await impl.${m.name.name}(${ctxImplCallArg}arg: decoded)
                |    output = rt.pure(callResultValue)

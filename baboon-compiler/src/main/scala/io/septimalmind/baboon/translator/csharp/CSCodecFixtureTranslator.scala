@@ -15,10 +15,10 @@ trait CSCodecFixtureTranslator {
 object CSCodecFixtureTranslator {
   final class CSRandomMethodTranslatorImpl(
     translator: CSTypeTranslator,
+    domainTypes: CSDomainTypes,
     enquiries: BaboonEnquiries,
     domain: Domain,
     lineage: BaboonLineage,
-    evo: BaboonEvolution,
     csTypeInfo: CSTypeInfo,
   ) extends CSCodecFixtureTranslator {
 
@@ -55,7 +55,7 @@ object CSCodecFixtureTranslator {
     private case object FixJson extends FixtureFormat
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[CSValue] = {
-      val fullType = translator.asCsType(dto.id, domain, evo)
+      val fullType = domainTypes.asCsType(dto.id)
 
       def body(format: FixtureFormat): TextTree[CSValue] = {
         val generatedFields = dto.fields.map(f => genType(f.tpe, format))
@@ -225,9 +225,9 @@ object CSCodecFixtureTranslator {
       def render(tpe: TypeRef): TextTree[CSValue] = {
         BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Cs) match {
           case TypeRef.Constructor(Builtins.opt, args) => q"${render(args.head)}?"
-          case TypeRef.Constructor(Builtins.map, args) => q"${translator.asCsType(Builtins.map, domain, evo)}<${render(args.head)}, ${render(args.last)}>"
-          case TypeRef.Constructor(id, args)           => q"${translator.asCsType(id, domain, evo)}<${render(args.head)}>"
-          case TypeRef.Scalar(id)                      => q"${translator.asCsType(id, domain, evo)}"
+          case TypeRef.Constructor(Builtins.map, args) => q"${domainTypes.asCsType(Builtins.map)}<${render(args.head)}, ${render(args.last)}>"
+          case TypeRef.Constructor(id, args)           => q"${domainTypes.asCsType(id)}<${render(args.head)}>"
+          case TypeRef.Scalar(id)                      => q"${domainTypes.asCsType(id)}"
           // Mirrors `CSTypeTranslator.asCsRef` — a collection element of type `any` is `AnyOpaque`.
           case _: TypeRef.Any => q"$baboonAnyOpaque"
         }
@@ -260,7 +260,7 @@ object CSCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"$baboonFixture.NextBoolean()"
 
-        case id: TypeId.User if enquiries.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${translator.asCsType(id, domain, evo).fullyQualified}>()"
+        case id: TypeId.User if enquiries.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${domainTypes.asCsType(id).fullyQualified}>()"
         case TypeId.User(_, _, name)                          =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (C# analog).

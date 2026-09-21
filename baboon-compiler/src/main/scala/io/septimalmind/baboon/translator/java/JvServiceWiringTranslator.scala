@@ -17,6 +17,7 @@ object JvServiceWiringTranslator {
   class Impl(
     target: JvTarget,
     trans: JvTypeTranslator,
+    domainTypes: JvDomainTypes,
     codecs: Set[JvCodecTranslator],
     domain: Domain,
     evo: BaboonEvolution,
@@ -26,7 +27,7 @@ object JvServiceWiringTranslator {
       ServiceResultResolver.resolve(domain, "java", target.language.serviceResult, target.language.pragmas)
 
     private def methodPlan(method: Typedef.MethodDef): ServiceMethodPlan[TextTree[JvValue]] =
-      new ServiceMethodPlan(method, trans.asJvRef(_, domain, evo), resolved, JvTypeTranslator.escapeJvKeyword(method.name.name))
+      new ServiceMethodPlan(method, domainTypes.asJvRef(_), resolved, JvTypeTranslator.escapeJvKeyword(method.name.name))
 
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "java", target.language.serviceContext, target.language.pragmas)
@@ -57,20 +58,20 @@ object JvServiceWiringTranslator {
     }
 
     private def jsonCodecName(typeId: TypeId.User): JvValue.JvType = {
-      val srcRef      = trans.toJvTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef      = domainTypes.toJvTypeRefKeepForeigns(typeId)
       val domainPkg   = trans.toJvPkg(domain.id, domain.version, evo)
       val ownerPrefix = srcRef.pkg.parts.toSeq.drop(domainPkg.parts.toSeq.length)
       val prefixStr   = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
-      val realPkg     = trans.effectiveJvPkg(typeId.owner, domain, evo)
+      val realPkg     = domainTypes.effectiveJvPkg(typeId.owner)
       JvValue.JvType(realPkg, s"$prefixStr${srcRef.name}_JsonCodec", srcRef.fq)
     }
 
     private def uebaCodecName(typeId: TypeId.User): JvValue.JvType = {
-      val srcRef      = trans.toJvTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef      = domainTypes.toJvTypeRefKeepForeigns(typeId)
       val domainPkg   = trans.toJvPkg(domain.id, domain.version, evo)
       val ownerPrefix = srcRef.pkg.parts.toSeq.drop(domainPkg.parts.toSeq.length)
       val prefixStr   = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
-      val realPkg     = trans.effectiveJvPkg(typeId.owner, domain, evo)
+      val realPkg     = domainTypes.effectiveJvPkg(typeId.owner)
       JvValue.JvType(realPkg, s"$prefixStr${srcRef.name}_UEBACodec", srcRef.fq)
     }
 

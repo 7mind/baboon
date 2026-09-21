@@ -25,6 +25,7 @@ object KtDomainTreeTools {
     domain: Domain,
     evolution: BaboonEvolution,
     typeTranslator: KtTypeTranslator,
+    domainTypes: KtDomainTypes,
     ktTypes: KtTypes,
   ) extends KtDomainTreeTools {
     import ktTypes.*
@@ -38,7 +39,7 @@ object KtDomainTreeTools {
     }
 
     private def mainMeta(defn: DomainMember.User): List[MetaField] = {
-      val ref = typeTranslator.asKtType(defn.id, domain, evolution).fullyQualified
+      val ref = domainTypes.asKtType(defn.id).fullyQualified
       val baboonDomainVersion = MetaField(
         q"val baboonDomainVersion: $ktString",
         q"\"${domain.version.v.toString}\"",
@@ -60,7 +61,7 @@ object KtDomainTreeTools {
     private def adtMeta(defn: DomainMember.User): List[MetaField] = {
       defn.id.owner match {
         case Owner.Adt(id) =>
-          val adtRef = typeTranslator.asKtType(defn.id, domain, evolution).fullyQualified
+          val adtRef = domainTypes.asKtType(defn.id).fullyQualified
           val adtTypeIdentifier = MetaField(
             q"val baboonAdtTypeIdentifier: $ktString",
             q"\"${id.toString}\"",
@@ -68,7 +69,7 @@ object KtDomainTreeTools {
           )
           val baboonAdtType = MetaField(
             q"val baboonAdtType: ${javaClass.fullyQualified}<*>",
-            q"${typeTranslator.asKtType(id, domain, evolution)}$classRefSuffix",
+            q"${domainTypes.asKtType(id)}$classRefSuffix",
             q"$adtRef.baboonAdtType",
           )
           List(adtTypeIdentifier, baboonAdtType)
@@ -77,7 +78,7 @@ object KtDomainTreeTools {
     }
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
-      val ref             = typeTranslator.asKtType(defn.id, domain, evolution).fullyQualified
+      val ref             = domainTypes.asKtType(defn.id).fullyQualified
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
       val sameInVersion = MetaField(
         q"val baboonSameInVersions: $ktList<$ktString>",

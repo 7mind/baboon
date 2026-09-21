@@ -19,6 +19,7 @@ object KtServiceWiringTranslator {
   class Impl(
     target: KtTarget,
     trans: KtTypeTranslator,
+    domainTypes: KtDomainTypes,
     codecs: Set[KtCodecTranslator],
     domain: Domain,
     evo: BaboonEvolution,
@@ -53,7 +54,7 @@ object KtServiceWiringTranslator {
       ServiceResultResolver.resolve(domain, "kotlin", target.language.serviceResult, target.language.pragmas)
 
     private def methodPlan(method: Typedef.MethodDef): ServiceMethodPlan[TextTree[KtValue]] =
-      new ServiceMethodPlan(method, trans.asKtRef(_, domain, evo), resolved, KtTypeTranslator.escapeKtKeyword(method.name.name))
+      new ServiceMethodPlan(method, domainTypes.asKtRef(_), resolved, KtTypeTranslator.escapeKtKeyword(method.name.name))
 
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "kotlin", target.language.serviceContext, target.language.pragmas)
@@ -115,12 +116,12 @@ object KtServiceWiringTranslator {
     }
 
     private def jsonCodecName(typeId: TypeId.User): KtValue.KtType = {
-      val srcRef = trans.toKtTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef = domainTypes.toKtTypeRefKeepForeigns(typeId)
       KtValue.KtType(srcRef.pkg, s"${srcRef.name}_JsonCodec", srcRef.fq)
     }
 
     private def uebaCodecName(typeId: TypeId.User): KtValue.KtType = {
-      val srcRef = trans.toKtTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef = domainTypes.toKtTypeRefKeepForeigns(typeId)
       KtValue.KtType(srcRef.pkg, s"${srcRef.name}_UEBACodec", srcRef.fq)
     }
 

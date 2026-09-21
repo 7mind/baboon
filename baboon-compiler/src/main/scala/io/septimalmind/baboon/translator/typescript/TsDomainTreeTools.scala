@@ -15,10 +15,11 @@ object TsDomainTreeTools {
     domain: Domain,
     evolution: BaboonEvolution,
     typeTranslator: TsTypeTranslator,
+    domainTypes: TsDomainTypes,
     tsFileTools: TsFileTools,
   ) extends TsDomainTreeTools {
     override def makeDataMeta(defn: DomainMember.User): List[TextTree[TsValue]] = {
-      val source = typeTranslator.asTsType(defn.id, domain, evolution, tsFileTools.definitionsBasePkg)
+      val source = domainTypes.asTsType(defn.id, tsFileTools.definitionsBasePkg)
       mainMeta(defn, source, isCodec = false) ++ sameInVersion(defn, source) ++ adtMeta(defn, source, isCodec = false)
     }
 

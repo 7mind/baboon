@@ -17,7 +17,7 @@ trait ScCodecFixtureTranslator {
 object ScCodecFixtureTranslator {
   final class ScRandomMethodTranslatorImpl(
     target: ScTarget,
-    translator: ScTypeTranslator,
+    domainTypes: ScDomainTypes,
     enquiries: BaboonEnquiries,
     domain: Domain,
     evo: BaboonEvolution,
@@ -91,7 +91,7 @@ object ScCodecFixtureTranslator {
     private case object FixJson extends FixtureFormat
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[ScValue] = {
-      val fullType = translator.toScTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = domainTypes.toScTypeRefKeepForeigns(dto.id)
 
       def body(format: FixtureFormat): TextTree[ScValue] = {
         if (dto.fields.isEmpty) {

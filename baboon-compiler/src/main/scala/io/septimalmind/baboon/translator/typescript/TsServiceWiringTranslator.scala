@@ -23,6 +23,7 @@ object TsServiceWiringTranslator {
   class Impl(
     target: TsTarget,
     typeTranslator: TsTypeTranslator,
+    domainTypes: TsDomainTypes,
     codecs: Set[TsCodecTranslator],
     domain: Domain,
     evo: BaboonEvolution,
@@ -120,7 +121,7 @@ object TsServiceWiringTranslator {
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     private def jsonDecodeExpr(id: TypeId, wire: TextTree[TsValue]): TextTree[TsValue] = id match {
       case u: TypeId.User =>
-        val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
+        val tsType = domainTypes.asTsType(u, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsJsonCodecGenerator => c }.get.codecName(tsType)
         q"$codec.instance.decode($tsBaboonCodecContext.Default, $wire)"
       case b: TypeId.BuiltinScalar => scalarOps.decodeJson(b, wire)
@@ -129,7 +130,7 @@ object TsServiceWiringTranslator {
 
     private def jsonEncodeExpr(id: TypeId, value: TextTree[TsValue]): TextTree[TsValue] = id match {
       case u: TypeId.User =>
-        val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
+        val tsType = domainTypes.asTsType(u, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsJsonCodecGenerator => c }.get.codecName(tsType)
         q"$codec.instance.encode($tsBaboonCodecContext.Default, $value)"
       case b: TypeId.BuiltinScalar => scalarOps.encodeJson(b, value)
@@ -138,7 +139,7 @@ object TsServiceWiringTranslator {
 
     private def uebaDecodeExpr(id: TypeId, reader: TextTree[TsValue]): TextTree[TsValue] = id match {
       case u: TypeId.User =>
-        val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
+        val tsType = domainTypes.asTsType(u, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsUEBACodecGenerator => c }.get.codecName(tsType)
         q"$codec.instance.decode($codecCtxRef, $reader)"
       case b: TypeId.BuiltinScalar => scalarOps.decodeUeba(b, reader)
@@ -147,7 +148,7 @@ object TsServiceWiringTranslator {
 
     private def uebaEncodeStmt(id: TypeId, writer: TextTree[TsValue], value: TextTree[TsValue]): TextTree[TsValue] = id match {
       case u: TypeId.User =>
-        val tsType = typeTranslator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
+        val tsType = domainTypes.asTsType(u, tsFileTools.definitionsBasePkg)
         val codec  = codecs.collectFirst { case c: TsUEBACodecGenerator => c }.get.codecName(tsType)
         q"$codec.instance.encode($codecCtxRef, $value, $writer);"
       case b: TypeId.BuiltinScalar => scalarOps.encodeUeba(b, writer, value)
@@ -216,7 +217,7 @@ object TsServiceWiringTranslator {
 
           val wiringPath   = getWiringPath(defn)
           val wiringModule = TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ wiringPath.stripSuffix(".ts").split('/').toList)
-          val serviceName  = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg).name
+          val serviceName  = domainTypes.asTsType(service.id, tsFileTools.definitionsBasePkg).name
           val exported = List(true -> activeJsonCodec(service), false -> activeBinCodec(service)).flatMap {
             case (isJson, codec) =>
               codec.toList.flatMap {
@@ -245,7 +246,7 @@ object TsServiceWiringTranslator {
     override def translateClient(defn: DomainMember.User): Option[TsDefnTranslator.Output] = {
       defn.defn match {
         case service: Typedef.Service =>
-          val svcType   = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg)
+          val svcType   = domainTypes.asTsType(service.id, tsFileTools.definitionsBasePkg)
           val jsonCodec = activeJsonCodec(service)
           val binCodec  = activeBinCodec(service)
 
@@ -261,8 +262,8 @@ object TsServiceWiringTranslator {
           // service client is always async" note in docs/language-features.md.
           val clientMethods = service.methods.flatMap {
             m =>
-              val inType  = typeTranslator.asTsRef(m.sig, domain, evo, tsFileTools.definitionsBasePkg)
-              val outType = m.out.map(typeTranslator.asTsRef(_, domain, evo, tsFileTools.definitionsBasePkg))
+              val inType  = domainTypes.asTsRef(m.sig, tsFileTools.definitionsBasePkg)
+              val outType = m.out.map(domainTypes.asTsRef(_, tsFileTools.definitionsBasePkg))
               val retType = outType.getOrElse(q"void")
 
               val jsonMethod = jsonCodec.map {
@@ -369,7 +370,7 @@ object TsServiceWiringTranslator {
 
       val implFields = services.map {
         s =>
-          val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
+          val svcType = domainTypes.asTsType(s.id, tsFileTools.definitionsBasePkg)
           q"${s.id.name.name}: ${typeTranslator.serviceInterfaceRef(svcType)}$ctxTypeArg"
       }
 
@@ -378,7 +379,7 @@ object TsServiceWiringTranslator {
           s =>
             activeBinCodec(s).map {
               _ =>
-                val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
+                val svcType = domainTypes.asTsType(s.id, tsFileTools.definitionsBasePkg)
                 val wiringFnRef = typeTranslator.serviceInvokeRef(
                   TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
                   svcType.name,
@@ -423,7 +424,7 @@ object TsServiceWiringTranslator {
           s =>
             activeJsonCodec(s).map {
               _ =>
-                val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
+                val svcType = domainTypes.asTsType(s.id, tsFileTools.definitionsBasePkg)
                 val wiringFnRef = typeTranslator.serviceInvokeRef(
                   TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
                   svcType.name,
@@ -624,7 +625,7 @@ object TsServiceWiringTranslator {
     // ========== noErrors mode ==========
 
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[TsValue] = {
-      val svcType = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg)
+      val svcType = domainTypes.asTsType(service.id, tsFileTools.definitionsBasePkg)
 
       val jsonFn =
         if (activeJsonCodec(service).isDefined) Some(generateNoErrorsJsonFn(service, svcType))
@@ -732,7 +733,7 @@ object TsServiceWiringTranslator {
     }
 
     private def generateErrorsWiring(service: Typedef.Service): TextTree[TsValue] = {
-      val svcType = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg)
+      val svcType = domainTypes.asTsType(service.id, tsFileTools.definitionsBasePkg)
 
       val jsonFn =
         if (activeJsonCodec(service).isDefined) Some(generateErrorsJsonFn(service, svcType))
@@ -772,7 +773,7 @@ object TsServiceWiringTranslator {
       wk: WireKind,
       wireType: String,
     ): TextTree[TsValue] = {
-      val inTypeRef  = typeTranslator.asTsType(m.sig.id, domain, evo, tsFileTools.definitionsBasePkg)
+      val inTypeRef  = domainTypes.asTsType(m.sig.id, tsFileTools.definitionsBasePkg)
       val hasErrType = m.err.isDefined && !resolved.noErrors
 
       def mkDecode(id: TypeId): TextTree[TsValue] = wk match {
@@ -796,7 +797,7 @@ object TsServiceWiringTranslator {
 
         val callAndEncodeStep = m.out match {
           case Some(outRef) =>
-            val outTypeRef = typeTranslator.asTsType(outRef.id, domain, evo, tsFileTools.definitionsBasePkg)
+            val outTypeRef = domainTypes.asTsType(outRef.id, tsFileTools.definitionsBasePkg)
 
             if (hasErrType) {
               q"""let output: $outTypeRef;
@@ -863,7 +864,7 @@ object TsServiceWiringTranslator {
 
         val callAndEncodeStep = m.out match {
           case Some(outRef) =>
-            val outTypeRef = typeTranslator.asTsType(outRef.id, domain, evo, tsFileTools.definitionsBasePkg)
+            val outTypeRef = domainTypes.asTsType(outRef.id, tsFileTools.definitionsBasePkg)
 
             val callBody = if (hasErrType) {
               q"""try {

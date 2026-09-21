@@ -28,6 +28,7 @@ object PyCodecFixtureTranslator {
 
   final class PyCodecFixtureTranslatorImpl(
     typeTranslator: PyTypeTranslator,
+    domainTypes: PyDomainTypes,
     enquiries: BaboonEnquiries,
     evolution: BaboonEvolution,
     pyFileTools: PyFileTools,
@@ -140,7 +141,7 @@ object PyCodecFixtureTranslator {
             case TypeId.Builtins.bytes => q"$baboonFixture.next_bytes()"
 
             case id: TypeId.User if enquiries.isEnum(tpe, domain) =>
-              val tpe = typeTranslator.asPyType(id, domain, evolution, pyFileTools.definitionsBasePkg)
+              val tpe = domainTypes.asPyType(id, pyFileTools.definitionsBasePkg)
               q"$baboonFixture.next_random_enum($tpe)"
             case u: TypeId.User =>
               // Propagate the codec branch into nested user-type fixtures so any-fields nested in

@@ -12,7 +12,6 @@ class RsJsonCodecGenerator(
   trans: RsTypeTranslator,
   target: RsTarget,
   domain: Domain,
-  evo: BaboonEvolution,
 ) extends RsCodecTranslator {
 
   override def translate(defn: DomainMember.User, rsRef: RsValue.RsType, srcRef: RsValue.RsType): Option[TextTree[RsValue]] = {

@@ -20,16 +20,16 @@ object CSServiceWiringTranslator {
   class Impl(
     target: CSTarget,
     trans: CSTypeTranslator,
+    domainTypes: CSDomainTypes,
     codecs: Set[CSCodecTranslator],
     domain: Domain,
-    evo: BaboonEvolution,
   ) extends CSServiceWiringTranslator {
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "cs", target.language.serviceResult, target.language.pragmas)
 
     private def methodPlan(method: Typedef.MethodDef): ServiceMethodPlan[TextTree[CSValue]] =
-      new ServiceMethodPlan(method, trans.asCsRef(_, domain, evo), resolved, CSTypes.escapeCsKeyword(method.name.name.capitalize))
+      new ServiceMethodPlan(method, domainTypes.asCsRef(_), resolved, CSTypes.escapeCsKeyword(method.name.name.capitalize))
 
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "cs", target.language.serviceContext, target.language.pragmas)
@@ -70,12 +70,12 @@ object CSServiceWiringTranslator {
     }
 
     private def jsonCodecName(typeId: TypeId.User): CSValue.CSType = {
-      val srcRef = trans.asCsTypeKeepForeigns(typeId, domain, evo)
+      val srcRef = domainTypes.asCsTypeKeepForeigns(typeId)
       CSValue.CSType(srcRef.pkg, s"${srcRef.name}_JsonCodec", srcRef.fq, CSTypeOrigin(typeId, domain).asDerived)
     }
 
     private def uebaCodecName(typeId: TypeId.User): CSValue.CSType = {
-      val srcRef = trans.asCsTypeKeepForeigns(typeId, domain, evo)
+      val srcRef = domainTypes.asCsTypeKeepForeigns(typeId)
       CSValue.CSType(srcRef.pkg, s"${srcRef.name}_UEBACodec", srcRef.fq, CSTypeOrigin(typeId, domain).asDerived)
     }
 

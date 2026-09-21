@@ -47,6 +47,7 @@ object TsDefnTranslator {
     domain: Domain,
     evo: BaboonEvolution,
     typeTranslator: TsTypeTranslator,
+    domainTypes: TsDomainTypes,
     codecs: Set[TsCodecTranslator],
     codecTests: TsCodecTestsTranslator,
     codecsFixture: TsCodecFixtureTranslator,
@@ -101,7 +102,7 @@ object TsDefnTranslator {
         Output(
           getOutputPath(defn),
           repr.defn,
-          typeTranslator.toTsModule(defn.id, domain, evo, tsFileTools.definitionsBasePkg),
+          domainTypes.toTsModule(defn.id, tsFileTools.definitionsBasePkg),
           CompilerProduct.Definition,
           exports = Some(repr.exports),
         )
@@ -121,8 +122,8 @@ object TsDefnTranslator {
         }
       }
 
-      val tsTypeRef = typeTranslator.asTsType(defn.id, domain, evo, tsFileTools.definitionsBasePkg)
-      val srcRef    = typeTranslator.asTsTypeKeepForeigns(defn.id, domain, evo, tsFileTools.definitionsBasePkg)
+      val tsTypeRef = domainTypes.asTsType(defn.id, tsFileTools.definitionsBasePkg)
+      val srcRef    = domainTypes.asTsTypeKeepForeigns(defn.id, tsFileTools.definitionsBasePkg)
 
       val renderedCodecs =
         codecs.toList
@@ -162,7 +163,7 @@ object TsDefnTranslator {
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Typescript) match {
             case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.Custom)) =>
-              val foreignName = typeTranslator.asTsTypeKeepForeigns(f.id, domain, evo, tsFileTools.definitionsBasePkg).name
+              val foreignName = domainTypes.asTsTypeKeepForeigns(f.id, tsFileTools.definitionsBasePkg).name
               List(ExportedSymbol(s"${foreignName}_KeyCodec", typeOnly = true), ExportedSymbol(s"${foreignName}_KeyCodecHost", typeOnly = false))
             case _ => Nil
           }
@@ -189,7 +190,7 @@ object TsDefnTranslator {
           // The codec/host names use the foreign's declared name (`FStr`) — not the deref'd
           // mapped name (`string`) that `name` resolves to. The `value: $name` field type
           // continues to use `name` so the signature reflects the host language type.
-          val srcRef       = typeTranslator.asTsTypeKeepForeigns(f.id, domain, evo, tsFileTools.definitionsBasePkg)
+          val srcRef       = domainTypes.asTsTypeKeepForeigns(f.id, tsFileTools.definitionsBasePkg)
           val codecName    = s"${srcRef.name}_KeyCodec"
           val hostName     = s"${srcRef.name}_KeyCodecHost"
           val defaultName  = s"_default${srcRef.name}_KeyCodec"
@@ -252,8 +253,8 @@ object TsDefnTranslator {
     }
 
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val tsTypeRef   = typeTranslator.asTsType(defn.id, domain, evo)
-      val srcRef      = typeTranslator.asTsTypeKeepForeigns(defn.id, domain, evo, tsFileTools.definitionsBasePkg)
+      val tsTypeRef   = domainTypes.asTsType(defn.id)
+      val srcRef      = domainTypes.asTsTypeKeepForeigns(defn.id, tsFileTools.definitionsBasePkg)
       val testTreeOpt = codecTests.translate(defn, tsTypeRef, srcRef)
       F.pure(testTreeOpt.map {
         testTree =>
@@ -278,12 +279,12 @@ object TsDefnTranslator {
       val mainMeta          = tsDomainTreeTools.makeDataMeta(defn)
       val codecMeta         = codecs.flatMap(_.codecMeta(defn, name))
       val meta              = mainMeta ++ codecMeta
-      val fieldsNameAndType = dto.fields.map(f => f.name -> typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg))
-      val contractParents   = dto.contracts.map(c => typeTranslator.asTsTypeKeepForeigns(c, domain, evo, tsFileTools.definitionsBasePkg))
+      val fieldsNameAndType = dto.fields.map(f => f.name -> domainTypes.asTsRef(f.tpe, tsFileTools.definitionsBasePkg))
+      val contractParents   = dto.contracts.map(c => domainTypes.asTsTypeKeepForeigns(c, tsFileTools.definitionsBasePkg))
       val adtContracts = dto.id.owner match {
         case Owner.Adt(id) =>
           domain.defs.meta.nodes(id) match {
-            case u: DomainMember.User => u.defn.asInstanceOf[Typedef.Adt].contracts.map(tid => typeTranslator.asTsType(tid, domain, evo, tsFileTools.definitionsBasePkg))
+            case u: DomainMember.User => u.defn.asInstanceOf[Typedef.Adt].contracts.map(tid => domainTypes.asTsType(tid, tsFileTools.definitionsBasePkg))
             case other                => throw new RuntimeException(s"BUG: missing/wrong adt: $id => $other")
           }
         case _ => Seq.empty
@@ -311,7 +312,7 @@ object TsDefnTranslator {
 
       val getters = dto.fields.map {
         f =>
-          val tpe = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
+          val tpe = domainTypes.asTsRef(f.tpe, tsFileTools.definitionsBasePkg)
           // The public getter is an accessor identifier; escape it for a keyword-named field
           // (`class` -> `class_`) so the codecs' `value.<getter>` reads (which assume the escaped
           // accessor name) resolve. The backing private field `_${name}` is `_`-prefixed and always
@@ -329,7 +330,7 @@ object TsDefnTranslator {
       // RHS reference must agree. The private field (`_${name}`) and all object-literal/member-access wire
       // keys keep the raw name, so the wire format is unchanged.
       val constrcutorParams =
-        dto.fields.map(f => q"${typeTranslator.escapeTsKeyword(f.name.name)}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
+        dto.fields.map(f => q"${typeTranslator.escapeTsKeyword(f.name.name)}: ${domainTypes.asTsRef(f.tpe, tsFileTools.definitionsBasePkg)}").join(", ")
 
       val constructorInside = fieldsNameAndType.map {
         case (n, _) =>
@@ -353,7 +354,7 @@ object TsDefnTranslator {
 
       val withParamFields = dto.fields.map {
         f =>
-          q"${f.name.name}?: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}"
+          q"${f.name.name}?: ${domainTypes.asTsRef(f.tpe, tsFileTools.definitionsBasePkg)}"
       }
 
       val withArgs = dto.fields.map {
@@ -370,7 +371,7 @@ object TsDefnTranslator {
 
       val fromPlainParamFields = dto.fields.map {
         f =>
-          q"${f.name.name}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}"
+          q"${f.name.name}: ${domainTypes.asTsRef(f.tpe, tsFileTools.definitionsBasePkg)}"
       }
 
       val fromPlainArgs = dto.fields.map {
@@ -519,7 +520,7 @@ object TsDefnTranslator {
       // Branch references use the prefixed branch symbol (`<Adt>_<Branch>`) via asTsType. The `isX`
       // instanceof type guards are intentionally dropped — narrowing is done on the union members
       // directly (instanceof, or a discriminator) and the guards were unused internally and by tests.
-      val branchRefs = adt.members.toList.map(m => q"${typeTranslator.asTsType(m, domain, evo, tsFileTools.definitionsBasePkg)}")
+      val branchRefs = adt.members.toList.map(m => q"${domainTypes.asTsType(m, tsFileTools.definitionsBasePkg)}")
 
       DefnRepr(
         q"""export type $name = ${branchRefs.join(" | ")}
@@ -539,7 +540,7 @@ object TsDefnTranslator {
       val contract = defn.defn.asInstanceOf[Typedef.Contract]
       val methods = contract.fields.map {
         f =>
-          val t      = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
+          val t      = domainTypes.asTsRef(f.tpe, tsFileTools.definitionsBasePkg)
           val member = q"readonly ${f.name.name}: $t;"
           prependDocs(f.docs, member)
       }
@@ -564,9 +565,9 @@ object TsDefnTranslator {
       val service = defn.defn.asInstanceOf[Typedef.Service]
       val methods = service.methods.map {
         m =>
-          val inType  = typeTranslator.asTsRef(m.sig, domain, evo, tsFileTools.definitionsBasePkg)
-          val outType = m.out.map(typeTranslator.asTsRef(_, domain, evo, tsFileTools.definitionsBasePkg))
-          val errType = m.err.map(typeTranslator.asTsRef(_, domain, evo, tsFileTools.definitionsBasePkg))
+          val inType  = domainTypes.asTsRef(m.sig, tsFileTools.definitionsBasePkg)
+          val outType = m.out.map(domainTypes.asTsRef(_, tsFileTools.definitionsBasePkg))
+          val errType = m.err.map(domainTypes.asTsRef(_, tsFileTools.definitionsBasePkg))
 
           val baseRetTree: TextTree[TsValue] = if (resolved.noErrors || errType.isEmpty) {
             outType.getOrElse(q"void")
@@ -818,7 +819,7 @@ object TsDefnTranslator {
                  |if ($resVar.tag === "Left") return { tag: "Left", value: $resVar.value };
                  |const $valVar: Uint8Array = $resVar.value;""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe       = typeTranslator.asTsTypeKeepForeigns(uid, domain, evo, tsFileTools.definitionsBasePkg)
+              val nestedTpe       = domainTypes.asTsTypeKeepForeigns(uid, tsFileTools.definitionsBasePkg)
               val nestedCodecName = nestedTpe.name.head.toLower.toString + nestedTpe.name.tail + "Codec"
               val nestedCodecRef  = TsType(nestedTpe.moduleId, nestedCodecName)
               q"""const ${srcFieldName}_ro = cursor.expect("{");
@@ -891,7 +892,7 @@ object TsDefnTranslator {
         case _ =>
           defn.defn.id.owner match {
             case Owner.Toplevel => s"$fbase/$fname"
-            case Owner.Ns(path) => s"$fbase/${typeTranslator.renderNsOwnerPath(path, domain).mkString("/")}/$fname"
+            case Owner.Ns(path) => s"$fbase/${domainTypes.renderNsOwnerPath(path).mkString("/")}/$fname"
             case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}.$fname"
           }
       }

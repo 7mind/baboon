@@ -13,6 +13,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSJsonCodecGenerator(
   trans: CSTypeTranslator,
+  domainTypes: CSDomainTypes,
   csDomTrees: CSDomainTreeTools,
   target: CSTarget,
   domain: Domain,
@@ -160,7 +161,7 @@ class CSJsonCodecGenerator(
         // only (never on the wire), so the rename is wire-safe.
         val branchNameRef = s"${escapeCsKeyword(branchName.toLowerCase)}_$idx"
 
-        val branchTpe           = trans.asCsType(m, domain, evo)
+        val branchTpe           = domainTypes.asCsType(m)
         val branchCodec         = codecName(branchTpe, CSTypeOrigin(m, domain))
         val routedBranchEncoder = q"$branchCodec.Instance.Encode(ctx, $branchNameRef)"
 
@@ -304,7 +305,7 @@ class CSJsonCodecGenerator(
                       // `.asDerived` is mandatory: it tells `isUpgradeable` to resolve
                       // higher twins via `asCsTypeKeepForeigns` (preserving the user's
                       // package), not via `asCsType` (which would deref to e.g. `System`).
-                      val srcRef  = trans.asCsTypeKeepForeigns(uid, domain, evo)
+                      val srcRef  = domainTypes.asCsTypeKeepForeigns(uid)
                       val hostTpe = CSValue.CSType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost", srcRef.fq, CSTypeOrigin(uid, domain).asDerived)
                       q"$hostTpe.Instance.EncodeKey($ref)"
                     case None =>
@@ -412,8 +413,8 @@ class CSJsonCodecGenerator(
                       // catch (Exception e) — NOT broader (PR-I-D01 pattern guidance):
                       // narrower than Throwable-equivalents would still propagate Errors.
                       // `.asDerived` is mandatory (see encoder note above).
-                      val srcRef   = trans.asCsTypeKeepForeigns(uid, domain, evo)
-                      val derefTpe = trans.asCsType(uid, domain, evo)
+                      val srcRef   = domainTypes.asCsTypeKeepForeigns(uid)
+                      val derefTpe = domainTypes.asCsType(uid)
                       val hostTpe  = CSValue.CSType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost", srcRef.fq, CSTypeOrigin(uid, domain).asDerived)
                       q"""((System.Func<$derefTpe>)(() => { try { return $hostTpe.Instance.DecodeKey($ref); } catch (Exception e) { throw new $baboonCodecException.DecoderFailure("malformed key: " + $ref, e); } }))()"""
                     case None =>
@@ -423,13 +424,13 @@ class CSJsonCodecGenerator(
                 // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for
                 // cross-language malformed-key consistency (replaces unchecked cast).
                 case d: Typedef.Dto if d.isIdentifier =>
-                  val targetTpe      = trans.asCsTypeKeepForeigns(uid, domain, evo)
+                  val targetTpe      = domainTypes.asCsTypeKeepForeigns(uid)
                   val codecClassName = CSValue.CSType(targetTpe.pkg, s"${targetTpe.name}Codec", targetTpe.fq, targetTpe.origin)
                   q"""($codecClassName.ParseRepr($ref) switch { $either<string, $targetTpe>.Right __r => __r.Value, _ => throw new $baboonCodecException.DecoderFailure("malformed key: " + $ref) })"""
                 // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                 case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                   val inner     = d.fields.head
-                  val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
+                  val targetTpe = domainTypes.asCsTypeKeepForeigns(uid)
                   val innerDec  = decodeKey(inner.tpe, ref)
                   q"new $targetTpe(${escapeCsKeyword(inner.name.name.capitalize)}: $innerDec)"
                 case o =>
@@ -473,9 +474,9 @@ class CSJsonCodecGenerator(
           case TypeId.Builtins.map =>
             val arg       = codecArgs.arg("kv")
             val keyDec    = decodeKey(args.head, arg)
-            val keyType   = trans.asCsRef(args.head, domain, evo)
+            val keyType   = domainTypes.asCsRef(args.head)
             val valueDec  = mkDecoder(args.last, arg, codecArgs.next)
-            val valueType = trans.asCsRef(args.last, domain, evo)
+            val valueType = domainTypes.asCsRef(args.last)
             q"""$BaboonTools.ReadJsonDict<$keyType, $valueType>($ref, $arg => $keyDec, $arg => $valueDec)"""
 
           case TypeId.Builtins.lst =>
@@ -507,7 +508,7 @@ class CSJsonCodecGenerator(
   }
 
   def codecName(id: TypeId.User): CSValue.CSType = {
-    codecName(trans.asCsTypeKeepForeigns(id, domain, evo), CSTypeOrigin(id, domain))
+    codecName(domainTypes.asCsTypeKeepForeigns(id), CSTypeOrigin(id, domain))
   }
 
   def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {

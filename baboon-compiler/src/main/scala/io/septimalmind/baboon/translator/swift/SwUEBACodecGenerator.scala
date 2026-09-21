@@ -14,6 +14,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class SwUEBACodecGenerator(
   trans: SwTypeTranslator,
+  domainTypes: SwDomainTypes,
   target: SwTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -152,7 +153,7 @@ class SwUEBACodecGenerator(
         val branchName = m.name.name
         val caseName   = trans.escapeSwiftKeyword(branchName.head.toLower.toString + branchName.tail)
 
-        val adtRef = trans.toSwTypeRefKeepForeigns(m, domain, evo)
+        val adtRef = domainTypes.toSwTypeRefKeepForeigns(m)
         val cName  = codecName(adtRef)
 
         val encBody = if (target.language.wrappedAdtBranchCodecs) {
@@ -348,7 +349,7 @@ class SwUEBACodecGenerator(
             val decoded = SwScalarCodecs.uebaDecode(s, q"reader")
             (decoded.expression, decoded.mayThrow)
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
+            val targetTpe = codecName(domainTypes.toSwTypeRefKeepForeigns(u))
             (q"$targetTpe.instance.decode(ctx, reader)", true)
         }
       case c: TypeRef.Constructor =>
@@ -387,7 +388,7 @@ class SwUEBACodecGenerator(
           case s: TypeId.BuiltinScalar =>
             SwScalarCodecs.uebaEncode(s, wref, ref)
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
+            val targetTpe = codecName(domainTypes.toSwTypeRefKeepForeigns(u))
             q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
         }
       case c: TypeRef.Constructor =>

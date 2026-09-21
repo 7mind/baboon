@@ -49,6 +49,7 @@ object PyDefnTranslator {
     codecsFixture: PyCodecFixtureTranslator,
     codecsTests: PyCodecTestTranslator,
     typeTranslator: PyTypeTranslator,
+    domainTypes: PyDomainTypes,
     baboonEnquiries: BaboonEnquiries,
     codecs: Set[PyCodecTranslator],
     pyDomTrees: PyDomainTreeTools,
@@ -83,8 +84,8 @@ object PyDefnTranslator {
       val codecsTestsOut = codecsTests
         .translate(
           defn,
-          typeTranslator.asPyType(defn.id, domain, evolution, fileTools.definitionsBasePkg),
-          typeTranslator.asPyTypeKeepForeigns(defn.id, domain, evolution, fileTools.definitionsBasePkg),
+          domainTypes.asPyType(defn.id, fileTools.definitionsBasePkg),
+          domainTypes.asPyTypeKeepForeigns(defn.id, fileTools.definitionsBasePkg),
         ).map(
           codecsTest =>
             Output(
@@ -188,8 +189,8 @@ object PyDefnTranslator {
         }
       }
 
-      val pyRef  = typeTranslator.asPyType(defn.id, domain, evolution, fileTools.definitionsBasePkg)
-      val srcRef = typeTranslator.asPyTypeKeepForeigns(defn.id, domain, evolution, fileTools.definitionsBasePkg)
+      val pyRef  = domainTypes.asPyType(defn.id, fileTools.definitionsBasePkg)
+      val srcRef = domainTypes.asPyTypeKeepForeigns(defn.id, fileTools.definitionsBasePkg)
 
       val repr       = mkRepr(defn, isLatestVersion)
       val defnRepr   = List(obsoletePrevious(repr.defn))
@@ -244,7 +245,7 @@ object PyDefnTranslator {
           val genMarkerParent     = if (adtParent.nonEmpty || contractParents.nonEmpty) Nil else List(genMarker)
           val adtMemberMetaParent = if (adtParent.isEmpty) Nil else List(baboonAdtMemberMeta)
 
-          val superclassesTypes = (adtParent ++ uniqueContracts).map(c => typeTranslator.asPyType(c, domain, evolution, fileTools.definitionsBasePkg))
+          val superclassesTypes = (adtParent ++ uniqueContracts).map(c => domainTypes.asPyType(c, fileTools.definitionsBasePkg))
 
           val parentTypes = superclassesTypes ++ genMarkerParent ++ adtMemberMetaParent :+ pydanticBaseModel
 
@@ -318,7 +319,7 @@ object PyDefnTranslator {
           val adtContractDefs    = adt.contracts.flatMap(domain.defs.meta.nodes.get).collect { case u: DomainMember.User => u }
           val adtSuperclasses    = baboonEnquiries.collectParents(domain, adtContractDefs).toSet
           val uniqueAdtContracts = adt.contracts.filterNot(c => adtSuperclasses.contains(c))
-          val contracts          = uniqueAdtContracts.map(c => typeTranslator.asPyType(c, domain, evolution, fileTools.definitionsBasePkg))
+          val contracts          = uniqueAdtContracts.map(c => domainTypes.asPyType(c, fileTools.definitionsBasePkg))
           val defaultParents     = contracts ++ List(pydanticBaseModel)
           val genMarkerParent    = if (adt.contracts.isEmpty) List(genMarker) else Nil
           val allParents         = defaultParents ++ genMarkerParent
@@ -390,12 +391,12 @@ object PyDefnTranslator {
           )
 
         case contract: Typedef.Contract =>
-          val contracts  = contract.contracts.map(c => typeTranslator.asPyType(c, domain, evolution, fileTools.definitionsBasePkg))
+          val contracts  = contract.contracts.map(c => domainTypes.asPyType(c, fileTools.definitionsBasePkg))
           val allParents = if (contract.contracts.isEmpty) List(genMarker, pyABC) ++ contracts else contracts
           val parents    = mkParents(allParents)
           val methods = contract.fields.map {
             f =>
-              val tpe  = typeTranslator.asPyRef(f.tpe, domain, evolution, fileTools.definitionsBasePkg)
+              val tpe  = domainTypes.asPyRef(f.tpe, fileTools.definitionsBasePkg)
               val name = escapePyKeyword(f.name.name)
               q"""@$pyAbstractMethod
                  |def $name(self) -> $tpe:
@@ -423,9 +424,9 @@ object PyDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val inType  = typeTranslator.asPyRef(m.sig, domain, evolution, fileTools.definitionsBasePkg)
-              val outType = m.out.map(typeTranslator.asPyRef(_, domain, evolution, fileTools.definitionsBasePkg))
-              val errType = m.err.map(typeTranslator.asPyRef(_, domain, evolution, fileTools.definitionsBasePkg))
+              val inType  = domainTypes.asPyRef(m.sig, fileTools.definitionsBasePkg)
+              val outType = m.out.map(domainTypes.asPyRef(_, fileTools.definitionsBasePkg))
+              val errType = m.err.map(domainTypes.asPyRef(_, fileTools.definitionsBasePkg))
               val retAnnotation: TextTree[PyValue] = if (resolved.noErrors || errType.isEmpty) {
                 outType.getOrElse(q"None")
               } else {
@@ -499,8 +500,8 @@ object PyDefnTranslator {
           // Foreign types are not emitted as Python typealiases (see line 90+ of mkRepr — pre-PR
           // emitted q"" for Foreign), so the user-facing name "FStr" doesn't exist as a Python
           // identifier. Methods accept/return the runtime Python type directly.
-          val srcRef          = typeTranslator.asPyTypeKeepForeigns(f.id, domain, evolution, fileTools.definitionsBasePkg)
-          val pyRef           = typeTranslator.asPyType(f.id, domain, evolution, fileTools.definitionsBasePkg)
+          val srcRef          = domainTypes.asPyTypeKeepForeigns(f.id, fileTools.definitionsBasePkg)
+          val pyRef           = domainTypes.asPyType(f.id, fileTools.definitionsBasePkg)
           val codecName       = s"${srcRef.name}_KeyCodec"
           val hostName        = s"${srcRef.name}_KeyCodecHost"
           val hostFqn         = s"${srcRef.moduleId.path.toList.mkString(".")}.$hostName"
@@ -547,7 +548,7 @@ object PyDefnTranslator {
         field =>
           val plan      = PyFieldPlan(field, contractsFields.contains(field))
           val fieldName = plan.wireName
-          val fieldType = typeTranslator.asPyRef(field.tpe, domain, evolution, fileTools.definitionsBasePkg)
+          val fieldType = domainTypes.asPyRef(field.tpe, fileTools.definitionsBasePkg)
           // A trailing `_` suffix is needed when either the field is a Python keyword (PEP 8
           // convention) or the field implements a contract abstract method (to avoid a Python
           // name-clash with the @property accessor). In both cases a pydantic alias preserves the
@@ -569,7 +570,7 @@ object PyDefnTranslator {
             // valid Python (e.g. `def class_(self)` instead of `def class(self)`).
             val propertyName = plan.accessorName
             q"""@property
-               |def $propertyName(self) -> ${typeTranslator.asPyRef(f.tpe, domain, evolution, fileTools.definitionsBasePkg)}:
+               |def $propertyName(self) -> ${domainTypes.asPyRef(f.tpe, fileTools.definitionsBasePkg)}:
                |    return self.${plan.attributeName}
                |""".stripMargin
         }
@@ -809,7 +810,7 @@ object PyDefnTranslator {
                  |    return $resVar
                  |$valVar = $resVar.value""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe   = typeTranslator.asPyTypeKeepForeigns(uid, domain, evolution, fileTools.definitionsBasePkg)
+              val nestedTpe   = domainTypes.asPyTypeKeepForeigns(uid, fileTools.definitionsBasePkg)
               val nestedCodec = PyType(nestedTpe.moduleId, s"${nestedTpe.name}Codec")
               q"""${srcFieldName}_ro = cursor.expect("{")
                  |if isinstance(${srcFieldName}_ro, $baboonLeftType):

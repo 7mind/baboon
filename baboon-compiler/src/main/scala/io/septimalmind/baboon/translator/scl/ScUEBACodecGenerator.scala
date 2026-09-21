@@ -12,7 +12,7 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class ScUEBACodecGenerator(
-  trans: ScTypeTranslator,
+  domainTypes: ScDomainTypes,
   target: ScTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -381,11 +381,11 @@ class ScUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkDecoder(aliasedRef)
                   case _ =>
-                    val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                    val targetTpe = codecName(domainTypes.toScTypeRefKeepForeigns(u))
                     q"""$targetTpe.instance.decode(ctx, wire).toTry.get"""
                 }
               case _ =>
-                val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                val targetTpe = codecName(domainTypes.toScTypeRefKeepForeigns(u))
                 q"""$targetTpe.instance.decode(ctx, wire).toTry.get"""
             }
         }
@@ -428,11 +428,11 @@ class ScUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkEncoder(aliasedRef, ref, wref)
                   case _ =>
-                    val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                    val targetTpe = codecName(domainTypes.toScTypeRefKeepForeigns(u))
                     q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
                 }
               case _ =>
-                val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                val targetTpe = codecName(domainTypes.toScTypeRefKeepForeigns(u))
                 q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
             }
         }

@@ -19,6 +19,7 @@ object TsCodecTestsTranslator {
   final class Impl(
     codecs: Set[TsCodecTranslator],
     typeTranslator: TsTypeTranslator,
+    domainTypes: TsDomainTypes,
     enquiries: BaboonEnquiries,
     target: TsTarget,
     domain: Domain,
@@ -54,10 +55,8 @@ object TsCodecTestsTranslator {
     private def makeTests(definition: DomainMember.User, srcRef: TsValue.TsType): TextTree[TsValue] = {
       val testFnName      = typeTranslator.camelToKebab(srcRef.name).replace('-', '_')
       val fixtureBaseName = s"random_${typeTranslator.camelToKebab(definition.id.name.name).replace('-', '_')}"
-      val fixtureModule = typeTranslator.toTsModule(
+      val fixtureModule = domainTypes.toTsModule(
         definition.id,
-        domain,
-        evo,
         tsFileTools.fixturesBasePkg,
         ".fixture",
       )
