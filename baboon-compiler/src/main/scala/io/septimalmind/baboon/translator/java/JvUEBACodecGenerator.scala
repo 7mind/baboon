@@ -12,7 +12,6 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class JvUEBACodecGenerator(
-  trans: JvTypeTranslator,
   domainTypes: JvDomainTypes,
   target: JvTarget,
   domain: Domain,
@@ -507,7 +506,7 @@ class JvUEBACodecGenerator(
   }
 
   def codecName(name: JvValue.JvType, owner: Owner): JvValue.JvType = {
-    val domainPkg   = trans.toJvPkg(domain.id, domain.version, evo)
+    val domainPkg   = domainTypes.currentPkg
     val ownerPrefix = name.pkg.parts.toSeq.drop(domainPkg.parts.toSeq.length)
     val prefixStr   = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
     val realPkg     = domainTypes.effectiveJvPkg(owner)

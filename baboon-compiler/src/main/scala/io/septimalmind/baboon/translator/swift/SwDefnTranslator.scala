@@ -165,10 +165,10 @@ object SwDefnTranslator {
     }
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
-      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val rtTree = wiringTranslator.translateServiceRt()
       val result = rtTree.map {
         tree =>
-          val pkg   = trans.toSwPkg(domain.id, domain.version, evo)
+          val pkg   = domainTypes.currentPkg
           val fbase = swFiles.basename(domain, evo)
           Output(
             s"$fbase/baboon_service_rt.swift",

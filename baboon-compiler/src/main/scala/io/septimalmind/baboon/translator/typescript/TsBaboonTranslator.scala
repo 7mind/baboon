@@ -21,7 +21,6 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   defnTranslator: Subcontext[TsDefnTranslator[F]],
   target: TsTarget,
   tsFileTools: TsFileTools,
-  enquiries: BaboonEnquiries,
   typeTranslator: TsTypeTranslator,
   mcpHook: McpServerGeneratorHook[F],
 ) extends BaboonAbstractTranslator[F] {

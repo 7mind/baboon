@@ -5,6 +5,7 @@ import io.septimalmind.baboon.translator.java.JvTypes.{javaClass, jvList, jvMap,
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import io.septimalmind.baboon.translator.DomainEvolution
 
 trait JvDomainTreeTools {
   def makeDataMeta(defn: DomainMember.User): List[MetaField]
@@ -23,8 +24,7 @@ object JvDomainTreeTools {
 
   final class JvDomainTreeToolsImpl(
     domain: Domain,
-    evolution: BaboonEvolution,
-    typeTranslator: JvTypeTranslator,
+    domainEvolution: DomainEvolution,
     domainTypes: JvDomainTypes,
   ) extends JvDomainTreeTools {
     override def makeDataMeta(defn: DomainMember.User): List[MetaField] = {
@@ -76,13 +76,13 @@ object JvDomainTreeTools {
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
       val ref             = domainTypes.asJvType(defn.id).fullyQualified
-      val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
+      val unmodifiedSince = domainEvolution.typesUnchangedSince(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
       val sameInVersion = MetaField(
         q"public static final $jvList<$jvString> baboonSameInVersions",
         q"$jvList.of(${unmodifiedSince.mkString(", ")})",
         q"$ref.baboonSameInVersions",
       )
-      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forward = domainEvolution.typesForwardReadable(defn.id)
       val forwardEntries = forward.readable.toList.map {
         case (v, tier) => s"""java.util.Map.entry("${v.v.toString}", "${tier.wireName}")"""
       }
@@ -91,7 +91,7 @@ object JvDomainTreeTools {
         q"$jvMap.ofEntries(${forwardEntries.mkString(", ")})",
         q"$ref.baboonForwardReadable",
       )
-      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+      val minReaderEntries = domainEvolution.minReaders(defn.id).toList.sortBy(_._1.weight).map {
         case (tier, v) => s"""java.util.Map.entry("${tier.wireName}", "${v.v.toString}")"""
       }
       val minReaders = MetaField(

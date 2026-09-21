@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.rust
 
-import io.septimalmind.baboon.translator.rust.RsValue.RsType
+import io.septimalmind.baboon.translator.rust.RsValue.{RsCrateId, RsType}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 
@@ -17,4 +17,7 @@ final class RsDomainTypes(trans: RsTypeTranslator, domain: Domain, evo: BaboonEv
   def asRsType(tpe: TypeId): RsType = trans.asRsType(tpe, domain, evo)
 
   def toRsTypeRefKeepForeigns(tid: TypeId.User): RsType = trans.toRsTypeRefKeepForeigns(tid, domain, evo)
+
+  /** The package/crate of the current domain's own version. */
+  def currentPkg: RsCrateId = trans.toRsCrate(domain.id, domain.version, evo)
 }

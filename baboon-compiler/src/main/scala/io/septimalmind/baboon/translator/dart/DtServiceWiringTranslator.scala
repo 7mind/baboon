@@ -10,7 +10,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait DtServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[DtValue]]
   def translateClient(defn: DomainMember.User): Option[TextTree[DtValue]]
-  def translateServiceRt(domain: Domain): Option[TextTree[DtValue]]
+  def translateServiceRt(): Option[TextTree[DtValue]]
 
   /** Generic clause (`<Ctx>`) appended to the service-interface class name when
     * an `abstract` service-context mode is active; empty otherwise (incl. `none`
@@ -124,7 +124,7 @@ object DtServiceWiringTranslator {
       s"$typeName$p"
     }
 
-    override def translateServiceRt(domain: Domain): Option[TextTree[DtValue]] = {
+    override def translateServiceRt(): Option[TextTree[DtValue]] = {
       if (resolved.noErrors) return None
 
       val hasServices = domain.defs.meta.nodes.values.exists {

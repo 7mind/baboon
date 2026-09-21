@@ -7,6 +7,7 @@ import io.septimalmind.baboon.typer.model.{BaboonEvolution, BaboonLang, Domain, 
 import io.septimalmind.baboon.util.BLogger
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait DtCodecTestsTranslator {
   def translate(
@@ -22,10 +23,9 @@ trait DtCodecTestsTranslator {
 object DtCodecTestsTranslator {
   final class Impl(
     codecs: Set[DtCodecTranslator],
-    typeTranslator: DtTypeTranslator,
     domainTypes: DtDomainTypes,
     logger: BLogger,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     target: DtTarget,
     domain: Domain,
     evo: BaboonEvolution,
@@ -41,8 +41,8 @@ object DtCodecTestsTranslator {
       val isLatestVersion = domain.version == evo.latest
 
       definition match {
-        case d if enquiries.hasForeignType(d, domain, BaboonLang.Dart) => None
-        case d if enquiries.isRecursiveTypedef(d, domain)              => None
+        case d if domainEnquiries.hasForeignType(d, BaboonLang.Dart) => None
+        case d if domainEnquiries.isRecursiveTypedef(d)              => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef]          => None
         case _ if !isLatestVersion                                     => None
         case _ =>

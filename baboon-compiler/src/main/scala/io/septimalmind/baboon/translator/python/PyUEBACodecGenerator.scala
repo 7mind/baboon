@@ -13,7 +13,7 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
 class PyUEBACodecGenerator(
-  typeTranslator: PyTypeTranslator,
+  domainTypes: PyDomainTypes,
   treeTools: PyDomainTreeTools,
   evolution: BaboonEvolution,
   pyFileTools: PyFileTools,
@@ -557,8 +557,7 @@ class PyUEBACodecGenerator(
 
   override def codecType(tid: TypeId.User): PyType = {
     val typeName = s"${tid.name.name.capitalize}_UEBACodec"
-    val moduleId = typeTranslator
-      .toPyModule(tid, domain.version, evolution, pyFileTools.definitionsBasePkg)
+    val moduleId = domainTypes.toPyModule(tid, pyFileTools.definitionsBasePkg)
     PyType(moduleId, typeName)
   }
 

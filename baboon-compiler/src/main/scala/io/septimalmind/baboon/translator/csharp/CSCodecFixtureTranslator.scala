@@ -7,6 +7,7 @@ import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait CSCodecFixtureTranslator {
   def translate(definition: DomainMember.User): Option[TextTree[CSValue]]
@@ -14,9 +15,8 @@ trait CSCodecFixtureTranslator {
 
 object CSCodecFixtureTranslator {
   final class CSRandomMethodTranslatorImpl(
-    translator: CSTypeTranslator,
     domainTypes: CSDomainTypes,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     domain: Domain,
     lineage: BaboonLineage,
     csTypeInfo: CSTypeInfo,
@@ -29,8 +29,8 @@ object CSCodecFixtureTranslator {
         None
       } else {
         definition.defn match {
-          case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Cs) => None
-          case _ if enquiries.isRecursiveTypedef(definition, domain)            => None
+          case _ if domainEnquiries.hasForeignType(definition, BaboonLang.Cs) => None
+          case _ if domainEnquiries.isRecursiveTypedef(definition)            => None
           case _: Typedef.Contract                                              => None
           case _: Typedef.Enum                                                  => None
           case _: Typedef.Foreign                                               => None
@@ -260,7 +260,7 @@ object CSCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"$baboonFixture.NextBoolean()"
 
-        case id: TypeId.User if enquiries.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${domainTypes.asCsType(id).fullyQualified}>()"
+        case id: TypeId.User if domainEnquiries.isEnum(tpe) => q"$baboonFixture.NextRandomEnum<${domainTypes.asCsType(id).fullyQualified}>()"
         case TypeId.User(_, _, name)                          =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (C# analog).

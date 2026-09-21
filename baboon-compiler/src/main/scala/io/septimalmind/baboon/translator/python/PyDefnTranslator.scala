@@ -14,6 +14,7 @@ import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait PyDefnTranslator[F[+_, +_]] {
   def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[PyDefnTranslator.Output]]
@@ -48,9 +49,8 @@ object PyDefnTranslator {
     target: PyTarget,
     codecsFixture: PyCodecFixtureTranslator,
     codecsTests: PyCodecTestTranslator,
-    typeTranslator: PyTypeTranslator,
     domainTypes: PyDomainTypes,
-    baboonEnquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     codecs: Set[PyCodecTranslator],
     pyDomTrees: PyDomainTreeTools,
     evolution: BaboonEvolution,
@@ -91,7 +91,7 @@ object PyDefnTranslator {
             Output(
               getOutputPath(defn, prefix = Some("test_")),
               codecsTest,
-              typeTranslator.toPyModule(defn.id, domain.version, evolution, fileTools.testsBasePkg),
+              domainTypes.toPyModule(defn.id, fileTools.testsBasePkg),
               CompilerProduct.Test,
             )
         )
@@ -100,7 +100,7 @@ object PyDefnTranslator {
     }
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
-      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val rtTree = wiringTranslator.translateServiceRt()
       val result = rtTree.map {
         tree =>
           val fbase = fileTools.basename(domain, evolution)
@@ -126,7 +126,7 @@ object PyDefnTranslator {
             Output(
               getOutputPath(defn, suffix = Some("_Fixture")),
               fixture,
-              typeTranslator.toPyModule(defn.id, domain.version, evolution, fileTools.fixturesBasePkg),
+              domainTypes.toPyModule(defn.id, fileTools.fixturesBasePkg),
               CompilerProduct.Fixture,
             )
         )
@@ -142,7 +142,7 @@ object PyDefnTranslator {
       val mainOutput = Output(
         getOutputPath(defn),
         repr.defn,
-        typeTranslator.toPyModule(defn.id, domain.version, evolution, fileTools.definitionsBasePkg),
+        domainTypes.toPyModule(defn.id, fileTools.definitionsBasePkg),
         CompilerProduct.Definition,
         codecReg = regsPerCodec,
       )
@@ -150,8 +150,7 @@ object PyDefnTranslator {
       val wiringOutput = wiringTranslator
         .translate(defn).map {
           wiringTree =>
-            val wiringModule = typeTranslator
-              .toPyModule(defn.id, domain.version, evolution, fileTools.definitionsBasePkg)
+            val wiringModule = domainTypes.toPyModule(defn.id, fileTools.definitionsBasePkg)
               .withModuleName(s"${defn.id.name.name}_Wiring")
             Output(
               getOutputPath(defn, suffix = Some("_Wiring")),
@@ -164,8 +163,7 @@ object PyDefnTranslator {
       val clientOutput = wiringTranslator
         .translateClient(defn).map {
           clientTree =>
-            val clientModule = typeTranslator
-              .toPyModule(defn.id, domain.version, evolution, fileTools.definitionsBasePkg)
+            val clientModule = domainTypes.toPyModule(defn.id, fileTools.definitionsBasePkg)
               .withModuleName(s"${defn.id.name.name}_Client")
             Output(
               getOutputPath(defn, suffix = Some("_Client")),
@@ -240,7 +238,7 @@ object PyDefnTranslator {
           }
           val directParentsDefs = (adtParent ++ contractParents).flatMap(domain.defs.meta.nodes.get).collect { case u: DomainMember.User => u }
 
-          val superclasses        = baboonEnquiries.collectParents(domain, directParentsDefs).toSet
+          val superclasses        = domainEnquiries.collectParents( directParentsDefs).toSet
           val uniqueContracts     = dtoContracts.filterNot(c1 => superclasses.contains(c1))
           val genMarkerParent     = if (adtParent.nonEmpty || contractParents.nonEmpty) Nil else List(genMarker)
           val adtMemberMetaParent = if (adtParent.isEmpty) Nil else List(baboonAdtMemberMeta)
@@ -317,7 +315,7 @@ object PyDefnTranslator {
           )
         case adt: Typedef.Adt =>
           val adtContractDefs    = adt.contracts.flatMap(domain.defs.meta.nodes.get).collect { case u: DomainMember.User => u }
-          val adtSuperclasses    = baboonEnquiries.collectParents(domain, adtContractDefs).toSet
+          val adtSuperclasses    = domainEnquiries.collectParents( adtContractDefs).toSet
           val uniqueAdtContracts = adt.contracts.filterNot(c => adtSuperclasses.contains(c))
           val contracts          = uniqueAdtContracts.map(c => domainTypes.asPyType(c, fileTools.definitionsBasePkg))
           val defaultParents     = contracts ++ List(pydanticBaseModel)

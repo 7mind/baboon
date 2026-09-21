@@ -4,6 +4,7 @@ import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain, DomainMember, Owner, Typedef}
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import io.septimalmind.baboon.translator.DomainEvolution
 
 trait PyDomainTreeTools {
   def makeDataMeta(defn: DomainMember.User): Seq[TextTree[PyValue]]
@@ -13,8 +14,7 @@ trait PyDomainTreeTools {
 object PyDomainTreeTools {
   final class PyDomainTreeToolsImpl(
     domain: Domain,
-    evolution: BaboonEvolution,
-    typeTranslator: PyTypeTranslator,
+    domainEvolution: DomainEvolution,
     domainTypes: PyDomainTypes,
     pyFileTools: PyFileTools,
   ) extends PyDomainTreeTools {
@@ -44,10 +44,10 @@ object PyDomainTreeTools {
       }
 
       val unmodifiedMethods = if (!isCodec) {
-        val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id)
-        val forward         = evolution.typesForwardReadable(domain.version)(defn.id)
+        val unmodifiedSince = domainEvolution.typesUnchangedSince(defn.id)
+        val forward         = domainEvolution.typesForwardReadable(defn.id)
         val forwardEntries  = forward.readable.toList.map { case (v, tier) => s""""${v.v.toString}": "${tier.wireName}"""" }.mkString(", ")
-        val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight)
+        val minReaderEntries = domainEvolution.minReaders(defn.id).toList.sortBy(_._1.weight)
           .map { case (tier, v) => s""""${tier.wireName}": "${v.v.toString}"""" }.mkString(", ")
         List(
           q"""baboon_same_in_versions: $pyClassVar[$pyList[$pyStr]] = [${unmodifiedSince.sameIn.map(v => q"\"${v.v.toString}\"").toList.join(", ")}]""".stripMargin,

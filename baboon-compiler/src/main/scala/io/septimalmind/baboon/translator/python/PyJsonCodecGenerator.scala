@@ -12,7 +12,6 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
 final class PyJsonCodecGenerator(
-  typeTranslator: PyTypeTranslator,
   domainTypes: PyDomainTypes,
   treeTools: PyDomainTreeTools,
   pyFileTools: PyFileTools,
@@ -507,7 +506,7 @@ final class PyJsonCodecGenerator(
 
   override def codecType(tid: TypeId.User): PyType = {
     val typeName = s"${tid.name.name.capitalize}_JsonCodec"
-    val moduleId = typeTranslator.toPyModule(tid, domain.version, evolution, pyFileTools.definitionsBasePkg)
+    val moduleId = domainTypes.toPyModule(tid, pyFileTools.definitionsBasePkg)
     PyType(moduleId, typeName)
   }
 

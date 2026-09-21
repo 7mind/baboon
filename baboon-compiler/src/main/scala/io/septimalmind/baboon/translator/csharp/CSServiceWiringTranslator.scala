@@ -11,7 +11,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait CSServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[CSValue]]
 
-  def translateServiceRt(domain: Domain): Option[TextTree[CSValue]]
+  def translateServiceRt(): Option[TextTree[CSValue]]
 
   def translateClient(defn: DomainMember.User): Option[TextTree[CSValue]]
 }
@@ -19,7 +19,6 @@ trait CSServiceWiringTranslator {
 object CSServiceWiringTranslator {
   class Impl(
     target: CSTarget,
-    trans: CSTypeTranslator,
     domainTypes: CSDomainTypes,
     codecs: Set[CSCodecTranslator],
     domain: Domain,
@@ -109,7 +108,7 @@ object CSServiceWiringTranslator {
       s"${resolved.resultType.get}$p"
     }
 
-    override def translateServiceRt(domain: Domain): Option[TextTree[CSValue]] = {
+    override def translateServiceRt(): Option[TextTree[CSValue]] = {
       if (resolved.noErrors) return None
 
       val hasServices = domain.defs.meta.nodes.values.exists {

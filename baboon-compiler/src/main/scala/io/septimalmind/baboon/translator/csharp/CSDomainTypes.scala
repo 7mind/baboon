@@ -27,4 +27,7 @@ final class CSDomainTypes(trans: CSTypeTranslator, domain: Domain, evo: BaboonEv
   def csFixtureRef(tid: TypeId.User): CSType = trans.csFixtureRef(tid, domain, evo)
 
   def deNull(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = trans.deNull(tpe, domain, ref)
+
+  /** The package/crate of the current domain's own version. */
+  def currentPkg: CSPackageId = trans.toCsPkg(domain.id, domain.version, evo)
 }

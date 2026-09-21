@@ -14,7 +14,6 @@ class TsUEBACodecGenerator(
   domainTypes: TsDomainTypes,
   target: TsTarget,
   domain: Domain,
-  enquiries: BaboonEnquiries,
   tsFileTools: TsFileTools,
   tsDomainTreeTools: TsDomainTreeTools,
 ) extends TsCodecTranslator {

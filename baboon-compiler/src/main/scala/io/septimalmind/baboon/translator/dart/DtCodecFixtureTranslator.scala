@@ -7,6 +7,7 @@ import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait DtCodecFixtureTranslator {
   def translate(definition: DomainMember.User): Option[TextTree[DtValue]]
@@ -27,7 +28,7 @@ object DtCodecFixtureTranslator {
   final class Impl(
     translator: DtTypeTranslator,
     domainTypes: DtDomainTypes,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     domain: Domain,
   ) extends DtCodecFixtureTranslator {
 
@@ -35,8 +36,8 @@ object DtCodecFixtureTranslator {
       definition: DomainMember.User
     ): Option[TextTree[DtValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Dart) => None
-        case _ if enquiries.isRecursiveTypedef(definition, domain)              => None
+        case _ if domainEnquiries.hasForeignType(definition, BaboonLang.Dart) => None
+        case _ if domainEnquiries.isRecursiveTypedef(definition)              => None
         case dto: Typedef.Dto                                                   => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                                   => Some(doTranslateAdt(adt))
         case _: Typedef.Contract                                                => None
@@ -55,8 +56,8 @@ object DtCodecFixtureTranslator {
         case _: DomainMember.Builtin => None
         case u: DomainMember.User =>
           u.defn match {
-            case _ if enquiries.hasForeignType(u, domain, BaboonLang.Dart) => None
-            case _ if enquiries.isRecursiveTypedef(u, domain)              => None
+            case _ if domainEnquiries.hasForeignType(u, BaboonLang.Dart) => None
+            case _ if domainEnquiries.isRecursiveTypedef(u)              => None
             case _: Typedef.Contract                                       => None
             case _: Typedef.Enum                                           => None
             case _: Typedef.Foreign                                        => None
@@ -198,7 +199,7 @@ object DtCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"rnd.nextBool()"
 
-        case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
+        case u: TypeId.User if domainEnquiries.isEnum(tpe) =>
           val enumType = domainTypes.toDtTypeRefKeepForeigns(u)
           q"rnd.mkEnum($enumType.values)"
         case u: TypeId.User =>

@@ -49,7 +49,6 @@ object KtDefnTranslator {
     evo: BaboonEvolution,
     ktFiles: KtFileTools,
     ktTrees: KtTreeTools,
-    trans: KtTypeTranslator,
     domainTypes: KtDomainTypes,
     ktTypes: KtTypes,
     codecs: Set[KtCodecTranslator],
@@ -124,7 +123,7 @@ object KtDefnTranslator {
           Output(
             getOutputPath(defn, suffix = Some("Fixture")),
             fixtureTreeWithPkg,
-            trans.toKtPkg(domain.id, domain.version, evo),
+            domainTypes.currentPkg,
             CompilerProduct.Fixture,
           )
       }
@@ -155,7 +154,7 @@ object KtDefnTranslator {
           Output(
             getOutputPath(defn, suffix = Some("Tests")),
             codecTestWithPkg,
-            trans.toKtPkg(domain.id, domain.version, evo),
+            domainTypes.currentPkg,
             CompilerProduct.Test,
           )
       }
@@ -164,10 +163,10 @@ object KtDefnTranslator {
     }
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
-      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val rtTree = wiringTranslator.translateServiceRt()
       val result = rtTree.map {
         tree =>
-          val pkg     = trans.toKtPkg(domain.id, domain.version, evo)
+          val pkg     = domainTypes.currentPkg
           val wrapped = ktTrees.inPkg(pkg.parts.toSeq, tree)
           val fbase   = ktFiles.basename(domain, evo)
           Output(

@@ -13,17 +13,15 @@ trait RsServiceWiringTranslator {
 
   def translateClient(defn: DomainMember.User): Option[TextTree[RsValue]]
 
-  def translateServiceRt(domain: Domain): Option[TextTree[RsValue]]
+  def translateServiceRt(): Option[TextTree[RsValue]]
 }
 
 object RsServiceWiringTranslator {
   class Impl(
     target: RsTarget,
-    trans: RsTypeTranslator,
     domainTypes: RsDomainTypes,
     codecs: Set[RsCodecTranslator],
     domain: Domain,
-    evo: BaboonEvolution,
     rsTypes: RsTypes,
   ) extends RsServiceWiringTranslator {
     import rsTypes.*
@@ -55,7 +53,7 @@ object RsServiceWiringTranslator {
     }
 
     private lazy val rtCrate: RsValue.RsCrateId = {
-      val baseCrate = trans.toRsCrate(domain.id, domain.version, evo)
+      val baseCrate = domainTypes.currentPkg
       RsValue.RsCrateId(izumi.fundamentals.collections.nonempty.NEList.unsafeFrom((baseCrate.parts :+ "baboon_service_rt").toList))
     }
     private lazy val ibaboonServiceRt: RsValue.RsType = RsValue.RsType(rtCrate, "IBaboonServiceRt")
@@ -65,7 +63,7 @@ object RsServiceWiringTranslator {
       s"${resolved.resultType.get}$p"
     }
 
-    override def translateServiceRt(domain: Domain): Option[TextTree[RsValue]] = {
+    override def translateServiceRt(): Option[TextTree[RsValue]] = {
       if (resolved.noErrors) return None
 
       val hasServices = domain.defs.meta.nodes.values.exists {

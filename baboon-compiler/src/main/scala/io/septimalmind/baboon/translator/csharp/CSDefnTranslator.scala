@@ -14,6 +14,7 @@ import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait CSDefnTranslator[F[+_, +_]] {
   def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[CSDefnTranslator.Output]]
@@ -63,7 +64,6 @@ object CSDefnTranslator {
 
   class CSDefnTranslatorImpl[F[+_, +_]: Applicative2 /* This impl has no errors right now */ ](
     target: CSTarget,
-    trans: CSTypeTranslator,
     domainTypes: CSDomainTypes,
     csTrees: CSTreeTools,
     csDomTrees: CSDomainTreeTools,
@@ -77,7 +77,7 @@ object CSDefnTranslator {
     lineage: BaboonLineage,
     types: TypeInfo,
     csTypeInfo: CSTypeInfo,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
   ) extends CSDefnTranslator[F] {
     type Out[T] = F[NEList[BaboonIssue], T]
 
@@ -109,7 +109,7 @@ object CSDefnTranslator {
       val mainOutput = Output(
         getOutputPath(defn),
         reprOut,
-        trans.toCsPkg(domain.id, domain.version, evo),
+        domainTypes.currentPkg,
         CompilerProduct.Definition,
         codecReg = regsPerCodec,
         origin   = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
@@ -123,7 +123,7 @@ object CSDefnTranslator {
             Output(
               getOutputPath(defn, suffix = Some(".Wiring")),
               Some(csTrees.inNs(ns.toSeq, wiringTree)),
-              trans.toCsPkg(domain.id, domain.version, evo),
+              domainTypes.currentPkg,
               CompilerProduct.Definition,
               origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
             )
@@ -137,7 +137,7 @@ object CSDefnTranslator {
             Output(
               getOutputPath(defn, suffix = Some("_Client")),
               Some(csTrees.inNs(ns.toSeq, clientTree)),
-              trans.toCsPkg(domain.id, domain.version, evo),
+              domainTypes.currentPkg,
               CompilerProduct.Definition,
               origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
             )
@@ -159,7 +159,7 @@ object CSDefnTranslator {
           Output(
             getOutputPath(defn, suffix = Some(".Fixture")),
             Some(fixtureTreeWithNs),
-            trans.toCsPkg(domain.id, domain.version, evo),
+            domainTypes.currentPkg,
             CompilerProduct.Fixture,
             origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
           )
@@ -181,7 +181,7 @@ object CSDefnTranslator {
           Output(
             getOutputPath(defn, suffix = Some(".Tests")),
             Some(codecTestWithNS),
-            trans.toCsPkg(domain.id, domain.version, evo),
+            domainTypes.currentPkg,
             CompilerProduct.Test,
             origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
           )
@@ -191,10 +191,10 @@ object CSDefnTranslator {
     }
 
     override def translateServiceRt(): Out[List[Output]] = {
-      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val rtTree = wiringTranslator.translateServiceRt()
       val result = rtTree.map {
         tree =>
-          val pkg     = trans.toCsPkg(domain.id, domain.version, evo)
+          val pkg     = domainTypes.currentPkg
           val wrapped = csTrees.inNs(pkg.parts.toSeq, tree)
           val fbase   = csFiles.basename(domain, evo)
           Output(
@@ -454,7 +454,7 @@ object CSDefnTranslator {
           val allParents = Seq(q"$genMarker") ++ adt.contracts.map(t => q"${domainTypes.asCsType(t)}")
           val parents    = makeParents(allParents.toList)
 
-          val allFields = enquiries.unfold(domain, adt.contracts)
+          val allFields = domainEnquiries.unfold( adt.contracts)
 
           val abstractFields = allFields.map {
             f =>

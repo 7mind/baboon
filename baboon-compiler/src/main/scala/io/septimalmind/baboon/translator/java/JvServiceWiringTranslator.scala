@@ -10,17 +10,15 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait JvServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[JvValue]]
   def translateClient(defn: DomainMember.User): Option[TextTree[JvValue]]
-  def translateServiceRt(domain: Domain): Option[TextTree[JvValue]]
+  def translateServiceRt(): Option[TextTree[JvValue]]
 }
 
 object JvServiceWiringTranslator {
   class Impl(
     target: JvTarget,
-    trans: JvTypeTranslator,
     domainTypes: JvDomainTypes,
     codecs: Set[JvCodecTranslator],
     domain: Domain,
-    evo: BaboonEvolution,
   ) extends JvServiceWiringTranslator {
 
     private val resolved: ResolvedServiceResult =
@@ -59,7 +57,7 @@ object JvServiceWiringTranslator {
 
     private def jsonCodecName(typeId: TypeId.User): JvValue.JvType = {
       val srcRef      = domainTypes.toJvTypeRefKeepForeigns(typeId)
-      val domainPkg   = trans.toJvPkg(domain.id, domain.version, evo)
+      val domainPkg   = domainTypes.currentPkg
       val ownerPrefix = srcRef.pkg.parts.toSeq.drop(domainPkg.parts.toSeq.length)
       val prefixStr   = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
       val realPkg     = domainTypes.effectiveJvPkg(typeId.owner)
@@ -68,7 +66,7 @@ object JvServiceWiringTranslator {
 
     private def uebaCodecName(typeId: TypeId.User): JvValue.JvType = {
       val srcRef      = domainTypes.toJvTypeRefKeepForeigns(typeId)
-      val domainPkg   = trans.toJvPkg(domain.id, domain.version, evo)
+      val domainPkg   = domainTypes.currentPkg
       val ownerPrefix = srcRef.pkg.parts.toSeq.drop(domainPkg.parts.toSeq.length)
       val prefixStr   = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
       val realPkg     = domainTypes.effectiveJvPkg(typeId.owner)
@@ -111,7 +109,7 @@ object JvServiceWiringTranslator {
       s"${resolved.resultType.get}$p"
     }
 
-    override def translateServiceRt(domain: Domain): Option[TextTree[JvValue]] = {
+    override def translateServiceRt(): Option[TextTree[JvValue]] = {
       if (resolved.noErrors) return None
 
       val hasServices = domain.defs.meta.nodes.values.exists {

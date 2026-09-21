@@ -5,6 +5,7 @@ import io.septimalmind.baboon.translator.kotlin.KtTypes.{ktList, ktMap, ktString
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import io.septimalmind.baboon.translator.DomainEvolution
 
 trait KtDomainTreeTools {
   def makeDataMeta(defn: DomainMember.User): List[MetaField]
@@ -23,8 +24,7 @@ object KtDomainTreeTools {
 
   final class KtDomainTreeToolsImpl(
     domain: Domain,
-    evolution: BaboonEvolution,
-    typeTranslator: KtTypeTranslator,
+    domainEvolution: DomainEvolution,
     domainTypes: KtDomainTypes,
     ktTypes: KtTypes,
   ) extends KtDomainTreeTools {
@@ -79,13 +79,13 @@ object KtDomainTreeTools {
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
       val ref             = domainTypes.asKtType(defn.id).fullyQualified
-      val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
+      val unmodifiedSince = domainEvolution.typesUnchangedSince(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
       val sameInVersion = MetaField(
         q"val baboonSameInVersions: $ktList<$ktString>",
         q"listOf(${unmodifiedSince.mkString(", ")})",
         q"$ref.baboonSameInVersions",
       )
-      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forward = domainEvolution.typesForwardReadable(defn.id)
       val forwardEntries = forward.readable.toList.map {
         case (v, tier) => s""""${v.v.toString}" to "${tier.wireName}""""
       }
@@ -94,7 +94,7 @@ object KtDomainTreeTools {
         q"mapOf(${forwardEntries.mkString(", ")})",
         q"$ref.baboonForwardReadable",
       )
-      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+      val minReaderEntries = domainEvolution.minReaders(defn.id).toList.sortBy(_._1.weight).map {
         case (tier, v) => s""""${tier.wireName}" to "${v.v.toString}""""
       }
       val minReaders = MetaField(

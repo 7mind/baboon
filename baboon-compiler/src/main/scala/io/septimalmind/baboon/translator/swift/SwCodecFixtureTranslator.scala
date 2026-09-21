@@ -7,6 +7,7 @@ import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait SwCodecFixtureTranslator {
   def translate(definition: DomainMember.User): Option[TextTree[SwValue]]
@@ -28,6 +29,7 @@ object SwCodecFixtureTranslator {
     translator: SwTypeTranslator,
     domainTypes: SwDomainTypes,
     enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     domain: Domain,
   ) extends SwCodecFixtureTranslator {
 
@@ -38,7 +40,7 @@ object SwCodecFixtureTranslator {
         // PR-26.4 (M26): hasForeignType filter lifted — `genScalar` now synthesizes deref'd
         // Foreign fixtures (BaboonRef recurses on aliased ref; Custom dispatches via Swift-decl
         // allowlist). Closes PR-I.2-D02 / PR-68-D02.
-        case _ if enquiries.isRecursiveTypedef(definition, domain) => None
+        case _ if domainEnquiries.isRecursiveTypedef(definition) => None
         case dto: Typedef.Dto                                      => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                      => Some(doTranslateAdt(adt))
         case _: Typedef.Contract                                   => None
@@ -58,7 +60,7 @@ object SwCodecFixtureTranslator {
         case u: DomainMember.User =>
           u.defn match {
             // PR-26.4 (M26): hasForeignType filter lifted (see translate() above).
-            case _ if enquiries.isRecursiveTypedef(u, domain) => None
+            case _ if domainEnquiries.isRecursiveTypedef(u) => None
             case _: Typedef.Contract                          => None
             case _: Typedef.Enum                              => None
             case _: Typedef.Foreign                           => None
@@ -218,7 +220,7 @@ object SwCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"rnd.nextBool()"
 
-        case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
+        case u: TypeId.User if domainEnquiries.isEnum(tpe) =>
           val enumType = domainTypes.toSwTypeRefKeepForeigns(u)
           q"rnd.mkEnum($enumType.all)"
 

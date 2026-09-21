@@ -14,7 +14,6 @@ trait CSDomainTreeTools {
 
 object CSDomainTreeTools {
   class CSDomainTreeToolsImpl(
-    trans: CSTypeTranslator,
     domainTypes: CSDomainTypes,
     domain: Domain,
     evo: BaboonEvolution,

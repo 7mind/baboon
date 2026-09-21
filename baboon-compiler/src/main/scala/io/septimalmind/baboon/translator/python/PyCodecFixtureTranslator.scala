@@ -9,6 +9,7 @@ import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait PyCodecFixtureTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[PyValue]]
@@ -29,7 +30,7 @@ object PyCodecFixtureTranslator {
   final class PyCodecFixtureTranslatorImpl(
     typeTranslator: PyTypeTranslator,
     domainTypes: PyDomainTypes,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     evolution: BaboonEvolution,
     pyFileTools: PyFileTools,
     domain: Domain,
@@ -41,8 +42,8 @@ object PyCodecFixtureTranslator {
 
     override def translate(defn: DomainMember.User): Option[TextTree[PyValue]] = {
       defn.defn match {
-        case _ if enquiries.hasForeignType(defn, domain, BaboonLang.Py) => None
-        case _ if enquiries.isRecursiveTypedef(defn, domain)            => None
+        case _ if domainEnquiries.hasForeignType(defn, BaboonLang.Py) => None
+        case _ if domainEnquiries.isRecursiveTypedef(defn)            => None
         case _: Typedef.Contract                                        => None
         case _: Typedef.Enum                                            => None
         case _: Typedef.Foreign                                         => None
@@ -140,7 +141,7 @@ object PyCodecFixtureTranslator {
 
             case TypeId.Builtins.bytes => q"$baboonFixture.next_bytes()"
 
-            case id: TypeId.User if enquiries.isEnum(tpe, domain) =>
+            case id: TypeId.User if domainEnquiries.isEnum(tpe) =>
               val tpe = domainTypes.asPyType(id, pyFileTools.definitionsBasePkg)
               q"$baboonFixture.next_random_enum($tpe)"
             case u: TypeId.User =>
@@ -198,8 +199,7 @@ object PyCodecFixtureTranslator {
 
     override def fixtureType(tid: TypeId.User): PyType = {
       val typeName = s"${tid.name.name.capitalize}_Fixture"
-      val pyModuleId = typeTranslator
-        .toPyModule(tid, domain.version, evolution, pyFileTools.fixturesBasePkg)
+      val pyModuleId = domainTypes.toPyModule(tid, pyFileTools.fixturesBasePkg)
         .withModuleName(typeName)
       PyType(pyModuleId, typeName)
     }

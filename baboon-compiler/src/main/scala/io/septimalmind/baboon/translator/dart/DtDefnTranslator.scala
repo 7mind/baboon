@@ -138,10 +138,10 @@ object DtDefnTranslator {
     }
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
-      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val rtTree = wiringTranslator.translateServiceRt()
       val result = rtTree.map {
         tree =>
-          val pkg   = trans.toDtPkg(domain.id, domain.version, evo)
+          val pkg   = domainTypes.currentPkg
           val fbase = dtFiles.basename(domain, evo)
           Output(
             s"$fbase/baboon_service_rt.dart",
@@ -889,7 +889,7 @@ object DtDefnTranslator {
     }
 
     private def getOutputModule(defn: DomainMember.User): DtValue.DtPackageId = {
-      val basePkg = trans.toDtPkg(domain.id, domain.version, evo)
+      val basePkg = domainTypes.currentPkg
       defn.defn.id.owner match {
         case Owner.Toplevel => basePkg
         case Owner.Ns(path) => DtValue.DtPackageId(basePkg.parts ++ path.map(_.name.toLowerCase))

@@ -4,6 +4,7 @@ import io.septimalmind.baboon.translator.swift.SwDomainTreeTools.MetaField
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import io.septimalmind.baboon.translator.DomainEvolution
 
 trait SwDomainTreeTools {
   def makeDataMeta(defn: DomainMember.User): List[MetaField]
@@ -30,8 +31,7 @@ object SwDomainTreeTools {
 
   final class SwDomainTreeToolsImpl(
     domain: Domain,
-    evolution: BaboonEvolution,
-    typeTranslator: SwTypeTranslator,
+    domainEvolution: DomainEvolution,
     domainTypes: SwDomainTypes,
   ) extends SwDomainTreeTools {
     override def makeDataMeta(defn: DomainMember.User): List[MetaField] = {
@@ -86,7 +86,7 @@ object SwDomainTreeTools {
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
       val ref             = domainTypes.asSwType(defn.id).asDeclName
-      val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s""""${v.v.toString}"""")
+      val unmodifiedSince = domainEvolution.typesUnchangedSince(defn.id).sameIn.map(v => s""""${v.v.toString}"""")
       val sameInVersion = MetaField(
         q"public static let baboonSameInVersions: [String]",
         q"[${unmodifiedSince.mkString(", ")}]",
@@ -94,7 +94,7 @@ object SwDomainTreeTools {
         "baboonSameInVersions",
         "[String]",
       )
-      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forward = domainEvolution.typesForwardReadable(defn.id)
       val forwardEntries = forward.readable.toList.map {
         case (v, tier) => s""""${v.v.toString}": "${tier.wireName}""""
       }
@@ -105,7 +105,7 @@ object SwDomainTreeTools {
         "baboonForwardReadable",
         "[String: String]",
       )
-      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+      val minReaderEntries = domainEvolution.minReaders(defn.id).toList.sortBy(_._1.weight).map {
         case (tier, v) => s""""${tier.wireName}": "${v.v.toString}""""
       }
       val minReaders = MetaField(
