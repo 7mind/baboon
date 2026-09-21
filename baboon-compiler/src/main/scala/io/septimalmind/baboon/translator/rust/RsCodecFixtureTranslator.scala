@@ -8,6 +8,7 @@ import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait RsCodecFixtureTranslator {
   def translate(definition: DomainMember.User): Option[TextTree[RsValue]]
@@ -16,16 +17,15 @@ trait RsCodecFixtureTranslator {
 object RsCodecFixtureTranslator {
   final class RsCodecFixtureTranslatorImpl(
     target: RsTarget,
-    translator: RsTypeTranslator,
     domainTypes: RsDomainTypes,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     domain: Domain,
   ) extends RsCodecFixtureTranslator {
 
     override def translate(definition: DomainMember.User): Option[TextTree[RsValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Rust) => None
-        case _ if enquiries.isRecursiveTypedef(definition, domain)              => None
+        case _ if domainEnquiries.hasForeignType(definition, BaboonLang.Rust) => None
+        case _ if domainEnquiries.isRecursiveTypedef(definition)              => None
         case dto: Typedef.Dto                                                   => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                                   => Some(doTranslateAdt(adt))
         case _: Typedef.Contract                                                => None
@@ -235,7 +235,7 @@ object RsCodecFixtureTranslator {
         case TypeId.Builtins.tso   => q"rnd.next_tso()"
         case TypeId.Builtins.bit   => q"rnd.next_bit()"
 
-        case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
+        case u: TypeId.User if domainEnquiries.isEnum(tpe) =>
           val enumType = domainTypes.asRsType(u)
           q"rnd.mk_enum(&$enumType::all())"
         case u: TypeId.User =>

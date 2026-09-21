@@ -21,4 +21,7 @@ final class SwDomainTypes(trans: SwTypeTranslator, domain: Domain, evo: BaboonEv
   def fixtureClassName(tid: TypeId.User): String = trans.fixtureClassName(tid, domain, evo)
 
   def effectiveSwPkg(owner: Owner): SwPackageId = trans.effectiveSwPkg(owner, domain, evo)
+
+  /** The package/crate of the current domain's own version. */
+  def currentPkg: SwPackageId = trans.toSwPkg(domain.id, domain.version, evo)
 }

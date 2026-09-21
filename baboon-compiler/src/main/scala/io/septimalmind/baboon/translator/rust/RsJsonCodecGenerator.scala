@@ -9,7 +9,6 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class RsJsonCodecGenerator(
-  trans: RsTypeTranslator,
   target: RsTarget,
   domain: Domain,
 ) extends RsCodecTranslator {

@@ -23,4 +23,7 @@ final class JvDomainTypes(trans: JvTypeTranslator, domain: Domain, evo: BaboonEv
   def toJvTypeRefKeepForeigns(tid: TypeId.User): JvType = trans.toJvTypeRefKeepForeigns(tid, domain, evo)
 
   def effectiveJvPkg(owner: Owner): JvPackageId = trans.effectiveJvPkg(owner, domain, evo)
+
+  /** The package/crate of the current domain's own version. */
+  def currentPkg: JvPackageId = trans.toJvPkg(domain.id, domain.version, evo)
 }

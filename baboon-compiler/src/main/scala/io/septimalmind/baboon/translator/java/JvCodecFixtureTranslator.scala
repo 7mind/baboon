@@ -8,6 +8,7 @@ import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait JvCodecFixtureTranslator {
   def translate(definition: DomainMember.User): Option[TextTree[JvValue]]
@@ -27,9 +28,8 @@ object JvCodecFixtureTranslator {
 
   final class Impl(
     target: JvTarget,
-    translator: JvTypeTranslator,
     domainTypes: JvDomainTypes,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     domain: Domain,
   ) extends JvCodecFixtureTranslator {
 
@@ -37,8 +37,8 @@ object JvCodecFixtureTranslator {
       definition: DomainMember.User
     ): Option[TextTree[JvValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Java) => None
-        case _ if enquiries.isRecursiveTypedef(definition, domain)              => None
+        case _ if domainEnquiries.hasForeignType(definition, BaboonLang.Java) => None
+        case _ if domainEnquiries.isRecursiveTypedef(definition)              => None
         case dto: Typedef.Dto                                                   => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                                   => Some(doTranslateAdt(adt))
         case _: Typedef.Contract                                                => None
@@ -69,8 +69,8 @@ object JvCodecFixtureTranslator {
         case _: DomainMember.Builtin => None
         case u: DomainMember.User =>
           u.defn match {
-            case _ if enquiries.hasForeignType(u, domain, BaboonLang.Java) => None
-            case _ if enquiries.isRecursiveTypedef(u, domain)              => None
+            case _ if domainEnquiries.hasForeignType(u, BaboonLang.Java) => None
+            case _ if domainEnquiries.isRecursiveTypedef(u)              => None
             case _: Typedef.Contract                                       => None
             case _: Typedef.Enum                                           => None
             case _: Typedef.Foreign                                        => None
@@ -234,7 +234,7 @@ object JvCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
-        case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"rnd.mkEnum(${name.name}.class, ${name.name}.values())"
+        case TypeId.User(_, _, name) if domainEnquiries.isEnum(tpe) => q"rnd.mkEnum(${name.name}.class, ${name.name}.values())"
         case u: TypeId.User                                           =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Java analog).

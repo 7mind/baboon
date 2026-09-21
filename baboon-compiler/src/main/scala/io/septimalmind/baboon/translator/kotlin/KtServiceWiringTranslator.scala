@@ -12,17 +12,15 @@ trait KtServiceWiringTranslator {
 
   def translateClient(defn: DomainMember.User): Option[TextTree[KtValue]]
 
-  def translateServiceRt(domain: Domain): Option[TextTree[KtValue]]
+  def translateServiceRt(): Option[TextTree[KtValue]]
 }
 
 object KtServiceWiringTranslator {
   class Impl(
     target: KtTarget,
-    trans: KtTypeTranslator,
     domainTypes: KtDomainTypes,
     codecs: Set[KtCodecTranslator],
     domain: Domain,
-    evo: BaboonEvolution,
     ktTypes: KtTypes,
   ) extends KtServiceWiringTranslator {
     import ktTypes.*
@@ -165,7 +163,7 @@ object KtServiceWiringTranslator {
       s"${resolved.resultType.get}$p"
     }
 
-    override def translateServiceRt(domain: Domain): Option[TextTree[KtValue]] = {
+    override def translateServiceRt(): Option[TextTree[KtValue]] = {
       if (resolved.noErrors) return None
 
       val hasServices = domain.defs.meta.nodes.values.exists {
@@ -528,7 +526,7 @@ object KtServiceWiringTranslator {
         if (resolved.noErrors) None
         else {
           // IBaboonServiceRt is emitted in the domain's root package, not in baboon.runtime.shared.
-          val rootPkg = trans.toKtPkg(domain.id, domain.version, evo)
+          val rootPkg = domainTypes.currentPkg
           Some(("rt", q"${KtValue.KtType(rootPkg, "IBaboonServiceRt")}$rtTypeArg"))
         }
       }
@@ -579,7 +577,7 @@ object KtServiceWiringTranslator {
     // IBaboonServiceRt is always emitted in the domain root package; use the FQ name
     // so that wiring objects inside a namespace sub-package can still reference it.
     private val iBaboonServiceRtFq: String = {
-      val rootPkg = trans.toKtPkg(domain.id, domain.version, evo)
+      val rootPkg = domainTypes.currentPkg
       (rootPkg.parts.toList :+ "IBaboonServiceRt").mkString(".")
     }
 

@@ -21,4 +21,8 @@ final class PyDomainTypes(trans: PyTypeTranslator, domain: Domain, evo: BaboonEv
   def asPyTypeKeepForeigns(tid: TypeId.User, pkgBase: List[String] = Nil): PyType = trans.asPyTypeKeepForeigns(tid, domain, evo, pkgBase)
 
   def asPyTypeVersioned(tid: TypeId.User, pkgBase: List[String]): PyType = trans.asPyTypeVersioned(tid, domain, evo, pkgBase)
+
+  /** The module of `tid` at the current domain's version. */
+  def toPyModule(tid: TypeId.User, pkgBase: List[String]): PyModuleId =
+    trans.toPyModule(tid, domain.version, evo, pkgBase)
 }

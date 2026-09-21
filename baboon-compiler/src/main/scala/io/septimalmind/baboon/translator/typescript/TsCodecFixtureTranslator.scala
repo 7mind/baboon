@@ -7,6 +7,7 @@ import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait TsCodecFixtureTranslator {
   def translate(definition: DomainMember.User): Option[TextTree[TsValue]]
@@ -26,7 +27,7 @@ object TsCodecFixtureTranslator {
   final class TsCodecFixtureTranslatorImpl(
     translator: TsTypeTranslator,
     domainTypes: TsDomainTypes,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     domain: Domain,
     tsFileTools: TsFileTools,
   ) extends TsCodecFixtureTranslator {
@@ -35,8 +36,8 @@ object TsCodecFixtureTranslator {
 
     override def translate(definition: DomainMember.User): Option[TextTree[TsValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Typescript) => None
-        case _ if enquiries.isRecursiveTypedef(definition, domain)                    => None
+        case _ if domainEnquiries.hasForeignType(definition, BaboonLang.Typescript) => None
+        case _ if domainEnquiries.isRecursiveTypedef(definition)                    => None
         case dto: Typedef.Dto                                                         => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                                         => Some(doTranslateAdt(adt))
         case _: Typedef.Contract                                                      => None
@@ -225,7 +226,7 @@ object TsCodecFixtureTranslator {
           }
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
-        case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
+        case u: TypeId.User if domainEnquiries.isEnum(tpe) =>
           val enumType   = domainTypes.asTsType(u, tsFileTools.definitionsBasePkg)
           val enumValues = TsValue.TsType(enumType.moduleId, s"${enumType.name}_values")
           q"rnd.mkEnum($enumValues)"

@@ -12,7 +12,7 @@ trait ScServiceWiringTranslator {
 
   def translateClient(defn: DomainMember.User): Option[TextTree[ScValue]]
 
-  def translateServiceRt(domain: Domain): Option[TextTree[ScValue]]
+  def translateServiceRt(): Option[TextTree[ScValue]]
 }
 
 object ScServiceWiringTranslator {
@@ -124,7 +124,7 @@ object ScServiceWiringTranslator {
       s"${resolved.resultType.get}$p"
     }
 
-    override def translateServiceRt(domain: Domain): Option[TextTree[ScValue]] = {
+    override def translateServiceRt(): Option[TextTree[ScValue]] = {
       if (resolved.noErrors) return None
 
       val hasServices = domain.defs.meta.nodes.values.exists {

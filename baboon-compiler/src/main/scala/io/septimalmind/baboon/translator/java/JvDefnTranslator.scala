@@ -56,7 +56,6 @@ object JvDefnTranslator {
     evo: BaboonEvolution,
     jvFiles: JvFileTools,
     jvTrees: JvTreeTools,
-    trans: JvTypeTranslator,
     domainTypes: JvDomainTypes,
     codecs: Set[JvCodecTranslator],
     codecTests: JvCodecTestsTranslator,
@@ -183,10 +182,10 @@ object JvDefnTranslator {
     }
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
-      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val rtTree = wiringTranslator.translateServiceRt()
       val result = rtTree.map {
         tree =>
-          val pkg     = trans.toJvPkg(domain.id, domain.version, evo)
+          val pkg     = domainTypes.currentPkg
           val wrapped = jvTrees.inPkg(pkg.parts.toSeq, tree)
           val fbase   = jvFiles.basename(domain, evo)
           Output(

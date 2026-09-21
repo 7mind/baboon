@@ -8,6 +8,7 @@ import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait KtCodecFixtureTranslator {
   def translate(definition: DomainMember.User): Option[TextTree[KtValue]]
@@ -17,9 +18,8 @@ trait KtCodecFixtureTranslator {
 object KtCodecFixtureTranslator {
   final class Impl(
     target: KtTarget,
-    translator: KtTypeTranslator,
     domainTypes: KtDomainTypes,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     domain: Domain,
     evo: BaboonEvolution,
   ) extends KtCodecFixtureTranslator {
@@ -31,8 +31,8 @@ object KtCodecFixtureTranslator {
       definition: DomainMember.User
     ): Option[TextTree[KtValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Kotlin) => None
-        case _ if enquiries.isRecursiveTypedef(definition, domain)                => None
+        case _ if domainEnquiries.hasForeignType(definition, BaboonLang.Kotlin) => None
+        case _ if domainEnquiries.isRecursiveTypedef(definition)                => None
         case dto: Typedef.Dto                                                     => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                                     => Some(doTranslateAdt(adt))
         case _: Typedef.Contract                                                  => None
@@ -73,8 +73,8 @@ object KtCodecFixtureTranslator {
         case _: DomainMember.Builtin => None
         case u: DomainMember.User =>
           u.defn match {
-            case _ if enquiries.hasForeignType(u, domain, BaboonLang.Kotlin) => None
-            case _ if enquiries.isRecursiveTypedef(u, domain)                => None
+            case _ if domainEnquiries.hasForeignType(u, BaboonLang.Kotlin) => None
+            case _ if domainEnquiries.isRecursiveTypedef(u)                => None
             case _: Typedef.Contract                                         => None
             case _: Typedef.Enum                                             => None
             case _: Typedef.Foreign                                          => None
@@ -235,7 +235,7 @@ object KtCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
-        case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"rnd.mkEnum(${name.name})"
+        case TypeId.User(_, _, name) if domainEnquiries.isEnum(tpe) => q"rnd.mkEnum(${name.name})"
         case u: TypeId.User                                           =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Kotlin analog).

@@ -161,7 +161,7 @@ object ScDefnTranslator {
     }
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
-      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val rtTree = wiringTranslator.translateServiceRt()
       val result = rtTree.map {
         tree =>
           val pkg     = domainTypes.currentPkg

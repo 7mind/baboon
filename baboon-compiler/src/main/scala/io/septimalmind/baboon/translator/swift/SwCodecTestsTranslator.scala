@@ -8,6 +8,7 @@ import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain, DomainMember
 import io.septimalmind.baboon.util.BLogger
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 trait SwCodecTestsTranslator {
   def translate(
@@ -26,7 +27,7 @@ object SwCodecTestsTranslator {
     typeTranslator: SwTypeTranslator,
     domainTypes: SwDomainTypes,
     logger: BLogger,
-    enquiries: BaboonEnquiries,
+    domainEnquiries: DomainEnquiries,
     target: SwTarget,
     domain: Domain,
     evo: BaboonEvolution,
@@ -50,8 +51,8 @@ object SwCodecTestsTranslator {
         // `Tests/RuntimeTests/` exercise the JSON path (which works via PR-I.2's
         // `KeyCodecHost`) — see `M24ForeignFixtureRoundTripTests.swift`. Closes
         // PR-I.2-D02 + PR-68-D02.
-        case d if enquiries.hasForeignType(d, domain)         => None
-        case d if enquiries.isRecursiveTypedef(d, domain)     => None
+        case d if domainEnquiries.hasForeignType(d)         => None
+        case d if domainEnquiries.isRecursiveTypedef(d)     => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ if !isLatestVersion                            => None
         case _ =>

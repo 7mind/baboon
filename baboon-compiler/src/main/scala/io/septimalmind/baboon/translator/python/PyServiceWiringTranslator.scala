@@ -12,7 +12,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait PyServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[PyValue]]
 
-  def translateServiceRt(domain: Domain): Option[TextTree[PyValue]]
+  def translateServiceRt(): Option[TextTree[PyValue]]
 
   def translateClient(defn: DomainMember.User): Option[TextTree[PyValue]]
 }
@@ -20,11 +20,9 @@ trait PyServiceWiringTranslator {
 object PyServiceWiringTranslator {
   class Impl(
     target: PyTarget,
-    typeTranslator: PyTypeTranslator,
     domainTypes: PyDomainTypes,
     codecs: Set[PyCodecTranslator],
     domain: Domain,
-    evolution: BaboonEvolution,
     fileTools: PyFileTools,
   ) extends PyServiceWiringTranslator {
 
@@ -61,13 +59,13 @@ object PyServiceWiringTranslator {
 
     private def jsonCodecType(typeId: TypeId.User): PyType = {
       val typeName = s"${typeId.name.name.capitalize}_JsonCodec"
-      val moduleId = typeTranslator.toPyModule(typeId, domain.version, evolution, fileTools.definitionsBasePkg)
+      val moduleId = domainTypes.toPyModule(typeId, fileTools.definitionsBasePkg)
       PyType(moduleId, typeName)
     }
 
     private def uebaCodecType(typeId: TypeId.User): PyType = {
       val typeName = s"${typeId.name.name.capitalize}_UEBACodec"
-      val moduleId = typeTranslator.toPyModule(typeId, domain.version, evolution, fileTools.definitionsBasePkg)
+      val moduleId = domainTypes.toPyModule(typeId, fileTools.definitionsBasePkg)
       PyType(moduleId, typeName)
     }
 
@@ -107,7 +105,7 @@ object PyServiceWiringTranslator {
 
     private lazy val ibaboonServiceRtType: PyType = PyType(serviceRtModule, "IBaboonServiceRt")
 
-    override def translateServiceRt(domain: Domain): Option[TextTree[PyValue]] = {
+    override def translateServiceRt(): Option[TextTree[PyValue]] = {
       if (resolved.noErrors) return None
 
       val hasServices = domain.defs.meta.nodes.values.exists {

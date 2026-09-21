@@ -19,4 +19,7 @@ final class KtDomainTypes(trans: KtTypeTranslator, domain: Domain, evo: BaboonEv
   def asKtType(tpe: TypeId): KtType = trans.asKtType(tpe, domain, evo)
 
   def toKtTypeRefKeepForeigns(tid: TypeId.User): KtType = trans.toKtTypeRefKeepForeigns(tid, domain, evo)
+
+  /** The package/crate of the current domain's own version. */
+  def currentPkg: KtPackageId = trans.toKtPkg(domain.id, domain.version, evo)
 }

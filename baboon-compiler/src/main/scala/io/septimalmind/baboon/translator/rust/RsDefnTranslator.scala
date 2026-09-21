@@ -71,7 +71,7 @@ object RsDefnTranslator {
       val mainOutput = Output(
         getOutputPath(defn),
         allDefs,
-        trans.toRsCrate(domain.id, domain.version, evo),
+        domainTypes.currentPkg,
         CompilerProduct.Definition,
         isAdt = defn.defn.isInstanceOf[Typedef.Adt],
       )
@@ -82,7 +82,7 @@ object RsDefnTranslator {
             Output(
               getOutputPath(defn, suffix = Some("_wiring")),
               wiringTree,
-              trans.toRsCrate(domain.id, domain.version, evo),
+              domainTypes.currentPkg,
               CompilerProduct.Definition,
             )
         }.toList
@@ -93,7 +93,7 @@ object RsDefnTranslator {
             Output(
               getOutputPath(defn, suffix = Some("_client")),
               clientTree,
-              trans.toRsCrate(domain.id, domain.version, evo),
+              domainTypes.currentPkg,
               CompilerProduct.Definition,
             )
         }.toList
@@ -115,7 +115,7 @@ object RsDefnTranslator {
           Output(
             getOutputPath(defn, suffix = Some("_fixture")),
             fixtureTree,
-            trans.toRsCrate(domain.id, domain.version, evo),
+            domainTypes.currentPkg,
             CompilerProduct.Fixture,
           )
       }.toList)
@@ -137,21 +137,21 @@ object RsDefnTranslator {
           Output(
             getOutputPath(defn, suffix = Some("_tests")),
             testTree,
-            trans.toRsCrate(domain.id, domain.version, evo),
+            domainTypes.currentPkg,
             CompilerProduct.Test,
           )
       }.toList)
     }
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
-      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val rtTree = wiringTranslator.translateServiceRt()
       val result = rtTree.map {
         tree =>
           val fbase = rsFiles.basename(domain, evo)
           Output(
             s"$fbase/baboon_service_rt.rs",
             tree,
-            trans.toRsCrate(domain.id, domain.version, evo),
+            domainTypes.currentPkg,
             CompilerProduct.Definition,
           )
       }.toList

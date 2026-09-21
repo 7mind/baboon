@@ -10,7 +10,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 trait SwServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[SwValue]]
-  def translateServiceRt(domain: Domain): Option[TextTree[SwValue]]
+  def translateServiceRt(): Option[TextTree[SwValue]]
   def translateClient(defn: DomainMember.User): Option[TextTree[SwValue]]
 }
 
@@ -174,7 +174,7 @@ object SwServiceWiringTranslator {
       s"${resolved.resultType.get}$p"
     }
 
-    override def translateServiceRt(domain: Domain): Option[TextTree[SwValue]] = {
+    override def translateServiceRt(): Option[TextTree[SwValue]] = {
       if (resolved.noErrors) return None
 
       val hasServices = domain.defs.meta.nodes.values.exists {

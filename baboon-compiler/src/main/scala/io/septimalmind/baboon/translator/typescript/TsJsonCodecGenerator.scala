@@ -7,19 +7,20 @@ import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.translator.DomainEnquiries
 
 class TsJsonCodecGenerator(
   trans: TsTypeTranslator,
   domainTypes: TsDomainTypes,
   target: TsTarget,
   domain: Domain,
-  enquiries: BaboonEnquiries,
+  domainEnquiries: DomainEnquiries,
   tsFileTools: TsFileTools,
   tsDomainTreeTools: TsDomainTreeTools,
 ) extends TsCodecTranslator {
   private val scalarOps = new TsScalarCodecOps(target)
   override def translate(defn: DomainMember.User, tsRef: TsValue.TsType, srcRef: TsValue.TsType): Option[TextTree[TsValue]] = {
-    // PR-I.1d (M24 Phase 3.1): the prior `&& !enquiries.hasForeignType(defn, domain)` short-circuit
+    // PR-I.1d (M24 Phase 3.1): the prior `&& !domainEnquiries.hasForeignType(defn)` short-circuit
     // suppressed JsonCodec emission for any type containing a Custom-bound foreign — including
     // single-primitive wrappers like `ItemKey { v: FStr }` and `Holder { m: map[ItemKey, str] }`.
     // With the new `<F>_KeyCodecHost` hook (emitted from `TsDefnTranslator`'s foreign emit site),

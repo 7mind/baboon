@@ -12,7 +12,6 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class KtUEBACodecGenerator(
-  trans: KtTypeTranslator,
   domainTypes: KtDomainTypes,
   target: KtTarget,
   domain: Domain,

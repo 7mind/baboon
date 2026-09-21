@@ -4,6 +4,7 @@ import io.septimalmind.baboon.translator.typescript.TsValue.TsType
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import io.septimalmind.baboon.translator.DomainEvolution
 
 trait TsDomainTreeTools {
   def makeDataMeta(defn: DomainMember.User): List[TextTree[TsValue]]
@@ -14,7 +15,7 @@ object TsDomainTreeTools {
   final class TsDomainTreeToolsImpl(
     domain: Domain,
     evolution: BaboonEvolution,
-    typeTranslator: TsTypeTranslator,
+    domainEvolution: DomainEvolution,
     domainTypes: TsDomainTypes,
     tsFileTools: TsFileTools,
   ) extends TsDomainTreeTools {
@@ -28,8 +29,8 @@ object TsDomainTreeTools {
     }
 
     private def sameInVersion(defn: DomainMember.User, source: TsType): List[TextTree[TsValue]] = {
-      val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id)
-      val forward         = evolution.typesForwardReadable(domain.version)(defn.id)
+      val unmodifiedSince = domainEvolution.typesUnchangedSince(defn.id)
+      val forward         = domainEvolution.typesForwardReadable(defn.id)
       val forwardLiteral =
         forward.readable.toList.map { case (v, tier) => s""""${v.v.toString}": "${tier.wireName}"""" }.mkString("{ ", ", ", " }")
       val minReaderLiteral = evolution

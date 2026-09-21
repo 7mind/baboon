@@ -5,6 +5,7 @@ import io.septimalmind.baboon.translator.scl.ScTypes.{javaClass, scList, scStrin
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import io.septimalmind.baboon.translator.DomainEvolution
 
 trait ScDomainTreeTools {
   def makeDataMeta(defn: DomainMember.User): List[MetaField]
@@ -33,7 +34,7 @@ object ScDomainTreeTools {
 
   final class ScDomainTreeToolsImpl(
     domain: Domain,
-    evolution: BaboonEvolution,
+    domainEvolution: DomainEvolution,
     domainTypes: ScDomainTypes,
   ) extends ScDomainTreeTools {
     override def makeDataMeta(defn: DomainMember.User): List[MetaField] = {
@@ -85,14 +86,14 @@ object ScDomainTreeTools {
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
       val ref             = domainTypes.asScType(defn.id)
-      val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
+      val unmodifiedSince = domainEvolution.typesUnchangedSince(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
       val sameInVersion = MetaField.cached(
         "baboonSameInVersions",
         q"$scList[$scString]",
         q"$scList(${unmodifiedSince.mkString(", ")})",
         q"$ref.baboonSameInVersions",
       )
-      val forward = evolution.typesForwardReadable(domain.version)(defn.id)
+      val forward = domainEvolution.typesForwardReadable(defn.id)
       val forwardEntries = forward.readable.toList.map {
         case (v, tier) => s""""${v.v.toString}" -> "${tier.wireName}""""
       }
@@ -102,7 +103,7 @@ object ScDomainTreeTools {
         q"${ScTypes.scMap}(${forwardEntries.mkString(", ")})",
         q"$ref.baboonForwardReadable",
       )
-      val minReaderEntries = evolution.minReaders(domain.version, defn.id).toList.sortBy(_._1.weight).map {
+      val minReaderEntries = domainEvolution.minReaders(defn.id).toList.sortBy(_._1.weight).map {
         case (tier, v) => s""""${tier.wireName}" -> "${v.v.toString}""""
       }
       val minReaders = MetaField.cached(

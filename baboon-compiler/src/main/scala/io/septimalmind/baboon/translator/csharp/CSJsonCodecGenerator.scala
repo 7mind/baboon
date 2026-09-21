@@ -12,7 +12,6 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSJsonCodecGenerator(
-  trans: CSTypeTranslator,
   domainTypes: CSDomainTypes,
   csDomTrees: CSDomainTreeTools,
   target: CSTarget,

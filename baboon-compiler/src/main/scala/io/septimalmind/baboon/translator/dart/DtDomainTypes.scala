@@ -19,4 +19,7 @@ final class DtDomainTypes(trans: DtTypeTranslator, domain: Domain, evo: BaboonEv
   def toDtTypeRefKeepForeigns(tid: TypeId.User): DtType = trans.toDtTypeRefKeepForeigns(tid, domain, evo)
 
   def effectiveDtPkg(owner: Owner): DtPackageId = trans.effectiveDtPkg(owner, domain, evo)
+
+  /** The package/crate of the current domain's own version. */
+  def currentPkg: DtPackageId = trans.toDtPkg(domain.id, domain.version, evo)
 }
