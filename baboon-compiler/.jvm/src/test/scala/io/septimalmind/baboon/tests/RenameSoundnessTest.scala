@@ -437,6 +437,80 @@ abstract class RenameSoundnessTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
         }
     }
 
+    "carry the old spelling of a renamed field type on the transfer op" in {
+      (manager: BaboonFamilyManager[F]) =>
+        // Guards the compiler half of the rename-aware transfer. The translator half -- each
+        // backend actually USING `sourceTpe` -- is guarded by the nine codegen lanes compiling
+        // `rename-nested-ok`: a renamed type's new name never exists in the old version, so
+        // ignoring `sourceTpe` always yields a dangling reference that fails to compile.
+        val v1 = """model rsnd.transfersrc
+                   |version "1.0.0"
+                   |data Leaf { a: i32 }
+                   |root data Host { l: Leaf  b: str }
+                   |""".stripMargin
+        val v2 = """model rsnd.transfersrc
+                   |version "1.1.0"
+                   |import "1.0.0" { * } without { Leaf Host }
+                   |data Renamed : was[Leaf] { a: i32 }
+                   |root data Host { l: Renamed  b: str }
+                   |""".stripMargin
+        load(manager, "v1.baboon" -> v1, "v2.baboon" -> v2).map {
+          family =>
+            val c = dtoConversion(family, "rsnd.transfersrc", "1.0.0", "1.1.0", "Host")
+
+            val sources = c.ops.collect {
+              case t: FieldOp.Transfer => (t.targetField.name.name, t.sourceTpe.toString)
+            }.toSet
+            assert(
+              sources == Set(("l", "rsnd.transfersrc/:#Leaf"), ("b", "#str")),
+              s"transfer ops must address the source by its OLD spelling; got $sources",
+            )
+
+            val targets = c.ops.collect {
+              case t: FieldOp.Transfer => (t.targetField.name.name, t.targetField.tpe.toString)
+            }.toSet
+            assert(
+              targets == Set(("l", "rsnd.transfersrc/:#Renamed"), ("b", "#str")),
+              s"transfer ops must build the target with its NEW spelling; got $targets",
+            )
+        }
+    }
+
+    "end a renamed type's run at the step that renames it, not before" in {
+      (manager: BaboonFamilyManager[F]) =>
+        // The rename happens mid-chain: a 1.0.0 reader can still decode a 1.1.0 `Leaf`, because the
+        // typeId is unchanged there, and must not claim 1.2.0, where the envelope would name a type
+        // it has never heard of. The host spans the whole chain either way.
+        val v1 = """model rsnd.midchain
+                   |version "1.0.0"
+                   |data Leaf { a: i32 }
+                   |root data Host { l: Leaf  b: str }
+                   |""".stripMargin
+        val v2 = """model rsnd.midchain
+                   |version "1.1.0"
+                   |import "1.0.0" { * }
+                   |""".stripMargin
+        val v3 = """model rsnd.midchain
+                   |version "1.2.0"
+                   |import "1.1.0" { * } without { Leaf Host }
+                   |data Renamed : was[Leaf] { a: i32 }
+                   |root data Host { l: Renamed  b: str }
+                   |""".stripMargin
+        load(manager, "v1.baboon" -> v1, "v2.baboon" -> v2, "v3.baboon" -> v3).map {
+          family =>
+            assert(
+              forwardRun(family, "rsnd.midchain", "1.0.0", "Leaf") ==
+              List(("1.0.0", "identical"), ("1.1.0", "identical")),
+              "a 1.0.0 reader reads 1.1.0's Leaf but must not claim 1.2.0",
+            )
+            assert(
+              forwardRun(family, "rsnd.midchain", "1.0.0", "Host") ==
+              List(("1.0.0", "identical"), ("1.1.0", "identical"), ("1.2.0", "identical"))
+            )
+            assert(forwardRun(family, "rsnd.midchain", "1.1.0", "Leaf") == List(("1.1.0", "identical")))
+        }
+    }
+
     "reject a field rename from a name no earlier version ever had" in {
       (manager: BaboonFamilyManager[F]) =>
         val v1 = """model rsnd.fieldtypo
