@@ -548,13 +548,19 @@ Two consequences of scheme 2:
 
 ## Known gaps
 
-- **A renamed type has no forward bound of its own.** Its hosts do (see the
-  closed gap below), but a top-level payload is identified by the typeId in its
-  envelope, and no runtime resolves a renamed one: `Domain.renames` is not
-  emitted into generated metadata at all. Lifting this means publishing the
-  rename map and resolving typeIds in the decode path of all ten runtimes -- a
-  metadata addition on the scale of the envelope-v2 work, worth doing only when
-  a ROOT type actually has to be renamed with old readers still decoding.
+- **A renamed type has no forward bound of its own** -- deliberately, and we do
+  NOT intend to change this (https://github.com/7mind/baboon/issues/94). Its
+  hosts do (see the closed gap below), but a top-level payload is identified by
+  the typeId in its envelope, and no runtime resolves a renamed one:
+  `Domain.renames` is not emitted into generated metadata at all. Publishing a
+  bound would be an overclaim -- it would promise a writer that an old reader can
+  decode something that reader cannot even identify. Lifting it would mean
+  emitting the rename map and resolving typeIds through the rename chain in the
+  decode path of all nine runtimes, a permanent metadata surface on the scale of
+  the envelope-v2 work, for the single case of renaming a ROOT type while older
+  readers must keep decoding it. The renamed type's run stops at the renaming
+  step, pinned by `RenameSoundnessTest`; silently extending it would hand writers
+  an unusable bound.
 - **`prefix-any-mode` has no runtime end-to-end test.** The tier requires an
   appended *fixed-length* field, and every fixed-length scalar is
   non-defaultable, so such a step needs a hand-written conversion — which the
