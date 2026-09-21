@@ -37,6 +37,28 @@ abstract class SchemeRoundtripTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
           _      <- checkRoundtrip(renderer, manager, family, Pkg(NEList("rename", "ns")), Version.parse("2.0.0"))
         } yield ()
     }
+
+    "preserve a declared type rename through a render/reload cycle" in {
+      (loader: BaboonLoader[F], manager: BaboonFamilyManager[F], renderer: BaboonSchemeRenderer) =>
+        // A type rename lives in `Domain.renames`, not on the member, and used to be dropped in
+        // silence: a rendered scheme turned the rename into a remove+add for anyone who fed it back
+        // in. The idempotence check above cannot see that on its own -- both renders omitted it --
+        // so the clause is asserted explicitly here, and the reloaded model must carry the rename.
+        val pkg     = Pkg(NEList("rename", "ns"))
+        val version = Version.parse("2.0.0")
+        for {
+          family <- loadRenamePkg(loader)
+          rendered = renderer
+            .render(family, pkg, version).fold(e => throw new AssertionError(s"render failed: $e"), identity)
+          _ = assert(rendered.contains("was["), s"rendered scheme lost the type rename:\n$rendered")
+          reloaded <- manager.load(
+            List(BaboonParser.Input(FSPath.parse(NEString.unsafeFrom("rt.baboon")), rendered))
+          )
+        } yield {
+          val domain2 = reloaded.domains.toMap(pkg).versions.toMap(version)
+          assert(domain2.renames.nonEmpty, s"reloaded model has no renames; rendered scheme was:\n$rendered")
+        }
+    }
   }
 
   private def checkRoundtrip(

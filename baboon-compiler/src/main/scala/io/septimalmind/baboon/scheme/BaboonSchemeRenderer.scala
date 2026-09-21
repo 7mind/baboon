@@ -264,20 +264,29 @@ object BaboonSchemeRenderer {
       val rootPrefix = if (member.root) "root " else ""
 
       member.defn match {
-        case dto: Typedef.Dto           => renderDto(sb, dto, member, rootPrefix, indent)
+        case dto: Typedef.Dto           => renderDto(sb, dto, member, rootPrefix, domain, indent)
         case adt: Typedef.Adt           => renderAdt(sb, adt, member, rootPrefix, userNodes, reverseDeps, domain, indent)
-        case e: Typedef.Enum            => renderEnum(sb, e, member, rootPrefix, indent)
-        case foreign: Typedef.Foreign   => renderForeign(sb, foreign, rootPrefix, indent)
-        case contract: Typedef.Contract => renderContract(sb, contract, member, rootPrefix, indent)
-        case service: Typedef.Service   => renderService(sb, service, member, rootPrefix, userNodes, indent)
+        case e: Typedef.Enum            => renderEnum(sb, e, member, rootPrefix, domain, indent)
+        case foreign: Typedef.Foreign   => renderForeign(sb, foreign, member, rootPrefix, domain, indent)
+        case contract: Typedef.Contract => renderContract(sb, contract, member, rootPrefix, domain, indent)
+        case service: Typedef.Service   => renderService(sb, service, member, rootPrefix, userNodes, domain, indent)
       }
     }
 
-    private def renderDerivations(member: DomainMember.User): String = {
+    /** The `: ...` clause list of a type header: a declared rename first, then derivations.
+      *
+      * A type rename lives in `domain.renames`, not on the member, so rendering only the
+      * derivations dropped it silently and turned a rename into a remove+add for anyone who fed
+      * the rendered scheme back in. `SchemeRoundtripTest` cannot catch that on its own: it compares
+      * two renders of the same model, so a field both of them omit stays invisible.
+      */
+    private def renderClauses(member: DomainMember.User, domain: Domain): String = {
+      val wasClause = domain.renames.get(member.id).map(oldId => s"was[${renderTypeRef(TypeRef.Scalar(oldId))}]")
       val derivations = member.derivations.toList.collect {
         case io.septimalmind.baboon.parser.model.RawMemberMeta.Derived(id) => s"derived[$id]"
       }.sorted
-      if (derivations.nonEmpty) s" : ${derivations.mkString(", ")}" else ""
+      val clauses = wasClause.toList ++ derivations
+      if (clauses.nonEmpty) s" : ${clauses.mkString(", ")}" else ""
     }
 
     private def renderDto(
@@ -285,9 +294,10 @@ object BaboonSchemeRenderer {
       dto: Typedef.Dto,
       member: DomainMember.User,
       rootPrefix: String,
+      domain: Domain,
       indent: String,
     ): Unit = {
-      val derivations = renderDerivations(member)
+      val derivations = renderClauses(member, domain)
       sb.append(s"$indent${rootPrefix}data ${dto.id.name.name}$derivations {\n")
       dto.contracts.foreach {
         contractId =>
@@ -311,7 +321,7 @@ object BaboonSchemeRenderer {
       domain: Domain,
       indent: String,
     ): Unit = {
-      val derivations = renderDerivations(member)
+      val derivations = renderClauses(member, domain)
       sb.append(s"$indent${rootPrefix}adt ${adt.id.name.name}$derivations {\n")
       adt.contracts.foreach {
         contractId =>
@@ -335,9 +345,10 @@ object BaboonSchemeRenderer {
       e: Typedef.Enum,
       member: DomainMember.User,
       rootPrefix: String,
+      domain: Domain,
       indent: String,
     ): Unit = {
-      val derivations = renderDerivations(member)
+      val derivations = renderClauses(member, domain)
       sb.append(s"$indent${rootPrefix}enum ${e.id.name.name}$derivations {\n")
       e.members.toList.foreach {
         m =>
@@ -351,10 +362,15 @@ object BaboonSchemeRenderer {
     private def renderForeign(
       sb: StringBuilder,
       foreign: Typedef.Foreign,
+      member: DomainMember.User,
       rootPrefix: String,
+      domain: Domain,
       indent: String,
     ): Unit = {
-      sb.append(s"$indent${rootPrefix}foreign ${foreign.id.name.name} {\n")
+      // `foreignEnclosed` parses the same `: ...` clause list as every other type header, so a
+      // foreign carrying `was[...]` or `derived[...]` lost it on render.
+      val derivations = renderClauses(member, domain)
+      sb.append(s"$indent${rootPrefix}foreign ${foreign.id.name.name}$derivations {\n")
       foreign.runtimeMapping.foreach {
         rtRef =>
           sb.append(s"$indent  rt = ${renderTypeRef(rtRef)}\n")
@@ -380,9 +396,10 @@ object BaboonSchemeRenderer {
       contract: Typedef.Contract,
       member: DomainMember.User,
       rootPrefix: String,
+      domain: Domain,
       indent: String,
     ): Unit = {
-      val derivations = renderDerivations(member)
+      val derivations = renderClauses(member, domain)
       sb.append(s"$indent${rootPrefix}contract ${contract.id.name.name}$derivations {\n")
       contract.contracts.foreach {
         contractId =>
@@ -402,6 +419,7 @@ object BaboonSchemeRenderer {
       member: DomainMember.User,
       rootPrefix: String,
       userNodes: Map[TypeId.User, DomainMember.User],
+      domain: Domain,
       indent: String,
     ): Unit = {
       val serviceOwnerPath = service.id.owner match {
@@ -409,7 +427,7 @@ object BaboonSchemeRenderer {
         case Owner.Ns(path) => path.toSeq
         case _              => Seq.empty[TypeName]
       }
-      val derivations = renderDerivations(member)
+      val derivations = renderClauses(member, domain)
       sb.append(s"$indent${rootPrefix}service ${service.id.name.name}$derivations {\n")
       service.methods.foreach {
         method =>
