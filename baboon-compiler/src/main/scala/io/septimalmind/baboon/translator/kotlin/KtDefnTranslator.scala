@@ -50,6 +50,7 @@ object KtDefnTranslator {
     ktFiles: KtFileTools,
     ktTrees: KtTreeTools,
     trans: KtTypeTranslator,
+    domainTypes: KtDomainTypes,
     ktTypes: KtTypes,
     codecs: Set[KtCodecTranslator],
     codecTests: KtCodecTestsTranslator,
@@ -71,7 +72,7 @@ object KtDefnTranslator {
 
       val registrations = codecs.toList.map(codec => codec.id -> repr.codecs.flatMap(reg => reg.trees.get(codec.id).map(expr => q"${reg.tpeId}, $expr")))
 
-      val srcRef = trans.toKtTypeRefKeepForeigns(defn.id, domain, evo)
+      val srcRef = domainTypes.toKtTypeRefKeepForeigns(defn.id)
 
       val mainOutput = Output(
         getOutputPath(defn),
@@ -132,7 +133,7 @@ object KtDefnTranslator {
     }
 
     private def makeFixtureRepr(defn: DomainMember.User): Option[TextTree[KtValue]] = {
-      val srcRef = trans.toKtTypeRefKeepForeigns(defn.id, domain, evo)
+      val srcRef = domainTypes.toKtTypeRefKeepForeigns(defn.id)
       val ns     = srcRef.pkg.parts
 
       val fixtureTree        = codecsFixture.translate(defn)
@@ -180,8 +181,8 @@ object KtDefnTranslator {
     }
 
     private def makeTestRepr(defn: DomainMember.User): Option[TextTree[KtValue]] = {
-      val ktTypeRef = trans.asKtType(defn.id, domain, evo)
-      val srcRef    = trans.toKtTypeRefKeepForeigns(defn.id, domain, evo)
+      val ktTypeRef = domainTypes.asKtType(defn.id)
+      val srcRef    = domainTypes.toKtTypeRefKeepForeigns(defn.id)
       val ns        = srcRef.pkg.parts
 
       val testTree        = codecTests.translate(defn, ktTypeRef, srcRef)
@@ -205,8 +206,8 @@ object KtDefnTranslator {
         }
       }
 
-      val ktTypeRef = trans.asKtType(defn.id, domain, evo)
-      val srcRef    = trans.toKtTypeRefKeepForeigns(defn.id, domain, evo)
+      val ktTypeRef = domainTypes.asKtType(defn.id)
+      val srcRef    = domainTypes.toKtTypeRefKeepForeigns(defn.id)
 
       val repr = makeRepr(defn, ktTypeRef, isLatestVersion)
 
@@ -266,16 +267,16 @@ object KtDefnTranslator {
           val contractFieldNames = collectContractFieldNames(dto.contracts)
           val params = dto.fields.map {
             f =>
-              val t         = trans.asKtNullableRef(f.tpe, domain, evo)
+              val t         = domainTypes.asKtNullableRef(f.tpe)
               val prefix    = if (contractFieldNames.contains(f.name.name)) "override val" else "val"
               val ktName    = KtTypeTranslator.escapeKtKeyword(f.name.name)
               val fieldTree = q"$prefix $ktName: $t"
               prependDocs(f.docs, fieldTree)
           }
           val paramsList      = if (params.nonEmpty) params.join(",\n") else q""
-          val contractParents = dto.contracts.map(c => trans.toKtTypeRefKeepForeigns(c, domain, evo))
+          val contractParents = dto.contracts.map(c => domainTypes.toKtTypeRefKeepForeigns(c))
           val (adtParent, adtMarker) = dto.id.owner match {
-            case Owner.Adt(id) => (Some(trans.toKtTypeRefKeepForeigns(id, domain, evo)), Seq(iBaboonAdtMemberMeta))
+            case Owner.Adt(id) => (Some(domainTypes.toKtTypeRefKeepForeigns(id)), Seq(iBaboonAdtMemberMeta))
             case _             => (None, Seq.empty)
           }
           val interfaceParents = (adtMarker ++ contractParents :+ genMarker).distinct
@@ -376,7 +377,7 @@ object KtDefnTranslator {
           )
 
         case adt: Typedef.Adt =>
-          val contractParents = adt.contracts.map(c => trans.toKtTypeRefKeepForeigns(c, domain, evo))
+          val contractParents = adt.contracts.map(c => domainTypes.toKtTypeRefKeepForeigns(c))
           val parents         = (contractParents :+ genMarker).distinct
           val parentsList     = if (parents.nonEmpty) q" : ${parents.map(t => q"$t").join(", ")}" else q""
 
@@ -407,12 +408,12 @@ object KtDefnTranslator {
         case contract: Typedef.Contract =>
           val methods = contract.fields.map {
             f =>
-              val t          = trans.asKtNullableRef(f.tpe, domain, evo)
+              val t          = domainTypes.asKtNullableRef(f.tpe)
               val ktName     = KtTypeTranslator.escapeKtKeyword(f.name.name)
               val methodTree = q"val $ktName: $t"
               prependDocs(f.docs, methodTree)
           }
-          val contractParents = contract.contracts.map(c => trans.toKtTypeRefKeepForeigns(c, domain, evo))
+          val contractParents = contract.contracts.map(c => domainTypes.toKtTypeRefKeepForeigns(c))
           val parents         = (contractParents :+ genMarker).distinct
           val parentsList     = if (parents.nonEmpty) q" : ${parents.map(t => q"$t").join(", ")}" else q""
           val body            = if (methods.nonEmpty) methods.joinN() else q""
@@ -433,7 +434,7 @@ object KtDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val plan = new ServiceMethodPlan(m, trans.asKtRef(_, domain, evo), resolved, KtTypeTranslator.escapeKtKeyword(m.name.name))
+              val plan = new ServiceMethodPlan(m, domainTypes.asKtRef(_), resolved, KtTypeTranslator.escapeKtKeyword(m.name.name))
               val in   = plan.input
               val out  = plan.output
               val err  = plan.error
@@ -495,7 +496,7 @@ object KtDefnTranslator {
         case None                                                               => q""
         case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef    = trans.toKtTypeRefKeepForeigns(f.id, domain, evo)
+          val srcRef    = domainTypes.toKtTypeRefKeepForeigns(f.id)
           val codecName = s"${srcRef.name}_KeyCodec"
           val hostName  = s"${srcRef.name}_KeyCodecHost"
           val codecFqn  = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
@@ -677,7 +678,7 @@ object KtDefnTranslator {
           val valVar       = s"${srcFieldName}_v"
           val isLast       = idx == dto.fields.length - 1
           val kind         = IdentifierFieldKind.classify(f.tpe)
-          val tpe          = trans.asKtRef(f.tpe, domain, evo)
+          val tpe          = domainTypes.asKtRef(f.tpe)
 
           // All locals beyond `valVar` (which the constructor consumes) are scoped
           // per-field with unique suffix names so multiple fields can declare them
@@ -790,7 +791,7 @@ object KtDefnTranslator {
                  |if ($rNh is $baboonEither.Left) return $baboonEither.Left($rNh.value)
                  |val $valVar: $tpe = ($rNh as $baboonEither.Right).value""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe   = trans.toKtTypeRefKeepForeigns(uid, domain, evo)
+              val nestedTpe   = domainTypes.toKtTypeRefKeepForeigns(uid)
               val nestedCodec = KtType(nestedTpe.pkg, s"${nestedTpe.name}Codec")
               val rOpen       = s"${srcFieldName}_ro"
               val rClose      = s"${srcFieldName}_rc"

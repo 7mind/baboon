@@ -15,6 +15,7 @@ object PyDomainTreeTools {
     domain: Domain,
     evolution: BaboonEvolution,
     typeTranslator: PyTypeTranslator,
+    domainTypes: PyDomainTypes,
     pyFileTools: PyFileTools,
   ) extends PyDomainTreeTools {
     override def makeDataMeta(defn: DomainMember.User): Seq[TextTree[PyValue]] = {
@@ -59,7 +60,7 @@ object PyDomainTreeTools {
     }
 
     private def makeRefMeta(defn: DomainMember.User): Seq[TextTree[PyValue]] = {
-      val pyType = typeTranslator.asPyType(defn.id, domain, evolution, pyFileTools.definitionsBasePkg)
+      val pyType = domainTypes.asPyType(defn.id, pyFileTools.definitionsBasePkg)
 
       val adtMethods = defn.id.owner match {
         case Owner.Adt(id) =>
@@ -67,7 +68,7 @@ object PyDomainTreeTools {
             q"""baboon_adt_type_identifier: $pyClassVar[$pyStr] = $pyType.baboon_adt_type_identifier
                |@$pyClassMethod
                |def baboon_adt_type(cls) -> type:
-               |    return type(${typeTranslator.asPyType(id, domain, evolution, pyFileTools.definitionsBasePkg)})
+               |    return type(${domainTypes.asPyType(id, pyFileTools.definitionsBasePkg)})
                |""".stripMargin
           )
         case _ => Nil

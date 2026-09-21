@@ -50,6 +50,7 @@ object SwDefnTranslator {
     swFiles: SwFileTools,
     swTrees: SwTreeTools,
     trans: SwTypeTranslator,
+    domainTypes: SwDomainTypes,
     codecs: Set[SwCodecTranslator],
     codecTests: SwCodecTestsTranslator,
     codecsFixture: SwCodecFixtureTranslator,
@@ -144,8 +145,8 @@ object SwDefnTranslator {
     }
 
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val swTypeRef   = trans.asSwType(defn.id, domain, evo)
-      val srcRef      = trans.toSwTypeRefKeepForeigns(defn.id, domain, evo)
+      val swTypeRef   = domainTypes.asSwType(defn.id)
+      val srcRef      = domainTypes.toSwTypeRefKeepForeigns(defn.id)
       val testPath    = getOutputPath(defn, suffix = Some("_test"))
       val typePath    = getOutputPath(defn)
       val fixturePath = getOutputPath(defn, suffix = Some("_fixture"))
@@ -195,8 +196,8 @@ object SwDefnTranslator {
         }
       }
 
-      val swTypeRef = trans.asSwType(defn.id, domain, evo)
-      val srcRef    = trans.toSwTypeRefKeepForeigns(defn.id, domain, evo)
+      val swTypeRef = domainTypes.asSwType(defn.id)
+      val srcRef    = domainTypes.toSwTypeRefKeepForeigns(defn.id)
       val reprName = defn.defn match {
         case _: Typedef.Foreign => srcRef
         case _                  => swTypeRef
@@ -272,7 +273,7 @@ object SwDefnTranslator {
       defn: DomainMember.User,
       name: SwType,
     ): DefnRepr = {
-      val target    = trans.asSwRef(TypeRef.Scalar(defn.id), domain, evo)
+      val target    = domainTypes.asSwRef(TypeRef.Scalar(defn.id))
       val typealias = q"public typealias ${name.asDeclName} = $target"
       val keyCodecBlock = defn.defn match {
         case f: Typedef.Foreign => makeForeignKeyCodecRepr(f, name)
@@ -303,7 +304,7 @@ object SwDefnTranslator {
         case None                                                               => q""
         case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef    = trans.toSwTypeRefKeepForeigns(f.id, domain, evo)
+          val srcRef    = domainTypes.toSwTypeRefKeepForeigns(f.id)
           val codecName = s"${srcRef.name}_KeyCodec"
           val hostName  = s"${srcRef.name}_KeyCodecHost"
           val hostFqn   = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
@@ -434,7 +435,7 @@ object SwDefnTranslator {
 
       val fieldDeclarations = dto.fields.map {
         f =>
-          val t       = trans.asSwRef(f.tpe, domain, evo)
+          val t       = domainTypes.asSwRef(f.tpe)
           val escaped = trans.escapeSwiftKeyword(f.name.name)
           if (recursiveFields.contains(f.name.name)) {
             prependDocs(f.docs, q"@$baboonIndirect public var $escaped: $t")
@@ -443,7 +444,7 @@ object SwDefnTranslator {
           }
       }
 
-      val contractParents = dto.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))
+      val contractParents = dto.contracts.map(c => domainTypes.toSwTypeRefKeepForeigns(c))
       val adtMemberProto = dto.id.owner match {
         case Owner.Adt(_) =>
           Seq(iBaboonAdtMemberMeta)
@@ -485,7 +486,7 @@ object SwDefnTranslator {
         //   `self` _self: String   ← caller still writes `.init(self: ...)`, body uses `_self`
         val initParams = dto.fields.map {
           f =>
-            val t          = trans.asSwRef(f.tpe, domain, evo)
+            val t          = domainTypes.asSwRef(f.tpe)
             val escaped    = trans.escapeSwiftKeyword(f.name.name)
             val internalId = if (f.name.name == "self") q"_self" else q"$escaped"
             if (f.name.name == "self") q"$escaped $internalId: $t" else q"$escaped: $t"
@@ -642,7 +643,7 @@ object SwDefnTranslator {
           val resVar       = s"${swFieldName}_r"
           val isLast       = idx == dto.fields.length - 1
           val kind         = IdentifierFieldKind.classify(f.tpe)
-          val tpe          = trans.asSwRef(f.tpe, domain, evo)
+          val tpe          = domainTypes.asSwRef(f.tpe)
 
           val parseHead =
             q"""let ${swFieldName}_fnr = $baboonIdRepr.parseFieldName(cursor, "$srcFieldName")
@@ -729,7 +730,7 @@ object SwDefnTranslator {
                  |if case .left(let l) = $resVar { return .left(l) }
                  |guard case .right(let $valVar) = $resVar else { return .left("internal: bytes decode") }""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe   = trans.toSwTypeRefKeepForeigns(uid, domain, evo)
+              val nestedTpe   = domainTypes.toSwTypeRefKeepForeigns(uid)
               val nestedCodec = SwType(nestedTpe.pkg, s"${nestedTpe.name}Codec")
               q"""let ${swFieldName}_ro = cursor.expect("{")
                  |if case .left(let l) = ${swFieldName}_ro { return .left(l) }
@@ -869,7 +870,7 @@ object SwDefnTranslator {
         mid =>
           val memberName = mid.name.name
           val caseName   = trans.escapeSwiftKeyword(memberName.head.toLower.toString + memberName.tail)
-          val memberRef  = trans.toSwTypeRefKeepForeigns(mid, domain, evo)
+          val memberRef  = domainTypes.toSwTypeRefKeepForeigns(mid)
           q"case $caseName(${memberRef.asDeclName})"
       }.toList
 
@@ -909,11 +910,11 @@ object SwDefnTranslator {
     ): DefnRepr = {
       val methods = contract.fields.map {
         f =>
-          val t       = trans.asSwRef(f.tpe, domain, evo)
+          val t       = domainTypes.asSwRef(f.tpe)
           val escaped = trans.escapeSwiftKeyword(f.name.name)
           prependDocs(f.docs, q"var $escaped: $t { get }")
       }
-      val contractParents   = contract.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))
+      val contractParents   = contract.contracts.map(c => domainTypes.toSwTypeRefKeepForeigns(c))
       val parents           = (contractParents :+ genMarker).distinct
       val conformanceClause = parents.map(t => q"$t").join(", ")
       val body              = if (methods.nonEmpty) methods.joinN() else q""
@@ -978,9 +979,9 @@ object SwDefnTranslator {
 
       val methods = service.methods.map {
         m =>
-          val in  = trans.asSwRef(m.sig, domain, evo)
-          val out = m.out.map(trans.asSwRef(_, domain, evo))
-          val err = m.err.map(trans.asSwRef(_, domain, evo))
+          val in  = domainTypes.asSwRef(m.sig)
+          val out = m.out.map(domainTypes.asSwRef(_))
+          val err = m.err.map(domainTypes.asSwRef(_))
 
           // Bare-`out` cases (noErrors mode, or an err-free method) keep the
           // original `out` SwType subtree verbatim so the render codec still
@@ -1015,14 +1016,14 @@ object SwDefnTranslator {
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
       val fbase    = swFiles.basename(domain, evo)
-      val typeRef  = trans.toSwTypeRefKeepForeigns(defn.id, domain, evo)
+      val typeRef  = domainTypes.toSwTypeRefKeepForeigns(defn.id)
       val flatName = typeRef.name.replace('.', '_')
       val fname    = s"${trans.toSnakeCase(flatName)}${suffix.getOrElse("")}.swift"
       s"$fbase/$fname"
     }
 
     private def getOutputModule(defn: DomainMember.User): SwValue.SwPackageId = {
-      trans.effectiveSwPkg(defn.defn.id.owner, domain, evo)
+      domainTypes.effectiveSwPkg(defn.defn.id.owner)
     }
   }
 }

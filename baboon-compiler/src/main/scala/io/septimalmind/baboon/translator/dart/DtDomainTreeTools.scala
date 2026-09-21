@@ -29,6 +29,7 @@ object DtDomainTreeTools {
     domain: Domain,
     evolution: BaboonEvolution,
     typeTranslator: DtTypeTranslator,
+    domainTypes: DtDomainTypes,
   ) extends DtDomainTreeTools {
     override def makeDataMeta(defn: DomainMember.User): List[MetaField] = {
       mainMeta(defn) ++ sameInVersion(defn) ++ adtMeta(defn)
@@ -45,7 +46,7 @@ object DtDomainTreeTools {
     // BaboonMetaProvider-required instance name; signature/value/refValue use the
     // `Const`-suffixed static identifier.
     private def mainMeta(defn: DomainMember.User): List[MetaField] = {
-      val ref = typeTranslator.asDtType(defn.id, domain, evolution).asName
+      val ref = domainTypes.asDtType(defn.id).asName
       val baboonDomainVersion = MetaField(
         q"static const String baboonDomainVersionConst",
         q"'${domain.version.v.toString}'",
@@ -76,7 +77,7 @@ object DtDomainTreeTools {
     private def adtMeta(defn: DomainMember.User): List[MetaField] = {
       defn.id.owner match {
         case Owner.Adt(id) =>
-          val adtRef = typeTranslator.asDtType(defn.id, domain, evolution).asName
+          val adtRef = domainTypes.asDtType(defn.id).asName
           val adtTypeIdentifier = MetaField(
             q"static const String baboonAdtTypeIdentifierConst",
             q"'${id.toString}'",
@@ -91,7 +92,7 @@ object DtDomainTreeTools {
     }
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
-      val ref             = typeTranslator.asDtType(defn.id, domain, evolution).asName
+      val ref             = domainTypes.asDtType(defn.id).asName
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"'${v.v.toString}'")
       val sameInVersion = MetaField(
         q"static const List<String> baboonSameInVersionsConst",

@@ -15,6 +15,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class DtUEBACodecGenerator(
   trans: DtTypeTranslator,
+  domainTypes: DtDomainTypes,
   target: DtTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -170,7 +171,7 @@ class DtUEBACodecGenerator(
       case (m, idx) =>
         val branchName = m.name.name
 
-        val adtRef = trans.toDtTypeRefKeepForeigns(m, domain, evo)
+        val adtRef = domainTypes.toDtTypeRefKeepForeigns(m)
         val cName  = codecName(adtRef)
 
         val castedName = trans.escapeDartKeyword(branchName.substring(0, 1).toLowerCase + branchName.substring(1))
@@ -390,11 +391,11 @@ class DtUEBACodecGenerator(
                 DtForeignWirePlan.ueba(f) match {
                   case DtForeignWirePlan.Inline(ref) => mkDecoder(ref)
                   case DtForeignWirePlan.Codec =>
-                    val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                    val targetTpe = codecName(domainTypes.toDtTypeRefKeepForeigns(u))
                     q"""$targetTpe.instance.decode(ctx, reader)"""
                 }
               case _ =>
-                val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                val targetTpe = codecName(domainTypes.toDtTypeRefKeepForeigns(u))
                 q"""$targetTpe.instance.decode(ctx, reader)"""
             }
         }
@@ -429,11 +430,11 @@ class DtUEBACodecGenerator(
                 DtForeignWirePlan.ueba(f) match {
                   case DtForeignWirePlan.Inline(wireRef) => mkEncoder(wireRef, ref, wref, depth)
                   case DtForeignWirePlan.Codec =>
-                    val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                    val targetTpe = codecName(domainTypes.toDtTypeRefKeepForeigns(u))
                     q"""$targetTpe.instance.encode(ctx, $wref, $ref);"""
                 }
               case _ =>
-                val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                val targetTpe = codecName(domainTypes.toDtTypeRefKeepForeigns(u))
                 q"""$targetTpe.instance.encode(ctx, $wref, $ref);"""
             }
         }

@@ -28,9 +28,9 @@ object DtServiceWiringTranslator {
   class Impl(
     target: DtTarget,
     trans: DtTypeTranslator,
+    domainTypes: DtDomainTypes,
     codecs: Set[DtCodecTranslator],
     domain: Domain,
-    evo: BaboonEvolution,
   ) extends DtServiceWiringTranslator {
 
     // When the Dart `asyncServices` flag is on, the service interface methods
@@ -72,7 +72,7 @@ object DtServiceWiringTranslator {
       case DomainMember.User(_, service: Typedef.Service, _, _) =>
         val endpoints = service.methods.map {
           m =>
-            EndpointPlan(m, trans.escapeDartKeyword(m.name.name), trans.asDtRef(m.sig, domain, evo), m.out.map(o => trans.asDtRef(o, domain, evo)).getOrElse(q"void"))
+            EndpointPlan(m, trans.escapeDartKeyword(m.name.name), domainTypes.asDtRef(m.sig), m.out.map(o => domainTypes.asDtRef(o)).getOrElse(q"void"))
         }
         service.id -> ServicePlan(endpoints, codecActive(service, "Json"), codecActive(service, "Ueba"))
     }.toMap
@@ -81,13 +81,13 @@ object DtServiceWiringTranslator {
     private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = servicePlans(service.id).uebaActive
 
     private def jsonCodecName(typeId: TypeId.User): DtValue.DtType = {
-      val srcRef       = trans.toDtTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef       = domainTypes.toDtTypeRefKeepForeigns(typeId)
       val baseFileName = srcRef.importAs.getOrElse(trans.toSnakeCase(srcRef.name))
       DtValue.DtType(srcRef.pkg, s"${srcRef.name}_JsonCodec", srcRef.fq, importAs = Some(baseFileName))
     }
 
     private def uebaCodecName(typeId: TypeId.User): DtValue.DtType = {
-      val srcRef       = trans.toDtTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef       = domainTypes.toDtTypeRefKeepForeigns(typeId)
       val baseFileName = srcRef.importAs.getOrElse(trans.toSnakeCase(srcRef.name))
       DtValue.DtType(srcRef.pkg, s"${srcRef.name}_UebaCodec", srcRef.fq, importAs = Some(baseFileName))
     }

@@ -18,17 +18,16 @@ trait ScServiceWiringTranslator {
 object ScServiceWiringTranslator {
   class Impl(
     target: ScTarget,
-    trans: ScTypeTranslator,
+    domainTypes: ScDomainTypes,
     codecs: Set[ScCodecTranslator],
     domain: Domain,
-    evo: BaboonEvolution,
   ) extends ScServiceWiringTranslator {
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "scala", target.language.serviceResult, target.language.pragmas)
 
     private def methodPlan(method: Typedef.MethodDef): ServiceMethodPlan[TextTree[ScValue]] =
-      new ServiceMethodPlan(method, trans.asScRef(_, domain, evo), resolved, method.name.name)
+      new ServiceMethodPlan(method, domainTypes.asScRef(_), resolved, method.name.name)
 
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "scala", target.language.serviceContext, target.language.pragmas)
@@ -74,12 +73,12 @@ object ScServiceWiringTranslator {
       if (ctxUsed) "" else "@scala.annotation.nowarn(\"cat=unused-params\")\n"
 
     private def jsonCodecName(typeId: TypeId.User): ScValue.ScType = {
-      val srcRef = trans.toScTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef = domainTypes.toScTypeRefKeepForeigns(typeId)
       ScValue.ScType(srcRef.pkg, s"${srcRef.name}_JsonCodec", fq = srcRef.fq)
     }
 
     private def uebaCodecName(typeId: TypeId.User): ScValue.ScType = {
-      val srcRef = trans.toScTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef = domainTypes.toScTypeRefKeepForeigns(typeId)
       ScValue.ScType(srcRef.pkg, s"${srcRef.name}_UEBACodec", fq = srcRef.fq)
     }
 
@@ -430,7 +429,7 @@ object ScServiceWiringTranslator {
     // (e.g. `petstore` in `petstore.api.petstore.addpet.Out`) binds to a NESTED sub-package of
     // the enclosing `package petstore.api`, producing "object api is not a member of package
     // petstore.api.petstore" in depth-2+ packages. ScTypes constants already carry `_root_`;
-    // user refs from `trans.asScRef` / `toScPkg` do not, so we prepend it here. Predef types
+    // user refs from `domainTypes.asScRef` / `toScPkg` do not, so we prepend it here. Predef types
     // (Int, String, …) render bare and need no qualification.
     private def renderFq(tree: TextTree[ScValue]): String = tree.mapRender {
       case t: ScValue.ScType =>
@@ -664,7 +663,7 @@ object ScServiceWiringTranslator {
     // IBaboonServiceRt is always emitted in the domain root package; use the FQ name
     // so that wiring objects inside a namespace sub-package can still reference it.
     private val iBaboonServiceRtFq: String = {
-      val rootPkg = trans.toScPkg(domain.id, domain.version, evo)
+      val rootPkg = domainTypes.currentPkg
       ("_root_" :: (rootPkg.parts.toList :+ "IBaboonServiceRt")).mkString(".")
     }
 

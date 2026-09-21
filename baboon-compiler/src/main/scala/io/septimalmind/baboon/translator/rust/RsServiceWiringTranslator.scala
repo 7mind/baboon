@@ -20,6 +20,7 @@ object RsServiceWiringTranslator {
   class Impl(
     target: RsTarget,
     trans: RsTypeTranslator,
+    domainTypes: RsDomainTypes,
     codecs: Set[RsCodecTranslator],
     domain: Domain,
     evo: BaboonEvolution,
@@ -197,7 +198,7 @@ object RsServiceWiringTranslator {
           val clientMethods = service.methods.flatMap {
             m =>
               val inFq  = inTypeFq(m)
-              val outFq = m.out.map(o => renderFq(q"${trans.asRsRef(o, domain, evo)}")).getOrElse("()")
+              val outFq = m.out.map(o => renderFq(q"${domainTypes.asRsRef(o)}")).getOrElse("()")
 
               val uebaMethod = if (hasUeba) {
                 val decodeResult = m.out match {
@@ -472,7 +473,7 @@ object RsServiceWiringTranslator {
 
     private def generateServiceWrappers(service: Typedef.Service): TextTree[RsValue] = {
       val svcName = service.id.name.name
-      val svcType = trans.asRsType(service.id, domain, evo)
+      val svcType = domainTypes.asRsType(service.id)
       val jsonWrapper =
         if (hasActiveJsonCodecs(service)) Some(generateOneWrapper(WrapperSpec(service, svcName, svcType, isJson = true)))
         else None
@@ -653,7 +654,7 @@ object RsServiceWiringTranslator {
     }
 
     private def inTypeFq(m: Typedef.MethodDef): String = {
-      val ref = trans.asRsType(m.sig.id, domain, evo)
+      val ref = domainTypes.asRsType(m.sig.id)
       renderFq(q"$ref")
     }
 
@@ -661,7 +662,7 @@ object RsServiceWiringTranslator {
 
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[RsValue] = {
       val svcName = service.id.name.name
-      val svcType = trans.asRsType(service.id, domain, evo)
+      val svcType = domainTypes.asRsType(service.id)
 
       val jsonFn =
         if (hasActiveJsonCodecs(service))
@@ -761,7 +762,7 @@ object RsServiceWiringTranslator {
     private def leftMapHint(m: Typedef.MethodDef): String =
       if (errorIsPhantom) {
         val errFq = m.err
-          .map(errRef => renderFq(q"${trans.asRsRef(errRef, domain, evo)}"))
+          .map(errRef => renderFq(q"${domainTypes.asRsRef(errRef)}"))
           .getOrElse("()")
         s"::<$errFq, _, _, _>"
       } else ""
@@ -770,7 +771,7 @@ object RsServiceWiringTranslator {
 
     private def generateErrorsWiring(service: Typedef.Service): TextTree[RsValue] = {
       val svcName = service.id.name.name
-      val svcType = trans.asRsType(service.id, domain, evo)
+      val svcType = domainTypes.asRsType(service.id)
 
       val jsonFn =
         if (hasActiveJsonCodecs(service))

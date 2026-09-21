@@ -10,9 +10,9 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class TsJsonCodecGenerator(
   trans: TsTypeTranslator,
+  domainTypes: TsDomainTypes,
   target: TsTarget,
   domain: Domain,
-  evo: BaboonEvolution,
   enquiries: BaboonEnquiries,
   tsFileTools: TsFileTools,
   tsDomainTreeTools: TsDomainTreeTools,
@@ -161,7 +161,7 @@ class TsJsonCodecGenerator(
     val encCases = dataMembers.map {
       mid =>
         val branchName  = mid.name.name
-        val branchType  = trans.asTsTypeDerefForeign(mid, domain, evo, tsFileTools.definitionsBasePkg)
+        val branchType  = domainTypes.asTsTypeDerefForeign(mid, tsFileTools.definitionsBasePkg)
         val branchCodec = codecName(branchType)
         if (target.language.wrappedAdtBranchCodecs) {
           q"""if (value instanceof $branchType) {
@@ -177,7 +177,7 @@ class TsJsonCodecGenerator(
     val decCases = dataMembers.map {
       mid =>
         val branchName  = mid.name.name
-        val branchType  = trans.asTsTypeKeepForeigns(mid, domain, evo, tsFileTools.definitionsBasePkg)
+        val branchType  = domainTypes.asTsTypeKeepForeigns(mid, tsFileTools.definitionsBasePkg)
         val branchCodec = codecName(branchType)
         q"""case "$branchName": return $branchCodec.instance.decode($tsBaboonCodecContext.Default, obj[key])"""
     }
@@ -209,11 +209,11 @@ class TsJsonCodecGenerator(
                     // Custom foreign value: route through the emitted `<F>_JsonCodec` (throws unless the
                     // host registered an impl via lazyInstance). Naming uses keep-foreigns to match the
                     // codec class emitted in the foreign's own module.
-                    val codec = codecName(trans.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg))
+                    val codec = codecName(domainTypes.asTsTypeKeepForeigns(u, tsFileTools.definitionsBasePkg))
                     q"$codec.instance.encode($tsBaboonCodecContext.Default, $ref)"
                 }
               case Some(DomainMember.User(_, _: Typedef.Enum | _: Typedef.Dto | _: Typedef.Adt, _, _)) =>
-                val tsType = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+                val tsType = domainTypes.asTsTypeDerefForeign(u, tsFileTools.definitionsBasePkg)
                 val codec  = codecName(tsType)
                 q"$codec.instance.encode($tsBaboonCodecContext.Default, $ref)"
               case _ => ref
@@ -271,7 +271,7 @@ class TsJsonCodecGenerator(
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
               // PR-I.1d (M24 Phase 3.1): Custom-foreign map keys route through
               // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
-              val srcRef  = trans.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
+              val srcRef  = domainTypes.asTsTypeKeepForeigns(u, tsFileTools.definitionsBasePkg)
               val hostTpe = TsValue.TsType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
               q"$hostTpe.instance.encodeKey($ref)"
             case None =>
@@ -294,7 +294,7 @@ class TsJsonCodecGenerator(
     case TypeRef.Scalar(u: TypeId.User) =>
       domain.defs.meta.nodes.get(u) match {
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.isIdentifier =>
-          val tsType   = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+          val tsType   = domainTypes.asTsTypeDerefForeign(u, tsFileTools.definitionsBasePkg)
           val codecObj = tsType.name.head.toLower.toString + tsType.name.tail + "Codec"
           val codecRef = TsValue.TsType(tsType.moduleId, codecObj)
           // PR-F (M24): throw BaboonDecoderFailure on Left for cross-language malformed-key
@@ -302,13 +302,13 @@ class TsJsonCodecGenerator(
           q"""((): $tsType => { const __e = $codecRef.parseRepr($ref); if (__e.tag === "Right") return __e.value; throw new $tsBaboonDecoderFailure("malformed key: " + $ref); })()"""
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
           val inner    = d.fields.head
-          val tsType   = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+          val tsType   = domainTypes.asTsTypeDerefForeign(u, tsFileTools.definitionsBasePkg)
           val innerDec = mkJsonKeyDecoder(inner.tpe, ref)
           q"new $tsType($innerDec)"
         case Some(DomainMember.User(_, _: Typedef.Enum, _, _)) =>
           // PR-G (M24.2.2): enum keys — parse via the generated `<EnumName>_parse` helper,
           // matching the value-position enum decoder shape.
-          val tsType = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+          val tsType = domainTypes.asTsTypeDerefForeign(u, tsFileTools.definitionsBasePkg)
           val parser = TsValue.TsType(tsType.moduleId, s"${tsType.name}_parse")
           q"$parser($ref)"
         case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
@@ -321,8 +321,8 @@ class TsJsonCodecGenerator(
               // `catch (e: unknown)` (PR-I-D01 pattern guidance for TS): TS catches
               // are `unknown`-typed by tsconfig `useUnknownInCatchVariables` default;
               // we still discriminate Error-vs-everything-else only at the throw site.
-              val srcRef  = trans.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
-              val mapped  = trans.asTsType(u, domain, evo)
+              val srcRef  = domainTypes.asTsTypeKeepForeigns(u, tsFileTools.definitionsBasePkg)
+              val mapped  = domainTypes.asTsType(u)
               val hostTpe = TsValue.TsType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
               q"""((): $mapped => { try { return $hostTpe.instance.decodeKey($ref); } catch (e) { throw new $tsBaboonDecoderFailure("malformed key: " + $ref, { cause: e }); } })()"""
             case None =>
@@ -394,11 +394,11 @@ class TsJsonCodecGenerator(
                   case _ =>
                     // Custom foreign value: route through the emitted `<F>_JsonCodec` (throws unless the
                     // host registered an impl via lazyInstance), replacing the prior no-op `as` cast.
-                    val codec = codecName(trans.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg))
+                    val codec = codecName(domainTypes.asTsTypeKeepForeigns(u, tsFileTools.definitionsBasePkg))
                     q"$codec.instance.decode($tsBaboonCodecContext.Default, $ref)"
                 }
               case Some(DomainMember.User(_, _: Typedef.Enum | _: Typedef.Dto | _: Typedef.Adt, _, _)) =>
-                val tsType = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+                val tsType = domainTypes.asTsTypeDerefForeign(u, tsFileTools.definitionsBasePkg)
                 val codec  = codecName(tsType)
                 q"$codec.instance.decode($tsBaboonCodecContext.Default, $ref)"
               case _ => ref

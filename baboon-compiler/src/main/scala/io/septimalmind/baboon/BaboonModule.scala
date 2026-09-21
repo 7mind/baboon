@@ -88,6 +88,7 @@ class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
       make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
       make[CSCodecFixtureTranslator].from[CSRandomMethodTranslatorImpl]
       make[CSServiceWiringTranslator].from[CSServiceWiringTranslator.Impl]
+      make[CSDomainTypes]
       make[CSDomainTreeTools].from[CSDomainTreeTools.CSDomainTreeToolsImpl]
 
       many[CSCodecTranslator]
@@ -119,6 +120,7 @@ class BaboonCommonScModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   makeSubcontext[ScDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
+      make[ScDomainTypes]
       make[ScDomainTreeTools].from[ScDomainTreeTools.ScDomainTreeToolsImpl]
       make[ScDefnTranslator[F]].from[ScDefnTranslator.ScDefnTranslatorImpl[F]]
       make[ScCodecFixtureTranslator].from[ScCodecFixtureTranslator.ScRandomMethodTranslatorImpl]
@@ -152,6 +154,7 @@ class BaboonCommonPyModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[PyDefnTranslator[F]].from[PyDefnTranslatorImpl[F]]
+      make[PyDomainTypes]
       make[PyDomainTreeTools].from[PyDomainTreeTools.PyDomainTreeToolsImpl]
       make[PyCodecFixtureTranslator].from[PyCodecFixtureTranslator.PyCodecFixtureTranslatorImpl]
       make[PyCodecTestTranslator].from[PyCodecTestTranslator.PyCodecTestTranslatorImpl]
@@ -185,6 +188,7 @@ class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[RsDefnTranslator[F]].from[RsDefnTranslator.RsDefnTranslatorImpl[F]]
+      make[RsDomainTypes]
       make[RsDomainTreeTools].from[RsDomainTreeTools.RsDomainTreeToolsImpl]
       make[RsCodecFixtureTranslator].from[RsCodecFixtureTranslator.RsCodecFixtureTranslatorImpl]
       make[RsCodecTestsTranslator].from[RsCodecTestsTranslator.Impl]
@@ -221,6 +225,7 @@ class BaboonCommonTsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
       make[TsServiceWiringTranslator].from[TsServiceWiringTranslator.Impl]
       make[TsCodecFixtureTranslator].from[TsCodecFixtureTranslator.TsCodecFixtureTranslatorImpl]
       make[TsCodecTestsTranslator].from[TsCodecTestsTranslator.Impl]
+      make[TsDomainTypes]
       make[TsDomainTreeTools].from[TsDomainTreeTools.TsDomainTreeToolsImpl]
       many[TsCodecTranslator]
         .add[TsJsonCodecGenerator]
@@ -249,6 +254,7 @@ class BaboonCommonKtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   makeSubcontext[KtDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
+      make[KtDomainTypes]
       make[KtDomainTreeTools].from[KtDomainTreeTools.KtDomainTreeToolsImpl]
       make[KtDefnTranslator[F]].from[KtDefnTranslator.KtDefnTranslatorImpl[F]]
       make[KtCodecFixtureTranslator].from[KtCodecFixtureTranslator.Impl]
@@ -282,6 +288,7 @@ class BaboonCommonJvModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   makeSubcontext[JvDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
+      make[JvDomainTypes]
       make[JvDomainTreeTools].from[JvDomainTreeTools.JvDomainTreeToolsImpl]
       make[JvDefnTranslator[F]].from[JvDefnTranslator.JvDefnTranslatorImpl[F]]
       make[JvCodecFixtureTranslator].from[JvCodecFixtureTranslator.Impl]
@@ -314,6 +321,7 @@ class BaboonCommonDtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   makeSubcontext[DtDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
+      make[DtDomainTypes]
       make[DtDomainTreeTools].from[DtDomainTreeTools.DtDomainTreeToolsImpl]
       make[DtDefnTranslator[F]].from[DtDefnTranslator.DtDefnTranslatorImpl[F]]
       make[DtCodecFixtureTranslator].from[DtCodecFixtureTranslator.Impl]
@@ -346,6 +354,7 @@ class BaboonCommonSwModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   makeSubcontext[SwDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
+      make[SwDomainTypes]
       make[SwDomainTreeTools].from[SwDomainTreeTools.SwDomainTreeToolsImpl]
       make[SwDefnTranslator[F]].from[SwDefnTranslator.SwDefnTranslatorImpl[F]]
       make[SwCodecFixtureTranslator].from[SwCodecFixtureTranslator.Impl]

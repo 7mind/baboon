@@ -21,6 +21,7 @@ object CSCodecTestsTranslator {
   final class Impl(
     codecs: Set[CSCodecTranslator],
     typeTranslator: CSTypeTranslator,
+    domainTypes: CSDomainTypes,
     logger: BLogger,
     enquiries: BaboonEnquiries,
     target: CSTarget,
@@ -56,8 +57,8 @@ object CSCodecTestsTranslator {
       // `AnyOpaqueUeba`-bearing fixture (`Random`); JSON codec test uses the `AnyOpaqueJson`-bearing
       // fixture (`RandomJson`). Each fixture matches its codec's native any-field branch so round-
       // trip avoids cross-format conversion and never needs `BaboonCodecContext.WithFacade`.
-      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
-      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
+      val uebaFixture = makeFixture(definition, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           case jsonCodec: CSJsonCodecGenerator =>
@@ -111,16 +112,14 @@ object CSCodecTestsTranslator {
 
     private def makeFixture(
       definition: DomainMember.User,
-      domain: Domain,
-      evolution: BaboonEvolution,
       useJsonAny: Boolean,
     ): TextTree[CSValue] = {
       val randomMethod    = if (useJsonAny) "RandomJson" else "Random"
       val randomAllMethod = if (useJsonAny) "RandomAllJson" else "RandomAll"
       definition.defn match {
         case e: Typedef.Enum => q"var fixture = $baboonFixture.NextRandomEnum<${escapeCsKeyword(e.id.name.name)}>();"
-        case _: Typedef.Adt  => q"var fixtures = ${typeTranslator.csFixtureRef(definition.id, domain, evolution)}.$randomAllMethod();"
-        case _               => q"var fixture = ${typeTranslator.csFixtureRef(definition.id, domain, evolution)}.$randomMethod();"
+        case _: Typedef.Adt  => q"var fixtures = ${domainTypes.csFixtureRef(definition.id)}.$randomAllMethod();"
+        case _               => q"var fixture = ${domainTypes.csFixtureRef(definition.id)}.$randomMethod();"
       }
     }
 

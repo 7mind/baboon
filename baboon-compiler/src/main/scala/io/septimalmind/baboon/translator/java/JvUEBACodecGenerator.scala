@@ -13,6 +13,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class JvUEBACodecGenerator(
   trans: JvTypeTranslator,
+  domainTypes: JvDomainTypes,
   target: JvTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -175,7 +176,7 @@ class JvUEBACodecGenerator(
       case (m, idx) =>
         val branchName = m.name.name
 
-        val adtRef = trans.toJvTypeRefKeepForeigns(m, domain, evo)
+        val adtRef = domainTypes.toJvTypeRefKeepForeigns(m)
         val cName  = codecName(adtRef, m.owner)
 
         val castedName = JvTypeTranslator.escapeJvKeyword(branchName.toLowerCase)
@@ -396,11 +397,11 @@ class JvUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkDecoder(aliasedRef)
                   case _ =>
-                    val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                    val targetTpe = codecName(domainTypes.toJvTypeRefKeepForeigns(u), u.owner)
                     q"""$targetTpe.INSTANCE.decode(ctx, input)"""
                 }
               case _ =>
-                val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                val targetTpe = codecName(domainTypes.toJvTypeRefKeepForeigns(u), u.owner)
                 q"""$targetTpe.INSTANCE.decode(ctx, input)"""
             }
         }
@@ -437,11 +438,11 @@ class JvUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkEncoder(aliasedRef, ref, wref)
                   case _ =>
-                    val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                    val targetTpe = codecName(domainTypes.toJvTypeRefKeepForeigns(u), u.owner)
                     q"""$targetTpe.INSTANCE.encode(ctx, $wref, $ref);"""
                 }
               case _ =>
-                val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                val targetTpe = codecName(domainTypes.toJvTypeRefKeepForeigns(u), u.owner)
                 q"""$targetTpe.INSTANCE.encode(ctx, $wref, $ref);"""
             }
         }
@@ -509,7 +510,7 @@ class JvUEBACodecGenerator(
     val domainPkg   = trans.toJvPkg(domain.id, domain.version, evo)
     val ownerPrefix = name.pkg.parts.toSeq.drop(domainPkg.parts.toSeq.length)
     val prefixStr   = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
-    val realPkg     = trans.effectiveJvPkg(owner, domain, evo)
+    val realPkg     = domainTypes.effectiveJvPkg(owner)
     JvValue.JvType(realPkg, s"$prefixStr${name.name}_UEBACodec", name.fq)
   }
 

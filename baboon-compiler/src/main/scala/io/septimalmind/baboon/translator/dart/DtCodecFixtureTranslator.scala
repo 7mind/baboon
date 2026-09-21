@@ -26,9 +26,9 @@ object DtCodecFixtureTranslator {
 
   final class Impl(
     translator: DtTypeTranslator,
+    domainTypes: DtDomainTypes,
     enquiries: BaboonEnquiries,
     domain: Domain,
-    evo: BaboonEvolution,
   ) extends DtCodecFixtureTranslator {
 
     override def translate(
@@ -72,7 +72,7 @@ object DtCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[DtValue] = {
-      val fullType = translator.toDtTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = domainTypes.toDtTypeRefKeepForeigns(dto.id)
 
       def body(format: FixtureFormat): TextTree[DtValue] = {
         val generatedFields = dto.fields.map { f =>
@@ -97,7 +97,7 @@ object DtCodecFixtureTranslator {
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[DtValue] = {
-      val fullType = translator.toDtTypeRefKeepForeigns(adt.id, domain, evo)
+      val fullType = domainTypes.toDtTypeRefKeepForeigns(adt.id)
       val members = adt.members.toList
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
@@ -199,10 +199,10 @@ object DtCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"rnd.nextBool()"
 
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
-          val enumType = translator.toDtTypeRefKeepForeigns(u, domain, evo)
+          val enumType = domainTypes.toDtTypeRefKeepForeigns(u)
           q"rnd.mkEnum($enumType.values)"
         case u: TypeId.User =>
-          val fixturePkg = translator.effectiveDtPkg(u.owner, domain, evo)
+          val fixturePkg = domainTypes.effectiveDtPkg(u.owner)
           val importAsFileName = u.owner match {
             case Owner.Adt(adtId) => translator.toSnakeCase(adtId.name.name)
             case _                => translator.toSnakeCase(u.name.name)

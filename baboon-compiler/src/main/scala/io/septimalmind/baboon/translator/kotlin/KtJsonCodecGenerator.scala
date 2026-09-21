@@ -13,6 +13,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class KtJsonCodecGenerator(
   trans: KtTypeTranslator,
+  domainTypes: KtDomainTypes,
   target: KtTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -217,7 +218,7 @@ class KtJsonCodecGenerator(
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
                       // PR-I.1b (M24 Phase 3.1): Custom-foreign map keys route through
                       // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
-                      val srcRef  = trans.toKtTypeRefKeepForeigns(uid, domain, evo)
+                      val srcRef  = domainTypes.toKtTypeRefKeepForeigns(uid)
                       val hostTpe = KtValue.KtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
                       q"$hostTpe.instance.encodeKey($ref)"
                     case None =>
@@ -253,11 +254,11 @@ class KtJsonCodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkEncoder(aliasedRef, ref)
                   case _ =>
-                    val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                    val targetTpe = codecName(domainTypes.toKtTypeRefKeepForeigns(u))
                     q"$targetTpe.encode(ctx, $ref)"
                 }
               case _ =>
-                val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                val targetTpe = codecName(domainTypes.toKtTypeRefKeepForeigns(u))
                 q"$targetTpe.encode(ctx, $ref)"
             }
           case o =>
@@ -294,11 +295,11 @@ class KtJsonCodecGenerator(
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       decodeElement(aliasedRef, ref)
                     case _ =>
-                      val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                      val targetTpe = codecName(domainTypes.toKtTypeRefKeepForeigns(u))
                       q"$targetTpe.decode(ctx, $ref)"
                   }
                 case _ =>
-                  val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                  val targetTpe = codecName(domainTypes.toKtTypeRefKeepForeigns(u))
                   q"$targetTpe.decode(ctx, $ref)"
               }
             case o =>
@@ -348,7 +349,7 @@ class KtJsonCodecGenerator(
                 case ud: DomainMember.User =>
                   ud.defn match {
                     case _: Typedef.Enum =>
-                      val targetTpe = trans.toKtTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe = domainTypes.toKtTypeRefKeepForeigns(u)
                       q"$targetTpe.parse($ref) ?: throw IllegalArgumentException(\"Cannot parse enum key: \" + $ref)"
                     case f: Typedef.Foreign =>
                       f.bindings.get(BaboonLang.Kotlin) match {
@@ -359,7 +360,7 @@ class KtJsonCodecGenerator(
                           // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
                           // catch (e: Exception) — NOT Throwable (PR-I-D01 pattern guidance):
                           // Throwable would swallow Error (OOM/StackOverflow), defeating fail-fast.
-                          val srcRef  = trans.toKtTypeRefKeepForeigns(u, domain, evo)
+                          val srcRef  = domainTypes.toKtTypeRefKeepForeigns(u)
                           val hostTpe = KtValue.KtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
                           q"""try { $hostTpe.instance.decodeKey($ref) } catch (__kc: Exception) { throw $baboonCodecException.DecoderFailure("malformed key: " + $ref, __kc) }"""
                         case None =>
@@ -369,13 +370,13 @@ class KtJsonCodecGenerator(
                     // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for
                     // cross-language malformed-key consistency (replaces unchecked cast).
                     case d: Typedef.Dto if d.isIdentifier =>
-                      val targetTpe   = trans.toKtTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe   = domainTypes.toKtTypeRefKeepForeigns(u)
                       val nestedCodec = KtValue.KtType(targetTpe.pkg, s"${targetTpe.name}Codec")
                       q"""when (val __r = $nestedCodec.parseRepr($ref)) { is $baboonEither.Right -> __r.value; is $baboonEither.Left -> throw $baboonCodecException.DecoderFailure("malformed key: " + $ref) }"""
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                       val inner     = d.fields.head
-                      val targetTpe = trans.toKtTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe = domainTypes.toKtTypeRefKeepForeigns(u)
                       val innerDec  = decodeKey(inner.tpe, ref)
                       q"$targetTpe($innerDec)"
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")

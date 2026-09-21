@@ -12,6 +12,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class RsUEBACodecGenerator(
   trans: RsTypeTranslator,
+  domainTypes: RsDomainTypes,
   target: RsTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -294,7 +295,7 @@ class RsUEBACodecGenerator(
     val decBranches = branches.map {
       case (mid, idx) =>
         val branchName = escapeRustTypeName(mid.name.name.capitalize)
-        val branchType = trans.asRsType(mid, domain, evo)
+        val branchType = domainTypes.asRsType(mid)
         if (target.language.wrappedAdtBranchCodecs) {
           q"""${idx.toString} => {
              |    let v = ${branchType.asName}::decode_ueba_branch(ctx, reader)?;
@@ -400,11 +401,11 @@ class RsUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkDecoder(aliasedRef)
                   case _ =>
-                    val tpe = trans.asRsType(u, domain, evo)
+                    val tpe = domainTypes.asRsType(u)
                     q"${tpe.asName}::decode_ueba(ctx, reader)?"
                 }
               case _ =>
-                val tpe = trans.asRsType(u, domain, evo)
+                val tpe = domainTypes.asRsType(u)
                 q"${tpe.asName}::decode_ueba(ctx, reader)?"
             }
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")

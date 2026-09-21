@@ -49,6 +49,7 @@ object DtDefnTranslator {
     dtFiles: DtFileTools,
     dtTrees: DtTreeTools,
     trans: DtTypeTranslator,
+    domainTypes: DtDomainTypes,
     codecs: Set[DtCodecTranslator],
     codecTests: DtCodecTestsTranslator,
     codecsFixture: DtCodecFixtureTranslator,
@@ -117,8 +118,8 @@ object DtDefnTranslator {
     }
 
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val dtTypeRef   = trans.asDtType(defn.id, domain, evo)
-      val srcRef      = trans.toDtTypeRefKeepForeigns(defn.id, domain, evo)
+      val dtTypeRef   = domainTypes.asDtType(defn.id)
+      val srcRef      = domainTypes.toDtTypeRefKeepForeigns(defn.id)
       val testPath    = getOutputPath(defn, suffix = Some("_test"))
       val typePath    = getOutputPath(defn)
       val fixturePath = getOutputPath(defn, suffix = Some("_fixture"))
@@ -167,8 +168,8 @@ object DtDefnTranslator {
         }
       }
 
-      val dtTypeRef = trans.asDtType(defn.id, domain, evo)
-      val srcRef    = trans.toDtTypeRefKeepForeigns(defn.id, domain, evo)
+      val dtTypeRef = domainTypes.asDtType(defn.id)
+      val srcRef    = domainTypes.toDtTypeRefKeepForeigns(defn.id)
 
       val repr = makeRepr(defn, dtTypeRef, isLatestVersion)
 
@@ -254,7 +255,7 @@ object DtDefnTranslator {
         case None                                                               => DefnRepr(q"", Nil)
         case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => DefnRepr(q"", Nil)
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef    = trans.toDtTypeRefKeepForeigns(f.id, domain, evo)
+          val srcRef    = domainTypes.toDtTypeRefKeepForeigns(f.id)
           val codecName = s"${srcRef.name}_KeyCodec"
           val hostName  = s"${srcRef.name}_KeyCodecHost"
           val hostFqn   = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
@@ -303,7 +304,7 @@ object DtDefnTranslator {
 
       val fieldDeclarations = dto.fields.map {
         f =>
-          val t              = trans.asDtRef(f.tpe, domain, evo)
+          val t              = domainTypes.asDtRef(f.tpe)
           val dartName       = trans.escapeDartKeyword(f.name.name)
           val overridePrefix = if (contractFieldNames.contains(f.name.name)) "@override " else ""
           val fieldTree = f.tpe match {
@@ -326,10 +327,10 @@ object DtDefnTranslator {
           }
       }
 
-      val contractParents = dto.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
+      val contractParents = dto.contracts.map(c => domainTypes.toDtTypeRefKeepForeigns(c))
       val (adtMarker, adtParent) = dto.id.owner match {
         case Owner.Adt(adtId) =>
-          val adtType = trans.toDtTypeRefKeepForeigns(adtId, domain, evo)
+          val adtType = domainTypes.toDtTypeRefKeepForeigns(adtId)
           // PR-F: switched from BaboonAdtMemberMeta (static-only marker) to BaboonAdtMember
           // (instance interface with `String get baboonAdtTypeIdentifier`). The runtime
           // already uses `value is BaboonAdtMember` for the useAdtIdentifier path; the
@@ -516,7 +517,7 @@ object DtDefnTranslator {
       mainMeta: List[DtDomainTreeTools.MetaField],
       codecMeta: Iterable[TextTree[DtValue]],
     ): DefnRepr = {
-      val contractParents = adt.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
+      val contractParents = adt.contracts.map(c => domainTypes.toDtTypeRefKeepForeigns(c))
       // MFACADE-PR-F: include BaboonMetaProvider on the sealed parent so polymorphic
       // dispatch sees the interface; concrete branch DTOs implement it via renderDto's
       // own conformance + instance getters.
@@ -555,12 +556,12 @@ object DtDefnTranslator {
     ): DefnRepr = {
       val methods = contract.fields.map {
         f =>
-          val t        = trans.asDtRef(f.tpe, domain, evo)
+          val t        = domainTypes.asDtRef(f.tpe)
           val dartName = trans.escapeDartKeyword(f.name.name)
           val methodEx = q"$t get $dartName;"
           prependDocs(f.docs, methodEx)
       }
-      val contractParents  = contract.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
+      val contractParents  = contract.contracts.map(c => domainTypes.toDtTypeRefKeepForeigns(c))
       val parents          = (contractParents :+ genMarker).distinct
       val implementsClause = if (parents.nonEmpty) q" implements ${parents.map(t => q"$t").join(", ")}" else q""
       val body             = if (methods.nonEmpty) methods.joinN() else q""
@@ -587,8 +588,8 @@ object DtDefnTranslator {
       val ctxTypeParam   = wiringTranslator.serviceInterfaceTypeParam
       val methods = service.methods.map {
         m =>
-          val in      = trans.asDtRef(m.sig, domain, evo)
-          val out     = m.out.map(trans.asDtRef(_, domain, evo))
+          val in      = domainTypes.asDtRef(m.sig)
+          val out     = m.out.map(domainTypes.asDtRef(_))
           val baseRet = out.map(o => q"$o").getOrElse(q"void")
           // Under `--dt-async-services` the interface method returns `Future<T>`
           // (`Future<void>` for void), aligning with the always-async Dart
@@ -703,7 +704,7 @@ object DtDefnTranslator {
           val resVar       = s"${srcFieldName}_r"
           val isLast       = idx == dto.fields.length - 1
           val kind         = IdentifierFieldKind.classify(f.tpe)
-          val tpe          = trans.asDtRef(f.tpe, domain, evo)
+          val tpe          = domainTypes.asDtRef(f.tpe)
 
           val parseHead =
             q"""final ${srcFieldName}_fnr = $baboonIdRepr.parseFieldName(cursor, "$srcFieldName");
@@ -804,7 +805,7 @@ object DtDefnTranslator {
                  |if ($resVar is $baboonLeft<String, $dtUint8List>) return $baboonLeft($resVar.value);
                  |final $tpe $valVar = ($resVar as $baboonRight<String, $dtUint8List>).value;""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe = trans.toDtTypeRefKeepForeigns(uid, domain, evo)
+              val nestedTpe = domainTypes.toDtTypeRefKeepForeigns(uid)
               // The codec lives in the SAME file as the nested type (not a sibling
               // file). importAs forces the resolver to use the type's file name.
               val nestedCodec = DtType(nestedTpe.pkg, s"${nestedTpe.name}Codec", importAs = Some(trans.toSnakeCase(nestedTpe.name)))

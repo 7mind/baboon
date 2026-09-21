@@ -24,6 +24,7 @@ object SwCodecTestsTranslator {
   final class Impl(
     codecs: Set[SwCodecTranslator],
     typeTranslator: SwTypeTranslator,
+    domainTypes: SwDomainTypes,
     logger: BLogger,
     enquiries: BaboonEnquiries,
     target: SwTarget,
@@ -82,8 +83,8 @@ object SwCodecTestsTranslator {
       // `AnyOpaque.json`-bearing fixture (`randomJson`). Each fixture matches its codec's native
       // any-field branch so round-trip avoids cross-format conversion and never needs a
       // `BaboonCodecContext.withFacade` ctx.
-      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
-      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
+      val uebaFixture = makeFixture(definition, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           codec =>
@@ -145,12 +146,10 @@ object SwCodecTestsTranslator {
 
     private def makeFixture(
       definition: DomainMember.User,
-      domain: Domain,
-      evolution: BaboonEvolution,
       useJsonAny: Boolean,
     ): TextTree[SwValue] = {
-      val swType          = typeTranslator.asSwType(definition.id, domain, evolution)
-      val fixtureName     = typeTranslator.fixtureClassName(definition.id, domain, evolution)
+      val swType          = domainTypes.asSwType(definition.id)
+      val fixtureName     = domainTypes.fixtureClassName(definition.id)
       val randomMethod    = if (useJsonAny) "randomJson" else "random"
       val randomAllMethod = if (useJsonAny) "randomAllJson" else "randomAll"
       definition.defn match {
@@ -229,7 +228,7 @@ object SwCodecTestsTranslator {
       val typeId    = definition.id.render
       q"""func testCrossLanguageJsonWrite() throws {
          |    let rnd = $baboonRandomFactory.create()
-         |    ${makeFixture(definition, domain, evo, useJsonAny = true).shift(4).trim}
+         |    ${makeFixture(definition, useJsonAny = true).shift(4).trim}
          |    ${makeJsonWriteBody(definition, srcRef).shift(4).trim}
          |}
          |""".stripMargin
@@ -275,7 +274,7 @@ object SwCodecTestsTranslator {
       val typeId    = definition.id.render
       q"""func testCrossLanguageUebaWrite() throws {
          |    let rnd = $baboonRandomFactory.create()
-         |    ${makeFixture(definition, domain, evo, useJsonAny = false).shift(4).trim}
+         |    ${makeFixture(definition, useJsonAny = false).shift(4).trim}
          |    ${makeUebaWriteBody(definition, srcRef).shift(4).trim}
          |}
          |""".stripMargin

@@ -25,6 +25,7 @@ object JvDomainTreeTools {
     domain: Domain,
     evolution: BaboonEvolution,
     typeTranslator: JvTypeTranslator,
+    domainTypes: JvDomainTypes,
   ) extends JvDomainTreeTools {
     override def makeDataMeta(defn: DomainMember.User): List[MetaField] = {
       mainMeta(defn) ++ sameInVersion(defn) ++ adtMeta(defn)
@@ -35,7 +36,7 @@ object JvDomainTreeTools {
     }
 
     private def mainMeta(defn: DomainMember.User): List[MetaField] = {
-      val ref = typeTranslator.asJvType(defn.id, domain, evolution).fullyQualified
+      val ref = domainTypes.asJvType(defn.id).fullyQualified
       val baboonDomainVersion = MetaField(
         q"public static final $jvString baboonDomainVersion",
         q"\"${domain.version.v.toString}\"",
@@ -57,7 +58,7 @@ object JvDomainTreeTools {
     private def adtMeta(defn: DomainMember.User): List[MetaField] = {
       defn.id.owner match {
         case Owner.Adt(id) =>
-          val adtRef = typeTranslator.asJvType(defn.id, domain, evolution).fullyQualified
+          val adtRef = domainTypes.asJvType(defn.id).fullyQualified
           val adtTypeIdentifier = MetaField(
             q"public static final $jvString baboonAdtTypeIdentifier",
             q"\"${id.toString}\"",
@@ -65,7 +66,7 @@ object JvDomainTreeTools {
           )
           val baboonAdtType = MetaField(
             q"public static final ${javaClass.fullyQualified}<?> baboonAdtType",
-            q"${typeTranslator.asJvType(id, domain, evolution)}.class",
+            q"${domainTypes.asJvType(id)}.class",
             q"$adtRef.baboonAdtType",
           )
           List(adtTypeIdentifier, baboonAdtType)
@@ -74,7 +75,7 @@ object JvDomainTreeTools {
     }
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
-      val ref             = typeTranslator.asJvType(defn.id, domain, evolution).fullyQualified
+      val ref             = domainTypes.asJvType(defn.id).fullyQualified
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
       val sameInVersion = MetaField(
         q"public static final $jvList<$jvString> baboonSameInVersions",

@@ -20,6 +20,7 @@ object JvCodecTestsTranslator {
   final class Impl(
     codecs: Set[JvCodecTranslator],
     typeTranslator: JvTypeTranslator,
+    domainTypes: JvDomainTypes,
     logger: BLogger,
     enquiries: BaboonEnquiries,
     target: JvTarget,
@@ -54,8 +55,8 @@ object JvCodecTestsTranslator {
       // `AnyOpaqueJson`-bearing fixture (`randomJson`). Each fixture matches its codec's native
       // any-field branch so round-trip avoids cross-format conversion and never needs a
       // `BaboonCodecContext.withFacade` ctx.
-      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
-      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
+      val uebaFixture = makeFixture(definition, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           case jsonCodec: JvJsonCodecGenerator =>
@@ -125,8 +126,6 @@ object JvCodecTestsTranslator {
 
     private def makeFixture(
       definition: DomainMember.User,
-      domain: Domain,
-      evolution: BaboonEvolution,
       useJsonAny: Boolean,
     ): TextTree[JvValue] = {
       val randomMethod    = if (useJsonAny) "randomJson" else "random"
@@ -135,9 +134,9 @@ object JvCodecTestsTranslator {
         case e: Typedef.Enum =>
           q"var fixture = ${e.id.name.name}.all().get(rnd.nextInt(${e.id.name.name}.all().size()));"
         case _: Typedef.Adt =>
-          q"var fixtures = ${typeTranslator.asJvType(definition.id, domain, evolution)}_Fixture.$randomAllMethod(rnd);"
+          q"var fixtures = ${domainTypes.asJvType(definition.id)}_Fixture.$randomAllMethod(rnd);"
         case _ =>
-          q"var fixture = ${typeTranslator.asJvType(definition.id, domain, evolution)}_Fixture.$randomMethod(rnd);"
+          q"var fixture = ${domainTypes.asJvType(definition.id)}_Fixture.$randomMethod(rnd);"
       }
     }
 

@@ -13,6 +13,7 @@ import izumi.fundamentals.platform.strings.TextTree.Quote
 
 final class PyJsonCodecGenerator(
   typeTranslator: PyTypeTranslator,
+  domainTypes: PyDomainTypes,
   treeTools: PyDomainTreeTools,
   pyFileTools: PyFileTools,
   evolution: BaboonEvolution,
@@ -268,7 +269,7 @@ final class PyJsonCodecGenerator(
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
               mkJsonKeyEncoder(aliasedRef, ref)
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
-              val srcRef = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+              val srcRef = domainTypes.asPyTypeKeepForeigns(u, pyFileTools.definitionsBasePkg)
               val host   = PyType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
               q"$host.instance().encode_key($ref)"
             case None =>
@@ -340,10 +341,10 @@ final class PyJsonCodecGenerator(
         // (ScJsonCodecGenerator.scala:476-481). A malformed key raises ValueError from the
         // enum constructor — consistent with the fail-fast contract for the other key arms.
         case Some(DomainMember.User(_, _: Typedef.Enum, _, _)) =>
-          val tpeRef = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+          val tpeRef = domainTypes.asPyTypeKeepForeigns(u, pyFileTools.definitionsBasePkg)
           q"$tpeRef($ref)"
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.isIdentifier =>
-          val tpeRef     = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+          val tpeRef     = domainTypes.asPyTypeKeepForeigns(u, pyFileTools.definitionsBasePkg)
           val codecClass = PyType(tpeRef.moduleId, s"${tpeRef.name}Codec")
           // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for cross-language
           // malformed-key consistency. Use a single-call lambda to bind the parse result
@@ -354,7 +355,7 @@ final class PyJsonCodecGenerator(
           q"""(lambda __r: __r.value if isinstance(__r, $baboonRightType) else (_ for _ in ()).throw($baboonCodecException.DecoderFailure(f"malformed key: {$ref}")))($codecClass.parse_repr($ref))"""
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
           val inner    = d.fields.head
-          val tpeRef   = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+          val tpeRef   = domainTypes.asPyTypeKeepForeigns(u, pyFileTools.definitionsBasePkg)
           val innerDec = mkJsonKeyDecoder(inner.tpe, ref)
           // Use the keyword-escaped attribute name as the constructor kwarg.
           val attrName = if (PyKeywords.isKeyword(inner.name.name)) s"${inner.name.name}_" else inner.name.name
@@ -369,7 +370,7 @@ final class PyJsonCodecGenerator(
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
               mkJsonKeyDecoder(aliasedRef, ref)
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
-              val srcRef = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+              val srcRef = domainTypes.asPyTypeKeepForeigns(u, pyFileTools.definitionsBasePkg)
               val host   = PyType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
               // PR-I.2-D01: wrap the host call via `_try_decode_key` to re-raise any exception
               // (including user-raised DecoderFailure with a custom message) as

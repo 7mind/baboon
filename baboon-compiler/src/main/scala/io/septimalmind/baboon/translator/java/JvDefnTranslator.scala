@@ -57,6 +57,7 @@ object JvDefnTranslator {
     jvFiles: JvFileTools,
     jvTrees: JvTreeTools,
     trans: JvTypeTranslator,
+    domainTypes: JvDomainTypes,
     codecs: Set[JvCodecTranslator],
     codecTests: JvCodecTestsTranslator,
     codecsFixture: JvCodecFixtureTranslator,
@@ -151,7 +152,7 @@ object JvDefnTranslator {
     }
 
     private def makeFixtureRepr(defn: DomainMember.User): Option[TextTree[JvValue]] = {
-      val srcRef = trans.toJvTypeRefKeepForeigns(defn.id, domain, evo)
+      val srcRef = domainTypes.toJvTypeRefKeepForeigns(defn.id)
       val ns     = srcRef.pkg.parts
 
       val fixtureTree        = codecsFixture.translate(defn)
@@ -205,8 +206,8 @@ object JvDefnTranslator {
     }
 
     private def makeTestRepr(defn: DomainMember.User): Option[TextTree[JvValue]] = {
-      val jvTypeRef = trans.asJvType(defn.id, domain, evo)
-      val srcRef    = trans.toJvTypeRefKeepForeigns(defn.id, domain, evo)
+      val jvTypeRef = domainTypes.asJvType(defn.id)
+      val srcRef    = domainTypes.toJvTypeRefKeepForeigns(defn.id)
       val ns        = srcRef.pkg.parts
 
       val testTree        = codecTests.translate(defn, jvTypeRef, srcRef)
@@ -230,8 +231,8 @@ object JvDefnTranslator {
         }
       }
 
-      val jvTypeRef = trans.asJvType(defn.id, domain, evo)
-      val srcRef    = trans.toJvTypeRefKeepForeigns(defn.id, domain, evo)
+      val jvTypeRef = domainTypes.asJvType(defn.id)
+      val srcRef    = domainTypes.toJvTypeRefKeepForeigns(defn.id)
 
       val repr = makeRepr(defn, jvTypeRef, isLatestVersion)
 
@@ -326,7 +327,7 @@ object JvDefnTranslator {
         case None                                                               => DefnRepr(q"", Nil, Nil)
         case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => DefnRepr(q"", Nil, Nil)
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef    = trans.toJvTypeRefKeepForeigns(f.id, domain, evo)
+          val srcRef    = domainTypes.toJvTypeRefKeepForeigns(f.id)
           val codecName = s"${srcRef.name}_KeyCodec"
           val hostName  = s"${srcRef.name}_KeyCodecHost"
           val codecFqn  = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
@@ -381,17 +382,17 @@ object JvDefnTranslator {
     ): DefnRepr = {
       val params = dto.fields.map {
         f =>
-          val t         = trans.asJvRef(f.tpe, domain, evo)
+          val t         = domainTypes.asJvRef(f.tpe)
           val javaName  = JvTypeTranslator.escapeJvKeyword(f.name.name)
           val fieldTree = q"$t $javaName"
           prependDocs(f.docs, fieldTree)
       }
       val paramsList = if (params.nonEmpty) params.join(",\n") else q""
 
-      val contractParents = dto.contracts.map(c => trans.toJvTypeRefKeepForeigns(c, domain, evo))
+      val contractParents = dto.contracts.map(c => domainTypes.toJvTypeRefKeepForeigns(c))
       val (adtMarker, adtParent) = dto.id.owner match {
         case Owner.Adt(adtId) =>
-          val adtType = trans.toJvTypeRefKeepForeigns(adtId, domain, evo)
+          val adtType = domainTypes.toJvTypeRefKeepForeigns(adtId)
           (Seq(iBaboonAdtMemberMeta), Seq(adtType))
         case _ => (Seq.empty, Seq.empty)
       }
@@ -516,7 +517,7 @@ object JvDefnTranslator {
       mainMeta: List[JvDomainTreeTools.MetaField],
       codecMeta: Iterable[TextTree[JvValue]],
     ): DefnRepr = {
-      val contractParents = adt.contracts.map(c => trans.toJvTypeRefKeepForeigns(c, domain, evo))
+      val contractParents = adt.contracts.map(c => domainTypes.toJvTypeRefKeepForeigns(c))
       val parents         = (contractParents :+ genMarker).distinct
       val parentsList     = parents.map(t => q"$t").join(", ")
 
@@ -556,14 +557,14 @@ object JvDefnTranslator {
     ): DefnRepr = {
       val methods = contract.fields.map {
         f =>
-          val t          = trans.asJvRef(f.tpe, domain, evo)
+          val t          = domainTypes.asJvRef(f.tpe)
           val javaName   = JvTypeTranslator.escapeJvKeyword(f.name.name)
           val methodTree = q"$t $javaName();"
           prependDocs(f.docs, methodTree)
       }
-      val contractParents = contract.contracts.map(c => trans.toJvTypeRefKeepForeigns(c, domain, evo))
+      val contractParents = contract.contracts.map(c => domainTypes.toJvTypeRefKeepForeigns(c))
       val adtParent = contract.id.owner match {
-        case Owner.Adt(adtId) => Seq(trans.toJvTypeRefKeepForeigns(adtId, domain, evo))
+        case Owner.Adt(adtId) => Seq(domainTypes.toJvTypeRefKeepForeigns(adtId))
         case _                => Seq.empty
       }
       val parents     = (adtParent ++ contractParents :+ genMarker).distinct
@@ -595,7 +596,7 @@ object JvDefnTranslator {
       }
       val methods = service.methods.map {
         m =>
-          val plan = new ServiceMethodPlan(m, tpe => trans.asJvRef(tpe, domain, evo), resolved, JvTypeTranslator.escapeJvKeyword(m.name.name))
+          val plan = new ServiceMethodPlan(m, tpe => domainTypes.asJvRef(tpe), resolved, JvTypeTranslator.escapeJvKeyword(m.name.name))
           val in   = plan.input
           val out  = plan.output
           val err  = plan.error
@@ -642,7 +643,7 @@ object JvDefnTranslator {
     }
 
     private def effectivePkg(owner: Owner): JvValue.JvPackageId = {
-      trans.effectiveJvPkg(owner, domain, evo)
+      domainTypes.effectiveJvPkg(owner)
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
@@ -778,7 +779,7 @@ object JvDefnTranslator {
           val valVar       = s"${srcFieldName}_v"
           val isLast       = idx == dto.fields.length - 1
           val kind         = IdentifierFieldKind.classify(f.tpe)
-          val tpe          = trans.asJvRef(f.tpe, domain, evo)
+          val tpe          = domainTypes.asJvRef(f.tpe)
 
           val parseHead =
             q"""{
@@ -904,7 +905,7 @@ object JvDefnTranslator {
                  |  $valVar = (($baboonEither.Right<String, $jvByteString>) __r).value();
                  |}""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe   = trans.toJvTypeRefKeepForeigns(uid, domain, evo)
+              val nestedTpe   = domainTypes.toJvTypeRefKeepForeigns(uid)
               val nestedCodec = JvType(nestedTpe.pkg, s"${nestedTpe.name}Codec")
               q"""{
                  |  $baboonEither<String, Void> __r = cursor.expect('{');

@@ -15,6 +15,7 @@ trait CSDomainTreeTools {
 object CSDomainTreeTools {
   class CSDomainTreeToolsImpl(
     trans: CSTypeTranslator,
+    domainTypes: CSDomainTypes,
     domain: Domain,
     evo: BaboonEvolution,
   ) extends CSDomainTreeTools {
@@ -54,7 +55,7 @@ object CSDomainTreeTools {
           List(
             q"""public const $csString BaboonAdtTypeIdentifierValue = "${id.toString}";
                |public $csString BaboonAdtTypeIdentifier() => BaboonAdtTypeIdentifierValue;
-               |public ${csTpe.fullyQualified} BaboonAdtType() => typeof(${trans.asCsType(id, domain, evo)});
+               |public ${csTpe.fullyQualified} BaboonAdtType() => typeof(${domainTypes.asCsType(id)});
                |""".stripMargin
           )
         case _ => List.empty
@@ -101,13 +102,13 @@ object CSDomainTreeTools {
     }
 
     private def makeRefMeta(defn: DomainMember.User): Seq[TextTree[CSValue.CSType]] = {
-      val csType = trans.asCsType(defn.id, domain, evo).fullyQualified
+      val csType = domainTypes.asCsType(defn.id).fullyQualified
 
       val adtMethods = defn.id.owner match {
         case Owner.Adt(id) =>
           List(
             q"""public override $csString BaboonAdtTypeIdentifier() => $csType.BaboonAdtTypeIdentifierValue;
-               |public override ${csTpe.fullyQualified} BaboonAdtType() => typeof(${trans.asCsType(id, domain, evo)});
+               |public override ${csTpe.fullyQualified} BaboonAdtType() => typeof(${domainTypes.asCsType(id)});
                |""".stripMargin
           )
         case _ => List.empty

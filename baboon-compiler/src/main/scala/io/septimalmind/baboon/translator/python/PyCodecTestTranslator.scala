@@ -17,6 +17,7 @@ object PyCodecTestTranslator {
   final class PyCodecTestTranslatorImpl(
     fixtureTranslator: PyCodecFixtureTranslator,
     typeTranslator: PyTypeTranslator,
+    domainTypes: PyDomainTypes,
     codecs: Set[PyCodecTranslator],
     enquiries: BaboonEnquiries,
     evolution: BaboonEvolution,
@@ -153,7 +154,7 @@ object PyCodecTestTranslator {
       val randomAllMethod = if (useJsonAny) "random_all_json" else "random_all"
       defn.defn match {
         case _: Typedef.Enum =>
-          val enumTpe = typeTranslator.asPyType(defn.id, domain, evolution, pyFileTools.definitionsBasePkg)
+          val enumTpe = domainTypes.asPyType(defn.id, pyFileTools.definitionsBasePkg)
           q"fixture = $baboonFixture.next_random_enum($enumTpe)"
         case _: Typedef.Adt =>
           val fixtureType = fixtureTranslator.fixtureType(defn.id)

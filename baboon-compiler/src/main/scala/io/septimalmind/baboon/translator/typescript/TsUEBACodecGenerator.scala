@@ -11,9 +11,9 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class TsUEBACodecGenerator(
   typeTranslator: TsTypeTranslator,
+  domainTypes: TsDomainTypes,
   target: TsTarget,
   domain: Domain,
-  evo: BaboonEvolution,
   enquiries: BaboonEnquiries,
   tsFileTools: TsFileTools,
   tsDomainTreeTools: TsDomainTreeTools,
@@ -246,7 +246,7 @@ class TsUEBACodecGenerator(
 
     val encBranches = branches.map {
       case (mid, idx) =>
-        val branchType = typeTranslator.asTsType(mid, domain, evo, tsFileTools.definitionsBasePkg)
+        val branchType = domainTypes.asTsType(mid, tsFileTools.definitionsBasePkg)
         val codecType  = codecName(branchType)
         if (target.language.wrappedAdtBranchCodecs) {
           q"""if (value instanceof $branchType) {
@@ -264,7 +264,7 @@ class TsUEBACodecGenerator(
 
     val decBranches = branches.map {
       case (mid, idx) =>
-        val branchType = typeTranslator.asTsType(mid, domain, evo, tsFileTools.definitionsBasePkg)
+        val branchType = domainTypes.asTsType(mid, tsFileTools.definitionsBasePkg)
         val codecType  = codecName(branchType)
         if (target.language.wrappedAdtBranchCodecs) {
           q"""case ${idx.toString}: return $codecType.instance.decodeBranch(ctx, reader)"""
@@ -298,12 +298,12 @@ class TsUEBACodecGenerator(
                     mkEncoder(aliasedRef, ref, writer)
                   case _ =>
                     // keep-foreigns naming matches the emitted `<F>_UEBACodec` and the decoder branch.
-                    val tsType = typeTranslator.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
+                    val tsType = domainTypes.asTsTypeKeepForeigns(u, tsFileTools.definitionsBasePkg)
                     val codec  = codecName(tsType)
                     q"$codec.instance.encode(ctx, $ref, $w);"
                 }
               case _ =>
-                val tsType = typeTranslator.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+                val tsType = domainTypes.asTsTypeDerefForeign(u, tsFileTools.definitionsBasePkg)
                 val codec  = codecName(tsType)
                 q"$codec.instance.encode(ctx, $ref, $w);"
             }
@@ -366,12 +366,12 @@ class TsUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkDecoder(aliasedRef)
                   case _ =>
-                    val tsType = typeTranslator.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
+                    val tsType = domainTypes.asTsTypeKeepForeigns(u, tsFileTools.definitionsBasePkg)
                     val codec  = codecName(tsType)
                     q"$codec.instance.decode(ctx, reader)"
                 }
               case _ =>
-                val tsType = typeTranslator.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
+                val tsType = domainTypes.asTsTypeKeepForeigns(u, tsFileTools.definitionsBasePkg)
                 val codec  = codecName(tsType)
                 q"$codec.instance.decode(ctx, reader)"
             }

@@ -32,6 +32,7 @@ object SwDomainTreeTools {
     domain: Domain,
     evolution: BaboonEvolution,
     typeTranslator: SwTypeTranslator,
+    domainTypes: SwDomainTypes,
   ) extends SwDomainTreeTools {
     override def makeDataMeta(defn: DomainMember.User): List[MetaField] = {
       mainMeta(defn) ++ sameInVersion(defn) ++ adtMeta(defn)
@@ -42,7 +43,7 @@ object SwDomainTreeTools {
     }
 
     private def mainMeta(defn: DomainMember.User): List[MetaField] = {
-      val ref = typeTranslator.asSwType(defn.id, domain, evolution).asDeclName
+      val ref = domainTypes.asSwType(defn.id).asDeclName
       val baboonDomainVersion = MetaField(
         q"""public static let baboonDomainVersion: String""",
         q""""${domain.version.v.toString}"""",
@@ -70,7 +71,7 @@ object SwDomainTreeTools {
     private def adtMeta(defn: DomainMember.User): List[MetaField] = {
       defn.id.owner match {
         case Owner.Adt(id) =>
-          val adtRef = typeTranslator.asSwType(defn.id, domain, evolution).asDeclName
+          val adtRef = domainTypes.asSwType(defn.id).asDeclName
           val adtTypeIdentifier = MetaField(
             q"""public static let baboonAdtTypeIdentifier: String""",
             q""""${id.toString}"""",
@@ -84,7 +85,7 @@ object SwDomainTreeTools {
     }
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
-      val ref             = typeTranslator.asSwType(defn.id, domain, evolution).asDeclName
+      val ref             = domainTypes.asSwType(defn.id).asDeclName
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s""""${v.v.toString}"""")
       val sameInVersion = MetaField(
         q"public static let baboonSameInVersions: [String]",

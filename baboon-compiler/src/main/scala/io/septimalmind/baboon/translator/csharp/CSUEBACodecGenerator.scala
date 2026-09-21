@@ -14,6 +14,7 @@ import izumi.fundamentals.platform.strings.TextTree.style.c.*
 
 class CSUEBACodecGenerator(
   trans: CSTypeTranslator,
+  domainTypes: CSDomainTypes,
   csDomTrees: CSDomainTreeTools,
   target: CSTarget,
   domain: Domain,
@@ -443,10 +444,10 @@ class CSUEBACodecGenerator(
           case TypeId.Builtins.map =>
             val keyArg       = codecArgs.arg("wk")
             val keyDecoder   = mkDecoder(c.args.head, keyArg, codecArgs.next)
-            val keyType      = trans.asCsRef(c.args.head, domain, evo)
+            val keyType      = domainTypes.asCsRef(c.args.head)
             val valueArg     = codecArgs.arg("wv")
             val valueDecoder = mkDecoder(c.args.last, valueArg, codecArgs.next)
-            val valueType    = trans.asCsRef(c.args.last, domain, evo)
+            val valueType    = domainTypes.asCsRef(c.args.last)
             q"""$BaboonTools.ReadDict<$keyType, $valueType>($wref, $keyArg => $keyDecoder, $valueArg => $valueDecoder)"""
           case TypeId.Builtins.lst =>
             val arg = codecArgs.arg("wi")
@@ -491,7 +492,7 @@ class CSUEBACodecGenerator(
                |else
                |{
                |    $wref.Write((byte)1);
-               |    ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref), wref, codecArgs.next).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.head, domainTypes.deNull(c.args.head, ref), wref, codecArgs.next).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.map =>
@@ -527,7 +528,7 @@ class CSUEBACodecGenerator(
   }
 
   def codecName(id: TypeId.User): CSValue.CSType = {
-    codecName(trans.asCsTypeKeepForeigns(id, domain, evo), CSTypeOrigin(id, domain))
+    codecName(domainTypes.asCsTypeKeepForeigns(id), CSTypeOrigin(id, domain))
   }
 
   def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {

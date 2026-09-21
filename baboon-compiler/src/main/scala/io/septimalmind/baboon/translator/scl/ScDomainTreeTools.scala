@@ -34,7 +34,7 @@ object ScDomainTreeTools {
   final class ScDomainTreeToolsImpl(
     domain: Domain,
     evolution: BaboonEvolution,
-    typeTranslator: ScTypeTranslator,
+    domainTypes: ScDomainTypes,
   ) extends ScDomainTreeTools {
     override def makeDataMeta(defn: DomainMember.User): List[MetaField] = {
       mainMeta(defn) ++ sameInVersion(defn) ++ adtMeta(defn)
@@ -45,7 +45,7 @@ object ScDomainTreeTools {
     }
 
     private def mainMeta(defn: DomainMember.User): List[MetaField] = {
-      val ref = typeTranslator.asScType(defn.id, domain, evolution)
+      val ref = domainTypes.asScType(defn.id)
       val baboonDomainVersion = MetaField(
         q"def baboonDomainVersion: $scString",
         q"\"${domain.version.v.toString}\"",
@@ -67,7 +67,7 @@ object ScDomainTreeTools {
     private def adtMeta(defn: DomainMember.User): List[MetaField] = {
       defn.id.owner match {
         case Owner.Adt(id) =>
-          val adtRef = typeTranslator.asScType(defn.id, domain, evolution)
+          val adtRef = domainTypes.asScType(defn.id)
           val adtTypeIdentifier = MetaField(
             q"def baboonAdtTypeIdentifier: $scString",
             q"\"${id.toString}\"",
@@ -75,7 +75,7 @@ object ScDomainTreeTools {
           )
           val baboonAdtType = MetaField(
             q"def baboonAdtType: _root_.${javaClass.fullyQualified}[?]",
-            q"${typeTranslator.asScType(id, domain, evolution)}.getClass",
+            q"${domainTypes.asScType(id)}.getClass",
             q"$adtRef.baboonAdtType",
           )
           List(adtTypeIdentifier, baboonAdtType)
@@ -84,7 +84,7 @@ object ScDomainTreeTools {
     }
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
-      val ref             = typeTranslator.asScType(defn.id, domain, evolution)
+      val ref             = domainTypes.asScType(defn.id)
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
       val sameInVersion = MetaField.cached(
         "baboonSameInVersions",

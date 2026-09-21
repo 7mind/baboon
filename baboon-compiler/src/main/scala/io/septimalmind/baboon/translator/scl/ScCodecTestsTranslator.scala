@@ -19,7 +19,7 @@ trait ScCodecTestsTranslator {
 object ScCodecTestsTranslator {
   final class Impl(
     codecs: Set[ScCodecTranslator],
-    typeTranslator: ScTypeTranslator,
+    domainTypes: ScDomainTypes,
     logger: BLogger,
     enquiries: BaboonEnquiries,
     target: ScTarget,
@@ -58,8 +58,8 @@ object ScCodecTestsTranslator {
       // fixture (`random`); JSON codec test uses the `AnyOpaqueJson`-bearing fixture (`randomJson`).
       // Each fixture matches its codec's native any-field branch so round-trip avoids cross-format
       // conversion and never needs `BaboonCodecContext.WithFacade`.
-      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
-      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
+      val uebaFixture = makeFixture(definition, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           case jsonCodec: ScJsonCodecGenerator =>
@@ -162,16 +162,14 @@ object ScCodecTestsTranslator {
 
     private def makeFixture(
       definition: DomainMember.User,
-      domain: Domain,
-      evolution: BaboonEvolution,
       useJsonAny: Boolean,
     ): TextTree[ScValue] = {
       val randomMethod    = if (useJsonAny) "randomJson" else "random"
       val randomAllMethod = if (useJsonAny) "randomAllJson" else "randomAll"
       definition.defn match {
         case e: Typedef.Enum => q"val fixture = rnd.randomElement(${e.id.name.name}.all)"
-        case _: Typedef.Adt  => q"val fixtures = ${typeTranslator.asScType(definition.id, domain, evolution)}_Fixture.$randomAllMethod(rnd)"
-        case _               => q"val fixture = ${typeTranslator.asScType(definition.id, domain, evolution)}_Fixture.$randomMethod(rnd)"
+        case _: Typedef.Adt  => q"val fixtures = ${domainTypes.asScType(definition.id)}_Fixture.$randomAllMethod(rnd)"
+        case _               => q"val fixture = ${domainTypes.asScType(definition.id)}_Fixture.$randomMethod(rnd)"
       }
     }
 

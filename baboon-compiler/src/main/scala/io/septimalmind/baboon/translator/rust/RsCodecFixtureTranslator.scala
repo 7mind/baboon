@@ -17,9 +17,9 @@ object RsCodecFixtureTranslator {
   final class RsCodecFixtureTranslatorImpl(
     target: RsTarget,
     translator: RsTypeTranslator,
+    domainTypes: RsDomainTypes,
     enquiries: BaboonEnquiries,
     domain: Domain,
-    evo: BaboonEvolution,
   ) extends RsCodecFixtureTranslator {
 
     override def translate(definition: DomainMember.User): Option[TextTree[RsValue]] = {
@@ -46,7 +46,7 @@ object RsCodecFixtureTranslator {
     private case object FixJson extends FixtureFormat
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[RsValue] = {
-      val fullType = translator.toRsTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = domainTypes.toRsTypeRefKeepForeigns(dto.id)
 
       def body(format: FixtureFormat): TextTree[RsValue] = {
         val generatedFields = dto.fields.map {
@@ -70,7 +70,7 @@ object RsCodecFixtureTranslator {
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[RsValue] = {
-      val adtName = translator.asRsType(adt.id, domain, evo)
+      val adtName = domainTypes.asRsType(adt.id)
       val members = adt.members.toList
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
@@ -123,7 +123,7 @@ object RsCodecFixtureTranslator {
         f =>
           q"${toSnakeCase(f.name.name)}: ${genType(f.tpe, format)},"
       }
-      val fullType = translator.toRsTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = domainTypes.toRsTypeRefKeepForeigns(dto.id)
       val rndParam = if (dto.fields.isEmpty) "_rnd" else "rnd"
       val name = format match {
         case FixUeba => fixtureFnName(dto.id)
@@ -236,7 +236,7 @@ object RsCodecFixtureTranslator {
         case TypeId.Builtins.bit   => q"rnd.next_bit()"
 
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
-          val enumType = translator.asRsType(u, domain, evo)
+          val enumType = domainTypes.asRsType(u)
           q"rnd.mk_enum(&$enumType::all())"
         case u: TypeId.User =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in

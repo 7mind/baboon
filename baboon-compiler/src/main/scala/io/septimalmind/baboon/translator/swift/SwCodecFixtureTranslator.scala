@@ -26,9 +26,9 @@ object SwCodecFixtureTranslator {
 
   final class Impl(
     translator: SwTypeTranslator,
+    domainTypes: SwDomainTypes,
     enquiries: BaboonEnquiries,
     domain: Domain,
-    evo: BaboonEvolution,
   ) extends SwCodecFixtureTranslator {
 
     override def translate(
@@ -70,11 +70,11 @@ object SwCodecFixtureTranslator {
     }
 
     private def fixtureTpeName(id: TypeId.User): TextTree[SwValue] = {
-      q"${translator.fixtureClassName(id, domain, evo)}"
+      q"${domainTypes.fixtureClassName(id)}"
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[SwValue] = {
-      val fullType = translator.toSwTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = domainTypes.toSwTypeRefKeepForeigns(dto.id)
 
       def fields(format: FixtureFormat): TextTree[SwValue] = {
         dto.fields.map {
@@ -100,7 +100,7 @@ object SwCodecFixtureTranslator {
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[SwValue] = {
-      val fullType = translator.toSwTypeRefKeepForeigns(adt.id, domain, evo)
+      val fullType = domainTypes.toSwTypeRefKeepForeigns(adt.id)
       val members = adt.members.toList
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
@@ -219,7 +219,7 @@ object SwCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"rnd.nextBool()"
 
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
-          val enumType = translator.toSwTypeRefKeepForeigns(u, domain, evo)
+          val enumType = domainTypes.toSwTypeRefKeepForeigns(u)
           q"rnd.mkEnum($enumType.all)"
 
         // PR-26.4 (M26): explicit Foreign-arm. BaboonRef-mapped Foreigns recurse on the aliased
@@ -268,9 +268,9 @@ object SwCodecFixtureTranslator {
           }
 
         case u: TypeId.User =>
-          val fixturePkg       = translator.effectiveSwPkg(u.owner, domain, evo)
-          val fixtureClassName = translator.fixtureClassName(u, domain, evo)
-          val fixtureFileName  = s"${translator.toSnakeCase(translator.toSwTypeRefKeepForeigns(u, domain, evo).name)}_fixture"
+          val fixturePkg       = domainTypes.effectiveSwPkg(u.owner)
+          val fixtureClassName = domainTypes.fixtureClassName(u)
+          val fixtureFileName  = s"${translator.toSnakeCase(domainTypes.toSwTypeRefKeepForeigns(u).name)}_fixture"
           val fixtureType      = SwValue.SwType(fixturePkg, fixtureClassName, importAs = Some(fixtureFileName))
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Swift analog).

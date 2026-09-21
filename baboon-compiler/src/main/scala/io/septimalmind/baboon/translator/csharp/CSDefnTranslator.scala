@@ -64,6 +64,7 @@ object CSDefnTranslator {
   class CSDefnTranslatorImpl[F[+_, +_]: Applicative2 /* This impl has no errors right now */ ](
     target: CSTarget,
     trans: CSTypeTranslator,
+    domainTypes: CSDomainTypes,
     csTrees: CSTreeTools,
     csDomTrees: CSDomainTreeTools,
     csFiles: CSFileTools,
@@ -117,7 +118,7 @@ object CSDefnTranslator {
       val wiringOutput = wiringTranslator
         .translate(defn).map {
           wiringTree =>
-            val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
+            val srcRef = domainTypes.asCsTypeKeepForeigns(defn.id)
             val ns     = srcRef.pkg.parts
             Output(
               getOutputPath(defn, suffix = Some(".Wiring")),
@@ -131,7 +132,7 @@ object CSDefnTranslator {
       val clientOutput = wiringTranslator
         .translateClient(defn).map {
           clientTree =>
-            val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
+            val srcRef = domainTypes.asCsTypeKeepForeigns(defn.id)
             val ns     = srcRef.pkg.parts
             Output(
               getOutputPath(defn, suffix = Some("_Client")),
@@ -232,8 +233,8 @@ object CSDefnTranslator {
         }
       }
 
-      val csTypeRef = trans.asCsType(defn.id, domain, evo)
-      val srcRef    = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
+      val csTypeRef = domainTypes.asCsType(defn.id)
+      val srcRef    = domainTypes.asCsTypeKeepForeigns(defn.id)
 
       val repr =
         makeRepr(defn, csTypeRef, isLatestVersion)
@@ -308,7 +309,7 @@ object CSDefnTranslator {
       defn.defn match {
         case contract: Typedef.Contract =>
           val methods = renderContractFields(contract.fields).join("\n")
-          val refs    = contract.contracts.map(t => q"${trans.asCsType(t, domain, evo)}") ++ List(q"$genMarker")
+          val refs    = contract.contracts.map(t => q"${domainTypes.asCsType(t)}") ++ List(q"$genMarker")
           val parents = makeParents(refs)
 
           DefnRepr(
@@ -321,7 +322,7 @@ object CSDefnTranslator {
         case dto: Typedef.Dto =>
           val outs = dto.fields.map {
             f =>
-              val tpe   = trans.asCsRef(f.tpe, domain, evo)
+              val tpe   = domainTypes.asCsRef(f.tpe)
               val mname = escapeCsKeyword(s"${f.name.name.capitalize}")
               (mname, tpe, f)
           }
@@ -346,10 +347,10 @@ object CSDefnTranslator {
               csTrees.renderParamDocs(mname, f.docs, "")
           }.mkString
 
-          val contractParents = dto.contracts.toSeq.map(c => q"${trans.asCsType(c, domain, evo)}")
+          val contractParents = dto.contracts.toSeq.map(c => q"${domainTypes.asCsType(c)}")
 
           val adtParents = dto.id.owner match {
-            case Owner.Adt(id) => Seq(q"${trans.asCsType(id, domain, evo)}", q"$iBaboonAdtMemberMeta")
+            case Owner.Adt(id) => Seq(q"${domainTypes.asCsType(id)}", q"$iBaboonAdtMemberMeta")
             case _             => Seq.empty
           }
 
@@ -450,14 +451,14 @@ object CSDefnTranslator {
           )
 
         case adt: Typedef.Adt =>
-          val allParents = Seq(q"$genMarker") ++ adt.contracts.map(t => q"${trans.asCsType(t, domain, evo)}")
+          val allParents = Seq(q"$genMarker") ++ adt.contracts.map(t => q"${domainTypes.asCsType(t)}")
           val parents    = makeParents(allParents.toList)
 
           val allFields = enquiries.unfold(domain, adt.contracts)
 
           val abstractFields = allFields.map {
             f =>
-              val tpe   = trans.asCsRef(f.tpe, domain, evo)
+              val tpe   = domainTypes.asCsRef(f.tpe)
               val mname = escapeCsKeyword(s"${f.name.name.capitalize}") // todo: dedup
               q"public abstract $tpe $mname { get; init; }"
           }.join("\n")
@@ -507,7 +508,7 @@ object CSDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val plan = new ServiceMethodPlan(m, tpe => trans.asCsRef(tpe, domain, evo), resolved, CSTypes.escapeCsKeyword(m.name.name.capitalize))
+              val plan = new ServiceMethodPlan(m, tpe => domainTypes.asCsRef(tpe), resolved, CSTypes.escapeCsKeyword(m.name.name.capitalize))
               val out  = plan.output
               val err  = plan.error
               val csFqName: CSValue => String = {
@@ -559,7 +560,7 @@ object CSDefnTranslator {
         case None                                                               => q""
         case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef    = trans.asCsTypeKeepForeigns(f.id, domain, evo)
+          val srcRef    = domainTypes.asCsTypeKeepForeigns(f.id)
           val codecName = s"${srcRef.name}_KeyCodec"
           val hostName  = s"${srcRef.name}_KeyCodecHost"
           val codecFqn  = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
@@ -598,7 +599,7 @@ object CSDefnTranslator {
       * fixture, and test emitters so all three agree on the type's location.
       */
     private def wrapInContainer(defn: DomainMember.User, srcRef: CSValue.CSType, tree: TextTree[CSValue]): TextTree[CSValue] = {
-      trans.serviceMethodContainers(defn.id, domain, evo) match {
+      domainTypes.serviceMethodContainers(defn.id) match {
         case Some((nsPrefix, classes)) =>
           val nested = classes.foldRight(tree) {
             (cls, acc) =>
@@ -619,14 +620,14 @@ object CSDefnTranslator {
       * types keep the fixture beside the type's own namespace.
       */
     private def wrapFixtureNs(defn: DomainMember.User, srcRef: CSValue.CSType, tree: TextTree[CSValue]): TextTree[CSValue] = {
-      trans.serviceMethodFixtureNs(defn.id, domain, evo) match {
+      domainTypes.serviceMethodFixtureNs(defn.id) match {
         case Some(ns) => csTrees.inNs(ns, tree)
         case None     => csTrees.inNs(srcRef.pkg.parts.toSeq, tree)
       }
     }
 
     private def makeFixtureRepr(defn: DomainMember.User): Option[TextTree[CSValue]] = {
-      val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
+      val srcRef = domainTypes.asCsTypeKeepForeigns(defn.id)
 
       val fixtureTree       = codecsFixture.translate(defn)
       val fixtureTreeWithNs = fixtureTree.map(t => wrapFixtureNs(defn, srcRef, t))
@@ -635,8 +636,8 @@ object CSDefnTranslator {
     }
 
     private def makeTestRepr(defn: DomainMember.User): Option[TextTree[CSValue]] = {
-      val csTypeRef = trans.asCsType(defn.id, domain, evo)
-      val srcRef    = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
+      val csTypeRef = domainTypes.asCsType(defn.id)
+      val srcRef    = domainTypes.asCsTypeKeepForeigns(defn.id)
 
       val testTree       = codecsTests.translate(defn, csTypeRef, srcRef)
       val testTreeWithNs = testTree.map(t => wrapFixtureNs(defn, srcRef, t))
@@ -649,7 +650,7 @@ object CSDefnTranslator {
     ): List[TextTree[CSValue]] = {
       fields.map {
         f =>
-          val tpe     = trans.asCsRef(f.tpe, domain, evo)
+          val tpe     = domainTypes.asCsRef(f.tpe)
           val mname   = escapeCsKeyword(s"${f.name.name.capitalize}")
           val fieldEx = q"public $tpe $mname { get; }"
           prependDocs(f.docs, fieldEx)
@@ -840,7 +841,7 @@ object CSDefnTranslator {
           val valVar       = s"${srcFieldName}_v"
           val isLast       = idx == dto.fields.length - 1
           val kind         = IdentifierFieldKind.classify(f.tpe)
-          val tpe          = trans.asCsRef(f.tpe, domain, evo)
+          val tpe          = domainTypes.asCsRef(f.tpe)
 
           val parseHead =
             q"""{
@@ -974,7 +975,7 @@ object CSDefnTranslator {
                  |    $valVar = (($either<string, $csByteString>.Right)__r).Value;
                  |}""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe   = trans.asCsTypeKeepForeigns(uid, domain, evo)
+              val nestedTpe   = domainTypes.asCsTypeKeepForeigns(uid)
               val nestedCodec = CSType(nestedTpe.pkg, s"${nestedTpe.name}Codec", fq = false, CSTypeOrigin.Other)
               q"""{
                  |    var __r = cursor.Expect('{');

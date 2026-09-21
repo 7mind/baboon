@@ -13,6 +13,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class JvJsonCodecGenerator(
   trans: JvTypeTranslator,
+  domainTypes: JvDomainTypes,
   target: JvTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -115,7 +116,7 @@ class JvJsonCodecGenerator(
     val branches = adt.dataMembers(domain).map {
       m =>
         val branchName = m.name.name
-        val fqBranch   = trans.toJvTypeRefKeepForeigns(m, domain, evo)
+        val fqBranch   = domainTypes.toJvTypeRefKeepForeigns(m)
         val branchRef  = q"branchVal"
 
         val routedBranchEncoder = q"${codecName(fqBranch, m.owner)}.INSTANCE.encode(ctx, $branchRef)"
@@ -236,8 +237,8 @@ class JvJsonCodecGenerator(
                       // PR-I.1b (M24 Phase 3.1): Custom-foreign map keys route through
                       // the emitted `<Foreign>_KeyCodecHost.instance()` extension hook.
                       val hostTpe = JvValue.JvType(
-                        trans.toJvTypeRefKeepForeigns(uid, domain, evo).pkg,
-                        s"${trans.toJvTypeRefKeepForeigns(uid, domain, evo).name}_KeyCodecHost",
+                        domainTypes.toJvTypeRefKeepForeigns(uid).pkg,
+                        s"${domainTypes.toJvTypeRefKeepForeigns(uid).name}_KeyCodecHost",
                       )
                       q"$hostTpe.instance().encodeKey($ref)"
                     case None =>
@@ -272,11 +273,11 @@ class JvJsonCodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkEncoder(aliasedRef, ref, depth)
                   case _ =>
-                    val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                    val targetTpe = codecName(domainTypes.toJvTypeRefKeepForeigns(u), u.owner)
                     q"$targetTpe.INSTANCE.encode(ctx, $ref)"
                 }
               case _ =>
-                val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                val targetTpe = codecName(domainTypes.toJvTypeRefKeepForeigns(u), u.owner)
                 q"$targetTpe.INSTANCE.encode(ctx, $ref)"
             }
           case o =>
@@ -327,11 +328,11 @@ class JvJsonCodecGenerator(
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       decodeElement(aliasedRef, ref, depth)
                     case _ =>
-                      val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                      val targetTpe = codecName(domainTypes.toJvTypeRefKeepForeigns(u), u.owner)
                       q"$targetTpe.INSTANCE.decode(ctx, $ref)"
                   }
                 case _ =>
-                  val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                  val targetTpe = codecName(domainTypes.toJvTypeRefKeepForeigns(u), u.owner)
                   q"$targetTpe.INSTANCE.decode(ctx, $ref)"
               }
             case o =>
@@ -343,29 +344,21 @@ class JvJsonCodecGenerator(
               q"""$ref == null || $ref.isNull() ? java.util.Optional.empty() : java.util.Optional.of(${decodeElement(c.args.head, ref, depth + 1)})"""
             case TypeId.Builtins.lst =>
               val elemDec = decodeElement(c.args.head, q"$varName", depth + 1)
-              q"""((java.util.function.Supplier<$jvList<${trans.asJvBoxedRef(c.args.head, domain, evo)}>>) () -> { var lst = new $jvArrayList<${trans.asJvBoxedRef(
+              q"""((java.util.function.Supplier<$jvList<${domainTypes.asJvBoxedRef(c.args.head)}>>) () -> { var lst = new $jvArrayList<${domainTypes.asJvBoxedRef(
                   c.args.head,
-                  domain,
-                  evo,
                 )}>(); for (var $varName : (Iterable<$jsonNode>) () -> $ref.elements()) { lst.add($elemDec); } return lst; }).get()"""
             case TypeId.Builtins.set =>
               val elemDec = decodeElement(c.args.head, q"$varName", depth + 1)
-              q"""((java.util.function.Supplier<$jvSet<${trans.asJvBoxedRef(c.args.head, domain, evo)}>>) () -> { var set = new $jvLinkedHashSet<${trans.asJvBoxedRef(
+              q"""((java.util.function.Supplier<$jvSet<${domainTypes.asJvBoxedRef(c.args.head)}>>) () -> { var set = new $jvLinkedHashSet<${domainTypes.asJvBoxedRef(
                   c.args.head,
-                  domain,
-                  evo,
                 )}>(); for (var $varName : (Iterable<$jsonNode>) () -> $ref.elements()) { set.add($elemDec); } return set; }).get()"""
             case TypeId.Builtins.map =>
               val keyDec   = decodeKey(c.args.head, q"$varName.getKey()")
               val valueDec = decodeElement(c.args.last, q"$varName.getValue()", depth + 1)
-              q"""((java.util.function.Supplier<$jvMap<${trans.asJvBoxedRef(c.args.head, domain, evo)}, ${trans.asJvBoxedRef(
+              q"""((java.util.function.Supplier<$jvMap<${domainTypes.asJvBoxedRef(c.args.head)}, ${domainTypes.asJvBoxedRef(
                   c.args.last,
-                  domain,
-                  evo,
-                )}>>) () -> { var map = new $jvLinkedHashMap<${trans.asJvBoxedRef(c.args.head, domain, evo)}, ${trans.asJvBoxedRef(
+                )}>>) () -> { var map = new $jvLinkedHashMap<${domainTypes.asJvBoxedRef(c.args.head)}, ${domainTypes.asJvBoxedRef(
                   c.args.last,
-                  domain,
-                  evo,
                 )}>(); for (var $varName : (Iterable<java.util.Map.Entry<String, $jsonNode>>) () -> $ref.fields()) { map.put($keyDec, $valueDec); } return map; }).get()"""
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
@@ -399,7 +392,7 @@ class JvJsonCodecGenerator(
                 case ud: DomainMember.User =>
                   ud.defn match {
                     case _: Typedef.Enum =>
-                      val targetTpe = trans.toJvTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe = domainTypes.toJvTypeRefKeepForeigns(u)
                       q"""$targetTpe.parse($ref)"""
                     case f: Typedef.Foreign =>
                       f.bindings.get(BaboonLang.Java) match {
@@ -411,8 +404,8 @@ class JvJsonCodecGenerator(
                           // catch (Exception e) — NOT Throwable (PR-I-D01 pattern guidance):
                           // Throwable would swallow Error (OOM/StackOverflow), which we want to
                           // propagate to fail-fast.
-                          val srcRef   = trans.toJvTypeRefKeepForeigns(u, domain, evo)
-                          val derefTpe = trans.asJvType(u, domain, evo)
+                          val srcRef   = domainTypes.toJvTypeRefKeepForeigns(u)
+                          val derefTpe = domainTypes.asJvType(u)
                           val hostTpe  = JvValue.JvType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
                           q"""((java.util.function.Supplier<$derefTpe>) () -> { try { return $hostTpe.instance().decodeKey($ref); } catch (Exception e) { throw new $baboonCodecException.DecoderFailure("malformed key: " + $ref, e); } }).get()"""
                         case None =>
@@ -422,13 +415,13 @@ class JvJsonCodecGenerator(
                     // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for
                     // cross-language malformed-key consistency (replaces unchecked cast).
                     case d: Typedef.Dto if d.isIdentifier =>
-                      val targetTpe   = trans.toJvTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe   = domainTypes.toJvTypeRefKeepForeigns(u)
                       val nestedCodec = JvValue.JvType(targetTpe.pkg, s"${targetTpe.name}Codec")
                       q"""((java.util.function.Supplier<$targetTpe>) () -> { var __e = $nestedCodec.parseRepr($ref); if (__e instanceof $baboonEither.Right<?,?> __r) { return ($targetTpe) __r.value(); } throw new $baboonCodecException.DecoderFailure("malformed key: " + $ref); }).get()"""
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                       val inner     = d.fields.head
-                      val targetTpe = trans.toJvTypeRefKeepForeigns(u, domain, evo)
+                      val targetTpe = domainTypes.toJvTypeRefKeepForeigns(u)
                       val innerDec  = decodeKey(inner.tpe, ref)
                       q"new $targetTpe($innerDec)"
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
@@ -444,10 +437,8 @@ class JvJsonCodecGenerator(
     tpe match {
       case TypeRef.Constructor(id, args) if id.name.name == "opt" =>
         val fieldNode = q"""$jsonObjRef.get("$fieldName")"""
-        q"""((java.util.function.Supplier<java.util.Optional<${trans.asJvBoxedRef(
+        q"""((java.util.function.Supplier<java.util.Optional<${domainTypes.asJvBoxedRef(
             args.head,
-            domain,
-            evo,
           )}>>) () -> { var v = $fieldNode; return v == null || v.isNull() ? java.util.Optional.empty() : java.util.Optional.of(${decodeElement(
             args.head,
             q"v",
@@ -486,7 +477,7 @@ class JvJsonCodecGenerator(
     val domainPkg   = trans.toJvPkg(domain.id, domain.version, evo)
     val ownerPrefix = name.pkg.parts.toSeq.drop(domainPkg.parts.toSeq.length)
     val prefixStr   = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
-    val realPkg     = trans.effectiveJvPkg(owner, domain, evo)
+    val realPkg     = domainTypes.effectiveJvPkg(owner)
     JvValue.JvType(realPkg, s"$prefixStr${name.name}_JsonCodec", name.fq)
   }
 

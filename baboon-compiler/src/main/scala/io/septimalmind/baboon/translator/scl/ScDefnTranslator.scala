@@ -49,7 +49,7 @@ object ScDefnTranslator {
     evo: BaboonEvolution,
     scFiles: ScFileTools,
     scTrees: ScTreeTools,
-    trans: ScTypeTranslator,
+    domainTypes: ScDomainTypes,
     codecs: Set[ScCodecTranslator],
     codecTests: ScCodecTestsTranslator,
     codecsFixture: ScCodecFixtureTranslator,
@@ -67,7 +67,7 @@ object ScDefnTranslator {
 
     private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val repr   = makeFullRepr(defn, inNs = true)
-      val srcRef = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val srcRef = domainTypes.toScTypeRefKeepForeigns(defn.id)
 
       val registrations = codecs.toList.map(codec => codec.id -> repr.codecs.flatMap(reg => reg.trees.get(codec.id).map(expr => q"${reg.tpeId}, $expr")))
 
@@ -116,7 +116,7 @@ object ScDefnTranslator {
     }
 
     private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val srcRef = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val srcRef = domainTypes.toScTypeRefKeepForeigns(defn.id)
       val fixtureTreeOut = makeFixtureRepr(defn).map {
         fixtureTreeWithNs =>
           Output(
@@ -130,7 +130,7 @@ object ScDefnTranslator {
       F.pure(fixtureTreeOut.toList)
     }
     private def makeFixtureRepr(defn: DomainMember.User): Option[TextTree[ScValue]] = {
-      val srcRef = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val srcRef = domainTypes.toScTypeRefKeepForeigns(defn.id)
       val ns     = srcRef.pkg.parts
 
       val fixtureTree       = codecsFixture.translate(defn)
@@ -146,7 +146,7 @@ object ScDefnTranslator {
       }
     }
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val srcRef = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val srcRef = domainTypes.toScTypeRefKeepForeigns(defn.id)
       val codecTestOut = makeTestRepr(defn).map {
         codecTestWithNS =>
           Output(
@@ -164,7 +164,7 @@ object ScDefnTranslator {
       val rtTree = wiringTranslator.translateServiceRt(domain)
       val result = rtTree.map {
         tree =>
-          val pkg     = trans.toScPkg(domain.id, domain.version, evo)
+          val pkg     = domainTypes.currentPkg
           val wrapped = scTrees.inNs(pkg.parts.toSeq, tree)
           val fbase   = scFiles.basename(domain, evo)
           Output(
@@ -178,8 +178,8 @@ object ScDefnTranslator {
     }
 
     private def makeTestRepr(defn: DomainMember.User): Option[TextTree[ScValue]] = {
-      val csTypeRef = trans.asScType(defn.id, domain, evo)
-      val srcRef    = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val csTypeRef = domainTypes.asScType(defn.id)
+      val srcRef    = domainTypes.toScTypeRefKeepForeigns(defn.id)
       val ns        = srcRef.pkg.parts
 
       val testTree       = codecTests.translate(defn, csTypeRef, srcRef)
@@ -212,8 +212,8 @@ object ScDefnTranslator {
     ): DefnRepr = {
       val isLatestVersion = domain.version == evo.latest
 
-      val scTypeRef = trans.asScType(defn.id, domain, evo)
-      val srcRef    = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val scTypeRef = domainTypes.asScType(defn.id)
+      val srcRef    = domainTypes.toScTypeRefKeepForeigns(defn.id)
 
       val repr = makeRepr(defn, scTypeRef, isLatestVersion)
 
@@ -285,14 +285,14 @@ object ScDefnTranslator {
         case dto: Typedef.Dto =>
           val params = dto.fields.map {
             f =>
-              val t       = trans.asScRef(f.tpe, domain, evo)
+              val t       = domainTypes.asScRef(f.tpe)
               val fieldEx = q"${escapeScKeyword(f.name.name)}: $t"
               prependDocs(f.docs, fieldEx)
           }
           val paramsList      = if (params.nonEmpty) params.join(",\n") else q""
-          val contractParents = dto.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo))
+          val contractParents = dto.contracts.map(c => domainTypes.toScTypeRefKeepForeigns(c))
           val adtParents = dto.id.owner match {
-            case Owner.Adt(id) => Seq(trans.toScTypeRefKeepForeigns(id, domain, evo), iBaboonAdtMemberMeta)
+            case Owner.Adt(id) => Seq(domainTypes.toScTypeRefKeepForeigns(id), iBaboonAdtMemberMeta)
             case _             => Seq.empty
           }
           val parents          = adtParents ++ contractParents :+ genMarker
@@ -370,7 +370,7 @@ object ScDefnTranslator {
           DefnRepr(Seq(traitTree, companion).joinNN(), Nil)
 
         case adt: Typedef.Adt =>
-          val parents          = adt.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
+          val parents          = adt.contracts.map(c => domainTypes.toScTypeRefKeepForeigns(c)) :+ genMarker
           val extendsClauseAdt = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
           val sealedTrait      = q"""sealed trait ${name.name}$extendsClauseAdt""".stripMargin
           val memberTrees = adt.members.map {
@@ -399,11 +399,11 @@ object ScDefnTranslator {
         case contract: Typedef.Contract =>
           val methods = contract.fields.map {
             f =>
-              val t        = trans.asScRef(f.tpe, domain, evo)
+              val t        = domainTypes.asScRef(f.tpe)
               val methodEx = q"def ${escapeScKeyword(f.name.name)}: $t"
               prependDocs(f.docs, methodEx)
           }
-          val parents       = contract.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
+          val parents       = contract.contracts.map(c => domainTypes.toScTypeRefKeepForeigns(c)) :+ genMarker
           val extendsClause = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
           val body          = if (methods.nonEmpty) methods.joinN() else q""
           DefnRepr(
@@ -423,7 +423,7 @@ object ScDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val plan            = new ServiceMethodPlan(m, trans.asScRef(_, domain, evo), resolved, m.name.name)
+              val plan            = new ServiceMethodPlan(m, domainTypes.asScRef(_), resolved, m.name.name)
               val in              = plan.input
               val out             = plan.output
               val err             = plan.error
@@ -491,7 +491,7 @@ object ScDefnTranslator {
         case None                                                               => Nil
         case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => Nil
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef    = trans.toScTypeRefKeepForeigns(f.id, domain, evo)
+          val srcRef    = domainTypes.toScTypeRefKeepForeigns(f.id)
           val traitName = s"${srcRef.name}_KeyCodec"
           val traitFqn  = s"${srcRef.pkg.parts.mkString(".")}.$traitName"
           val isStringy = decl == "java.lang.String"
@@ -613,7 +613,7 @@ object ScDefnTranslator {
                  |  case Left(e)  => return Left(e)
                  |}""".stripMargin
             case IdentifierFieldKind.SignedInt | IdentifierFieldKind.SignedLong =>
-              val tpeRef     = trans.asScRef(f.tpe, domain, evo)
+              val tpeRef     = domainTypes.asScRef(f.tpe)
               val rangeCheck = signedRangeCheck(f.tpe)
               val typeName   = signedTypeName(f.tpe)
               q"""val ${fieldName}_raw = cursor.readUntilStructural()
@@ -633,7 +633,7 @@ object ScDefnTranslator {
                  |  }
                  |}""".stripMargin
             case IdentifierFieldKind.UnsignedSmallInt =>
-              val tpeRef     = trans.asScRef(f.tpe, domain, evo)
+              val tpeRef     = domainTypes.asScRef(f.tpe)
               val rangeCheck = unsignedSmallRangeCheck(f.tpe)
               val typeName   = unsignedSmallTypeName(f.tpe)
               q"""val ${fieldName}_raw = cursor.readUntilStructural()
@@ -698,7 +698,7 @@ object ScDefnTranslator {
                  |  case Left(e)  => return Left(e)
                  |}""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe   = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+              val nestedTpe   = domainTypes.toScTypeRefKeepForeigns(uid)
               val nestedCodec = ScValue.ScType(nestedTpe.pkg, s"${nestedTpe.name}Codec", nestedTpe.inObject)
               q"""cursor.expect('{') match {
                  |  case Left(e)  => return Left(e)

@@ -23,6 +23,7 @@ object DtCodecTestsTranslator {
   final class Impl(
     codecs: Set[DtCodecTranslator],
     typeTranslator: DtTypeTranslator,
+    domainTypes: DtDomainTypes,
     logger: BLogger,
     enquiries: BaboonEnquiries,
     target: DtTarget,
@@ -97,8 +98,8 @@ object DtCodecTestsTranslator {
       // `AnyOpaqueJson`-bearing fixture (`randomJson`). Each fixture matches its codec's native
       // any-field branch so round-trip avoids cross-format conversion and never needs a
       // `BaboonCodecContext.withFacade` ctx.
-      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
-      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
+      val uebaFixture = makeFixture(definition, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           codec =>
@@ -160,11 +161,9 @@ object DtCodecTestsTranslator {
 
     private def makeFixture(
       definition: DomainMember.User,
-      domain: Domain,
-      evolution: BaboonEvolution,
       useJsonAny: Boolean,
     ): TextTree[DtValue] = {
-      val dtType          = typeTranslator.asDtType(definition.id, domain, evolution)
+      val dtType          = domainTypes.asDtType(definition.id)
       val fixtureName     = s"${definition.id.name.name.capitalize}_Fixture"
       val randomMethod    = if (useJsonAny) "randomJson" else "random"
       val randomAllMethod = if (useJsonAny) "randomAllJson" else "randomAll"
@@ -258,7 +257,7 @@ object DtCodecTestsTranslator {
       val typeId    = definition.id.render
       q"""test('Cross-language JSON writing', () {
          |  final rnd = $baboonRandomFactory.create();
-         |  ${makeFixture(definition, domain, evo, useJsonAny = true).shift(2).trim}
+         |  ${makeFixture(definition, useJsonAny = true).shift(2).trim}
          |  ${makeJsonWriteBody(definition, srcRef).shift(2).trim}
          |});
          |""".stripMargin
@@ -310,7 +309,7 @@ object DtCodecTestsTranslator {
       val typeId    = definition.id.render
       q"""test('Cross-language UEBA writing', () {
          |  final rnd = $baboonRandomFactory.create();
-         |  ${makeFixture(definition, domain, evo, useJsonAny = false).shift(2).trim}
+         |  ${makeFixture(definition, useJsonAny = false).shift(2).trim}
          |  ${makeUebaWriteBody(definition, srcRef).shift(2).trim}
          |});
          |""".stripMargin

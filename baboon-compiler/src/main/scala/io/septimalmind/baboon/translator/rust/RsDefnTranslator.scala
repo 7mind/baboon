@@ -38,6 +38,7 @@ object RsDefnTranslator {
     rsFiles: RsFileTools,
     rsTrees: RsTreeTools,
     trans: RsTypeTranslator,
+    domainTypes: RsDomainTypes,
     codecs: Set[RsCodecTranslator],
     codecTests: RsCodecTestsTranslator,
     codecsFixture: RsCodecFixtureTranslator,
@@ -63,7 +64,7 @@ object RsDefnTranslator {
 
     private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val repr       = makeRepr(defn)
-      val codecTrees = codecs.toList.flatMap(t => t.translate(defn, trans.asRsType(defn.id, domain, evo), trans.toRsTypeRefKeepForeigns(defn.id, domain, evo)).toList)
+      val codecTrees = codecs.toList.flatMap(t => t.translate(defn, domainTypes.asRsType(defn.id), domainTypes.toRsTypeRefKeepForeigns(defn.id)).toList)
       val metaTrees  = makeMetaImpls(defn)
       val allDefs    = (repr +: codecTrees ++: metaTrees).joinNN()
 
@@ -128,8 +129,8 @@ object RsDefnTranslator {
     }
 
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val csTypeRef   = trans.asRsType(defn.id, domain, evo)
-      val srcRef      = trans.toRsTypeRefKeepForeigns(defn.id, domain, evo)
+      val csTypeRef   = domainTypes.asRsType(defn.id)
+      val srcRef      = domainTypes.toRsTypeRefKeepForeigns(defn.id)
       val testTreeOpt = codecTests.translate(defn, csTypeRef, srcRef)
       F.pure(testTreeOpt.map {
         testTree =>
@@ -159,7 +160,7 @@ object RsDefnTranslator {
 
     private def makeMetaImpls(defn: DomainMember.User): List[TextTree[RsValue]] = {
       val isLatestVersion = domain.version == evo.latest
-      val name            = trans.asRsType(defn.id, domain, evo)
+      val name            = domainTypes.asRsType(defn.id)
 
       defn.defn match {
         case _: Typedef.Dto =>
@@ -174,7 +175,7 @@ object RsDefnTranslator {
             mid =>
               domain.defs.meta.nodes.get(mid) match {
                 case Some(mdefn: DomainMember.User) =>
-                  val branchName = trans.asRsType(mdefn.id, domain, evo)
+                  val branchName = domainTypes.asRsType(mdefn.id)
                   List(rsDomainTreeTools.makeBaboonGeneratedImpl(mdefn, branchName, isLatestVersion))
                 case _ => Nil
               }
@@ -188,7 +189,7 @@ object RsDefnTranslator {
     }
 
     private def makeRepr(defn: DomainMember.User): TextTree[RsValue] = {
-      val name = trans.asRsType(defn.id, domain, evo)
+      val name = domainTypes.asRsType(defn.id)
 
       defn.defn match {
         case dto: Typedef.Dto =>
@@ -232,7 +233,7 @@ object RsDefnTranslator {
         case None                                                               => q""
         case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef        = trans.toRsTypeRefKeepForeigns(f.id, domain, evo)
+          val srcRef        = domainTypes.toRsTypeRefKeepForeigns(f.id)
           val foreignName   = srcRef.name
           val snake         = toSnakeCase(foreignName)
           val codecTrait    = s"${foreignName}_KeyCodec"
@@ -242,7 +243,7 @@ object RsDefnTranslator {
           val registerName  = s"register_${snake}_keycodec"
           val adapterMod    = s"${snake}_as_map_key"
           val hostFqn       = (srcRef.crate.parts.toSeq :+ getterName).mkString("::")
-          val derefedTpe    = trans.asRsType(f.id, domain, evo)
+          val derefedTpe    = domainTypes.asRsType(f.id)
           // Stringy allowlist: only the actual Rust string type spellings the
           // codegen emits (`std::string::String` is what `asRsType` produces for
           // stringy Customs; `String` and `&str` are accepted as user-friendly
@@ -470,7 +471,7 @@ object RsDefnTranslator {
           val rawVar       = s"${toSnakeCase(srcFieldName)}_raw"
           val isLast       = idx == dto.fields.length - 1
           val kind         = IdentifierFieldKind.classify(f.tpe)
-          val tpe          = trans.asRsRef(f.tpe, domain, evo)
+          val tpe          = domainTypes.asRsRef(f.tpe)
 
           val parseHead =
             q"""crate::baboon_identifier_repr::parse_field_name(cursor, "$srcFieldName")?;"""
@@ -544,7 +545,7 @@ object RsDefnTranslator {
               q"""let $rawVar = cursor.read_until_structural();
                  |let $valVar: $tpe = crate::baboon_identifier_repr::parse_bytes_hex(&$rawVar)?;""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe = trans.toRsTypeRefKeepForeigns(uid, domain, evo)
+              val nestedTpe = domainTypes.toRsTypeRefKeepForeigns(uid)
               // The nested type's parse_repr_cursor lives in
               // `<typename_snake>_repr_codec` inside its own module — see
               // renderIdentifierParseRepr for naming rationale.
@@ -755,14 +756,14 @@ object RsDefnTranslator {
                 // ADT-owned contracts are not emitted as standalone traits — skip.
                 case Owner.Adt(_) => None
                 case _ =>
-                  val contractTpe = trans.asRsType(cid, domain, evo)
+                  val contractTpe = domainTypes.asRsType(cid)
                   // Every own contract field must be a duplicated host field; if
                   // not, omit this impl rather than emit non-compiling code.
                   if (c.fields.forall(f => hostFieldNames.contains(toSnakeCase(f.name.name)))) {
                     val methods = c.fields.map {
                       f =>
                         val rsName = toSnakeCase(f.name.name)
-                        val rawT   = trans.asRsRef(f.tpe, domain, evo)
+                        val rawT   = domainTypes.asRsRef(f.tpe)
                         // D22/T55: the trait accessor always declares `-> &rawT` (never &Box<rawT>).
                         // When the host stores the field as Box<rawT> (needsBox=true), the accessor
                         // body uses `self.field.as_ref()` which returns `&rawT` via Deref — exactly
@@ -812,7 +813,7 @@ object RsDefnTranslator {
             case Some(DomainMember.User(_, fdef: Typedef.Foreign, _, _)) =>
               fdef.bindings.get(BaboonLang.Rust) match {
                 case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
-                  val srcRef = trans.toRsTypeRefKeepForeigns(uid, domain, evo)
+                  val srcRef = domainTypes.toRsTypeRefKeepForeigns(uid)
                   val getter = s"${toSnakeCase(srcRef.name)}_keycodec"
                   Some((srcRef.crate.parts.toSeq :+ getter).mkString("::"))
                 case _ => None
@@ -864,7 +865,7 @@ object RsDefnTranslator {
           val (leafTpe, _, wrappers) = peelWrapperChain(dto, name).getOrElse(
             throw new IllegalStateException(s"renderUserMapKeyAdapter: peelWrapperChain returned None for ${name.name}")
           )
-          val leafT = trans.asRsRef(leafTpe, domain, evo)
+          val leafT = domainTypes.asRsRef(leafTpe)
           // Parse via str::parse; for primitive scalars Rust's FromStr matches
           // Display's wire form. Bytes/timestamps require dedicated parsers.
           // PR-I.3: foreign leaves route through the foreign's `<foreign>_keycodec()`
@@ -1095,7 +1096,7 @@ object RsDefnTranslator {
           case TypeRef.Scalar(uid: TypeId.User) =>
             domain.defs.meta.nodes.get(uid) match {
               case Some(DomainMember.User(_, dto: Typedef.Dto, _, _)) if isUserMapKeyEligibleDto(dto) =>
-                val rsT     = trans.toRsTypeRefKeepForeigns(uid, domain, evo)
+                val rsT     = domainTypes.toRsTypeRefKeepForeigns(uid)
                 val modName = s"${toSnakeCase(rsT.name)}_as_map_key"
                 Some((rsT.crate.parts.toSeq :+ modName).mkString("::"))
               // PR-I.3 (M24 Phase 3.3): direct foreign map key — route through
@@ -1104,7 +1105,7 @@ object RsDefnTranslator {
               case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
                 f.bindings.get(BaboonLang.Rust) match {
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
-                    val rsT     = trans.toRsTypeRefKeepForeigns(uid, domain, evo)
+                    val rsT     = domainTypes.toRsTypeRefKeepForeigns(uid)
                     val modName = s"${toSnakeCase(rsT.name)}_as_map_key"
                     Some((rsT.crate.parts.toSeq :+ modName).mkString("::"))
                   case _ => None
@@ -1167,7 +1168,7 @@ object RsDefnTranslator {
           case s @ TypeRef.Scalar(u: TypeId.User) =>
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, nested: Typedef.Dto, _, _)) =>
-                val nestedRs = trans.toRsTypeRefKeepForeigns(u, domain, evo)
+                val nestedRs = domainTypes.toRsTypeRefKeepForeigns(u)
                 peelWrapperChain(nested, nestedRs).map {
                   case (leafTpe, deepPath, innerWrappers) =>
                     (leafTpe, s"$fieldSnake.$deepPath", innerWrappers :+ (fieldSnake, rsName))
@@ -1252,7 +1253,7 @@ object RsDefnTranslator {
             case mdefn: DomainMember.User =>
               mdefn.defn match {
                 case dto: Typedef.Dto =>
-                  val branchName = trans.asRsType(dto.id, domain, evo)
+                  val branchName = domainTypes.asRsType(dto.id)
                   prependDocs(mdefn.docs, makeDtoRepr(dto, branchName))
                 case other =>
                   throw new RuntimeException(s"BUG: ADT member should be Dto, got: $other")
@@ -1266,7 +1267,7 @@ object RsDefnTranslator {
         mid =>
           domain.defs.meta.nodes(mid) match {
             case mdefn: DomainMember.User =>
-              codecs.toList.flatMap(_.translate(mdefn, trans.asRsType(mdefn.id, domain, evo), trans.toRsTypeRefKeepForeigns(mdefn.id, domain, evo)).toList)
+              codecs.toList.flatMap(_.translate(mdefn, domainTypes.asRsType(mdefn.id), domainTypes.toRsTypeRefKeepForeigns(mdefn.id)).toList)
             case _ => Nil
           }
       }
@@ -1278,7 +1279,7 @@ object RsDefnTranslator {
           // rsVariantName: keyword-escaped Rust identifier used in source code.
           val wireVariantName = mid.name.name.capitalize
           val rsVariantName   = escapeRustTypeName(wireVariantName)
-          val branchType      = trans.asRsType(mid, domain, evo)
+          val branchType      = domainTypes.asRsType(mid)
           q"$rsVariantName(${branchType.asName}),"
       }
 
@@ -1399,7 +1400,7 @@ object RsDefnTranslator {
       val contract = defn.defn.asInstanceOf[Typedef.Contract]
       val methods = contract.fields.map {
         f =>
-          val t        = trans.asRsRef(f.tpe, domain, evo)
+          val t        = domainTypes.asRsRef(f.tpe)
           val methodEx = q"fn ${toSnakeCase(f.name.name)}(&self) -> &$t;"
           prependDocs(f.docs, methodEx)
       }
@@ -1420,9 +1421,9 @@ object RsDefnTranslator {
       val service = defn.defn.asInstanceOf[Typedef.Service]
       val methods = service.methods.map {
         m =>
-          val inType  = trans.asRsRef(m.sig, domain, evo)
-          val outType = m.out.map(trans.asRsRef(_, domain, evo))
-          val errType = m.err.map(trans.asRsRef(_, domain, evo))
+          val inType  = domainTypes.asRsRef(m.sig)
+          val outType = m.out.map(domainTypes.asRsRef(_))
+          val errType = m.err.map(domainTypes.asRsRef(_))
           val rsFqName: RsValue => String = {
             case t: RsValue.RsType     => if (t.predef) t.name else (t.crate.parts :+ t.name).mkString("::")
             case t: RsValue.RsTypeName => t.name

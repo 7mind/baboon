@@ -13,6 +13,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class KtUEBACodecGenerator(
   trans: KtTypeTranslator,
+  domainTypes: KtDomainTypes,
   target: KtTarget,
   domain: Domain,
   evo: BaboonEvolution,
@@ -180,7 +181,7 @@ class KtUEBACodecGenerator(
         val branchName = m.name.name
         val fqBranch   = q"$branchNs.$branchName"
 
-        val adtRef = trans.toKtTypeRefKeepForeigns(m, domain, evo)
+        val adtRef = domainTypes.toKtTypeRefKeepForeigns(m)
         val cName  = codecName(adtRef)
 
         val castedName = KtTypeTranslator.escapeKtKeyword(branchName.toLowerCase)
@@ -396,11 +397,11 @@ class KtUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkDecoder(aliasedRef)
                   case _ =>
-                    val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                    val targetTpe = codecName(domainTypes.toKtTypeRefKeepForeigns(u))
                     q"""$targetTpe.instance.decode(ctx, wire)"""
                 }
               case _ =>
-                val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                val targetTpe = codecName(domainTypes.toKtTypeRefKeepForeigns(u))
                 q"""$targetTpe.instance.decode(ctx, wire)"""
             }
         }
@@ -436,11 +437,11 @@ class KtUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkEncoder(aliasedRef, ref, wref)
                   case _ =>
-                    val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                    val targetTpe = codecName(domainTypes.toKtTypeRefKeepForeigns(u))
                     q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
                 }
               case _ =>
-                val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                val targetTpe = codecName(domainTypes.toKtTypeRefKeepForeigns(u))
                 q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
             }
         }
