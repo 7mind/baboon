@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.tests
 
-import com.networknt.schema.{InputFormat, JsonSchemaFactory, SchemaValidatorsConfig, SpecVersion}
+import com.networknt.schema.{InputFormat, SchemaRegistry, SpecificationVersion}
 import io.circe.Json
 import io.septimalmind.baboon.BaboonLoader
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
@@ -82,16 +82,15 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
 
   // ── real JSON-Schema validator (networknt, Draft 2020-12) ──────────────────
 
-  private val factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
+  private val registry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
 
   /** Compile a schema with the real validator. This parses the schema document
     * AND eagerly resolves every `$ref` (including the local `#/$defs/...`
     * closure); a dangling ref or malformed schema throws here. Returns the
     * compiled schema for optional instance validation.
     */
-  private def compileSchema(schema: Json): com.networknt.schema.JsonSchema = {
-    val cfg = SchemaValidatorsConfig.builder().build()
-    factory.getSchema(schema.noSpaces, InputFormat.JSON, cfg)
+  private def compileSchema(schema: Json): com.networknt.schema.Schema = {
+    registry.getSchema(schema.noSpaces, InputFormat.JSON)
   }
 
   private def assertWellFormed(name: String, schema: Json): org.scalatest.Assertion = {
