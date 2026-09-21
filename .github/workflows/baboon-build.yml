@@ -128,6 +128,17 @@ jobs:
           native-image-job-reports: true
       - name: Set up SBT
         uses: sbt/setup-sbt@v1
+        with:
+          # The action's post step caches the sbt 2.x disk cache
+          # ($HOME/Library/Caches/sbt), which sbt 1.x never writes -- see
+          # project/build.properties. Building its key costs a whole-workspace
+          # hashFiles('**/*.sbt', '**/*.properties'), which by teardown has to walk every
+          # backend's generated code plus node_modules / cargo target / .dart_tool /
+          # Swift .build. That exceeds the 120s expression limit on the Intel runner (the
+          # slowest of the matrix at ~2h40m) and fails the job AFTER build, tests and
+          # artifact upload have all succeeded. Dependency caching is unaffected:
+          # graalvm/setup-graalvm above already does it via `cache: 'sbt'`.
+          disk-cache: false
       - name: Set up Dart SDK
         uses: dart-lang/setup-dart@v1
       - name: Install mudyla
