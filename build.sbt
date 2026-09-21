@@ -8,9 +8,9 @@ lazy val refreshFlakeTask = taskKey[Unit]("Refresh flake.nix")
 lazy val isLinux: Boolean = System.getProperty("os.name").toLowerCase.contains("linux")
 lazy val isAmd64: Boolean = System.getProperty("os.arch") == "amd64"
 
-ThisBuild / scalaVersion := "2.13.16"
+ThisBuild / scalaVersion := "2.13.18"
 
-lazy val izumiVersion = "1.2.24"
+lazy val izumiVersion = "1.2.25"
 
 // Shared settings for both JVM and JS
 lazy val sharedSettings = Seq(
@@ -24,24 +24,24 @@ lazy val sharedSettings = Seq(
     "distage-core",
   ).map("io.7mind.izumi" %%% _ % izumiVersion),
   libraryDependencies ++= Seq(
-    "io.github.classgraph" % "classgraph" % "4.8.181"
+    "io.github.classgraph" % "classgraph" % "4.8.195"
   ),
   libraryDependencies ++= Seq(
-    "org.scala-lang.modules" %%% "scala-parser-combinators" % "2.4.0"
+    "org.scala-lang.modules" %%% "scala-parser-combinators" % "2.5.0"
   ),
   libraryDependencies ++= Seq(
-    "org.scalatest" %%% "scalatest" % "3.2.19" % Test,
+    "org.scalatest" %%% "scalatest" % "3.2.20" % Test,
   ),
   libraryDependencies ++= Seq(
     "io.circe" %%% "circe-core",
     "io.circe" %%% "circe-generic",
     "io.circe" %%% "circe-parser"
-  ).map(_ % "0.14.1"),
+  ).map(_ % "0.14.16"),
   libraryDependencies ++= Seq(
-    "com.softwaremill.magnolia1_2" %%% "magnolia" % "1.1.10",
+    "com.softwaremill.magnolia1_2" %%% "magnolia" % "1.1.14",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
   ),
-  addCompilerPlugin("org.typelevel" % "kind-projector" % "0.13.3" cross CrossVersion.full),
+  addCompilerPlugin("org.typelevel" % "kind-projector" % "0.13.4" cross CrossVersion.full),
   scalacOptions ++= Seq(
     s"-Xmacro-settings:product-name=${name.value}",
     s"-Xmacro-settings:product-version=${version.value}",
@@ -87,7 +87,7 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
   .jvmSettings(
     Compile / unmanagedResourceDirectories += baseDirectory.value / "src" / "main" / "resources",
     libraryDependencies ++= Seq(
-      "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
+      "com.github.alexarchambault" %% "case-app" % "2.1.0",
       "org.jline" % "jline" % "3.26.3",
       "io.7mind.izumi" %% "distage-testkit-scalatest" % izumiVersion % Test,
       // Real Draft 2020-12 JSON-Schema validator for the MCP inputSchema
