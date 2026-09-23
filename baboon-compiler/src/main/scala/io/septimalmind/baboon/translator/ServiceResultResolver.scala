@@ -2,6 +2,8 @@ package io.septimalmind.baboon.translator
 
 import io.septimalmind.baboon.{HktConfig, ServiceResultConfig}
 import io.septimalmind.baboon.typer.model.Domain
+import izumi.fundamentals.platform.strings.TextTree
+import izumi.fundamentals.platform.strings.TextTree.*
 
 case class ResolvedServiceResult(
   noErrors: Boolean,
@@ -30,6 +32,53 @@ case class ResolvedServiceResult(
     }
   }
 
+  /** Tree-preserving counterpart of [[renderReturnType]]: `None` means the method returns
+    * the unit type, otherwise the returned tree keeps the language-value nodes of
+    * `outType`/`errType` instead of flattening them to text.
+    *
+    * Backends whose renderer post-processes type nodes MUST use this form — the C# renderer
+    * rewrites references to deduplicated types to their surviving twin at render time, and a
+    * type flattened to a string here escapes that rewrite and names a type that was never
+    * emitted.
+    */
+  def renderReturnTypeTree[T](
+    outType: Option[TextTree[T]],
+    errType: Option[TextTree[T]],
+    unitType: TextTree[T],
+  ): Option[TextTree[T]] = {
+    val success = outType.getOrElse(unitType)
+
+    if (noErrors || errType.isEmpty) {
+      outType
+    } else {
+      val container = expandPattern(errType.get, success)
+      (hkt, container) match {
+        case (Some(h), Some(c)) => Some(Seq(TextTree.text[T](h.name), c).join(""))
+        case (None, Some(c))    => Some(Seq(TextTree.text[T](resultType.getOrElse("")), c).join(""))
+        case _                  => outType
+      }
+    }
+  }
+
+  /** Expands the configured `$error`/`$success` pattern, splicing the argument trees in place
+    * of the placeholders. `None` when no pattern is configured.
+    */
+  def expandPattern[T](error: TextTree[T], success: TextTree[T]): Option[TextTree[T]] = {
+    pattern.map {
+      p =>
+        val values = Map(
+          ServiceResultResolver.errorPlaceholder   -> error,
+          ServiceResultResolver.successPlaceholder -> success,
+        )
+        val matches = ServiceResultResolver.placeholders.findAllMatchIn(p).toList
+        val spliced: (List[TextTree[T]], Int) = matches.foldLeft((List.empty[TextTree[T]], 0)) {
+          case ((acc, pos), m) =>
+            (acc ++ List(TextTree.text[T](p.substring(pos, m.start)), values(m.matched)), m.end)
+        }
+        (spliced._1 :+ TextTree.text[T](p.substring(spliced._2))).join("")
+    }
+  }
+
   def traitTypeParam: Option[String] = {
     if (noErrors) None
     else hkt.map(h => s"${h.name}${h.signature}")
@@ -37,6 +86,12 @@ case class ResolvedServiceResult(
 }
 
 object ServiceResultResolver {
+  val errorPlaceholder: String   = "$error"
+  val successPlaceholder: String = "$success"
+
+  private[translator] val placeholders =
+    s"${_root_.java.util.regex.Pattern.quote(errorPlaceholder)}|${_root_.java.util.regex.Pattern.quote(successPlaceholder)}".r
+
   private val pragmaPrefix = Map(
     "scala"      -> "scala.service.result.",
     "cs"         -> "cs.service.result.",

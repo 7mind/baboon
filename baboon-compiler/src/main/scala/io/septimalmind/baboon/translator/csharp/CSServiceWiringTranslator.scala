@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ResolvedServiceResult, ServiceContextResolver, ServiceMethodPlan, ServiceResultResolver}
+import io.septimalmind.baboon.translator.FQNSymbol.*
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.typer.model.*
@@ -522,7 +523,7 @@ object CSServiceWiringTranslator {
 
           val callStep = if (hasErrType) {
             val errType = plan.error.get
-            q"""${ct("BaboonWiringError", renderFq(outType))} output;
+            q"""${ctTree("BaboonWiringError", outType)} output;
                |try
                |{
                |    var callResult = await impl.${plan.methodName}(${ctxArgPass}decoded);
@@ -534,7 +535,7 @@ object CSServiceWiringTranslator {
                |    return rt.Fail<$baboonWiringError, $wireType>(new $baboonWiringError.CallFailed(method, ex));
                |}""".stripMargin
           } else {
-            q"""${ct("BaboonWiringError", renderFq(outType))} output;
+            q"""${ctTree("BaboonWiringError", outType)} output;
                |try
                |{
                |    var callResultValue = await impl.${plan.methodName}(${ctxArgPass}decoded);
@@ -738,9 +739,14 @@ object CSServiceWiringTranslator {
 
     private def ct(error: String, success: String): String = renderContainer(error, success)
 
-    private def renderFq(tree: TextTree[CSValue]): String = tree.mapRender {
-      case t: CSValue.CSType     => (t.pkg.parts :+ t.name).mkString(".")
-      case t: CSValue.CSTypeName => t.name
+    /** Result container around a generated type. The type stays a tree node: rendering it here
+      * would bypass `CSBaboonTranslator.renderType`, which rewrites references to deduplicated
+      * types to their surviving twin, and would name a type that was never emitted.
+      * `.fullyQualified` keeps the rendered shape the same as a flattened FQN was.
+      */
+    private def ctTree(error: String, success: TextTree[CSValue]): TextTree[CSValue] = {
+      val expanded = resolved.expandPattern(TextTree.text[CSValue](error), success.fullyQualified)
+      q"${resolved.resultType.get}${expanded.get}"
     }
 
     private def generateErrorsJsonMethod(service: Typedef.Service): TextTree[CSValue] = {
@@ -756,7 +762,7 @@ object CSServiceWiringTranslator {
           if (isAsync) generateErrorsJsonCaseAsync(plan, inRef, decodeIn)
           else {
             val decodeStep =
-              q"""${ct("BaboonWiringError", renderFq(inRef))} input;
+              q"""${ctTree("BaboonWiringError", inRef)} input;
                  |try
                  |{
                  |    var wire = $BaboonTools.ParseWireJson(data);
@@ -896,7 +902,7 @@ object CSServiceWiringTranslator {
           if (isAsync) generateErrorsUebaCaseAsync(plan, inRef, decodeIn)
           else {
             val decodeStep =
-              q"""${ct("BaboonWiringError", renderFq(inRef))} input;
+              q"""${ctTree("BaboonWiringError", inRef)} input;
                  |try
                  |{
                  |    var ms = new $memoryStream(data);

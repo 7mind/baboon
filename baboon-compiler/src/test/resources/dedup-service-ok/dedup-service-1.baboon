@@ -1,0 +1,29 @@
+// C# deduplication fixture for the service-signature emission test.
+//
+// `Svc` is declared identically in both versions and its inline method I/O types are
+// therefore unchanged, so the C# backend emits them ONCE, in the latest namespace, and
+// drops them from `Dedup-Service-1.0.0/`. The 1.0.0 service interface is still emitted
+// (services are never deduplicated), so its method signature must reference the
+// surviving latest-namespace types — every reference in it, not just the parameter.
+//
+// `D` changes between the versions purely so that 1.0.0 is not itself deduplicated away.
+//
+// Lives OUTSIDE the shared `baboon/` model-dir on purpose: the language stubs scan that
+// directory wholesale (see the D9 note in CLAUDE.md) and this fixture exists only for
+// the JVM emission test.
+
+model dedup.service
+
+version "1.0.0"
+
+root data D {
+  a: i32
+}
+
+root service Svc {
+  def m (
+    data in { x: i32 }
+    data out { y: i32 }
+    data err { code: i32 }
+  )
+}

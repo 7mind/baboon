@@ -1,0 +1,12 @@
+model dedup.service
+
+version "2.0.0"
+
+import "1.0.0" { * } without {
+  D
+}
+
+root data D {
+  a: i32
+  b: opt[str]
+}
