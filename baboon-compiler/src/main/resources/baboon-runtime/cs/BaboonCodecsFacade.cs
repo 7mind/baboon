@@ -965,8 +965,9 @@ namespace Baboon.Runtime.Shared
 
         /// <summary>
         /// Walks the registered conversion chain without executing converters: returns <c>true</c>
-        /// when any step is missing the type (no path to latest). Unknown domains and already-latest
-        /// models return <c>false</c>.
+        /// when no chain of conversions leads from the value's type to the latest version. Unknown
+        /// domains, already-latest models and values with no newer registered version return
+        /// <c>false</c>.
         /// </summary>
         public bool IsDeprecated(IBaboonGenerated value)
         {
@@ -978,35 +979,65 @@ namespace Baboon.Runtime.Shared
                 return false;
             }
 
-            var currentType = value.GetType();
-            var adtType = (value as IBaboonAdtMemberMeta)?.BaboonAdtType();
-
+            var newer = new List<AbstractBaboonConversions>();
             foreach (var registered in versions)
             {
-                var toVersion = registered.Id;
                 if (dvFrom.Version >= registered.Version) continue;
-
-                if (!_versionsConversions.TryGetValue(toVersion, out var lazyConversions))
+                if (!_versionsConversions.TryGetValue(registered.Id, out var lazyConversions))
                 {
+                    // A newer version is registered but carries no conversions: no path can be established.
                     return true;
                 }
 
-                var typeConversions = lazyConversions.Value.FindConversions(value);
-                var hasMatch = false;
-                foreach (var typeConversion in typeConversions)
-                {
-                    var typeFrom = typeConversion.TypeFrom();
-                    if (typeFrom == currentType || (adtType != null && typeFrom == adtType))
-                    {
-                        hasMatch = true;
-                        break;
-                    }
-                }
-
-                if (!hasMatch) return true;
+                newer.Add(lazyConversions.Value);
             }
 
-            return false;
+            // Nothing newer is registered, so there is no later version this value could be deprecated by.
+            if (newer.Count == 0) return false;
+
+            // Reachability over the registered conversion graph, following the type each step
+            // PRODUCES. A step may cover several versions at once: when consecutive versions share
+            // a type (deduplicated codegen) the conversion registered for the earlier version
+            // already yields the later version's class and no conversion is registered in between,
+            // so a strict per-version lockstep would report a live type as deprecated.
+            var visited = new HashSet<Type>();
+            var pending = new Queue<Type>();
+
+            var valueType = value.GetType();
+            visited.Add(valueType);
+            pending.Enqueue(valueType);
+
+            // ADT conversions are registered on the ADT type, not on its branches.
+            if (value is IBaboonAdtMemberMeta adtMember)
+            {
+                var adtType = adtMember.BaboonAdtType();
+                if (visited.Add(adtType)) pending.Enqueue(adtType);
+            }
+
+            var lastIndex = newer.Count - 1;
+            while (pending.Count > 0)
+            {
+                var current = pending.Dequeue();
+                if (typeof(IBaboonGeneratedLatest).IsAssignableFrom(current)) return false;
+
+                for (var i = 0; i <= lastIndex; i++)
+                {
+                    var conversions = newer[i].FindConversions(current);
+                    if (conversions.Count == 0) continue;
+
+                    // A conversion into the newest registered version completes the path even when
+                    // that version is not the latest one the model knows about.
+                    if (i == lastIndex) return false;
+
+                    foreach (var conversion in conversions)
+                    {
+                        var next = conversion.TypeTo();
+                        if (visited.Add(next)) pending.Enqueue(next);
+                    }
+                }
+            }
+
+            return true;
         }
 
         private static bool IsAdtConversion(IBaboonGenerated instance, IConversion conversion)
