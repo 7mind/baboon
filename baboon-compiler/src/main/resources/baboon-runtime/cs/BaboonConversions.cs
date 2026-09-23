@@ -227,6 +227,16 @@ namespace Baboon.Runtime.Shared
             return new List<IConversion>();
         }
 
+        /// <summary>
+        /// Conversions declared for <paramref name="typeFrom"/>. Type-keyed counterpart of
+        /// <see cref="FindConversions(IBaboonGenerated)"/> for callers that walk the conversion
+        /// graph without holding an instance of every intermediate type.
+        /// </summary>
+        public IReadOnlyList<IConversion> FindConversions(Type typeFrom)
+        {
+            return _convsWild.TryGetValue(typeFrom, out var tpeConv) ? tpeConv : new List<IConversion>();
+        }
+
 
         public TTo ConvertWithContext<T, TFrom, TTo>(T? c, TFrom from)
         {
