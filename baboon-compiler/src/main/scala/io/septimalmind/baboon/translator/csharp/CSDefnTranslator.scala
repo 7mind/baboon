@@ -5,6 +5,7 @@ import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.{IdentifierFieldKind, ServiceMethodPlan}
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
+import io.septimalmind.baboon.translator.FQNSymbol.*
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
 import io.septimalmind.baboon.typer.model.*
@@ -509,21 +510,22 @@ object CSDefnTranslator {
           val methods = service.methods.map {
             m =>
               val plan = new ServiceMethodPlan(m, tpe => domainTypes.asCsRef(tpe), resolved, CSTypes.escapeCsKeyword(m.name.name.capitalize))
-              val out  = plan.output
-              val err  = plan.error
-              val csFqName: CSValue => String = {
-                case t: CSValue.CSType     => (t.pkg.parts :+ t.name).mkString(".")
-                case t: CSValue.CSTypeName => t.name
+              // Tree form, not a rendered FQN: `CSBaboonTranslator.renderType` rewrites references
+              // to deduplicated types to their surviving twin, and a type flattened to a string
+              // here would escape that rewrite and name a type that was never emitted.
+              // `.fullyQualified` keeps the rendered shape the same as the flattened FQN was.
+              val syncRet = resolved.renderReturnTypeTree(
+                plan.output.map(_.fullyQualified),
+                plan.error.map(_.fullyQualified),
+                q"void",
+              )
+              val retType = (target.language.asyncServices, syncRet) match {
+                case (true, Some(ret))  => q"System.Threading.Tasks.Task<$ret>"
+                case (true, None)       => q"System.Threading.Tasks.Task"
+                case (false, Some(ret)) => ret
+                case (false, None)      => q"void"
               }
-              val outStr  = out.map(_.mapRender(csFqName)).getOrElse("")
-              val errStr  = err.map(_.mapRender(csFqName))
-              val syncRet = resolved.renderReturnType(outStr, errStr, "void")
-              val retStr =
-                if (target.language.asyncServices) {
-                  if (syncRet == "void") "System.Threading.Tasks.Task"
-                  else s"System.Threading.Tasks.Task<$syncRet>"
-                } else syncRet
-              val methodEx = q"""public $retStr ${plan.methodName}($ctxParam${plan.input} arg);"""
+              val methodEx = q"""public $retType ${plan.methodName}($ctxParam${plan.input} arg);"""
               prependDocs(m.docs, methodEx)
           }.join("\n")
 

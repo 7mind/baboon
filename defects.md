@@ -10,6 +10,17 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## FIELD-2026-09-23 (user reports, C# backend)
+
+### [FIELD-2026-09-23-D01] C# service signature of an obsolete version names deduplicated-away method I/O types (CS0234)
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/csharp/CSDefnTranslator.scala:513-521` (service case); `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/csharp/CSServiceWiringTranslator.scala:741-745` (`renderFq`)
+**Description:** With `deduplicate` on (the CLI default), a type whose schema is unchanged across versions is emitted once in the latest namespace; references from older namespaces are rewritten to the surviving twin by `CSBaboonTranslator.renderType` -> `CSTypeTranslator.isUpgradeable`, which runs in the final `mapRender` over the emitted tree. Services are never deduplicated (`CSTypeInfo.canBeUpgradedTo` returns `None` for `Typedef.Service`), so an unchanged service is re-emitted per version. Its method signature mixed the two worlds: the parameter stayed a `TextTree` node and was rewritten correctly, but the return type was flattened to a fully-qualified string by `csFqName`/`renderFq` before the renderer ran, so it kept the obsolete version's namespace. The obsolete interface declared `...v1_0_0.Svc.M.Out` (and `.Err`), a type no file declares, and the C# build failed with CS0234. The same flattening affected the obsolete `SvcWiring` result declarations. The trigger is the METHOD I/O types being unchanged, not the service: reproduced both with an identical service and with a service that gains a method while `m`'s inline types stay identical. C#-only, since `deduplicate` has no consumer outside `CSTypeInfo`.
+**Fix:** Added `ResolvedServiceResult.renderReturnTypeTree` / `expandPattern` (`ServiceResultResolver.scala`), which splice the `$error`/`$success` pattern around the argument trees instead of around rendered strings. `CSDefnTranslator` and `CSServiceWiringTranslator.ctTree` now build the container from trees (`.fullyQualified`, so the rendered shape is unchanged for every non-deduplicated type) and the upgrade rewrite applies to the return type as it always did to the parameter. The seven non-C# backends keep the string-based `renderReturnType` — none of them rewrite type nodes at render time. Verified byte-identical output for the whole shared model-dir matrix in both default and errors/async configurations. Regression test: `CSharpDedupServiceSignatureTest` over the new isolated fixture `baboon-compiler/src/test/resources/dedup-service-ok/`.
+
+---
+
 ## MFACADE-PR-3
 
 ### [MFACADE-PR-3-D01] C# reader throws OverflowException on out-of-byte numeric `$mv`
