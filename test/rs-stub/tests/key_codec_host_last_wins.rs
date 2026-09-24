@@ -78,7 +78,7 @@ fn key_codec_host_last_wins() {
 
     // Register impl A and observe it in the encode wire form.
     register_f_str_keycodec(Arc::new(PrefixCodec("A")));
-    let encoded_a = serde_json::to_string(&sample).expect("encode under A");
+    let encoded_a = sample.to_json().expect("encode under A");
     assert!(
         encoded_a.contains("A:k"),
         "expected A: prefix in encoded wire form, got {}",
@@ -88,7 +88,7 @@ fn key_codec_host_last_wins() {
     // Register impl B and observe it (NOT A) in the new encode wire form.
     // Pre-fix: this re-register silently no-ops; encoded_b would still contain "A:k".
     register_f_str_keycodec(Arc::new(PrefixCodec("B")));
-    let encoded_b = serde_json::to_string(&sample).expect("encode under B");
+    let encoded_b = sample.to_json().expect("encode under B");
     assert!(
         encoded_b.contains("B:k"),
         "PR-26.2 last-wins regression: expected B: prefix after re-register, got {}. \

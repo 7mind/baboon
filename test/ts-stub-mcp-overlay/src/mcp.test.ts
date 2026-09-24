@@ -358,7 +358,7 @@ describe("MCP §2: tools/list and AJV inputSchema validation", () => {
         // keys (matches the wire the codecs emit and the reconciled inputSchema).
         const valid = validate({
             tags: ["a", "b"],
-            uniqueIds: [1, 2],
+            uniqueIds: ["1", "2"],
             labels: { k: "v" },
             byColor: { Green: "ok", Red: "stop" },
         });

@@ -14,7 +14,7 @@ fn read_json_file(source: &str) -> AllBasicTypes {
     let path = base_dir().join(format!("{}-json/all-basic-types.json", source));
     let json_str = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
-    serde_json::from_str(&json_str)
+    AllBasicTypes::from_json(&json_str)
         .unwrap_or_else(|e| panic!("Failed to parse JSON from {:?}: {}", path, e))
 }
 
@@ -221,7 +221,7 @@ fn read_any_showcase_json(source: &str) -> AnyShowcase {
     let path = base_dir().join(format!("{}-json/any-showcase.json", source));
     let json_str = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
-    serde_json::from_str(&json_str)
+    AnyShowcase::from_json(&json_str)
         .unwrap_or_else(|e| panic!("Failed to parse AnyShowcase JSON from {:?}: {}", path, e))
 }
 
@@ -242,7 +242,7 @@ fn decode_inner(o: &AnyOpaque) -> InnerPayload {
             InnerPayload::decode_ueba(&BaboonCodecContext::Compact, &mut cursor)
                 .unwrap_or_else(|e| panic!("InnerPayload UEBA decode failed: {}", e))
         }
-        AnyOpaque::Json(j) => serde_json::from_value(j.json.clone())
+        AnyOpaque::Json(j) => InnerPayload::from_json_value(j.json.clone())
             .unwrap_or_else(|e| panic!("InnerPayload JSON decode failed: {}", e)),
     }
 }
@@ -422,7 +422,7 @@ fn test_pr_i3_foreign_keycodec_roundtrip() {
     assert!(path.exists(), "Rust m24-foreign-keycodec fixture not found: {:?}", path);
     let json_str = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
-    let decoded: ForeignKeyHolder = serde_json::from_str(&json_str)
+    let decoded: ForeignKeyHolder = ForeignKeyHolder::from_json(&json_str)
         .unwrap_or_else(|e| panic!("Failed to decode m24-foreign-keycodec JSON: {}", e));
     let mut expected_map = BTreeMap::new();
     expected_map.insert(ItemKey { v: "alpha".to_string() }, "v1".to_string());
@@ -437,7 +437,7 @@ fn test_pr_i3_foreign_keycodec_canonical_wire_form() {
     m.insert(ItemKey { v: "alpha".to_string() }, "v1".to_string());
     m.insert(ItemKey { v: "beta".to_string() },  "v2".to_string());
     let sample = ForeignKeyHolder { m };
-    let encoded = serde_json::to_string(&sample).expect("ForeignKeyHolder encode");
+    let encoded = sample.to_json().expect("ForeignKeyHolder encode");
     let expected = r#"{"m":{"alpha":"v1","beta":"v2"}}"#;
     assert_eq!(encoded, expected, "FStr_KeyCodec wire form diverged");
 }

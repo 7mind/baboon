@@ -41,8 +41,30 @@ class RsConversionTranslator[F[+_, +_]: Error2](
   private val srcVer = srcDom.version
   type Out[T] = F[NEList[BaboonIssue], T]
 
-  private def serdeConvert(expr: TextTree[RsValue]): TextTree[RsValue] = {
-    q"serde_json::from_value(serde_json::to_value(&$expr).unwrap()).unwrap()"
+  private val codecCtx = q"&crate::baboon_runtime::BaboonCodecContext::Compact"
+
+  /** A pair of types with no targeted conversion is copied structurally, through JSON. A
+    * generated type carries `encode_json`/`decode_json`; a foreign type carries neither —
+    * Baboon does not know its shape — so it keeps the serde impl its host provides, and so do
+    * the builtins.
+    */
+  private def structuralConvert(oldTpe: TypeRef, newTpe: TypeRef, ref: TextTree[RsValue]): TextTree[RsValue] = {
+    (oldTpe, newTpe) match {
+      case (TypeRef.Scalar(oldId), TypeRef.Scalar(newId)) if hasJsonCodec(oldId, srcDom) && hasJsonCodec(newId, domain) =>
+        val target = trans.asRsRef(newTpe, domain, evo)
+        q"$target::decode_json($codecCtx, &($ref).encode_json($codecCtx).unwrap()).unwrap()"
+      case _ =>
+        q"serde_json::from_value(serde_json::to_value(&$ref).unwrap()).unwrap()"
+    }
+  }
+
+  private def hasJsonCodec(id: TypeId, dom: Domain): Boolean = id match {
+    case u: TypeId.User =>
+      dom.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, _: Typedef.Dto | _: Typedef.Enum | _: Typedef.Adt, _, _)) => true
+        case _                                                                                   => false
+      }
+    case _ => false
   }
 
   private val sourceRepresentation = new RsFieldRepresentation(srcDom, evo, trans, enquiries)
@@ -76,7 +98,7 @@ class RsConversionTranslator[F[+_, +_]: Error2](
         rules.conversions.collectFirst {
           case c: TargetedConversion if c.sourceTpe == oldId && c.targetTpe == newId && !c.isInstanceOf[Conversion.CustomConversionRequired] =>
             q"${crate.parts.mkString("::")}::${conversionFile(c)}::${conversionName(c)}($ref)"
-        }.getOrElse(serdeConvert(ref))
+        }.getOrElse(structuralConvert(oldTpe, newTpe, ref))
       case (TypeRef.Scalar(oldId: TypeId.BuiltinScalar), TypeRef.Scalar(newId: TypeId.BuiltinScalar)) if oldId != newId =>
         val integers = Set(
           TypeId.Builtins.i08,
@@ -89,14 +111,14 @@ class RsConversionTranslator[F[+_, +_]: Error2](
           TypeId.Builtins.u64,
         )
         if (integers.contains(oldId) && integers.contains(newId)) q"(*($ref)) as ${trans.asRsRef(newTpe, domain, evo)}"
-        else serdeConvert(ref)
+        else structuralConvert(oldTpe, newTpe, ref)
       case (old: TypeRef.Scalar, TypeRef.Constructor(newId, args)) =>
         val inner = transfer(old, args.head, ref)
         newId match {
           case TypeId.Builtins.opt => q"Some($inner)"
           case TypeId.Builtins.lst => q"vec![$inner]"
           case TypeId.Builtins.set => q"std::collections::BTreeSet::from([$inner])"
-          case _                   => serdeConvert(ref)
+          case _                   => structuralConvert(oldTpe, newTpe, ref)
         }
       case (TypeRef.Constructor(oldId, oldArgs), TypeRef.Constructor(newId, newArgs)) =>
         (oldId, newId) match {
@@ -110,10 +132,10 @@ class RsConversionTranslator[F[+_, +_]: Error2](
           case (_, TypeId.Builtins.lst | TypeId.Builtins.set) =>
             val inner = transfer(oldArgs.head, newArgs.head, q"e")
             q"($ref).iter().map(|e| $inner).collect()"
-          case _ => serdeConvert(ref)
+          case _ => structuralConvert(oldTpe, newTpe, ref)
         }
       case _ if oldTpe == newTpe => q"(*($ref)).clone()"
-      case _                     => serdeConvert(ref)
+      case _                     => structuralConvert(oldTpe, newTpe, ref)
     }
   }
 

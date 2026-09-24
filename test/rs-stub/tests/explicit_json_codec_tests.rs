@@ -1,19 +1,17 @@
 // NOTE: references generated symbols produced into this stub only by the rs-stub codegen path.
 // Run from the codegen'd copy, not the source tree.
 //
-// The generated per-type `test_*_json_{encode,decode}_matches_derive` oracles pin the explicit
-// codecs against the serde derive across the whole fixture corpus, but they can only exercise
-// wire documents that the encoder itself produced. Three behaviours therefore escape them
-// entirely, and all three are ones the derive has and the explicit decoder must match:
+// The generated per-type round-trip tests can only exercise wire documents that the encoder
+// itself produced, so three reader behaviours escape them entirely. All three were the serde
+// derive's behaviour before the explicit codecs replaced it, and the explicit decoder has to
+// keep them:
 //
-//   * an ABSENT optional field decodes to None — serde special-cases `Option`, so this is not
-//     the same thing as an explicit null, and getting it wrong would reject valid documents
-//     from producers that omit empty fields;
+//   * an ABSENT optional field decodes to None — not the same thing as an explicit null, and
+//     getting it wrong would reject valid documents from producers that omit empty fields;
 //   * unknown keys are ignored, which is what makes forward-compatible readers possible;
 //   * an absent REQUIRED field is an error rather than a default.
 //
-// `Holder` is used because it is any-bearing, which is precisely the case that takes the
-// explicit path; an any-free type would delegate to serde and prove nothing.
+// `Holder` is used because it is any-bearing, which is the most intricate decode path.
 #![allow(dead_code)]
 
 use baboon_rs_stub::any_opaque::{AnyMeta, AnyOpaque, AnyOpaqueJson};
@@ -59,18 +57,6 @@ fn decode(wire: serde_json::Value) -> Result<Holder, String> {
     Holder::decode_json(&BaboonCodecContext::Compact, &wire).map_err(|e| format!("{}", e))
 }
 
-/// Each case is also checked against serde, so the assertions record the derive's behaviour
-/// rather than my reading of it.
-fn assert_agrees_with_derive(wire: &serde_json::Value) {
-    let explicit = decode(wire.clone());
-    let derived: Result<Holder, String> = serde_json::from_value(wire.clone()).map_err(|e| format!("{}", e));
-    match (&explicit, &derived) {
-        (Ok(a), Ok(b)) => assert_eq!(a, b, "explicit and derived decode disagree"),
-        (Err(_), Err(_)) => {}
-        _ => panic!("explicit and derived disagree on acceptance: explicit={:?} derived={:?}", explicit.is_ok(), derived.is_ok()),
-    }
-}
-
 #[test]
 fn absent_optional_field_decodes_to_none() {
     let mut wire = holder_wire();
@@ -79,7 +65,6 @@ fn absent_optional_field_decodes_to_none() {
 
     let decoded = decode(wire.clone()).expect("an absent optional field must decode, not fail");
     assert!(decoded.f_opt.is_none());
-    assert_agrees_with_derive(&wire);
 }
 
 #[test]
@@ -87,7 +72,6 @@ fn explicit_null_optional_field_decodes_to_none() {
     let wire = serde_json::Value::Object(holder_wire());
     let decoded = decode(wire.clone()).expect("an explicit null optional must decode");
     assert!(decoded.f_opt.is_none());
-    assert_agrees_with_derive(&wire);
 }
 
 #[test]
@@ -97,7 +81,6 @@ fn unknown_keys_are_ignored() {
     let wire = serde_json::Value::Object(wire);
 
     decode(wire.clone()).expect("unknown keys must be ignored, not rejected");
-    assert_agrees_with_derive(&wire);
 }
 
 #[test]
@@ -108,7 +91,6 @@ fn absent_required_field_is_an_error() {
 
     let err = decode(wire.clone()).expect_err("an absent required field must fail");
     assert!(err.contains("fAny"), "the error must name the missing field; got: {}", err);
-    assert_agrees_with_derive(&wire);
 }
 
 #[test]

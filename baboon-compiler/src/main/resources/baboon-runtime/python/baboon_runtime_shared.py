@@ -13,14 +13,22 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
-from typing import TypeVar, Generic, Callable, Optional, Any, ClassVar
+from typing import Annotated, TypeVar, Generic, Callable, Optional, Any, ClassVar
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PlainSerializer
 
 from .baboon_exceptions import BaboonCodecException
 
 T = TypeVar("T")
+
+# 64-bit integers go on the wire as decimal strings in every backend: a JSON number beyond 2**53
+# is already rounded by the time a JavaScript reader sees it (docs/json-codecs.md, "64-bit
+# integers"). Only the JSON direction is affected — `model_dump()` without `mode="json"`, and the
+# UEBA codecs, still see a plain `int`. Decoding needs no counterpart: pydantic's lax `int`
+# validator already accepts a decimal string, which is what keeps older numeric payloads readable.
+BaboonI64 = Annotated[int, PlainSerializer(str, return_type=str, when_used="json")]
+BaboonU64 = Annotated[int, PlainSerializer(str, return_type=str, when_used="json")]
 
 
 class BaboonGenerated(ABC):

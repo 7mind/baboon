@@ -302,7 +302,7 @@ fn ref_schema_list_collections() -> serde_json::Value {
         "type": "object",
         "properties": {
             "tags":      { "type": "array", "items": { "type": "string" } },
-            "uniqueIds": { "type": "array", "items": { "type": "integer", "format": "int64" }, "uniqueItems": true },
+            "uniqueIds": { "type": "array", "items": { "type": "string", "format": "int64" }, "uniqueItems": true },
             "labels":    { "type": "object", "additionalProperties": { "type": "string" } },
             "byColor": {
                 "type": "object",

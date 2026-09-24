@@ -213,10 +213,10 @@ object RsDefnTranslator {
     }
 
     /** PR-I.3 (M24 Phase 3.3) — emit a `<Foreign>_KeyCodec` extension hook
-      * + sibling `<foreign>_as_map_key` serde adapter module for every
+      * + sibling `<foreign>_as_map_key` adapter module for every
       * Custom-mapped Rust foreign declaration. The host registers an
-      * implementation at boot via `register_<foreign>_keycodec`; serde
-      * routes map keys through it via the adapter module.
+      * implementation at boot via `register_<foreign>_keycodec`; the JSON
+      * codecs route map keys through it via the adapter module.
       *
       * Stringy customs ({"String", "&str", "std::string::String"}) get a
       * default identity impl so the common case works out of the box.
@@ -258,9 +258,9 @@ object RsDefnTranslator {
                |}""".stripMargin
           } else {
             // Non-stringy DefaultImpl: encode_key panics with FQN-bearing message
-            // (serde::Serializer cannot consume Result, and a String stub would
+            // (a map key is a `String` with no room for a Result, and a String stub would
             // produce malformed wire data). decode_key returns Err with the same
-            // message so deserializers surface a clear "register me" diagnostic.
+            // message so decoders surface a clear "register me" diagnostic.
             // The panic-on-encode is intentional: silently emitting bogus keys
             // is worse than a crash that points the host operator at the fix.
             val msg = s"$hostFqn() is not registered; call $registerName(impl) at app boot."
@@ -308,7 +308,6 @@ object RsDefnTranslator {
              |
              |pub mod $adapterMod {
              |    use super::*;
-             |    use std::collections::BTreeMap;
              |
              |    /// Per-key conversion, independent of any serializer — see the DTO adapter.
              |    /// Routes through the host-registered key codec so the encoding stays pluggable.
@@ -320,35 +319,6 @@ object RsDefnTranslator {
              |        super::$getterName().decode_key(s).map_err(|e| format!("{}", e))
              |    }
              |
-             |    pub fn serialize<S, V>(map: &BTreeMap<${derefedTpe.asName}, V>, serializer: S) -> Result<S::Ok, S::Error>
-             |    where
-             |        S: serde::Serializer,
-             |        V: serde::Serialize,
-             |    {
-             |        use serde::ser::SerializeMap;
-             |        let mut m = serializer.serialize_map(Some(map.len()))?;
-             |        for (k, v) in map.iter() {
-             |            let s: String = super::$getterName().encode_key(k);
-             |            m.serialize_entry(&s, v)?;
-             |        }
-             |        m.end()
-             |    }
-             |
-             |    pub fn deserialize<'de, __De, V>(deserializer: __De) -> Result<BTreeMap<${derefedTpe.asName}, V>, __De::Error>
-             |    where
-             |        __De: serde::Deserializer<'de>,
-             |        V: serde::Deserialize<'de>,
-             |    {
-             |        use serde::Deserialize as _BaboonDeserialize;
-             |        let raw: BTreeMap<String, V> = BTreeMap::<String, V>::deserialize(deserializer)?;
-             |        let mut out: BTreeMap<${derefedTpe.asName}, V> = BTreeMap::new();
-             |        for (s, v) in raw.into_iter() {
-             |            let key = super::$getterName().decode_key(&s)
-             |                .map_err(|e| serde::de::Error::custom(format!("malformed key: {}", e)))?;
-             |            out.insert(key, v);
-             |        }
-             |        Ok(out)
-             |    }
              |}""".stripMargin
       }
     }
@@ -628,10 +598,7 @@ object RsDefnTranslator {
       val fields = dto.fields.map {
         f =>
           val t          = representation.field(f.tpe).stored
-          val serdeAttrs = fieldSerdeAttributes(f)
-          val attrLine   = if (serdeAttrs.nonEmpty) serdeAttrs.joinN() else q""
-          val fieldEx = q"""$attrLine
-                           |pub ${toSnakeCase(f.name.name)}: $t,""".stripMargin.trim
+          val fieldEx = q"""pub ${toSnakeCase(f.name.name)}: $t,"""
           prependDocs(f.docs, fieldEx)
       }
       val fieldsList = if (fields.nonEmpty) fields.joinN() else q""
@@ -639,49 +606,10 @@ object RsDefnTranslator {
       val derives  = dtoDerives(dto)
       val ordImpls = dtoOrdImpls(dto, name)
 
-      val customSerialize = if (isWrappedAdtBranch(dto)) {
-        val branchName = dto.id.name.name
-        val hasFields  = dto.fields.nonEmpty
-
-        val innerFields = dto.fields.map {
-          f =>
-            val t          = representation.field(f.tpe).stored
-            val serdeAttrs = fieldSerdeAttributes(f)
-            val attrLine   = if (serdeAttrs.nonEmpty) serdeAttrs.joinN() else q""
-            q"""$attrLine
-               |${toSnakeCase(f.name.name)}: &'a $t,""".stripMargin.trim
-        }
-        val innerFieldsList = if (innerFields.nonEmpty) innerFields.joinN() else q""
-
-        val fieldAssignments = dto.fields.map {
-          f =>
-            val fld = toSnakeCase(f.name.name)
-            q"$fld: &self.$fld,"
-        }
-        val fieldAssignmentsList = if (fieldAssignments.nonEmpty) fieldAssignments.joinN() else q""
-
-        val fieldsStructDecl = if (hasFields) q"struct Fields<'a>" else q"struct Fields"
-
-        q"""
-           |
-           |impl serde::Serialize for ${name.asName} {
-           |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-           |        use serde::ser::SerializeMap;
-           |        #[derive(serde::Serialize)]
-           |        $fieldsStructDecl {
-           |            ${innerFieldsList.shift(12).trim}
-           |        }
-           |        let fields = Fields {
-           |            ${fieldAssignmentsList.shift(12).trim}
-           |        };
-           |        let mut map = serializer.serialize_map(Some(1))?;
-           |        map.serialize_entry("$branchName", &fields)?;
-           |        map.end()
-           |    }
-           |}""".stripMargin
-      } else {
-        q""
-      }
+      // The wrapped-ADT-branch envelope used to need a hand-written `Serialize` (the derive
+      // cannot express `{"Branch": {...}}`). `encode_json` emits that shape directly now, so
+      // no serde impl is emitted for branches either.
+      val customSerialize: TextTree[RsValue] = q""
 
       val structDef = if (dto.fields.isEmpty) {
         q"""$derives
@@ -707,8 +635,8 @@ object RsDefnTranslator {
              |$parseRepr""".stripMargin
         } else q""
 
-      // PR-61 (M19.3): per-key-type serde adapter module so this DTO can appear
-      // as a JSON map key. See userMapKeyAdapterPath / fieldSerdeAttributes.
+      // PR-61 (M19.3): per-key-type adapter module so this DTO can appear
+      // as a JSON map key. See RsMapKeyAdapter.
       val mapKeyAdapter: TextTree[RsValue] =
         if (isUserMapKeyEligibleDto(dto)) renderUserMapKeyAdapter(dto, name)
         else q""
@@ -798,17 +726,16 @@ object RsDefnTranslator {
       if (impls.nonEmpty) impls.joinNN() else q""
     }
 
-    /** PR-61 (M19.3) — emit a per-key-type serde adapter module as a sibling of
-      * the struct, generic over the map value type V. Used by fields of shape
-      * `BTreeMap<Self, V>` via `#[serde(with = "<this_module>")]`.
+    /** PR-61 (M19.3) — emit a per-key-type adapter module as a sibling of the struct. Used by
+      * the explicit JSON codecs for fields of shape `BTreeMap<Self, V>`.
       *
       * String form on the wire:
       *   - id types         → `format!("{}", k)` (Display from PR-57c) ↔ parse_repr
       *   - single-primitive → inner primitive's Display ↔ inner primitive parse
       *
-      * Approach (b) per PR-61 brief: the wrapper's value-position Serialize is
-      * NOT overridden — wrappers/ids continue to JSON-serialize as objects when
-      * they appear in value position. Only the map-key path is rerouted.
+      * Approach (b) per PR-61 brief: the wrapper's value-position encoding is NOT overridden —
+      * wrappers/ids continue to JSON-encode as objects when they appear in value position. Only
+      * the map-key path is rerouted.
       */
     private def renderUserMapKeyAdapter(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
       val modName = s"${toSnakeCase(name.name)}_as_map_key"
@@ -910,12 +837,9 @@ object RsDefnTranslator {
 
       q"""pub mod $modName {
          |    use super::*;
-         |    use serde::Deserialize as _BaboonDeserialize;
-         |    use std::collections::BTreeMap;
          |
          |    /// Per-key conversion, independent of any serializer. The explicit JSON codecs build
-         |    /// the map themselves and only need the key, so they call these rather than the
-         |    /// whole-map serde adapter below.
+         |    /// the map themselves and only need the key.
          |    pub fn key_to_string(k: &${name.asName}) -> String {
          |        $encodeKey
          |    }
@@ -924,34 +848,6 @@ object RsDefnTranslator {
          |        $decodeKey.map_err(|e| format!("{}", e))
          |    }
          |
-         |    pub fn serialize<S, V>(map: &BTreeMap<${name.asName}, V>, serializer: S) -> Result<S::Ok, S::Error>
-         |    where
-         |        S: serde::Serializer,
-         |        V: serde::Serialize,
-         |    {
-         |        use serde::ser::SerializeMap;
-         |        let mut m = serializer.serialize_map(Some(map.len()))?;
-         |        for (k, v) in map.iter() {
-         |            let key_str: String = $encodeKey;
-         |            m.serialize_entry(&key_str, v)?;
-         |        }
-         |        m.end()
-         |    }
-         |
-         |    pub fn deserialize<'de, __De, V>(deserializer: __De) -> Result<BTreeMap<${name.asName}, V>, __De::Error>
-         |    where
-         |        __De: serde::Deserializer<'de>,
-         |        V: serde::Deserialize<'de>,
-         |    {
-         |        let raw: BTreeMap<String, V> = BTreeMap::<String, V>::deserialize(deserializer)?;
-         |        let mut out: BTreeMap<${name.asName}, V> = BTreeMap::new();
-         |        for (s, v) in raw.into_iter() {
-         |            let key = $decodeKey
-         |                .map_err(|e| serde::de::Error::custom(format!("malformed key: {}", e)))?;
-         |            out.insert(key, v);
-         |        }
-         |        Ok(out)
-         |    }
          |}""".stripMargin
     }
 
@@ -980,18 +876,19 @@ object RsDefnTranslator {
       // - hasUnorderable (any): PartialEq is derived (AnyOpaque has PartialEq); no Eq/Ord because
       //   serde_json::Value has no total ordering and JSON-source bytes can be byte-different but
       //   semantically equal — Eq is misleading.
-      // - wrappedBranch: encoded as an inline ADT branch — no Serialize derive (handled by ADT).
-      val serdeDerives =
-        if (wrappedBranch) "serde::Deserialize"
-        else "serde::Serialize, serde::Deserialize"
+      // JSON is produced by the generated `encode_json` / `decode_json` pair, so no serde
+      // derive is emitted: `serde::Serialize` has no room for a codec context and cannot reach
+      // the facade an `any` field needs.
+      val _ = wrappedBranch
 
       val cmpDerives =
-        if (hasUnorderable) "PartialEq, "
-        else if (hasWrappedFlt) "PartialEq, PartialOrd, "
-        else if (hasBareFloat) "" // manual PartialEq/Eq/PartialOrd/Ord via dtoOrdImpls
-        else "PartialEq, Eq, PartialOrd, Ord, "
+        if (hasUnorderable) "PartialEq"
+        else if (hasWrappedFlt) "PartialEq, PartialOrd"
+        else if (hasBareFloat) "Clone2Marker" // manual PartialEq/Eq/PartialOrd/Ord via dtoOrdImpls
+        else "PartialEq, Eq, PartialOrd, Ord"
 
-      q"#[derive(Clone, Debug, $cmpDerives$serdeDerives)]"
+      if (cmpDerives == "Clone2Marker") q"#[derive(Clone, Debug)]"
+      else q"#[derive(Clone, Debug, $cmpDerives)]"
     }
 
     private def dtoOrdImpls(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
@@ -1051,54 +948,6 @@ object RsDefnTranslator {
     private val representation = new RsFieldRepresentation(domain, evo, trans, enquiries)
 
     private def needsBox(tpe: TypeRef): Boolean = representation.needsBox(tpe)
-
-    private def fieldSerdeAttributes(f: Field): List[TextTree[RsValue]] = {
-      val attrs = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
-      // Rename field to original name if we snake_cased it
-      val originalName = f.name.name
-      val rustName     = toSnakeCase(originalName)
-      if (rustName != originalName) {
-        attrs += q"""#[serde(rename = "$originalName")]"""
-      }
-
-      // Special serde for bytes (hex encoding)
-      trans.needsHexSerde(f.tpe) match {
-        case Some(RsTypeTranslator.HexSerdeKind.Direct) =>
-          attrs += q"""#[serde(with = "crate::baboon_runtime::hex_bytes")]"""
-        case Some(RsTypeTranslator.HexSerdeKind.Optional) =>
-          attrs += q"""#[serde(with = "crate::baboon_runtime::opt_hex_bytes")]"""
-        case None =>
-      }
-      // Special serde for Decimal (as number)
-      if (trans.needsDecimalSerde(f.tpe)) {
-        attrs += q"""#[serde(with = "crate::baboon_runtime::decimal_as_number")]"""
-      }
-      // Special serde for timestamps
-      f.tpe match {
-        case TypeRef.Scalar(TypeId.Builtins.tsu) =>
-          attrs += q"""#[serde(with = "crate::baboon_runtime::tsu_serde")]"""
-        case TypeRef.Scalar(TypeId.Builtins.tso) =>
-          attrs += q"""#[serde(with = "crate::baboon_runtime::tso_serde")]"""
-        case _ =>
-      }
-      // Lenient deserialization for fields containing i64/u64 (accepts both numbers and strings)
-      if (trans.needsLenientSerde(f.tpe)) {
-        attrs += q"""#[serde(deserialize_with = "crate::baboon_runtime::lenient_numeric::deserialize")]"""
-      }
-      // PR-61 (M19.3 / PR-60-D06): user-typed map keys.
-      // serde_json's default Serialize for `BTreeMap<K, V>` rejects non-string-shaped K
-      // with `key must be a string`. For `map[K, V]` where K is a user `id` (M18) or
-      // single-primitive-field `data` wrapper (M19), redirect through a per-K adapter
-      // module that converts K↔String via the existing Display / parse_repr machinery
-      // (id types) or by peeling to the inner primitive (single-field wrappers). The
-      // adapter module is emitted next to K's struct (see `userMapKeyAdapter` below).
-      userMapKeyAdapterPath(f.tpe).foreach {
-        path =>
-          attrs += q"""#[serde(with = "$path")]"""
-      }
-
-      attrs.toList
-    }
 
     // Map-key adapter lookup lives in RsMapKeyAdapter so the explicit JSON codecs can reuse it.
     private val mapKeyAdapter = new RsMapKeyAdapter(domain, domainTypes)
@@ -1168,7 +1017,7 @@ object RsDefnTranslator {
           q"${name.asName}::${EnumWireStyle.wireName(m.name)},"
       }.toList
 
-      q"""#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+      q"""#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
          |pub enum ${name.asName} {
          |    ${variants.joinN().shift(4).trim}
          |}
@@ -1235,7 +1084,7 @@ object RsDefnTranslator {
       // Generate the ADT enum
       val variants = dataMembers.map {
         mid =>
-          // wireVariantName: original model name (capitalized) used in serde string literals.
+          // wireVariantName: original model name (capitalized) used in the wire string literals.
           // rsVariantName: keyword-escaped Rust identifier used in source code.
           val wireVariantName = mid.name.name.capitalize
           val rsVariantName   = escapeRustTypeName(wireVariantName)
@@ -1243,52 +1092,7 @@ object RsDefnTranslator {
           q"$rsVariantName(${branchType.asName}),"
       }
 
-      // Custom serde for ADT: serialize as {"BranchName": { ... }}
-      val serImpl = if (target.language.wrappedAdtBranchCodecs) {
-        val serBranches = dataMembers.map {
-          mid =>
-            val rsVariantName = escapeRustTypeName(mid.name.name.capitalize)
-            q"""${name.asName}::$rsVariantName(v) => v.serialize(serializer),"""
-        }
-        q"""impl serde::Serialize for ${name.asName} {
-           |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-           |        match self {
-           |            ${serBranches.toList.joinN().shift(12).trim}
-           |        }
-           |    }
-           |}""".stripMargin
-      } else {
-        val serBranches = dataMembers.map {
-          mid =>
-            val wireVariantName = mid.name.name.capitalize
-            val rsVariantName   = escapeRustTypeName(wireVariantName)
-            q"""${name.asName}::$rsVariantName(v) => {
-               |    map.serialize_entry("$wireVariantName", v)?;
-               |}""".stripMargin
-        }
-        q"""impl serde::Serialize for ${name.asName} {
-           |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-           |        use serde::ser::SerializeMap;
-           |        let mut map = serializer.serialize_map(Some(1))?;
-           |        match self {
-           |            ${serBranches.toList.joinN().shift(12).trim}
-           |        }
-           |        map.end()
-           |    }
-           |}""".stripMargin
-      }
-
-      val deBranches = dataMembers.map {
-        mid =>
-          val wireVariantName = mid.name.name.capitalize
-          val rsVariantName   = escapeRustTypeName(wireVariantName)
-          q""""$wireVariantName" => Ok(${name.asName}::$rsVariantName(map.next_value()?)),"""
-      }
-
-      // branchNames for serde error messages use wire names (original model names).
-      val branchNames    = dataMembers.map(_.name.name.capitalize)
-      val branchNamesLit = branchNames.map(n => s""""$n"""").mkString(", ")
-
+      // The ADT wire shape is {"BranchName": { ... }}; `Display` mirrors the branch names.
       val displayBranches = dataMembers.map {
         mid =>
           val wireVariantName = mid.name.name.capitalize
@@ -1320,29 +1124,6 @@ object RsDefnTranslator {
          |$adtDocBlock#[derive(Clone, Debug, $adtCmpDerives)]
          |pub enum ${name.asName} {
          |    ${variants.toList.joinN().shift(4).trim}
-         |}
-         |
-         |$serImpl
-         |
-         |impl<'de> serde::Deserialize<'de> for ${name.asName} {
-         |    fn deserialize<__De: serde::Deserializer<'de>>(deserializer: __De) -> Result<Self, __De::Error> {
-         |        struct AdtVisitor;
-         |        impl<'de> serde::de::Visitor<'de> for AdtVisitor {
-         |            type Value = ${name.asName};
-         |            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-         |                write!(f, "a single-key map representing ${name.name}")
-         |            }
-         |            fn visit_map<__M: serde::de::MapAccess<'de>>(self, mut map: __M) -> Result<Self::Value, __M::Error> {
-         |                let key: String = map.next_key()?
-         |                    .ok_or_else(|| serde::de::Error::custom("expected single-key map for ADT"))?;
-         |                match key.as_str() {
-         |                    ${deBranches.toList.joinN().shift(20).trim}
-         |                    _ => Err(serde::de::Error::unknown_variant(&key, &[$branchNamesLit])),
-         |                }
-         |            }
-         |        }
-         |        deserializer.deserialize_map(AdtVisitor)
-         |    }
          |}
          |
          |impl std::fmt::Display for ${name.asName} {

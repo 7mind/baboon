@@ -36,7 +36,9 @@ object JvScalarCodecEmitter {
     case TypeId.Builtins.i08   => q"$shortNode.valueOf((short) $value)"
     case TypeId.Builtins.i16   => q"$shortNode.valueOf($value)"
     case TypeId.Builtins.i32   => q"$intNode.valueOf($value)"
-    case TypeId.Builtins.i64   => q"$longNode.valueOf($value)"
+    // 64-bit integers go on the wire as decimal strings in every backend — see the C# emitter
+    // and docs/json-codecs.md, "64-bit integers". The decoder stays lenient about numbers.
+    case TypeId.Builtins.i64   => q"new $textNode(Long.toString($value))"
     case TypeId.Builtins.u08   => q"$shortNode.valueOf($value)"
     case TypeId.Builtins.u16   => q"$intNode.valueOf($value)"
     case TypeId.Builtins.u32   => q"$longNode.valueOf($value)"

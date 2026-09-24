@@ -53,7 +53,8 @@ final class PyTypeTranslator {
           case TypeId.Builtins.i08 | TypeId.Builtins.u08 => pyInt
           case TypeId.Builtins.i16 | TypeId.Builtins.u16 => pyInt
           case TypeId.Builtins.i32 | TypeId.Builtins.u32 => pyInt
-          case TypeId.Builtins.i64 | TypeId.Builtins.u64 => pyInt
+          case TypeId.Builtins.i64                       => pyI64
+          case TypeId.Builtins.u64                       => pyU64
           case TypeId.Builtins.f32                       => pyFloat
           case TypeId.Builtins.f64                       => pyFloat
           case TypeId.Builtins.f128                      => pyDecimal

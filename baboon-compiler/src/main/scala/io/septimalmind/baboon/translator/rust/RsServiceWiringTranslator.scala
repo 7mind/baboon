@@ -218,13 +218,15 @@ object RsServiceWiringTranslator {
               val jsonMethod = if (hasJson) {
                 val decodeResult = m.out match {
                   case Some(_) =>
-                    q"""let decoded: $outFq = serde_json::from_str(&resp)?;
+                    val dec = m.out.map(o => jsonDecodeExpr(o.id, outFq, q"parsed")).getOrElse(q"Ok(())")
+                    q"""let parsed: serde_json::Value = serde_json::from_str(&resp)?;
+                       |let decoded: $outFq = $dec?;
                        |Ok(decoded)""".stripMargin
                   case None => q"Ok(())"
                 }
                 Some(
                   q"""pub ${asyncKw}fn ${toSnakeCase(m.name.name)}_json(&self, ${ctxParamDecl}arg: $inFq) -> Result<$outFq, Box<dyn std::error::Error>> {
-                     |    let encoded = serde_json::to_string(&arg)?;
+                     |    let encoded = ${jsonEncodeExpr(m.sig.id, q"arg")}?.to_string();
                      |    let resp = (self.transport_json)($transportCtxArg"$svcName", "${m.name.name}", &encoded)$awaitSuffix$transportErrMap?;
                      |    ${decodeResult.shift(4).trim}
                      |}""".stripMargin
@@ -651,6 +653,23 @@ object RsServiceWiringTranslator {
       case t: RsValue.RsTypeName => t.name
     }
 
+    /** A method's in/out type is either a generated type, which carries `encode_json`/
+      * `decode_json`, or a builtin scalar, which does not — a builtin is a std type and keeps
+      * serde's own impl, so it needs no generated codec and never had a derive to lose.
+      */
+    private def isGeneratedType(id: TypeId): Boolean = id match {
+      case _: TypeId.User => true
+      case _              => false
+    }
+
+    private def jsonEncodeExpr(id: TypeId, ref: TextTree[RsValue]): TextTree[RsValue] =
+      if (isGeneratedType(id)) q"$ref.encode_json(&crate::baboon_runtime::BaboonCodecContext::Compact)"
+      else q"""serde_json::to_value(&$ref).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!("{}", e)))"""
+
+    private def jsonDecodeExpr(id: TypeId, tpe: String, ref: TextTree[RsValue]): TextTree[RsValue] =
+      if (isGeneratedType(id)) q"<$tpe>::decode_json(&crate::baboon_runtime::BaboonCodecContext::Compact, &$ref)"
+      else q"""serde_json::from_value::<$tpe>($ref.clone()).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("{}", e)))"""
+
     private def inTypeFq(m: Typedef.MethodDef): String = {
       val ref = domainTypes.asRsType(m.sig.id)
       renderFq(q"$ref")
@@ -685,14 +704,15 @@ object RsServiceWiringTranslator {
           val encodeAndReturn = m.out match {
             case Some(_) =>
               q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
-                 |serde_json::to_string(&result).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))""".stripMargin
+                 |${jsonEncodeExpr(m.out.get.id, q"result")}.map(|v| v.to_string()).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))""".stripMargin
             case None =>
               q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
                  |Ok("null".to_string())""".stripMargin
           }
 
           q""""${m.name.name}" => {
-             |    let decoded: $inFq = serde_json::from_str(data).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), Box::new(e)))?;
+             |    let parsed: serde_json::Value = serde_json::from_str(data).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), Box::new(e)))?;
+             |    let decoded: $inFq = ${jsonDecodeExpr(m.sig.id, inFq, q"parsed")}.map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), Box::new(e)))?;
              |    ${encodeAndReturn.shift(4).trim}
              |}""".stripMargin
       }.join("\n")
@@ -823,9 +843,11 @@ object RsServiceWiringTranslator {
           val inFq = inTypeFq(m)
 
           val decodeStep =
-            q"""let input: ${ct(bweFq, inFq)} = match serde_json::from_str::<$inFq>(data) {
+            q"""let input: ${ct(bweFq, inFq)} = match serde_json::from_str::<serde_json::Value>(data)
+               |    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+               |    .and_then(|parsed| ${jsonDecodeExpr(m.sig.id, inFq, q"parsed")}.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)) {
                |    Ok(v) => rt.pure$pureHint(v),
-               |    Err(e) => rt.fail($bweFq::DecoderFailed(method.clone(), Box::new(e))),
+               |    Err(e) => rt.fail($bweFq::DecoderFailed(method.clone(), e)),
                |};""".stripMargin
 
           val callAndEncodeStep = m.out match {
@@ -836,7 +858,7 @@ object RsServiceWiringTranslator {
                  |    ${callBody.shift(4).trim}
                  |$combinatorClosureClose)$combinatorAwait;
                  |rt.flat_map$flatMapHint(output, |v| $combinatorClosureOpen
-                 |    match serde_json::to_string(&v) {
+                 |    match ${jsonEncodeExpr(m.out.get.id, q"v")}.map(|j| j.to_string()) {
                  |        Ok(s) => rt.pure$pureHint(s),
                  |        Err(e) => rt.fail($bweFq::EncoderFailed(method.clone(), Box::new(e))),
                  |    }

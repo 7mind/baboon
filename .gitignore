@@ -222,3 +222,6 @@ pubspec.lock
 
 # hand-written documentation exempt from the ledger-backend ignore above
 !docs/cli-reference.md
+
+# local-only working notes (not part of any ledger)
+notes.local.md

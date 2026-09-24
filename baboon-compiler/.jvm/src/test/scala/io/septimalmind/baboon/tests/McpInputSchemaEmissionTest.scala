@@ -267,7 +267,8 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
           assertWellFormed("listCollections", schema)
           val instance = Json.obj(
             "tags"      -> Json.arr(Json.fromString("a"), Json.fromString("b")),
-            "uniqueIds" -> Json.arr(Json.fromLong(1L), Json.fromLong(2L)),
+            // set[i64]: 64-bit integers are carried as decimal strings (docs/json-codecs.md).
+            "uniqueIds" -> Json.arr(Json.fromString("1"), Json.fromString("2")),
             "labels"    -> Json.obj("k" -> Json.fromString("v")),
             "byColor"   -> Json.obj("Green" -> Json.fromString("ok")),
           )

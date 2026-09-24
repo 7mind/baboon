@@ -40,11 +40,9 @@ fn holder_nested_wrapper_map_key_json_round_trip() {
     );
     let original = Holder { m };
 
-    let json = serde_json::to_string(&original)
-        .expect("serde_json::to_string should succeed");
+    let json = original.to_json().expect("to_json should succeed");
 
-    let decoded: Holder = serde_json::from_str(&json)
-        .expect("serde_json::from_str should succeed");
+    let decoded: Holder = Holder::from_json(&json).expect("from_json should succeed");
 
     assert_eq!(decoded, original, "round-trip diverged: {:?} vs {:?}", decoded, original);
 }
@@ -53,11 +51,9 @@ fn holder_nested_wrapper_map_key_json_round_trip() {
 fn holder_nested_wrapper_map_key_json_round_trip_empty() {
     let original = Holder { m: BTreeMap::new() };
 
-    let json = serde_json::to_string(&original)
-        .expect("serde_json::to_string should succeed");
+    let json = original.to_json().expect("to_json should succeed");
 
-    let decoded: Holder = serde_json::from_str(&json)
-        .expect("serde_json::from_str should succeed");
+    let decoded: Holder = Holder::from_json(&json).expect("from_json should succeed");
 
     assert_eq!(decoded, original, "round-trip diverged: {:?} vs {:?}", decoded, original);
 }

@@ -52,6 +52,7 @@ object TsTypes {
   val tsBaboonBinWriter: TsType           = TsType(tsBaboonRuntimeShared, "BaboonBinWriter")
   val tsBaboonBinReader: TsType           = TsType(tsBaboonRuntimeShared, "BaboonBinReader")
   val tsBinTools: TsType                  = TsType(tsBaboonRuntimeShared, "BinTools")
+  val tsBaboonInt64: TsType               = TsType(tsBaboonRuntimeShared, "BaboonInt64")
   val tsBaboonGenerated: TsType           = TsType(tsBaboonRuntimeShared, "BaboonGenerated", typeOnly = true)
   val tsBaboonGeneratedLatest: TsType     = TsType(tsBaboonRuntimeShared, "BaboonGeneratedLatest", typeOnly = true)
   val tsBaboonAdtMemberMeta: TsType       = TsType(tsBaboonRuntimeShared, "BaboonAdtMemberMeta", typeOnly = true)
