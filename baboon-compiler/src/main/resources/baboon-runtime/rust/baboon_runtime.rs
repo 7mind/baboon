@@ -982,3 +982,136 @@ pub mod bin_tools {
         Ok(dt.with_timezone(&offset))
     }
 }
+
+// --- Explicit JSON codec support ---
+//
+// `serde::Serialize` has no room for a codec context, so the generated types carry inherent
+// `encode_json(ctx)` / `decode_json(ctx, wire)` methods instead of relying on the derive.
+// These helpers hold the leaf conversions those methods need. Plain primitives deliberately
+// still route through `serde_json`'s own conversion at the call site, so their JSON form is
+// exactly what the derive produced (f32 shortest-repr, full-range i64/u64, bool, string) and
+// cannot drift; only the shapes serde expressed through attributes live here.
+#[cfg(feature = "json-helpers")]
+pub mod json_tools {
+    use crate::any_opaque::BaboonCodecError;
+    use serde_json::Value;
+
+    pub fn decoder_failure<S: Into<String>>(message: S) -> BaboonCodecError {
+        BaboonCodecError::decoder_failure(message)
+    }
+
+    pub fn encoder_failure<S: Into<String>>(message: S) -> BaboonCodecError {
+        BaboonCodecError::encoder_failure(message)
+    }
+
+    pub fn expect_object<'a>(wire: &'a Value, what: &str) -> Result<&'a serde_json::Map<String, Value>, BaboonCodecError> {
+        wire.as_object().ok_or_else(|| decoder_failure(format!("{}: expected a JSON object, got {}", what, kind_of(wire))))
+    }
+
+    pub fn expect_array<'a>(wire: &'a Value, what: &str) -> Result<&'a Vec<Value>, BaboonCodecError> {
+        wire.as_array().ok_or_else(|| decoder_failure(format!("{}: expected a JSON array, got {}", what, kind_of(wire))))
+    }
+
+    pub fn expect_str<'a>(wire: &'a Value, what: &str) -> Result<&'a str, BaboonCodecError> {
+        wire.as_str().ok_or_else(|| decoder_failure(format!("{}: expected a JSON string, got {}", what, kind_of(wire))))
+    }
+
+    pub fn expect_bool(wire: &Value, what: &str) -> Result<bool, BaboonCodecError> {
+        wire.as_bool().ok_or_else(|| decoder_failure(format!("{}: expected a JSON boolean, got {}", what, kind_of(wire))))
+    }
+
+    /// A field the wire is required to carry. Absent and explicit-null are distinguished: an
+    /// `opt` field decodes null itself, every other field treats it as malformed input.
+    pub fn field<'a>(obj: &'a serde_json::Map<String, Value>, name: &str, what: &str) -> Result<&'a Value, BaboonCodecError> {
+        obj.get(name).ok_or_else(|| decoder_failure(format!("{}: missing field '{}'", what, name)))
+    }
+
+    pub fn kind_of(wire: &Value) -> &'static str {
+        match wire {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        }
+    }
+
+    // Integers. `i64`/`u64` also accept a string on the wire, matching the lenient
+    // `#[serde(deserialize_with = "lenient_numeric::deserialize")]` the derive carried —
+    // JavaScript producers cannot represent the full 64-bit range as a JSON number.
+    pub fn read_i64(wire: &Value, what: &str) -> Result<i64, BaboonCodecError> {
+        match wire {
+            Value::Number(n) => n.as_i64().ok_or_else(|| decoder_failure(format!("{}: {} is not an i64", what, n))),
+            Value::String(s) => s.parse::<i64>().map_err(|e| decoder_failure(format!("{}: {}", what, e))),
+            other => Err(decoder_failure(format!("{}: expected a number or string, got {}", what, kind_of(other)))),
+        }
+    }
+
+    pub fn read_u64(wire: &Value, what: &str) -> Result<u64, BaboonCodecError> {
+        match wire {
+            Value::Number(n) => n.as_u64().ok_or_else(|| decoder_failure(format!("{}: {} is not a u64", what, n))),
+            Value::String(s) => s.parse::<u64>().map_err(|e| decoder_failure(format!("{}: {}", what, e))),
+            other => Err(decoder_failure(format!("{}: expected a number or string, got {}", what, kind_of(other)))),
+        }
+    }
+
+    pub fn read_f64(wire: &Value, what: &str) -> Result<f64, BaboonCodecError> {
+        wire.as_f64().ok_or_else(|| decoder_failure(format!("{}: expected a number, got {}", what, kind_of(wire))))
+    }
+
+    // Bytes travel as upper-case hex, matching the `hex_bytes` adapter the derive used.
+    pub fn bytes_to_json(bytes: &[u8]) -> Value {
+        Value::String(bytes.iter().map(|b| format!("{:02X}", b)).collect::<String>())
+    }
+
+    pub fn bytes_from_json(wire: &Value, what: &str) -> Result<Vec<u8>, BaboonCodecError> {
+        let s = expect_str(wire, what)?;
+        super::hex_bytes::hex_decode(s).map_err(|e| decoder_failure(format!("{}: {}", what, e)))
+    }
+
+    #[cfg(feature = "decimal")]
+    pub fn decimal_to_json(value: &rust_decimal::Decimal) -> Value {
+        use std::str::FromStr;
+        let normalized = value.normalize().to_string();
+        match serde_json::Number::from_str(&normalized) {
+            Ok(n) => Value::Number(n),
+            Err(_) => Value::Number(serde_json::Number::from(0)),
+        }
+    }
+
+    #[cfg(feature = "decimal")]
+    pub fn decimal_from_json(wire: &Value, what: &str) -> Result<rust_decimal::Decimal, BaboonCodecError> {
+        use std::str::FromStr;
+        let text = match wire {
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.clone(),
+            other => return Err(decoder_failure(format!("{}: expected a number or string, got {}", what, kind_of(other)))),
+        };
+        rust_decimal::Decimal::from_str(&text)
+            .map(|d| d.normalize())
+            .map_err(|e| decoder_failure(format!("{}: {}", what, e)))
+    }
+
+    #[cfg(feature = "timestamps")]
+    pub fn tsu_to_json(value: &chrono::DateTime<chrono::Utc>) -> Value {
+        Value::String(super::time_formats::format_tsu(value))
+    }
+
+    #[cfg(feature = "timestamps")]
+    pub fn tsu_from_json(wire: &Value, what: &str) -> Result<chrono::DateTime<chrono::Utc>, BaboonCodecError> {
+        let s = expect_str(wire, what)?;
+        super::time_formats::parse_tsu(s).map_err(|e| decoder_failure(format!("{}: {}", what, e)))
+    }
+
+    #[cfg(feature = "timestamps")]
+    pub fn tso_to_json(value: &chrono::DateTime<chrono::FixedOffset>) -> Value {
+        Value::String(super::time_formats::format_tso(value))
+    }
+
+    #[cfg(feature = "timestamps")]
+    pub fn tso_from_json(wire: &Value, what: &str) -> Result<chrono::DateTime<chrono::FixedOffset>, BaboonCodecError> {
+        let s = expect_str(wire, what)?;
+        super::time_formats::parse_tso(s).map_err(|e| decoder_failure(format!("{}: {}", what, e)))
+    }
+}

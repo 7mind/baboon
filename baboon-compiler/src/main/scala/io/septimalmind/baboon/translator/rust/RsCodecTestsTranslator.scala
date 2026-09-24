@@ -78,6 +78,31 @@ object RsCodecTestsTranslator {
                    |assert_eq!(fixture, decoded);""".stripMargin
             }
 
+            // Conversion oracle: while the serde derive is still in place it defines the JSON
+            // shape, so the explicit `encode_json` must agree with it value for value. This is
+            // what lets the derives be removed later without moving the wire.
+            val encodeMatchesDerive = definition.defn match {
+              case _: Typedef.Adt =>
+                q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+                   |for fixture in super::${fixtureMethodJson}_all(&mut rnd) {
+                   |    let explicit = fixture.encode_json(&crate::baboon_runtime::BaboonCodecContext::Compact).expect("encode_json failed");
+                   |    let derived = serde_json::to_value(&fixture).expect("serde encode failed");
+                   |    assert_eq!(explicit, derived);
+                   |}""".stripMargin
+              case _: Typedef.Enum =>
+                q"""for fixture in $srcRef::all() {
+                   |    let explicit = fixture.encode_json(&crate::baboon_runtime::BaboonCodecContext::Compact).expect("encode_json failed");
+                   |    let derived = serde_json::to_value(&fixture).expect("serde encode failed");
+                   |    assert_eq!(explicit, derived);
+                   |}""".stripMargin
+              case _ =>
+                q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+                   |let fixture = super::$fixtureMethodJson(&mut rnd);
+                   |let explicit = fixture.encode_json(&crate::baboon_runtime::BaboonCodecContext::Compact).expect("encode_json failed");
+                   |let derived = serde_json::to_value(&fixture).expect("serde encode failed");
+                   |assert_eq!(explicit, derived);""".stripMargin
+            }
+
             q"""#[test]
                |fn test_${testFnName}_json_codec() {
                |    crate::cross_language_fixture_path::assert_cross_language_fixture_root_exists();
@@ -101,6 +126,13 @@ object RsCodecTestsTranslator {
                |    let re_encoded = serde_json::to_value(&decoded).expect("Failed to re-encode");
                |    let re_decoded: $srcRef = serde_json::from_value(re_encoded).expect("Failed to decode re-encoded");
                |    assert_eq!(decoded, re_decoded);
+               |}
+               |
+               |#[test]
+               |fn test_${testFnName}_json_encode_matches_derive() {
+               |    for _ in 0..${target.generic.codecTestIterations.toString} {
+               |        ${encodeMatchesDerive.shift(8).trim}
+               |    }
                |}""".stripMargin
         }.toList
 
