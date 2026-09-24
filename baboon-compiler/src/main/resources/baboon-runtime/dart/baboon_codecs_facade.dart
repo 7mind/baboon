@@ -292,6 +292,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
 
   /// PR-19-D02: pass `useAdtIdentifier=true` when encoding through an ADT-typed reference.
   BaboonEither<BaboonCodecException, Map<String, dynamic>> encodeToJson(
+    BaboonCodecContext ctx,
     BaboonGenerated value, {
     BaboonTypeMeta? typeMetaOverride,
     bool useAdtIdentifier = false,
@@ -309,7 +310,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
     final codec = (codecResult as BaboonRight<BaboonCodecException, BaboonCodecData>).value as BaboonJsonCodecBase<BaboonGenerated>;
 
     try {
-      final content = codec.encode(BaboonCodecContext.compact, value);
+      final content = codec.encode(ctx, value);
       final metaJson = (typeMetaOverride ?? typeMeta).writeJson();
       // PR-08-D06 analog: meta JSON must be a plain map for `$c` insertion to work. The runtime
       // helper `BaboonTypeMetaCodec.writeJson` always returns one; assert defensively.
@@ -418,6 +419,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
   /// the wire `meta` (variants B/C/D1/D2/D3 — codec-generation-time knowledge); wire data wins
   /// when both are present (override semantics). See PR-06-D01.
   BaboonEither<BaboonCodecException, Uint8List> jsonToUebaBytes(
+    BaboonCodecContext ctx,
     AnyMeta meta,
     Object? json, {
     String? staticDomain,
@@ -444,7 +446,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
 
     final BaboonGenerated typed;
     try {
-      typed = jsonCodec.decode(BaboonCodecContext.compact, json);
+      typed = jsonCodec.decode(ctx, json);
     } catch (e) {
       return BaboonLeft(BaboonDecoderFailure(
         "jsonToUebaBytes: cannot decode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
@@ -454,7 +456,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
 
     try {
       final writer = BaboonBinWriter();
-      binCodec.encode(BaboonCodecContext.compact, writer, typed);
+      binCodec.encode(ctx, writer, typed);
       return BaboonRight(writer.toBytes());
     } catch (e) {
       return BaboonLeft(BaboonEncoderFailure(
@@ -466,6 +468,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
 
   /// Cross-format helper symmetric to [jsonToUebaBytes].
   BaboonEither<BaboonCodecException, Object?> uebaToJson(
+    BaboonCodecContext ctx,
     AnyMeta meta,
     Uint8List bytes, {
     String? staticDomain,
@@ -492,7 +495,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
 
     final BaboonGenerated typed;
     try {
-      typed = binCodec.decode(BaboonCodecContext.compact, BaboonBinReader(bytes));
+      typed = binCodec.decode(ctx, BaboonBinReader(bytes));
     } catch (e) {
       return BaboonLeft(BaboonDecoderFailure(
         "uebaToJson: cannot decode UEBA payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
@@ -501,7 +504,7 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
     }
 
     try {
-      return BaboonRight(jsonCodec.encode(BaboonCodecContext.compact, typed));
+      return BaboonRight(jsonCodec.encode(ctx, typed));
     } catch (e) {
       return BaboonLeft(BaboonEncoderFailure(
         "uebaToJson: cannot encode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",

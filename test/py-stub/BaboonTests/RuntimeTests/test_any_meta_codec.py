@@ -8,6 +8,7 @@ import json
 import unittest
 from io import BytesIO
 
+from BaboonDefinitions.Generated.baboon_codecs import BaboonCodecContext
 from BaboonDefinitions.Generated.baboon_any_opaque import (
     ANY_CONTENT_KEY,
     ANY_DOMAIN_KEY,
@@ -428,11 +429,11 @@ class BaboonCodecsFacadeAnyTest(unittest.TestCase):
     def test_json_to_ueba_bytes_with_full_meta(self):
         facade = _make_facade()
         meta = AnyMeta(0x07, "smoke.dom", "1.0.0", "smoke.dom/:#Stub")
-        result = facade.json_to_ueba_bytes(meta, {"x": "hi"})
+        result = facade.json_to_ueba_bytes(BaboonCodecContext.default(), meta, {"x": "hi"})
         self.assertIsInstance(result, BaboonRight, msg=str(result))
         # Round-trip back via ueba_to_json. Real codegen's encode returns a JSON-text
         # string (pydantic model_dump_json), so ueba_to_json's BaboonRight wraps a string.
-        rev = facade.ueba_to_json(meta, result.value)
+        rev = facade.ueba_to_json(BaboonCodecContext.default(), meta, result.value)
         self.assertIsInstance(rev, BaboonRight)
         self.assertEqual(json.loads(rev.value), {"x": "hi"})
 
@@ -441,6 +442,7 @@ class BaboonCodecsFacadeAnyTest(unittest.TestCase):
         facade = _make_facade()
         meta = AnyMeta(0x00, None, None, None)
         result = facade.json_to_ueba_bytes(
+            BaboonCodecContext.default(),
             meta,
             {"x": "fallback"},
             static_domain="smoke.dom",
@@ -454,6 +456,7 @@ class BaboonCodecsFacadeAnyTest(unittest.TestCase):
         facade = _make_facade()
         meta = AnyMeta(0x07, "smoke.dom", "1.0.0", "smoke.dom/:#Stub")
         result = facade.json_to_ueba_bytes(
+            BaboonCodecContext.default(),
             meta,
             {"x": "wire-wins"},
             static_domain="other.dom",  # would fail if it overrode
@@ -465,7 +468,7 @@ class BaboonCodecsFacadeAnyTest(unittest.TestCase):
     def test_ueba_to_json_unknown_domain_returns_left(self):
         facade = _make_facade()
         meta = AnyMeta(0x07, "unknown.dom", "1.0.0", "unknown.dom/:#X")
-        result = facade.ueba_to_json(meta, b"\x00")
+        result = facade.ueba_to_json(BaboonCodecContext.default(), meta, b"\x00")
         self.assertIsInstance(result, BaboonLeft)
 
     def test_pr_07_d02_single_version_domain_resolves(self):

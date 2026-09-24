@@ -1,6 +1,7 @@
 import json
 import unittest
 
+from BaboonDefinitions.Generated.baboon_codecs import BaboonCodecContext
 from BaboonDefinitions.Generated.baboon_codecs_facade import BaboonTypeMeta, BaboonTypeMetaCodec
 from BaboonDefinitions.Generated.review.python.facade.domain_facade import DomainReviewPythonFacadeFacade
 from BaboonDefinitions.Generated.review.python.facade.baboon_runtime import BaboonConversions, RequiredConversions
@@ -42,7 +43,7 @@ class VersionedFacadeTest(unittest.TestCase):
     def test_latest_exact_roundtrip_preserves_legacy_text_payload(self):
         facade = DomainReviewPythonFacadeFacade()
         value = Evolving(value=8, extra="current")
-        wire = facade.encode_to_json(value)
+        wire = facade.encode_to_json(BaboonCodecContext.default(), value)
         self.assertIsInstance(json.loads(wire)["$c"], str)
         self.assertEqual(value, facade.decode_from_json_latest(wire, Evolving))
 
@@ -55,6 +56,6 @@ class VersionedFacadeTest(unittest.TestCase):
         facade = DomainReviewPythonFacadeFacade()
         facade.register(BaboonDomainVersion("review.python.facade", "2.0.0"), codecs_json=fail)
         with self.assertRaises(BaboonCodecException) as caught:
-            facade.encode_to_json(Evolving(value=8, extra=None))
+            facade.encode_to_json(BaboonCodecContext.default(), Evolving(value=8, extra=None))
         self.assertIn("EncoderFailure", str(caught.exception))
         self.assertIs(cause, caught.exception.__cause__)

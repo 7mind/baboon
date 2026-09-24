@@ -562,6 +562,7 @@ impl BaboonCodecsFacade {
     /// override semantics. Without the static fallback, only variant A would work — see PR-06-D01.
     pub fn json_to_ueba_bytes(
         &self,
+        ctx: &BaboonCodecContext,
         meta: &AnyMeta,
         json: &serde_json::Value,
         static_domain: Option<&str>,
@@ -572,7 +573,7 @@ impl BaboonCodecsFacade {
             self.build_synthetic_type_meta(meta, static_domain, static_version, static_typeid)?;
         let json_codec = self.get_json_codec(&type_meta, false)?;
         let bin_codec = self.get_bin_codec(&type_meta, false)?;
-        let typed = json_codec.decode_json_dyn(&BaboonCodecContext::Compact, json).map_err(|e| {
+        let typed = json_codec.decode_json_dyn(ctx, json).map_err(|e| {
             BaboonCodecError::decoder_failure(format!(
                 "json_to_ueba_bytes: cannot decode JSON payload of type [{}.{}] of version '{}': {}",
                 type_meta.domain_identifier, type_meta.type_identifier, type_meta.domain_version, e
@@ -580,7 +581,7 @@ impl BaboonCodecsFacade {
         })?;
         let mut buf = Vec::new();
         bin_codec
-            .encode_dyn(&BaboonCodecContext::Compact, &mut buf, typed.as_ref())
+            .encode_dyn(ctx, &mut buf, typed.as_ref())
             .map_err(|e| {
                 BaboonCodecError::encoder_failure(format!(
                     "json_to_ueba_bytes: cannot encode UEBA payload of type [{}.{}] of version '{}': {}",
@@ -593,6 +594,7 @@ impl BaboonCodecsFacade {
     /// Symmetric to `json_to_ueba_bytes`. See its documentation for the static-fallback contract.
     pub fn ueba_to_json(
         &self,
+        ctx: &BaboonCodecContext,
         meta: &AnyMeta,
         bytes: &[u8],
         static_domain: Option<&str>,
@@ -604,14 +606,14 @@ impl BaboonCodecsFacade {
         let bin_codec = self.get_bin_codec(&type_meta, false)?;
         let json_codec = self.get_json_codec(&type_meta, false)?;
         let mut cursor = Cursor::new(bytes);
-        let typed = bin_codec.decode_dyn(&BaboonCodecContext::Compact, &mut cursor).map_err(|e| {
+        let typed = bin_codec.decode_dyn(ctx, &mut cursor).map_err(|e| {
             BaboonCodecError::decoder_failure(format!(
                 "ueba_to_json: cannot decode UEBA payload of type [{}.{}] of version '{}': {}",
                 type_meta.domain_identifier, type_meta.type_identifier, type_meta.domain_version, e
             ))
         })?;
         let json = json_codec
-            .encode_json_dyn(&BaboonCodecContext::Compact, typed.as_ref())
+            .encode_json_dyn(ctx, typed.as_ref())
             .map_err(|e| {
                 BaboonCodecError::encoder_failure(format!(
                     "ueba_to_json: cannot encode JSON payload of type [{}.{}] of version '{}': {}",
@@ -990,14 +992,16 @@ impl BaboonCodecsFacade {
 
     pub fn encode_to_json_with_override(
         &self,
+        ctx: &BaboonCodecContext,
         value: &dyn BaboonGeneratedDyn,
         type_meta_override: Option<&BaboonTypeMeta>,
     ) -> Result<serde_json::Value, BaboonCodecError> {
-        self.encode_to_json_with_declared_trait(value, type_meta_override, false)
+        self.encode_to_json_with_declared_trait(ctx, value, type_meta_override, false)
     }
 
     pub fn encode_to_json_with_declared_trait(
         &self,
+        ctx: &BaboonCodecContext,
         value: &dyn BaboonGeneratedDyn,
         type_meta_override: Option<&BaboonTypeMeta>,
         is_adt_trait: bool,
@@ -1005,7 +1009,7 @@ impl BaboonCodecsFacade {
         let type_meta = self.type_meta_from(value, is_adt_trait)?;
         let codec = self.get_json_codec(&type_meta, true)?;
         let content = codec
-            .encode_json_dyn(&BaboonCodecContext::Compact, value)
+            .encode_json_dyn(ctx, value)
             .map_err(|e| {
                 BaboonCodecError::encoder_failure(format!(
                     "Cannot encode to json form type [{}] of version '{}': {}",
@@ -1022,9 +1026,10 @@ impl BaboonCodecsFacade {
 
     pub fn encode_to_json(
         &self,
+        ctx: &BaboonCodecContext,
         value: &dyn BaboonGeneratedDyn,
     ) -> Result<serde_json::Value, BaboonCodecError> {
-        self.encode_to_json_with_override(value, None)
+        self.encode_to_json_with_override(ctx, value, None)
     }
 
     // --- Bin/JSON decode entry points ---

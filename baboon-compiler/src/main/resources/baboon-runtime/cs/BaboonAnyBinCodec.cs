@@ -30,7 +30,7 @@ namespace Baboon.Runtime.Shared
             {
                 var f = ctx.Facade ?? throw new BaboonCodecException.EncoderFailure(
                     "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.WithFacade(useIndices, facade) into Encode(), or supply AnyOpaqueUeba directly.");
-                var anyConvResult = f.JsonToUebaBytes(anyJson.Meta, anyJson.Json, staticDomain, staticVersion, staticTypeid);
+                var anyConvResult = f.JsonToUebaBytes(ctx, anyJson.Meta, anyJson.Json, staticDomain, staticVersion, staticTypeid);
                 if (anyConvResult is Either<BaboonCodecException, byte[]>.Left anyConvL)
                 {
                     throw anyConvL.Value;

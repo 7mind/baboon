@@ -321,7 +321,7 @@ class AnyMetaCodecTest {
     void jsonToUebaBytes_leftOnIncompleteMeta() {
         BaboonCodecsFacade facade = new BaboonCodecsFacade();
         AnyMeta meta = new AnyMeta((byte) 0x00, null, null, null);
-        BaboonEither<BaboonCodecException, byte[]> r = facade.jsonToUebaBytes(meta, NF.objectNode());
+        BaboonEither<BaboonCodecException, byte[]> r = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, NF.objectNode());
         assertInstanceOf(BaboonEither.Left.class, r);
     }
 
@@ -329,7 +329,7 @@ class AnyMetaCodecTest {
     void uebaToJson_leftOnIncompleteMeta() {
         BaboonCodecsFacade facade = new BaboonCodecsFacade();
         AnyMeta meta = new AnyMeta((byte) 0x00, null, null, null);
-        BaboonEither<BaboonCodecException, JsonNode> r = facade.uebaToJson(meta, new byte[]{1, 2, 3});
+        BaboonEither<BaboonCodecException, JsonNode> r = facade.uebaToJson(BaboonCodecContext.Compact, meta, new byte[]{1, 2, 3});
         assertInstanceOf(BaboonEither.Left.class, r);
     }
 
@@ -337,7 +337,7 @@ class AnyMetaCodecTest {
     void jsonToUebaBytes_leftOnNoCodec() {
         BaboonCodecsFacade facade = new BaboonCodecsFacade();
         AnyMeta meta = new AnyMeta((byte) 0x07, "dom", "1.0.0", "T");
-        BaboonEither<BaboonCodecException, byte[]> r = facade.jsonToUebaBytes(meta, NF.objectNode());
+        BaboonEither<BaboonCodecException, byte[]> r = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, NF.objectNode());
         assertInstanceOf(BaboonEither.Left.class, r);
         BaboonCodecException e = ((BaboonEither.Left<BaboonCodecException, byte[]>) r).value();
         assertInstanceOf(BaboonCodecException.CodecNotFound.class, e);
@@ -347,7 +347,7 @@ class AnyMetaCodecTest {
     void uebaToJson_leftOnNoCodec() {
         BaboonCodecsFacade facade = new BaboonCodecsFacade();
         AnyMeta meta = new AnyMeta((byte) 0x07, "dom", "1.0.0", "T");
-        BaboonEither<BaboonCodecException, JsonNode> r = facade.uebaToJson(meta, new byte[]{1, 2, 3});
+        BaboonEither<BaboonCodecException, JsonNode> r = facade.uebaToJson(BaboonCodecContext.Compact, meta, new byte[]{1, 2, 3});
         assertInstanceOf(BaboonEither.Left.class, r);
         BaboonCodecException e = ((BaboonEither.Left<BaboonCodecException, JsonNode>) r).value();
         assertInstanceOf(BaboonCodecException.CodecNotFound.class, e);
@@ -370,7 +370,7 @@ class AnyMetaCodecTest {
         // registered) but it should fail with CodecNotFound, not "AnyMeta requires ...".
         BaboonCodecsFacade facade = new BaboonCodecsFacade();
         AnyMeta meta = new AnyMeta((byte) 0x00, null, null, null);
-        BaboonEither<BaboonCodecException, byte[]> r = facade.jsonToUebaBytes(meta, NF.objectNode(), "dom", "1.0.0", "T");
+        BaboonEither<BaboonCodecException, byte[]> r = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, NF.objectNode(), "dom", "1.0.0", "T");
         assertInstanceOf(BaboonEither.Left.class, r);
         BaboonCodecException e = ((BaboonEither.Left<BaboonCodecException, byte[]>) r).value();
         assertInstanceOf(BaboonCodecException.CodecNotFound.class, e);
@@ -382,7 +382,7 @@ class AnyMetaCodecTest {
         // (no codec registered) but the failure must mention the wire-derived domain.
         BaboonCodecsFacade facade = new BaboonCodecsFacade();
         AnyMeta meta = new AnyMeta((byte) 0x07, "dom-wire", "1.0.0", "T");
-        BaboonEither<BaboonCodecException, byte[]> r = facade.jsonToUebaBytes(meta, NF.objectNode(), "dom-static", "0.9.0", "Other");
+        BaboonEither<BaboonCodecException, byte[]> r = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, NF.objectNode(), "dom-static", "0.9.0", "Other");
         assertInstanceOf(BaboonEither.Left.class, r);
         assertTrue(((BaboonEither.Left<BaboonCodecException, byte[]>) r).value().getMessage().contains("dom-wire"));
     }
@@ -406,7 +406,7 @@ class AnyMetaCodecTest {
         // Non-exact lookup at version 1.0.0 must succeed (PR-07-D02 fix).
         AnyMeta any = new AnyMeta((byte) 0x07, "dom", "1.0.0", "T");
         byte[] payload = new byte[]{0x42};
-        BaboonEither<BaboonCodecException, JsonNode> r = facade.uebaToJson(any, payload);
+        BaboonEither<BaboonCodecException, JsonNode> r = facade.uebaToJson(BaboonCodecContext.Compact, any, payload);
         assertInstanceOf(BaboonEither.Right.class, r);
     }
 

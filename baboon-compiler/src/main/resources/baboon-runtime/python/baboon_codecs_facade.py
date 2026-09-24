@@ -106,7 +106,7 @@ class BaboonCodecsFacade:
             return None
 
     def encode_to_bin(self,
-                      ctx: str,
+                      ctx: BaboonCodecContext,
                       value: TI,
                       writer: Optional[LEDataOutputStream] = None,
                       type_meta_override: Optional[BaboonTypeMeta] = None) -> bytes:
@@ -115,7 +115,7 @@ class BaboonCodecsFacade:
         return output_stream.stream.getvalue()
 
     def _encode_to_bin_stream(self,
-                              ctx: str,
+                              ctx: BaboonCodecContext,
                               writer: LEDataOutputStream,
                               value: TI,
                               type_meta_override: Optional[BaboonTypeMeta] = None):
@@ -184,12 +184,13 @@ class BaboonCodecsFacade:
         return self.convert(baboon, target_type)
 
     def encode_to_json(self,
+                       ctx: BaboonCodecContext,
                        value: BaboonGenerated,
                        type_meta_override: Optional[BaboonTypeMeta] = None) -> str:
         type_meta = BaboonTypeMeta.from_instance(value)
         try:
             codec = self._get_json_codec(type_meta, exact=True)
-            model_json = codec.encode(BaboonCodecContext.default(), value)
+            model_json = codec.encode(ctx, value)
             meta_json_dict = BaboonTypeMetaCodec.write_json(type_meta_override or type_meta)
             result = {
                 **meta_json_dict,
@@ -476,6 +477,7 @@ class BaboonCodecsFacade:
 
     def json_to_ueba_bytes(
         self,
+        ctx: BaboonCodecContext,
         meta: AnyMeta,
         json_value,
         static_domain: Optional[str] = None,
@@ -509,7 +511,7 @@ class BaboonCodecsFacade:
             # fixture pattern). Accept both: dump parsed values, pass strings through.
             # Future hygiene tracked in M25-N03 (align Python JSON-codec interface).
             wire = json_value if isinstance(json_value, str) else json.dumps(json_value)
-            typed = json_codec.decode(BaboonCodecContext.Compact, wire)
+            typed = json_codec.decode(ctx, wire)
         except Exception as e:
             return BaboonLeft(
                 BaboonCodecException.DecoderFailure(
@@ -523,7 +525,7 @@ class BaboonCodecsFacade:
         try:
             buf = BytesIO()
             writer = LEDataOutputStream(buf)
-            bin_codec.encode(BaboonCodecContext.Compact, writer, typed)
+            bin_codec.encode(ctx, writer, typed)
             return BaboonRight(buf.getvalue())
         except Exception as e:
             return BaboonLeft(
@@ -537,6 +539,7 @@ class BaboonCodecsFacade:
 
     def ueba_to_json(
         self,
+        ctx: BaboonCodecContext,
         meta: AnyMeta,
         ueba_bytes: bytes,
         static_domain: Optional[str] = None,
@@ -559,7 +562,7 @@ class BaboonCodecsFacade:
 
         try:
             reader = LEDataInputStream(BytesIO(ueba_bytes))
-            typed = bin_codec.decode(BaboonCodecContext.Compact, reader)
+            typed = bin_codec.decode(ctx, reader)
         except Exception as e:
             return BaboonLeft(
                 BaboonCodecException.DecoderFailure(
@@ -571,7 +574,7 @@ class BaboonCodecsFacade:
             )
 
         try:
-            return BaboonRight(json_codec.encode(BaboonCodecContext.Compact, typed))
+            return BaboonRight(json_codec.encode(ctx, typed))
         except Exception as e:
             return BaboonLeft(
                 BaboonCodecException.EncoderFailure(

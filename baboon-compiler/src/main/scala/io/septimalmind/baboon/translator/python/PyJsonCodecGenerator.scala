@@ -453,7 +453,7 @@ final class PyJsonCodecGenerator(
        |            raise $baboonCodecException.EncoderFailure(
        |                "Cannot encode AnyOpaqueUeba into JSON without a facade reference. Pass BaboonCodecContext.with_facade(use_indices, facade) into encode(), or supply AnyOpaqueJson directly."
        |            )
-       |        any_conv_result = context.facade.ueba_to_json(value.meta, value.bytes, static_domain=static_domain, static_version=static_version, static_typeid=static_typeid)
+       |        any_conv_result = context.facade.ueba_to_json(context, value.meta, value.bytes, static_domain=static_domain, static_version=static_version, static_typeid=static_typeid)
        |        if isinstance(any_conv_result, $baboonLeftType):
        |            raise any_conv_result.value
        |        any_inner = $pyJsonLoads(any_conv_result.value)

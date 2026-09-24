@@ -23,7 +23,7 @@ object BaboonAnyBinCodec {
               val anyFacade = ctx.facade ?: throw BaboonCodecException.EncoderFailure(
                   "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply AnyOpaqueUeba directly."
               )
-              val anyConvResult = anyFacade.jsonToUebaBytes(value.meta, value.json, staticDomain, staticVersion, staticTypeid)
+              val anyConvResult = anyFacade.jsonToUebaBytes(ctx, value.meta, value.json, staticDomain, staticVersion, staticTypeid)
               when (anyConvResult) {
                   is Either.Left -> throw anyConvResult.value
                   is Either.Right -> anyConvResult.value

@@ -474,6 +474,7 @@ open class BaboonCodecsFacade {
      * supply all three.
      */
     fun jsonToUebaBytes(
+        ctx: BaboonCodecContext,
         meta: AnyMeta,
         json: JsonElement,
         staticDomain: String? = null,
@@ -491,7 +492,7 @@ open class BaboonCodecsFacade {
                     @Suppress("UNCHECKED_CAST")
                     val binCodec = getBinCodec(typeMeta, exact = false) as BaboonBinCodec<BaboonGenerated>
                     val typed = try {
-                        jsonCodec.decode(BaboonCodecContext.Compact, json)
+                        jsonCodec.decode(ctx, json)
                     } catch (e: Throwable) {
                         return Either.Left(
                             BaboonCodecException.DecoderFailure(
@@ -503,7 +504,7 @@ open class BaboonCodecsFacade {
                     try {
                         val baos = java.io.ByteArrayOutputStream()
                         val out = LEDataOutputStream(baos)
-                        out.use { binCodec.encode(BaboonCodecContext.Compact, it, typed) }
+                        out.use { binCodec.encode(ctx, it, typed) }
                         Either.Right(baos.toByteArray())
                     } catch (e: Throwable) {
                         Either.Left(
@@ -525,6 +526,7 @@ open class BaboonCodecsFacade {
      * the registered UEBA codec, then re-encode it via the registered JSON codec.
      */
     fun uebaToJson(
+        ctx: BaboonCodecContext,
         meta: AnyMeta,
         bytes: ByteArray,
         staticDomain: String? = null,
@@ -543,7 +545,7 @@ open class BaboonCodecsFacade {
                     val jsonCodec = getJsonCodec(typeMeta, exact = false) as BaboonJsonCodec<BaboonGenerated>
                     val typed = try {
                         val reader = LEDataInputStream(java.io.ByteArrayInputStream(bytes))
-                        binCodec.decode(BaboonCodecContext.Compact, reader)
+                        binCodec.decode(ctx, reader)
                     } catch (e: Throwable) {
                         return Either.Left(
                             BaboonCodecException.DecoderFailure(
@@ -553,7 +555,7 @@ open class BaboonCodecsFacade {
                         )
                     }
                     try {
-                        Either.Right(jsonCodec.encode(BaboonCodecContext.Compact, typed))
+                        Either.Right(jsonCodec.encode(ctx, typed))
                     } catch (e: Throwable) {
                         Either.Left(
                             BaboonCodecException.EncoderFailure(

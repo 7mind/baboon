@@ -487,7 +487,7 @@ class PyUEBACodecGenerator(
        |            raise $baboonCodecException.EncoderFailure(
        |                "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.with_facade(use_indices, facade) into encode(), or supply AnyOpaqueUeba directly."
        |            )
-       |        any_conv_result = ctx.facade.json_to_ueba_bytes(value.meta, value.json, static_domain=static_domain, static_version=static_version, static_typeid=static_typeid)
+       |        any_conv_result = ctx.facade.json_to_ueba_bytes(ctx, value.meta, value.json, static_domain=static_domain, static_version=static_version, static_typeid=static_typeid)
        |        if isinstance(any_conv_result, $baboonLeftType):
        |            raise any_conv_result.value
        |        any_blob = any_conv_result.value

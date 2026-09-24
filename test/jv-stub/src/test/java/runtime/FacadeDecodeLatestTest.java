@@ -47,7 +47,7 @@ class FacadeDecodeLatestTest {
 
     private static JsonNode encodeInnerToJson(my.ok.Inner inner) {
         BaboonCodecsFacade facade = freshFacade();
-        BaboonEither<BaboonCodecException, JsonNode> r = facade.encodeToJson(inner);
+        BaboonEither<BaboonCodecException, JsonNode> r = facade.encodeToJson(BaboonCodecContext.Compact, inner);
         assertInstanceOf(BaboonEither.Right.class, r, "encodeToJson must succeed");
         return ((BaboonEither.Right<BaboonCodecException, JsonNode>) r).value();
     }

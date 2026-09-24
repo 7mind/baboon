@@ -26,7 +26,7 @@ object BaboonAnyBinCodec {
             "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.WithFacade(useIndices, facade) into encode(), or supply AnyOpaqueUeba directly."
           )
         )
-        f.jsonToUebaBytes(anyJson.meta, anyJson.json, staticDomain, staticVersion, staticTypeid) match {
+        f.jsonToUebaBytes(ctx, anyJson.meta, anyJson.json, staticDomain, staticVersion, staticTypeid) match {
           case Right(b) => b
           case Left(e)  => throw e
         }

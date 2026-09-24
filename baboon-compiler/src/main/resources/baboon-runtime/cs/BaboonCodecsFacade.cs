@@ -444,6 +444,7 @@ namespace Baboon.Runtime.Shared
         /// static context it has, or accept the all-null semantics (= no static fallback).
         /// </summary>
         public Either<BaboonCodecException, byte[]> JsonToUebaBytes(
+            BaboonCodecContext ctx,
             AnyMeta meta,
             JToken json,
             string? staticDomain = null,
@@ -476,7 +477,7 @@ namespace Baboon.Runtime.Shared
             IBaboonGenerated typed;
             try
             {
-                typed = jsonCodec.Decode(BaboonCodecContext.Compact, json);
+                typed = jsonCodec.Decode(ctx, json);
             }
             catch (Exception e)
             {
@@ -490,7 +491,7 @@ namespace Baboon.Runtime.Shared
             {
                 using var ms = new MemoryStream();
                 using var writer = new BinaryWriter(ms);
-                binCodec.Encode(BaboonCodecContext.Compact, writer, typed);
+                binCodec.Encode(ctx, writer, typed);
                 writer.Flush();
                 return Either.Right<BaboonCodecException, byte[]>(ms.ToArray());
             }
@@ -508,6 +509,7 @@ namespace Baboon.Runtime.Shared
         /// static-fallback contract.
         /// </summary>
         public Either<BaboonCodecException, JToken> UebaToJson(
+            BaboonCodecContext ctx,
             AnyMeta meta,
             byte[] bytes,
             string? staticDomain = null,
@@ -543,7 +545,7 @@ namespace Baboon.Runtime.Shared
             {
                 using var ms = new MemoryStream(bytes);
                 using var reader = new BinaryReader(ms);
-                typed = binCodec.Decode(BaboonCodecContext.Compact, reader);
+                typed = binCodec.Decode(ctx, reader);
             }
             catch (Exception e)
             {
@@ -555,7 +557,7 @@ namespace Baboon.Runtime.Shared
 
             try
             {
-                var json = jsonCodec.Encode(BaboonCodecContext.Compact, typed);
+                var json = jsonCodec.Encode(ctx, typed);
                 return Either.Right<BaboonCodecException, JToken>(json);
             }
             catch (Exception e)
@@ -679,24 +681,28 @@ namespace Baboon.Runtime.Shared
         /// Encodes a Baboon model to JSON. The result is a <c>JObject</c> containing type metadata
         /// fields and a <c>$c</c> key with the encoded content.
         /// </summary>
+        /// <param name="ctx">Codec context. Must carry a facade (<c>BaboonCodecContext.WithFacade</c>)
+        /// to encode <c>any</c> fields holding a UEBA payload, which have to be transcoded to JSON.</param>
         /// <param name="value">The model to encode.</param>
         /// <returns>JSON token with metadata and encoded content.</returns>
         /// <exception cref="BaboonCodecException.EncoderFailure">Encoding failed.</exception>
-        public Either<BaboonCodecException, JToken> EncodeToJson<T>(T value)
+        public Either<BaboonCodecException, JToken> EncodeToJson<T>(BaboonCodecContext ctx, T value)
             where T : IBaboonGenerated
         {
-            return EncodeToJson(value, null);
+            return EncodeToJson(ctx, value, null);
         }
 
         /// <summary>
         /// Encodes a Baboon model to JSON. The result is a <c>JObject</c> containing type metadata
         /// fields and a <c>$c</c> key with the encoded content.
         /// </summary>
+        /// <param name="ctx">Codec context. Must carry a facade (<c>BaboonCodecContext.WithFacade</c>)
+        /// to encode <c>any</c> fields holding a UEBA payload, which have to be transcoded to JSON.</param>
         /// <param name="value">The model to encode.</param>
         /// <param name="typeMetaOverride">Optional override for the embedded type metadata.</param>
         /// <returns>JSON token with metadata and encoded content.</returns>
         /// <exception cref="BaboonCodecException.EncoderFailure">Encoding failed.</exception>
-        public Either<BaboonCodecException, JToken> EncodeToJson<T>(T value, BaboonTypeMeta? typeMetaOverride)
+        public Either<BaboonCodecException, JToken> EncodeToJson<T>(BaboonCodecContext ctx, T value, BaboonTypeMeta? typeMetaOverride)
             where T : IBaboonGenerated
         {
             var typeMeta = BaboonTypeMeta.From(value, typeof(T));
@@ -709,7 +715,7 @@ namespace Baboon.Runtime.Shared
             var codec = codecResult.GetRight();
             try
             {
-                var content = codec.Encode(BaboonCodecContext.Compact, value);
+                var content = codec.Encode(ctx, value);
                 var metaJson = (typeMetaOverride ?? typeMeta).WriteJson();
                 if (metaJson is not JObject metaObj)
                 {

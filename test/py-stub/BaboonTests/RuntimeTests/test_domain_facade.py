@@ -22,7 +22,7 @@ class DomainFacadeTest(unittest.TestCase):
     def test_latest_json_round_trip(self):
         facade = DomainMyOkFacade()
         sample = Inner(x=42)
-        self.assertEqual(sample, facade.decode_from_json_latest(facade.encode_to_json(sample), Inner))
+        self.assertEqual(sample, facade.decode_from_json_latest(facade.encode_to_json(BaboonCodecContext.default(), sample), Inner))
 
     def test_decode_any_native_json(self):
         sample = Inner(x=42)

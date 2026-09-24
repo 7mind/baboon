@@ -138,7 +138,7 @@ fn type_meta_write_json_emits_mv_as_numeric_1() {
 
     let value = TestVal { x: 42 };
     let json = facade
-        .encode_to_json(&value)
+        .encode_to_json(&BaboonCodecContext::Compact, &value)
         .expect("encode_to_json");
 
     let obj = json.as_object().expect("envelope must be a JSON object");

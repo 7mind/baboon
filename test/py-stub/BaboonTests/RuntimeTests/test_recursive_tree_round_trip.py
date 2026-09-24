@@ -38,7 +38,7 @@ class RecursiveTreeRoundTripTest(unittest.TestCase):
     def test_round_trips_recursive_tree_json(self):
         facade = DomainRecursiveTreeFacade()
         sample = self._sample()
-        encoded = facade.encode_to_json(sample)
+        encoded = facade.encode_to_json(BaboonCodecContext.default(), sample)
         decoded = facade.decode_from_json(encoded)
         self.assertEqual(decoded, sample)
 

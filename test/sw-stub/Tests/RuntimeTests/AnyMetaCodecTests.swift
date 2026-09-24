@@ -471,6 +471,7 @@ final class AnyMetaCodecTests: XCTestCase {
         let m = try AnyMeta(kind: 0x00, domain: nil, version: nil, typeid: nil)
         let f = BaboonCodecsFacade()
         let result = f.jsonToUebaBytes(
+            BaboonCodecContext.compact,
             m, [String: Any](),
             staticDomain: "d", staticVersion: "1.0.0", staticTypeid: "T"
         )
@@ -485,7 +486,7 @@ final class AnyMetaCodecTests: XCTestCase {
     func testJsonToUebaBytes_failsWhenStaticsMissing() throws {
         let m = try AnyMeta(kind: 0x00, domain: nil, version: nil, typeid: nil)
         let f = BaboonCodecsFacade()
-        let result = f.jsonToUebaBytes(m, [String: Any]())
+        let result = f.jsonToUebaBytes(BaboonCodecContext.compact, m, [String: Any]())
         switch result {
         case .success: XCTFail("Expected failure")
         case .failure(let e):
@@ -500,6 +501,7 @@ final class AnyMetaCodecTests: XCTestCase {
         let m = try AnyMeta(kind: 0x07, domain: "wire", version: "1.0.0", typeid: "T")
         let f = BaboonCodecsFacade()
         let result = f.jsonToUebaBytes(
+            BaboonCodecContext.compact,
             m, [String: Any](),
             staticDomain: "static", staticVersion: "1.0.0", staticTypeid: "T"
         )
@@ -515,6 +517,7 @@ final class AnyMetaCodecTests: XCTestCase {
         let m = try AnyMeta(kind: 0x00, domain: nil, version: nil, typeid: nil)
         let f = BaboonCodecsFacade()
         let result = f.uebaToJson(
+            BaboonCodecContext.compact,
             m, Data(),
             staticDomain: "d", staticVersion: "1.0.0", staticTypeid: "T"
         )

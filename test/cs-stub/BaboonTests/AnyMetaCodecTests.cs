@@ -528,7 +528,7 @@ namespace ConversionsTest
         {
             var facade = new BaboonCodecsFacade();
             var meta = new AnyMeta(0x01, null, null, "T");
-            var result = facade.JsonToUebaBytes(meta, JValue.CreateNull());
+            var result = facade.JsonToUebaBytes(BaboonCodecContext.Compact, meta, JValue.CreateNull());
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, byte[]>.Left>());
             var msg = ((Either<BaboonCodecException, byte[]>.Left)result).Value.Message;
             Assert.That(msg, Does.Contain("domain"));
@@ -540,7 +540,7 @@ namespace ConversionsTest
         {
             var facade = new BaboonCodecsFacade();
             var meta = new AnyMeta(0x01, null, null, "T");
-            var result = facade.UebaToJson(meta, Array.Empty<byte>());
+            var result = facade.UebaToJson(BaboonCodecContext.Compact, meta, Array.Empty<byte>());
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, JToken>.Left>());
             var msg = ((Either<BaboonCodecException, JToken>.Left)result).Value.Message;
             Assert.That(msg, Does.Contain("domain"));
@@ -552,7 +552,7 @@ namespace ConversionsTest
         {
             var facade = new BaboonCodecsFacade();
             var meta = new AnyMeta(0x07, "com.example.unknown", "1.0.0", "Unknown");
-            var result = facade.JsonToUebaBytes(meta, new JObject { ["x"] = 1 });
+            var result = facade.JsonToUebaBytes(BaboonCodecContext.Compact, meta, new JObject { ["x"] = 1 });
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, byte[]>.Left>());
             var err = ((Either<BaboonCodecException, byte[]>.Left)result).Value;
             Assert.That(err, Is.InstanceOf<BaboonCodecException.CodecNotFound>());
@@ -563,7 +563,7 @@ namespace ConversionsTest
         {
             var facade = new BaboonCodecsFacade();
             var meta = new AnyMeta(0x07, "com.example.unknown", "1.0.0", "Unknown");
-            var result = facade.UebaToJson(meta, Array.Empty<byte>());
+            var result = facade.UebaToJson(BaboonCodecContext.Compact, meta, Array.Empty<byte>());
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, JToken>.Left>());
             var err = ((Either<BaboonCodecException, JToken>.Left)result).Value;
             Assert.That(err, Is.InstanceOf<BaboonCodecException.CodecNotFound>());
@@ -577,7 +577,7 @@ namespace ConversionsTest
             var facade = new BaboonCodecsFacade();
             // kind 0x03 (B): no domain on wire, version + typeid present.
             var meta = new AnyMeta(0x03, null, "1.0.0", "T");
-            var result = facade.JsonToUebaBytes(meta, JValue.CreateNull(), staticDomain: "com.example.unknown");
+            var result = facade.JsonToUebaBytes(BaboonCodecContext.Compact, meta, JValue.CreateNull(), staticDomain: "com.example.unknown");
             // Should reach codec lookup (CodecNotFound), not the missing-meta DecoderFailure.
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, byte[]>.Left>());
             var err = ((Either<BaboonCodecException, byte[]>.Left)result).Value;
@@ -591,7 +591,7 @@ namespace ConversionsTest
             var facade = new BaboonCodecsFacade();
             // kind 0x01 (C): only typeid on wire.
             var meta = new AnyMeta(0x01, null, null, "T");
-            var result = facade.JsonToUebaBytes(meta, JValue.CreateNull(),
+            var result = facade.JsonToUebaBytes(BaboonCodecContext.Compact, meta, JValue.CreateNull(),
                 staticDomain: "com.example.unknown", staticVersion: "1.0.0");
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, byte[]>.Left>());
             var err = ((Either<BaboonCodecException, byte[]>.Left)result).Value;
@@ -604,7 +604,7 @@ namespace ConversionsTest
             var facade = new BaboonCodecsFacade();
             // kind 0x06 (D1): domain + version on wire, typeid absent.
             var meta = new AnyMeta(0x06, "com.example.unknown", "1.0.0", null);
-            var result = facade.JsonToUebaBytes(meta, JValue.CreateNull(), staticTypeid: "Inner");
+            var result = facade.JsonToUebaBytes(BaboonCodecContext.Compact, meta, JValue.CreateNull(), staticTypeid: "Inner");
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, byte[]>.Left>());
             var err = ((Either<BaboonCodecException, byte[]>.Left)result).Value;
             Assert.That(err, Is.InstanceOf<BaboonCodecException.CodecNotFound>());
@@ -616,7 +616,7 @@ namespace ConversionsTest
             var facade = new BaboonCodecsFacade();
             // kind 0x00 (D3): nothing on wire.
             var meta = new AnyMeta(0x00, null, null, null);
-            var result = facade.JsonToUebaBytes(meta, JValue.CreateNull(),
+            var result = facade.JsonToUebaBytes(BaboonCodecContext.Compact, meta, JValue.CreateNull(),
                 staticDomain: "com.example.unknown", staticVersion: "1.0.0", staticTypeid: "Inner");
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, byte[]>.Left>());
             var err = ((Either<BaboonCodecException, byte[]>.Left)result).Value;
@@ -628,7 +628,7 @@ namespace ConversionsTest
         {
             var facade = new BaboonCodecsFacade();
             var meta = new AnyMeta(0x00, null, null, null);
-            var result = facade.UebaToJson(meta, Array.Empty<byte>(),
+            var result = facade.UebaToJson(BaboonCodecContext.Compact, meta, Array.Empty<byte>(),
                 staticDomain: "com.example.unknown", staticVersion: "1.0.0", staticTypeid: "Inner");
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, JToken>.Left>());
             var err = ((Either<BaboonCodecException, JToken>.Left)result).Value;
@@ -642,7 +642,7 @@ namespace ConversionsTest
             // All three present on wire; statics differ — wire wins, so resolution must reference
             // meta.domain ("metawins"), not the static ("staticloses").
             var meta = new AnyMeta(0x07, "com.example.metawins", "1.0.0", "MetaT");
-            var result = facade.JsonToUebaBytes(meta, JValue.CreateNull(),
+            var result = facade.JsonToUebaBytes(BaboonCodecContext.Compact, meta, JValue.CreateNull(),
                 staticDomain: "com.example.staticloses", staticVersion: "9.9.9", staticTypeid: "StaticT");
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, byte[]>.Left>());
             var err = ((Either<BaboonCodecException, byte[]>.Left)result).Value;
@@ -685,7 +685,7 @@ namespace ConversionsTest
                 () => new StubUebaCodecs(),
                 () => new StubMeta());
             var meta = new AnyMeta(0x07, "com.example.single", "1.0.0", "Unknown");
-            var result = facade.JsonToUebaBytes(meta, JValue.CreateNull());
+            var result = facade.JsonToUebaBytes(BaboonCodecContext.Compact, meta, JValue.CreateNull());
             Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, byte[]>.Left>());
             var err = ((Either<BaboonCodecException, byte[]>.Left)result).Value;
             Assert.That(err, Is.InstanceOf<BaboonCodecException.CodecNotFound>());

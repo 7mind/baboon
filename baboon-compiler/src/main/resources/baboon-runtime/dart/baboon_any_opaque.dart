@@ -50,6 +50,7 @@ Object? encodeAnyJsonField(
       // which only accepts BaboonCodecsFacadeBase, but real callers pass BaboonCodecsFacade.
       final anyFacade = anyFacadeBase as BaboonCodecsFacade;
       final anyConvResult = anyFacade.uebaToJson(
+        ctx,
         meta,
         bytes,
         staticDomain: staticDomain,
@@ -128,6 +129,7 @@ void encodeAnyUebaField(
       // which only accepts BaboonCodecsFacadeBase, but real callers pass BaboonCodecsFacade.
       final anyFacade = anyFacadeBase as BaboonCodecsFacade;
       final anyConvResult = anyFacade.jsonToUebaBytes(
+        ctx,
         meta,
         json,
         staticDomain: staticDomain,
