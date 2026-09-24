@@ -51,25 +51,33 @@ class RsJsonCodecGenerator(
   }
 
   private def genJsonHelpers(name: RsValue.RsType, defn: DomainMember.User): TextTree[RsValue] = {
+    // The convenience helpers run the explicit codecs under a facade-less context, which is the
+    // behaviour they always had: no facade means an `any` field holding a UEBA payload cannot be
+    // transcoded and is refused rather than silently mis-encoded. Callers that need it reach for
+    // `encode_json(ctx)` with `BaboonCodecContext::with_facade`.
     q"""impl ${name.asName} {
-       |    pub fn to_json(&self) -> Result<String, serde_json::Error> {
-       |        serde_json::to_string(self)
+       |    pub fn to_json(&self) -> Result<String, crate::any_opaque::BaboonCodecError> {
+       |        Ok(self.encode_json(&crate::baboon_runtime::BaboonCodecContext::Compact)?.to_string())
        |    }
        |
-       |    pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
-       |        serde_json::to_string_pretty(self)
+       |    pub fn to_json_pretty(&self) -> Result<String, crate::any_opaque::BaboonCodecError> {
+       |        let value = self.encode_json(&crate::baboon_runtime::BaboonCodecContext::Compact)?;
+       |        serde_json::to_string_pretty(&value)
+       |            .map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!("{}", e)))
        |    }
        |
-       |    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-       |        serde_json::from_str(s)
+       |    pub fn from_json(s: &str) -> Result<Self, crate::any_opaque::BaboonCodecError> {
+       |        let value: serde_json::Value = serde_json::from_str(s)
+       |            .map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("{}", e)))?;
+       |        Self::decode_json(&crate::baboon_runtime::BaboonCodecContext::Compact, &value)
        |    }
        |
-       |    pub fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
-       |        serde_json::to_value(self)
+       |    pub fn to_json_value(&self) -> Result<serde_json::Value, crate::any_opaque::BaboonCodecError> {
+       |        self.encode_json(&crate::baboon_runtime::BaboonCodecContext::Compact)
        |    }
        |
-       |    pub fn from_json_value(v: serde_json::Value) -> Result<Self, serde_json::Error> {
-       |        serde_json::from_value(v)
+       |    pub fn from_json_value(v: serde_json::Value) -> Result<Self, crate::any_opaque::BaboonCodecError> {
+       |        Self::decode_json(&crate::baboon_runtime::BaboonCodecContext::Compact, &v)
        |    }
        |
        |    ${ctxEncoder(defn, name).shift(4).trim}
@@ -215,11 +223,6 @@ class RsJsonCodecGenerator(
             q"$rsT::decode_json(ctx, $ref)?"
         }
 
-      case _ if mapKeyAdapter.userMapKeyAdapterPath(tpe).isDefined =>
-        val path = mapKeyAdapter.userMapKeyAdapterPath(tpe).get
-        // `serde_json::Value` is itself a Deserializer, so the adapter can read straight from it.
-        q"""$path::deserialize($ref.clone()).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("$what: {}", e)))?"""
-
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
@@ -258,11 +261,16 @@ class RsJsonCodecGenerator(
 
   /** JSON object keys arrive as strings; mirror `mapKeyEnc`. */
   private def mapKeyDec(tpe: TypeRef, ref: TextTree[RsValue], what: String): TextTree[RsValue] = {
-    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
-      case TypeRef.Scalar(TypeId.Builtins.str) => q"($ref).clone()"
-      case _ =>
-        val rsT = trans.asRsRef(tpe, domain, evo)
-        q"""($ref).parse::<$rsT>().map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("$what: bad map key '{}': {}", $ref, e)))?"""
+    mapKeyAdapter.keyAdapterPathFor(tpe) match {
+      case Some(path) =>
+        q"""$path::key_from_string($ref).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("$what: bad map key '{}': {}", $ref, e)))?"""
+      case None =>
+        BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
+          case TypeRef.Scalar(TypeId.Builtins.str) => q"($ref).clone()"
+          case _ =>
+            val rsT = trans.asRsRef(tpe, domain, evo)
+            q"""($ref).parse::<$rsT>().map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("$what: bad map key '{}': {}", $ref, e)))?"""
+        }
     }
   }
 
@@ -337,10 +345,6 @@ class RsJsonCodecGenerator(
             q"$ref.encode_json(ctx)?"
         }
 
-      case _ if mapKeyAdapter.userMapKeyAdapterPath(tpe).isDefined =>
-        val path = mapKeyAdapter.userMapKeyAdapterPath(tpe).get
-        q"""$path::serialize(&$ref, serde_json::value::Serializer).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!("{}", e)))?"""
-
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
@@ -369,11 +373,18 @@ class RsJsonCodecGenerator(
     }
   }
 
-  /** JSON object keys are strings; serde_json coerces map keys the same way. */
+  /** JSON object keys are strings. A user-typed key converts through the adapter module emitted
+    * beside it — only that knows how each eligible kind maps, since an `id` type has no `FromStr`
+    * and a single-primitive wrapper has neither `Display` nor `FromStr`.
+    */
   private def mapKeyEnc(tpe: TypeRef, ref: TextTree[RsValue]): TextTree[RsValue] = {
-    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
-      case TypeRef.Scalar(TypeId.Builtins.str) => q"($ref).clone()"
-      case _                                   => q"($ref).to_string()"
+    mapKeyAdapter.keyAdapterPathFor(tpe) match {
+      case Some(path) => q"$path::key_to_string(&$ref)"
+      case None =>
+        BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
+          case TypeRef.Scalar(TypeId.Builtins.str) => q"($ref).clone()"
+          case _                                   => q"($ref).to_string()"
+        }
     }
   }
 

@@ -28,25 +28,29 @@ final class RsMapKeyAdapter(domain: Domain, domainTypes: RsDomainTypes) {
     * and serde's `with` attribute is applied to the field's full type).
     */
   def userMapKeyAdapterPath(tpe: TypeRef): Option[String] = tpe match {
-    case TypeRef.Constructor(TypeId.Builtins.map, args) =>
-      args.head match {
-        case TypeRef.Scalar(uid: TypeId.User) =>
-          domain.defs.meta.nodes.get(uid) match {
-            case Some(DomainMember.User(_, dto: Typedef.Dto, _, _)) if isUserMapKeyEligibleDto(dto) =>
+    case TypeRef.Constructor(TypeId.Builtins.map, args) => keyAdapterPathFor(args.head)
+    case _                                              => None
+  }
+
+  /** Same lookup against a bare key type, for callers that build the map themselves and need
+    * only the key conversion.
+    */
+  def keyAdapterPathFor(keyTpe: TypeRef): Option[String] = keyTpe match {
+    case TypeRef.Scalar(uid: TypeId.User) =>
+      domain.defs.meta.nodes.get(uid) match {
+        case Some(DomainMember.User(_, dto: Typedef.Dto, _, _)) if isUserMapKeyEligibleDto(dto) =>
+          val rsT     = domainTypes.toRsTypeRefKeepForeigns(uid)
+          val modName = s"${toSnakeCase(rsT.name)}_as_map_key"
+          Some((rsT.crate.parts.toSeq :+ modName).mkString("::"))
+        // PR-I.3 (M24 Phase 3.3): direct foreign map key — route through
+        // the foreign's emitted `<foreign>_as_map_key` adapter (Custom only;
+        // BaboonRef-aliased foreigns reuse the aliased type's serde path).
+        case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+          f.bindings.get(BaboonLang.Rust) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
               val rsT     = domainTypes.toRsTypeRefKeepForeigns(uid)
               val modName = s"${toSnakeCase(rsT.name)}_as_map_key"
               Some((rsT.crate.parts.toSeq :+ modName).mkString("::"))
-            // PR-I.3 (M24 Phase 3.3): direct foreign map key — route through
-            // the foreign's emitted `<foreign>_as_map_key` adapter (Custom only;
-            // BaboonRef-aliased foreigns reuse the aliased type's serde path).
-            case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
-              f.bindings.get(BaboonLang.Rust) match {
-                case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
-                  val rsT     = domainTypes.toRsTypeRefKeepForeigns(uid)
-                  val modName = s"${toSnakeCase(rsT.name)}_as_map_key"
-                  Some((rsT.crate.parts.toSeq :+ modName).mkString("::"))
-                case _ => None
-              }
             case _ => None
           }
         case _ => None

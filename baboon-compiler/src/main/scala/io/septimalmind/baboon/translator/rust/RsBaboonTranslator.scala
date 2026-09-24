@@ -293,8 +293,8 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
                |        let v = value.as_any().downcast_ref::<$fullPath>().ok_or_else(|| crate::any_opaque::BaboonCodecError::encoder_failure("$jsonCodec.encode: wrong type"))?;
                |        v.encode_json(ctx)
                |    }
-               |    fn decode_json_dyn(&self, _ctx: &BaboonCodecContext, wire: &serde_json::Value) -> Result<Box<dyn BaboonGeneratedDyn>, crate::any_opaque::BaboonCodecError> {
-               |        let v: $fullPath = serde_json::from_value(wire.clone()).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("{}", e)))?;
+               |    fn decode_json_dyn(&self, ctx: &BaboonCodecContext, wire: &serde_json::Value) -> Result<Box<dyn BaboonGeneratedDyn>, crate::any_opaque::BaboonCodecError> {
+               |        let v = <$fullPath>::decode_json(ctx, wire)?;
                |        Ok(Box::new(v))
                |    }
                |}""".stripMargin

@@ -310,6 +310,16 @@ object RsDefnTranslator {
              |    use super::*;
              |    use std::collections::BTreeMap;
              |
+             |    /// Per-key conversion, independent of any serializer — see the DTO adapter.
+             |    /// Routes through the host-registered key codec so the encoding stays pluggable.
+             |    pub fn key_to_string(k: &${derefedTpe.asName}) -> String {
+             |        super::$getterName().encode_key(k)
+             |    }
+             |
+             |    pub fn key_from_string(s: &str) -> Result<${derefedTpe.asName}, String> {
+             |        super::$getterName().decode_key(s).map_err(|e| format!("{}", e))
+             |    }
+             |
              |    pub fn serialize<S, V>(map: &BTreeMap<${derefedTpe.asName}, V>, serializer: S) -> Result<S::Ok, S::Error>
              |    where
              |        S: serde::Serializer,
@@ -902,6 +912,17 @@ object RsDefnTranslator {
          |    use super::*;
          |    use serde::Deserialize as _BaboonDeserialize;
          |    use std::collections::BTreeMap;
+         |
+         |    /// Per-key conversion, independent of any serializer. The explicit JSON codecs build
+         |    /// the map themselves and only need the key, so they call these rather than the
+         |    /// whole-map serde adapter below.
+         |    pub fn key_to_string(k: &${name.asName}) -> String {
+         |        $encodeKey
+         |    }
+         |
+         |    pub fn key_from_string(s: &str) -> Result<${name.asName}, String> {
+         |        $decodeKey.map_err(|e| format!("{}", e))
+         |    }
          |
          |    pub fn serialize<S, V>(map: &BTreeMap<${name.asName}, V>, serializer: S) -> Result<S::Ok, S::Error>
          |    where
