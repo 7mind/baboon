@@ -289,9 +289,9 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
                |struct $jsonCodec;
                |impl BaboonAnyJsonCodec for $jsonCodec {
                |    fn type_identifier(&self) -> &str { "$typeId" }
-               |    fn encode_json_dyn(&self, _ctx: &BaboonCodecContext, value: &dyn BaboonGeneratedDyn) -> Result<serde_json::Value, crate::any_opaque::BaboonCodecError> {
+               |    fn encode_json_dyn(&self, ctx: &BaboonCodecContext, value: &dyn BaboonGeneratedDyn) -> Result<serde_json::Value, crate::any_opaque::BaboonCodecError> {
                |        let v = value.as_any().downcast_ref::<$fullPath>().ok_or_else(|| crate::any_opaque::BaboonCodecError::encoder_failure("$jsonCodec.encode: wrong type"))?;
-               |        serde_json::to_value(v).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!("{}", e)))
+               |        v.encode_json(ctx)
                |    }
                |    fn decode_json_dyn(&self, _ctx: &BaboonCodecContext, wire: &serde_json::Value) -> Result<Box<dyn BaboonGeneratedDyn>, crate::any_opaque::BaboonCodecError> {
                |        let v: $fullPath = serde_json::from_value(wire.clone()).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("{}", e)))?;
