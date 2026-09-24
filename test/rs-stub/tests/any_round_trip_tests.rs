@@ -322,19 +322,19 @@ fn cross_format_ueba_holder_to_json_decode_round_trip() {
     // f_any — variant A, all wire-meta present.
     let typed_meta_a = AnyMeta::new(0x07, Some(DOMAIN_ID.into()), Some(VERSION_STR.into()), Some(INNER_TYPE.into())).unwrap();
     let json_a = facade
-        .ueba_to_json(&typed_meta_a, &inner_bytes, None, None, None)
+        .ueba_to_json(&BaboonCodecContext::Compact, &typed_meta_a, &inner_bytes, None, None, None)
         .expect("ueba_to_json A");
     assert_eq!(json_a, inner_to_json(&sample_inner()), "A cross-convert must yield Inner JSON");
 
     // f_underlying — variant D1, statics fill in typeid only.
     let json_d1 = facade
-        .ueba_to_json(&meta_d1(), &inner_bytes, None, None, Some(INNER_TYPE))
+        .ueba_to_json(&BaboonCodecContext::Compact, &meta_d1(), &inner_bytes, None, None, Some(INNER_TYPE))
         .expect("ueba_to_json D1");
     assert_eq!(json_d1, inner_to_json(&sample_inner()), "D1 cross-convert must yield Inner JSON");
 
     // f_current_underlying — variant D3, statics fill in domain/version/typeid.
     let json_d3 = facade
-        .ueba_to_json(&meta_d3(), &inner_bytes, Some(DOMAIN_ID), Some(VERSION_STR), Some(INNER_TYPE))
+        .ueba_to_json(&BaboonCodecContext::Compact, &meta_d3(), &inner_bytes, Some(DOMAIN_ID), Some(VERSION_STR), Some(INNER_TYPE))
         .expect("ueba_to_json D3");
     assert_eq!(json_d3, inner_to_json(&sample_inner()), "D3 cross-convert must yield Inner JSON");
 }

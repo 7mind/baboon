@@ -6,8 +6,8 @@
 //   * `encodeToJson` / `decodeFromJson`
 //   * `convert<TFrom, TTo>` cross-version (stub — see Java PR-17-D05 note)
 //   * `decodeAny(opaque)`
-//   * `jsonToUebaBytes(meta, json, staticDomain?, staticVersion?, staticTypeid?)` (PR-06-D01)
-//   * `uebaToJson(meta, bytes, staticDomain?, staticVersion?, staticTypeid?)` (symmetric)
+//   * `jsonToUebaBytes(ctx, meta, json, staticDomain?, staticVersion?, staticTypeid?)` (PR-06-D01)
+//   * `uebaToJson(ctx, meta, bytes, staticDomain?, staticVersion?, staticTypeid?)` (symmetric)
 //
 // Defects addressed:
 //   PR-06-D01  cross-format helpers accept static fallbacks; wire-`meta.X` overrides `staticX`
@@ -254,6 +254,7 @@ export class BaboonCodecsFacade {
      * generics, so the caller must opt in. Default `false` preserves concrete-branch semantics.
      */
     public encodeToJson(
+        ctx: BaboonCodecContext,
         value: BaboonGenerated,
         typeMetaOverride?: BaboonTypeMeta,
         useAdtIdentifier: boolean = false,
@@ -264,7 +265,7 @@ export class BaboonCodecsFacade {
         const codec = codecResult.value as BaboonJsonCodec<BaboonGenerated>;
 
         try {
-            const content = codec.encode(BaboonCodecContext.Compact, value);
+            const content = codec.encode(ctx, value);
             const metaJson = (typeMetaOverride !== undefined ? typeMetaOverride : typeMeta).writeJson();
             // PR-08-D06 analog: if the meta JSON were ever a non-object, the `$c` set would
             // silently lose the key. `BaboonTypeMetaCodec.writeJson` always returns a plain
@@ -375,6 +376,7 @@ export class BaboonCodecsFacade {
      * semantics — wire wins). Without static fallback only variant A would work — PR-06-D01.
      */
     public jsonToUebaBytes(
+        ctx: BaboonCodecContext,
         meta: AnyMeta,
         json: unknown,
         staticDomain?: string,
@@ -395,7 +397,7 @@ export class BaboonCodecsFacade {
 
         let typed: BaboonGenerated;
         try {
-            typed = jsonCodec.decode(BaboonCodecContext.Compact, json);
+            typed = jsonCodec.decode(ctx, json);
         } catch (e) {
             return leftCodecException(new BaboonDecoderFailure(
                 `jsonToUebaBytes: cannot decode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.`,
@@ -409,7 +411,7 @@ export class BaboonCodecsFacade {
             // The interface declaration in `BaboonSharedRuntime.ts` is misleading; the codegen
             // (TsUEBACodecGenerator) emits `(ctx, value, writer)` and the interface should match.
             // Argument order corrected here so cross-format JSON→UEBA conversion works.
-            binCodec.encode(BaboonCodecContext.Compact, typed, writer);
+            binCodec.encode(ctx, typed, writer);
             return right(writer.toBytes());
         } catch (e) {
             return leftCodecException(new BaboonEncoderFailure(
@@ -421,6 +423,7 @@ export class BaboonCodecsFacade {
 
     /** Cross-format helper symmetric to {@link jsonToUebaBytes}. See its doc for static-fallback contract. */
     public uebaToJson(
+        ctx: BaboonCodecContext,
         meta: AnyMeta,
         bytes: Uint8Array,
         staticDomain?: string,
@@ -442,7 +445,7 @@ export class BaboonCodecsFacade {
         let typed: BaboonGenerated;
         try {
             const reader = new BaboonBinReader(bytes);
-            typed = binCodec.decode(BaboonCodecContext.Compact, reader);
+            typed = binCodec.decode(ctx, reader);
         } catch (e) {
             return leftCodecException(new BaboonDecoderFailure(
                 `uebaToJson: cannot decode UEBA payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.`,
@@ -451,7 +454,7 @@ export class BaboonCodecsFacade {
         }
 
         try {
-            return right(jsonCodec.encode(BaboonCodecContext.Compact, typed));
+            return right(jsonCodec.encode(ctx, typed));
         } catch (e) {
             return leftCodecException(new BaboonEncoderFailure(
                 `uebaToJson: cannot encode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.`,

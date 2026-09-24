@@ -31,7 +31,7 @@ public final class BaboonAnyBinCodec {
           throw new BaboonCodecException.EncoderFailure(
               "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply AnyOpaqueUeba directly.");
         }
-        var anyConvResult = anyFacade.jsonToUebaBytes(anyJson.meta(), anyJson.json(), staticDomain, staticVersion, staticTypeid);
+        var anyConvResult = anyFacade.jsonToUebaBytes(ctx, anyJson.meta(), anyJson.json(), staticDomain, staticVersion, staticTypeid);
         if (anyConvResult instanceof BaboonEither.Left<BaboonCodecException, byte[]> anyConvL) {
           throw anyConvL.value();
         }

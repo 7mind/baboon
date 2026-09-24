@@ -319,7 +319,7 @@ fn json_to_ueba_bytes_left_on_incomplete_meta_with_no_static() {
     let facade = BaboonCodecsFacade::new();
     let meta = mk(0x00, None, None, None);
     let result =
-        facade.json_to_ueba_bytes(&meta, &serde_json::Value::Null, None, None, None);
+        facade.json_to_ueba_bytes(&BaboonCodecContext::Compact, &meta, &serde_json::Value::Null, None, None, None);
     match result {
         Err(BaboonCodecError::DecoderFailure { message, .. }) => {
             assert!(message.contains("domain"));
@@ -334,7 +334,7 @@ fn json_to_ueba_bytes_left_on_incomplete_meta_with_no_static() {
 fn ueba_to_json_left_on_incomplete_meta_with_no_static() {
     let facade = BaboonCodecsFacade::new();
     let meta = mk(0x00, None, None, None);
-    let result = facade.ueba_to_json(&meta, &[], None, None, None);
+    let result = facade.ueba_to_json(&BaboonCodecContext::Compact, &meta, &[], None, None, None);
     assert!(matches!(result, Err(BaboonCodecError::DecoderFailure { .. })));
 }
 
@@ -343,7 +343,7 @@ fn json_to_ueba_bytes_left_on_no_codec_registered() {
     // All meta complete; facade empty; expect CodecNotFound.
     let facade = BaboonCodecsFacade::new();
     let meta = mk(0x07, Some("dom"), Some("1.0.0"), Some("T"));
-    let result = facade.json_to_ueba_bytes(&meta, &serde_json::Value::Null, None, None, None);
+    let result = facade.json_to_ueba_bytes(&BaboonCodecContext::Compact, &meta, &serde_json::Value::Null, None, None, None);
     assert!(matches!(result, Err(BaboonCodecError::CodecNotFound { .. })));
 }
 
@@ -351,7 +351,7 @@ fn json_to_ueba_bytes_left_on_no_codec_registered() {
 fn ueba_to_json_left_on_no_codec_registered() {
     let facade = BaboonCodecsFacade::new();
     let meta = mk(0x07, Some("dom"), Some("1.0.0"), Some("T"));
-    let result = facade.ueba_to_json(&meta, &[], None, None, None);
+    let result = facade.ueba_to_json(&BaboonCodecContext::Compact, &meta, &[], None, None, None);
     assert!(matches!(result, Err(BaboonCodecError::CodecNotFound { .. })));
 }
 
@@ -363,7 +363,7 @@ fn json_to_ueba_bytes_static_fallback_b_resolves() {
     let facade = BaboonCodecsFacade::new();
     let meta = mk(0x03, None, Some("1.0.0"), Some("T"));
     let result =
-        facade.json_to_ueba_bytes(&meta, &serde_json::Value::Null, Some("static.dom"), None, None);
+        facade.json_to_ueba_bytes(&BaboonCodecContext::Compact, &meta, &serde_json::Value::Null, Some("static.dom"), None, None);
     assert!(matches!(result, Err(BaboonCodecError::CodecNotFound { .. })));
 }
 
@@ -373,6 +373,7 @@ fn json_to_ueba_bytes_static_fallback_d3_resolves() {
     let facade = BaboonCodecsFacade::new();
     let meta = mk(0x00, None, None, None);
     let result = facade.json_to_ueba_bytes(
+        &BaboonCodecContext::Compact,
         &meta,
         &serde_json::Value::Null,
         Some("static.dom"),
@@ -386,7 +387,7 @@ fn json_to_ueba_bytes_static_fallback_d3_resolves() {
 fn ueba_to_json_static_fallback_d3_resolves() {
     let facade = BaboonCodecsFacade::new();
     let meta = mk(0x00, None, None, None);
-    let result = facade.ueba_to_json(&meta, &[], Some("static.dom"), Some("1.0.0"), Some("T"));
+    let result = facade.ueba_to_json(&BaboonCodecContext::Compact, &meta, &[], Some("static.dom"), Some("1.0.0"), Some("T"));
     assert!(matches!(result, Err(BaboonCodecError::CodecNotFound { .. })));
 }
 
@@ -397,7 +398,7 @@ fn cross_format_wire_meta_wins_over_static() {
     let facade = BaboonCodecsFacade::new();
     let meta = mk(0x07, Some("wire.dom"), Some("1.0.0"), Some("T"));
     let result =
-        facade.json_to_ueba_bytes(&meta, &serde_json::Value::Null, Some("static.dom"), None, None);
+        facade.json_to_ueba_bytes(&BaboonCodecContext::Compact, &meta, &serde_json::Value::Null, Some("static.dom"), None, None);
     match result {
         Err(BaboonCodecError::CodecNotFound { message }) => {
             assert!(message.contains("wire.dom"), "expected wire override; message: {}", message);
@@ -459,7 +460,7 @@ fn single_version_domain_get_codec_regression() {
     // path). Without the !exact && model == max arm, this would yield "Unsupported domain
     // version" rather than the expected codec-table CodecNotFound.
     let meta = mk(0x07, Some("my.ok"), Some("1.0.0"), Some("Inner"));
-    let result = facade.json_to_ueba_bytes(&meta, &serde_json::Value::Null, None, None, None);
+    let result = facade.json_to_ueba_bytes(&BaboonCodecContext::Compact, &meta, &serde_json::Value::Null, None, None, None);
     match result {
         Err(BaboonCodecError::CodecNotFound { message }) => {
             assert!(
@@ -710,7 +711,7 @@ fn pr11_d02_decode_from_json_round_trip() {
     let facade = BaboonCodecsFacade::new();
     register_sample_v1(&facade);
     let value = SampleV1 { payload: 99 };
-    let json = facade.encode_to_json(&value).expect("encode_to_json");
+    let json = facade.encode_to_json(&BaboonCodecContext::Compact, &value).expect("encode_to_json");
     let decoded = facade
         .decode_from_json(&json)
         .expect("decode_from_json")
@@ -737,7 +738,7 @@ fn pr11_d02_decode_from_json_str_works() {
     let facade = BaboonCodecsFacade::new();
     register_sample_v1(&facade);
     let value = SampleV1 { payload: 5 };
-    let json = facade.encode_to_json(&value).expect("encode_to_json");
+    let json = facade.encode_to_json(&BaboonCodecContext::Compact, &value).expect("encode_to_json");
     let s = serde_json::to_string(&json).unwrap();
     let decoded = facade
         .decode_from_json_str(&s)
@@ -827,7 +828,7 @@ fn pr11_d04_min_compat_from_same_in_versions_first() {
     let facade = BaboonCodecsFacade::new();
     register_sample_v2(&facade);
     let value = SampleV2 { payload: 11 };
-    let json = facade.encode_to_json(&value).expect("encode_to_json");
+    let json = facade.encode_to_json(&BaboonCodecContext::Compact, &value).expect("encode_to_json");
     let obj = json.as_object().expect("object");
     // SampleV2: domain_version=2.0.0, same_in[0]=1.0.0 → $uv must be present and == 1.0.0
     assert_eq!(obj.get("$d").and_then(|v| v.as_str()), Some("my.dom"));
@@ -841,7 +842,7 @@ fn pr11_d04_no_uv_when_min_compat_equals_current() {
     let facade = BaboonCodecsFacade::new();
     register_sample_v1(&facade);
     let value = SampleV1 { payload: 1 };
-    let json = facade.encode_to_json(&value).expect("encode_to_json");
+    let json = facade.encode_to_json(&BaboonCodecContext::Compact, &value).expect("encode_to_json");
     let obj = json.as_object().expect("object");
     // SampleV1: same_in[0]=1.0.0 == current → $uv suppressed
     assert!(obj.get("$uv").is_none(), "$uv must be omitted when min-compat == current");

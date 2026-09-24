@@ -297,21 +297,21 @@ describe("BaboonCodecsFacade cross-format helpers (incomplete meta / no codec)",
     test("jsonToUebaBytes returns Left on incomplete meta (PR-06-D01)", () => {
         const facade = new BaboonCodecsFacade();
         const meta = createAnyMeta(0x00, null, null, null);
-        const r = facade.jsonToUebaBytes(meta, {});
+        const r = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, {});
         expect(r.tag).toBe("Left");
     });
 
     test("uebaToJson returns Left on incomplete meta", () => {
         const facade = new BaboonCodecsFacade();
         const meta = createAnyMeta(0x00, null, null, null);
-        const r = facade.uebaToJson(meta, new Uint8Array([1, 2, 3]));
+        const r = facade.uebaToJson(BaboonCodecContext.Compact, meta, new Uint8Array([1, 2, 3]));
         expect(r.tag).toBe("Left");
     });
 
     test("jsonToUebaBytes returns Left on no codec", () => {
         const facade = new BaboonCodecsFacade();
         const meta = createAnyMeta(0x07, "dom", "1.0.0", "T");
-        const r = facade.jsonToUebaBytes(meta, {});
+        const r = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, {});
         expect(r.tag).toBe("Left");
         if (r.tag === "Left") expect(r.value).toBeInstanceOf(BaboonCodecNotFound);
     });
@@ -319,7 +319,7 @@ describe("BaboonCodecsFacade cross-format helpers (incomplete meta / no codec)",
     test("uebaToJson returns Left on no codec", () => {
         const facade = new BaboonCodecsFacade();
         const meta = createAnyMeta(0x07, "dom", "1.0.0", "T");
-        const r = facade.uebaToJson(meta, new Uint8Array([1, 2, 3]));
+        const r = facade.uebaToJson(BaboonCodecContext.Compact, meta, new Uint8Array([1, 2, 3]));
         expect(r.tag).toBe("Left");
         if (r.tag === "Left") expect(r.value).toBeInstanceOf(BaboonCodecNotFound);
     });
@@ -341,7 +341,7 @@ describe("Static-fallback semantics", () => {
         // complete) rather than "AnyMeta requires ...".
         const facade = new BaboonCodecsFacade();
         const meta = createAnyMeta(0x00, null, null, null);
-        const r = facade.jsonToUebaBytes(meta, {}, "dom", "1.0.0", "T");
+        const r = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, {}, "dom", "1.0.0", "T");
         expect(r.tag).toBe("Left");
         if (r.tag === "Left") expect(r.value).toBeInstanceOf(BaboonCodecNotFound);
     });
@@ -349,7 +349,7 @@ describe("Static-fallback semantics", () => {
     test("wire meta domain overrides static (PR-06-D01: wire wins)", () => {
         const facade = new BaboonCodecsFacade();
         const meta = createAnyMeta(0x07, "dom-wire", "1.0.0", "T");
-        const r = facade.jsonToUebaBytes(meta, {}, "dom-static", "0.9.0", "Other");
+        const r = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, {}, "dom-static", "0.9.0", "Other");
         expect(r.tag).toBe("Left");
         if (r.tag === "Left") expect(r.value.message).toContain("dom-wire");
     });
@@ -425,7 +425,7 @@ describe("getCodec single-version-domain (PR-07-D02)", () => {
 
         const any = createAnyMeta(0x07, "dom", "1.0.0", "T");
         const payload = new Uint8Array([0x42]);
-        const r = facade.uebaToJson(any, payload);
+        const r = facade.uebaToJson(BaboonCodecContext.Compact, any, payload);
         expect(r.tag).toBe("Right");
     });
 
@@ -494,7 +494,7 @@ describe("encodeToBin / encodeToJson useAdtIdentifier plumbing (PR-19-D02)", () 
 
     test("encodeToJson defaults to concrete branch typeid", () => {
         const facade = makeFacade();
-        const r = facade.encodeToJson(new StubAdtBranchGenerated());
+        const r = facade.encodeToJson(BaboonCodecContext.Compact, new StubAdtBranchGenerated());
         expect(r.tag).toBe("Right");
         if (r.tag !== "Right") return;
         expect(r.value["$t"]).toBe("BranchT");
@@ -502,7 +502,7 @@ describe("encodeToBin / encodeToJson useAdtIdentifier plumbing (PR-19-D02)", () 
 
     test("encodeToJson with useAdtIdentifier=true uses the ADT typeid", () => {
         const facade = makeFacade();
-        const r = facade.encodeToJson(new StubAdtBranchGenerated(), undefined, true);
+        const r = facade.encodeToJson(BaboonCodecContext.Compact, new StubAdtBranchGenerated(), undefined, true);
         expect(r.tag).toBe("Right");
         if (r.tag !== "Right") return;
         expect(r.value["$t"]).toBe("AdtT");

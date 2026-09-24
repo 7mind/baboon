@@ -327,7 +327,7 @@ export function encodeAnyJsonField(
                 "Cannot encode AnyOpaqueUeba into JSON without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply anyOpaqueJson directly."
             );
         }
-        const anyConvResult = anyFacade.uebaToJson(value.meta, value.bytes, staticDomain, staticVersion, staticTypeid);
+        const anyConvResult = anyFacade.uebaToJson(ctx, value.meta, value.bytes, staticDomain, staticVersion, staticTypeid);
         if (anyConvResult.tag === "Left") {
             throw anyConvResult.value;
         }
@@ -384,7 +384,7 @@ export function encodeAnyUebaField(
                 "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply anyOpaqueUeba directly."
             );
         }
-        const anyConvResult = anyFacade.jsonToUebaBytes(value.meta, value.json, staticDomain, staticVersion, staticTypeid);
+        const anyConvResult = anyFacade.jsonToUebaBytes(ctx, value.meta, value.json, staticDomain, staticVersion, staticTypeid);
         if (anyConvResult.tag === "Left") {
             throw anyConvResult.value;
         }

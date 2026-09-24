@@ -324,6 +324,7 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
 
     // PR-19-D02: pass `useAdtIdentifier=true` when encoding through an ADT-typed reference.
     public func encodeToJson(
+        _ ctx: BaboonCodecContext,
         _ value: Any,
         typeMetaOverride: BaboonTypeMeta? = nil,
         useAdtIdentifier: Bool = false
@@ -344,7 +345,7 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
                     nil
                 ))
             }
-            let content = jsonEncoder.encodeAnyValue(BaboonCodecContext.compact, value)
+            let content = jsonEncoder.encodeAnyValue(ctx, value)
             var metaJson = (typeMetaOverride ?? typeMeta).writeJson()
             metaJson[CONTENT_JSON_KEY] = content
             return .success(metaJson)
@@ -462,6 +463,7 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
     // the wire `meta` (variants B/C/D1/D2/D3 — codec-generation-time knowledge); wire data wins
     // when both are present (override semantics). See PR-06-D01.
     public func jsonToUebaBytes(
+        _ ctx: BaboonCodecContext,
         _ meta: AnyMeta,
         _ json: Any?,
         staticDomain: String? = nil,
@@ -499,7 +501,7 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
 
         let typed: Any
         do {
-            typed = try jsonCodec.decodeAnyValue(BaboonCodecContext.compact, json as Any)
+            typed = try jsonCodec.decodeAnyValue(ctx, json as Any)
         } catch {
             return .failure(.decoderFailure(
                 "jsonToUebaBytes: cannot decode JSON payload of type [\(typeMeta.domainIdentifier).\(typeMeta.typeIdentifier)] of version '\(typeMeta.domainVersion)'.",
@@ -508,11 +510,12 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
         }
 
         let writer = BaboonBinWriter()
-        binCodec.encodeAnyValue(BaboonCodecContext.compact, writer, typed)
+        binCodec.encodeAnyValue(ctx, writer, typed)
         return .success(writer.toData())
     }
 
     public func uebaToJson(
+        _ ctx: BaboonCodecContext,
         _ meta: AnyMeta,
         _ bytes: Data,
         staticDomain: String? = nil,
@@ -550,7 +553,7 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
 
         let typed: Any
         do {
-            typed = try binCodec.decodeAnyValue(BaboonCodecContext.compact, BaboonBinReader(bytes))
+            typed = try binCodec.decodeAnyValue(ctx, BaboonBinReader(bytes))
         } catch {
             return .failure(.decoderFailure(
                 "uebaToJson: cannot decode UEBA payload of type [\(typeMeta.domainIdentifier).\(typeMeta.typeIdentifier)] of version '\(typeMeta.domainVersion)'.",
@@ -558,7 +561,7 @@ open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
             ))
         }
 
-        return .success(jsonCodec.encodeAnyValue(BaboonCodecContext.compact, typed))
+        return .success(jsonCodec.encodeAnyValue(ctx, typed))
     }
 
     // Synthesise a `BaboonTypeMeta` from an `AnyMeta` plus optional static fallbacks. `AnyMeta`

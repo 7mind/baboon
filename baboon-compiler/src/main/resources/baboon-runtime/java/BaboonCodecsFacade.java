@@ -287,13 +287,13 @@ public class BaboonCodecsFacade {
         return decodeFromBin(new LEDataInputStream(new ByteArrayInputStream(bytes)));
     }
 
-    public BaboonEither<BaboonCodecException, JsonNode> encodeToJson(BaboonGenerated value) {
-        return encodeToJson(value, null);
+    public BaboonEither<BaboonCodecException, JsonNode> encodeToJson(BaboonCodecContext ctx, BaboonGenerated value) {
+        return encodeToJson(ctx, value, null);
     }
 
     @SuppressWarnings("unchecked")
     public BaboonEither<BaboonCodecException, JsonNode> encodeToJson(
-        BaboonGenerated value, BaboonTypeMeta typeMetaOverride
+        BaboonCodecContext ctx, BaboonGenerated value, BaboonTypeMeta typeMetaOverride
     ) {
         BaboonTypeMeta typeMeta = BaboonTypeMeta.from(value, value.getClass());
         BaboonEither<BaboonCodecException, BaboonCodecData> codecResult = getJsonCodec(typeMeta, true);
@@ -303,7 +303,7 @@ public class BaboonCodecsFacade {
         BaboonJsonCodec<BaboonGenerated> codec = (BaboonJsonCodec<BaboonGenerated>) ((BaboonEither.Right<BaboonCodecException, BaboonCodecData>) codecResult).value();
 
         try {
-            JsonNode content = codec.encode(BaboonCodecContext.Compact, value);
+            JsonNode content = codec.encode(ctx, value);
             JsonNode metaJson = (typeMetaOverride != null ? typeMetaOverride : typeMeta).writeJson();
             if (!(metaJson instanceof ObjectNode metaObj)) {
                 return BaboonEither.left(new BaboonCodecException.EncoderFailure(
@@ -408,7 +408,7 @@ public class BaboonCodecsFacade {
      */
     @SuppressWarnings("unchecked")
     public BaboonEither<BaboonCodecException, byte[]> jsonToUebaBytes(
-        AnyMeta meta, JsonNode json, String staticDomain, String staticVersion, String staticTypeid
+        BaboonCodecContext ctx, AnyMeta meta, JsonNode json, String staticDomain, String staticVersion, String staticTypeid
     ) {
         BaboonEither<BaboonCodecException, BaboonTypeMeta> metaResult = buildSyntheticTypeMeta(meta, staticDomain, staticVersion, staticTypeid);
         if (metaResult instanceof BaboonEither.Left<BaboonCodecException, BaboonTypeMeta> l) {
@@ -430,7 +430,7 @@ public class BaboonCodecsFacade {
 
         BaboonGenerated typed;
         try {
-            typed = jsonCodec.decode(BaboonCodecContext.Compact, json);
+            typed = jsonCodec.decode(ctx, json);
         } catch (Exception e) {
             return BaboonEither.left(new BaboonCodecException.DecoderFailure(
                 "jsonToUebaBytes: cannot decode JSON payload of type [" + typeMeta.domainIdentifier() + "." + typeMeta.typeIdentifier() + "] of version '" + typeMeta.domainVersion() + "'.",
@@ -440,7 +440,7 @@ public class BaboonCodecsFacade {
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             LEDataOutputStream writer = new LEDataOutputStream(baos);
-            binCodec.encode(BaboonCodecContext.Compact, writer, typed);
+            binCodec.encode(ctx, writer, typed);
             writer.flush();
             return BaboonEither.right(baos.toByteArray());
         } catch (Exception e) {
@@ -450,14 +450,14 @@ public class BaboonCodecsFacade {
         }
     }
 
-    public BaboonEither<BaboonCodecException, byte[]> jsonToUebaBytes(AnyMeta meta, JsonNode json) {
-        return jsonToUebaBytes(meta, json, null, null, null);
+    public BaboonEither<BaboonCodecException, byte[]> jsonToUebaBytes(BaboonCodecContext ctx, AnyMeta meta, JsonNode json) {
+        return jsonToUebaBytes(ctx, meta, json, null, null, null);
     }
 
     /** Cross-format helper symmetric to {@link #jsonToUebaBytes}. See its doc for static-fallback contract. */
     @SuppressWarnings("unchecked")
     public BaboonEither<BaboonCodecException, JsonNode> uebaToJson(
-        AnyMeta meta, byte[] bytes, String staticDomain, String staticVersion, String staticTypeid
+        BaboonCodecContext ctx, AnyMeta meta, byte[] bytes, String staticDomain, String staticVersion, String staticTypeid
     ) {
         BaboonEither<BaboonCodecException, BaboonTypeMeta> metaResult = buildSyntheticTypeMeta(meta, staticDomain, staticVersion, staticTypeid);
         if (metaResult instanceof BaboonEither.Left<BaboonCodecException, BaboonTypeMeta> l) {
@@ -480,7 +480,7 @@ public class BaboonCodecsFacade {
         BaboonGenerated typed;
         try {
             LEDataInputStream reader = new LEDataInputStream(new ByteArrayInputStream(bytes));
-            typed = binCodec.decode(BaboonCodecContext.Compact, reader);
+            typed = binCodec.decode(ctx, reader);
         } catch (Exception e) {
             return BaboonEither.left(new BaboonCodecException.DecoderFailure(
                 "uebaToJson: cannot decode UEBA payload of type [" + typeMeta.domainIdentifier() + "." + typeMeta.typeIdentifier() + "] of version '" + typeMeta.domainVersion() + "'.",
@@ -488,7 +488,7 @@ public class BaboonCodecsFacade {
         }
 
         try {
-            return BaboonEither.right(jsonCodec.encode(BaboonCodecContext.Compact, typed));
+            return BaboonEither.right(jsonCodec.encode(ctx, typed));
         } catch (Exception e) {
             return BaboonEither.left(new BaboonCodecException.EncoderFailure(
                 "uebaToJson: cannot encode JSON payload of type [" + typeMeta.domainIdentifier() + "." + typeMeta.typeIdentifier() + "] of version '" + typeMeta.domainVersion() + "'.",
@@ -496,8 +496,8 @@ public class BaboonCodecsFacade {
         }
     }
 
-    public BaboonEither<BaboonCodecException, JsonNode> uebaToJson(AnyMeta meta, byte[] bytes) {
-        return uebaToJson(meta, bytes, null, null, null);
+    public BaboonEither<BaboonCodecException, JsonNode> uebaToJson(BaboonCodecContext ctx, AnyMeta meta, byte[] bytes) {
+        return uebaToJson(ctx, meta, bytes, null, null, null);
     }
 
     /**

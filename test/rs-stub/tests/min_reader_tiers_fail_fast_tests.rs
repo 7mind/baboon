@@ -87,10 +87,10 @@ fn facade() -> BaboonCodecsFacade {
 
 #[test]
 fn json_bound_missing_is_an_encoder_failure() {
-    let err = facade().encode_to_json(&NoTiers::none()).err().expect("a value without the json-additive tier must not be silently encoded");
+    let err = facade().encode_to_json(&BaboonCodecContext::Compact, &NoTiers::none()).err().expect("a value without the json-additive tier must not be silently encoded");
     assert!(format!("{:?}", err).contains("json-additive"), "got {:?}", err);
     // with the JSON bound present the value encodes normally
-    assert!(facade().encode_to_json(&NoTiers::json_only()).is_ok());
+    assert!(facade().encode_to_json(&BaboonCodecContext::Compact, &NoTiers::json_only()).is_ok());
 }
 
 #[test]

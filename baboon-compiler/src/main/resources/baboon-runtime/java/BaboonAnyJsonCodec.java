@@ -30,7 +30,7 @@ public final class BaboonAnyJsonCodec {
           throw new BaboonCodecException.EncoderFailure(
               "Cannot encode AnyOpaqueUeba into JSON without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply AnyOpaqueJson directly.");
         }
-        var anyConvResult = anyFacade.uebaToJson(anyUeba.meta(), anyUeba.bytes(), staticDomain, staticVersion, staticTypeid);
+        var anyConvResult = anyFacade.uebaToJson(ctx, anyUeba.meta(), anyUeba.bytes(), staticDomain, staticVersion, staticTypeid);
         if (anyConvResult instanceof BaboonEither.Left<BaboonCodecException, JsonNode> anyConvL) {
           throw anyConvL.value();
         }

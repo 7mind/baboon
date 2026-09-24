@@ -10,6 +10,31 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## FIELD-2026-09-24 (user report + facade review, all backends)
+
+### [FIELD-2026-09-24-D01] Facade JSON encode entry points take no codec context, so `any` fields holding the other wire form cannot be encoded
+**Status:** resolved
+**Severity:** major
+**Location:** `encodeToJson` in `baboon-compiler/src/main/resources/baboon-runtime/{cs,scala,java,python,rust,typescript,dart,swift}/BaboonCodecsFacade.*`; `jsonToUebaBytes`/`uebaToJson` in all ten runtimes (the two Kotlin ones included)
+**Description:** `BaboonCodecContext` carries `UseIndices`, `ForwardWritePolicy`, `EnvelopeVersion` and `Facade`. The first three are UEBA-only for encoding (`BaboonTypeMeta.From` computes `$rv` unconditionally, so JSON needs no policy input); `Facade` is not — `BaboonAnyJsonCodec.Encode` requires it whenever an `any` field holds an `AnyOpaqueUeba`, because the payload has to be transcoded through `facade.uebaToJson`. `encodeToJson` hardcoded a facade-less context (`Compact` / `default()`), so encoding such a value failed with `EncoderFailure: Cannot encode AnyOpaqueUeba into JSON without a facade reference. Pass BaboonCodecContext.WithFacade(useIndices, facade) into Encode()` — advice the signature made impossible to follow, while the sibling `encodeToBin(ctx, …)` in the same class was configurable. Kotlin and Kotlin-KMP alone already took a context on `encodeToJson`; the other eight were inconsistent with both Kotlin and their own binary path. The cross-format helpers `jsonToUebaBytes`/`uebaToJson` had the same hole in all ten runtimes (hardcoded `Compact` on both legs), so a payload whose content contains a nested `any` in the opposite wire form failed one level down, and `jsonToUebaBytes` could never emit indexed UEBA. Reproduced in the C# stub against the `any-ok` fixture: `facade.EncodeToJson(holderWithUebaAny)` returned `Left(EncoderFailure)` while the generated codec called directly with `WithFacade` succeeded — which is why the existing `AnyRoundTrip*` cross-format suites (they call `Holder_JsonCodec.Instance.Encode(ctxWithFacade, …)`, never the facade) never caught it.
+**Fix:** Threaded a codec context through `encodeToJson` (and Scala's `encodeToJsonString`, Rust's `encode_to_json_with_override`/`_with_declared_trait`) and through `jsonToUebaBytes`/`uebaToJson` in all ten runtimes, using it in place of the hardcoded constant; the `any` runtime codecs now pass their own `ctx` into the facade call, so nested transcoding inherits the facade. Breaking API change, deliberately: the context is a required leading parameter, matching `encodeToBin` and Kotlin's existing `encodeToJson`, with no ctx-less overload left to fall into. Rust's JSON side still refuses `AnyOpaque::Ueba` outright (serde-side limitation predating this change) and is untouched. Regression tests: `EncodeToJson_WithFacadeContext_TranscodesUebaAnyPayloads` and `EncodeToJson_WithoutFacadeContext_StillReportsTheMissingFacade` in `test/cs-stub/BaboonTests/AnyRoundTripTests.cs`.
+
+### [FIELD-2026-09-24-D02] Python facade annotates the codec context as `str`
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/python/baboon_codecs_facade.py` (`encode_to_bin`, `_encode_to_bin_stream`)
+**Description:** Both declared `ctx: str`. The value is a `BaboonCodecContext` — the private `_bin_type_meta(value, ctx: BaboonCodecContext)` annotates it correctly and reads `ctx.envelope_version` / `ctx.use_indices`, which would raise `AttributeError` on a `str`. Wrong annotation on a public method: type-checkers and IDEs actively mislead callers.
+**Fix:** Corrected both annotations to `BaboonCodecContext`.
+
+### [FIELD-2026-09-24-N01] Facade decode entry points also pin a facade-less context (assessed, no change)
+**Status:** resolved (note-only; no functional change)
+**Severity:** nit
+**Location:** `decodeFromBin`, `decodeFromJson`, `decodeAny` and their `*Latest` variants, all runtimes
+**Description:** These hardcode `Compact` too, but the read path does not need the context: the UEBA reader takes indexing from the wire header byte (`ReadIndexEntries` reads `header & 1`), `IndexElementsCount` is a generated constant, and the `any` decoders take no context at all (`Decode(expectedKind, wire)`), so no facade is needed to decode. The only effect is that the decoder's `if (ctx.UseIndices)` index-count assertion never fires on a facade decode — a validation the caller cannot switch on.
+**Fix:** None. Recorded so a future reader does not re-derive the analysis; revisit only if a decode-side context knob is introduced.
+
+---
+
 ## FIELD-2026-09-23 (user reports, C# backend)
 
 ### [FIELD-2026-09-23-D01] C# service signature of an obsolete version names deduplicated-away method I/O types (CS0234)

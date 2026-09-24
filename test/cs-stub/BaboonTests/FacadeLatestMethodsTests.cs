@@ -56,7 +56,7 @@ namespace ConversionsTest
         public void DecodeFromJsonLatest_JToken_ReturnsRightWithOriginalValue()
         {
             var f = FreshFacade();
-            var encodeResult = f.EncodeToJson(SampleInner);
+            var encodeResult = f.EncodeToJson(BaboonCodecContext.Compact, SampleInner);
             Assert.That(encodeResult, Is.InstanceOf<Either<BaboonCodecException, Newtonsoft.Json.Linq.JToken>.Right>(),
                 $"EncodeToJson must succeed; got {encodeResult}");
             var json = ((Either<BaboonCodecException, Newtonsoft.Json.Linq.JToken>.Right)encodeResult).Value;

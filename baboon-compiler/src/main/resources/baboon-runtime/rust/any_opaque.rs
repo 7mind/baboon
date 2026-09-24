@@ -139,7 +139,7 @@ pub mod any_field_codec {
                     std::io::ErrorKind::InvalidData,
                     "Cannot encode AnyOpaque::Json into UEBA without a facade reference. Construct the codec context via BaboonCodecContext::with_facade(use_indices, facade), or supply AnyOpaque::Ueba directly."
                 ))?;
-                std::borrow::Cow::Owned(f.json_to_ueba_bytes(&j.meta, &j.json, static_domain, static_version, static_typeid)
+                std::borrow::Cow::Owned(f.json_to_ueba_bytes(ctx, &j.meta, &j.json, static_domain, static_version, static_typeid)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{}", e)))?)
             }
         };

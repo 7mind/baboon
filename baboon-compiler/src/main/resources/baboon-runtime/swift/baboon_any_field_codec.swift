@@ -37,6 +37,7 @@ public enum BaboonAnyJsonFieldCodec {
                 )
             }
             let anyConvResult = anyFacade.uebaToJson(
+                ctx,
                 uebaMeta,
                 uebaBytes,
                 staticDomain: staticDomain,
@@ -133,6 +134,7 @@ public enum BaboonAnyUebaFieldCodec {
                 )
             }
             let anyConvResult = anyFacade.jsonToUebaBytes(
+                ctx,
                 jsonMeta,
                 jsonValue,
                 staticDomain: staticDomain,

@@ -364,21 +364,21 @@ void main() {
     test('jsonToUebaBytes returns Left on incomplete meta (PR-06-D01)', () {
       final facade = BaboonCodecsFacade();
       final meta = AnyMeta(0x00, null, null, null);
-      final r = facade.jsonToUebaBytes(meta, {});
+      final r = facade.jsonToUebaBytes(BaboonCodecContext.compact, meta, {});
       expect(r, isA<BaboonLeft>());
     });
 
     test('uebaToJson returns Left on incomplete meta', () {
       final facade = BaboonCodecsFacade();
       final meta = AnyMeta(0x00, null, null, null);
-      final r = facade.uebaToJson(meta, Uint8List.fromList([1, 2, 3]));
+      final r = facade.uebaToJson(BaboonCodecContext.compact, meta, Uint8List.fromList([1, 2, 3]));
       expect(r, isA<BaboonLeft>());
     });
 
     test('jsonToUebaBytes returns Left on no codec', () {
       final facade = BaboonCodecsFacade();
       final meta = AnyMeta(0x07, 'dom', '1.0.0', 'T');
-      final r = facade.jsonToUebaBytes(meta, {});
+      final r = facade.jsonToUebaBytes(BaboonCodecContext.compact, meta, {});
       expect(r, isA<BaboonLeft>());
       expect((r as BaboonLeft).value, isA<BaboonCodecNotFound>());
     });
@@ -386,7 +386,7 @@ void main() {
     test('uebaToJson returns Left on no codec', () {
       final facade = BaboonCodecsFacade();
       final meta = AnyMeta(0x07, 'dom', '1.0.0', 'T');
-      final r = facade.uebaToJson(meta, Uint8List.fromList([0]));
+      final r = facade.uebaToJson(BaboonCodecContext.compact, meta, Uint8List.fromList([0]));
       expect(r, isA<BaboonLeft>());
       expect((r as BaboonLeft).value, isA<BaboonCodecNotFound>());
     });
@@ -407,6 +407,7 @@ void main() {
       final facade = BaboonCodecsFacade();
       final meta = AnyMeta(0x00, null, null, null);
       final r = facade.jsonToUebaBytes(
+        BaboonCodecContext.compact,
         meta,
         {},
         staticDomain: 'dom',
@@ -423,6 +424,7 @@ void main() {
       final facade = BaboonCodecsFacade();
       final meta = AnyMeta(0x07, 'dom-wire', '1.0.0', 'T');
       final r = facade.jsonToUebaBytes(
+        BaboonCodecContext.compact,
         meta,
         {},
         staticDomain: 'dom-static',
@@ -458,7 +460,7 @@ void main() {
 
       final any = AnyMeta(0x07, 'dom', '1.0.0', 'T');
       final payload = Uint8List.fromList([0x42]);
-      final r = facade.uebaToJson(any, payload);
+      final r = facade.uebaToJson(BaboonCodecContext.compact, any, payload);
       expect(r, isA<BaboonRight>());
     });
 
@@ -518,7 +520,7 @@ void main() {
 
     test('encodeToJson defaults to concrete branch typeid', () {
       final facade = makeFacade();
-      final r = facade.encodeToJson(_StubAdtBranchGenerated());
+      final r = facade.encodeToJson(BaboonCodecContext.compact, _StubAdtBranchGenerated());
       expect(r, isA<BaboonRight>());
       final wire = (r as BaboonRight).value as Map<String, dynamic>;
       expect(wire[r'$t'], 'BranchT');
@@ -526,7 +528,7 @@ void main() {
 
     test('encodeToJson with useAdtIdentifier=true uses the ADT typeid', () {
       final facade = makeFacade();
-      final r = facade.encodeToJson(_StubAdtBranchGenerated(), useAdtIdentifier: true);
+      final r = facade.encodeToJson(BaboonCodecContext.compact, _StubAdtBranchGenerated(), useAdtIdentifier: true);
       expect(r, isA<BaboonRight>());
       final wire = (r as BaboonRight).value as Map<String, dynamic>;
       expect(wire[r'$t'], 'AdtT');
@@ -769,7 +771,7 @@ void main() {
         meta: () => _StubMeta(['1.0.0']),
       );
 
-      final encResult = facade.encodeToJson(_StubGeneratedLatest());
+      final encResult = facade.encodeToJson(BaboonCodecContext.compact, _StubGeneratedLatest());
       expect(encResult, isA<BaboonRight>());
       final wire = (encResult as BaboonRight).value as Map<String, dynamic>;
 

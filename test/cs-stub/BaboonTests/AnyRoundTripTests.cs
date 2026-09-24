@@ -246,6 +246,60 @@ namespace ConversionsTest
             Assert.That(decoded.FCurrentUnderlying.Meta.Kind, Is.EqualTo((byte)0x00)); // D3: kind=0x00, statics filled
         }
 
+        // The facade's own JSON entry point must be able to do what the generated codec can:
+        // `BaboonAnyJsonCodec.Encode` needs `ctx.Facade` to transcode a UEBA-form `any` payload,
+        // and before `EncodeToJson` took a context there was no way to supply one — the encode
+        // failed with "Cannot encode AnyOpaqueUeba into JSON without a facade reference. Pass
+        // BaboonCodecContext.WithFacade(...) into Encode()", advice the signature made impossible
+        // to follow. The Compact case below pins the other half: the diagnostic still fires when
+        // the caller genuinely passes a facade-less context.
+        [Test]
+        public void EncodeToJson_WithFacadeContext_TranscodesUebaAnyPayloads()
+        {
+            var facade = FreshFacade();
+            var innerBytes = InnerToUebaBytes(SampleInner);
+            var crossable = BuildUebaHolder() with
+            {
+                FAny = new AnyOpaqueUeba(new AnyMeta(0x07, DomainId, VersionStr, InnerType), innerBytes),
+                FDomainThis = new AnyOpaqueUeba(new AnyMeta(0x03, null, VersionStr, InnerType), innerBytes),
+                FDomainCurrent = new AnyOpaqueUeba(new AnyMeta(0x01, null, null, InnerType), innerBytes),
+                FOpt = new AnyOpaqueUeba(new AnyMeta(0x07, DomainId, VersionStr, InnerType), innerBytes),
+                FMapValue = new Dictionary<string, AnyOpaque> { { "k1", new AnyOpaqueUeba(new AnyMeta(0x07, DomainId, VersionStr, InnerType), innerBytes) } },
+            };
+
+            var withFacade = facade.EncodeToJson(BaboonCodecContext.WithFacade(useIndices: false, facade), crossable);
+            Assert.That(withFacade, Is.InstanceOf<Either<BaboonCodecException, JToken>.Right>(),
+                $"EncodeToJson must transcode UEBA `any` payloads when the context carries a facade; got {withFacade}");
+
+            var envelope = ((Either<BaboonCodecException, JToken>.Right)withFacade).Value;
+            var decoded = facade.DecodeFromJson(envelope);
+            Assert.That(decoded, Is.InstanceOf<Either<BaboonCodecException, IBaboonGenerated?>.Right>(), $"{decoded}");
+            var holder = ((Either<BaboonCodecException, IBaboonGenerated?>.Right)decoded).Value as My.Ok.Holder;
+            Assert.That(holder, Is.Not.Null);
+            Assert.That(holder!.FAny, Is.InstanceOf<AnyOpaqueJson>(), "the transcoded field must come back as JSON-form");
+        }
+
+        [Test]
+        public void EncodeToJson_WithoutFacadeContext_StillReportsTheMissingFacade()
+        {
+            var facade = FreshFacade();
+            var innerBytes = InnerToUebaBytes(SampleInner);
+            var crossable = BuildUebaHolder() with
+            {
+                FAny = new AnyOpaqueUeba(new AnyMeta(0x07, DomainId, VersionStr, InnerType), innerBytes),
+            };
+
+            var result = facade.EncodeToJson(BaboonCodecContext.Compact, crossable);
+            Assert.That(result, Is.InstanceOf<Either<BaboonCodecException, JToken>.Left>(),
+                "a facade-less context cannot transcode a UEBA `any` payload");
+            var chain = new List<string>();
+            for (Exception? e = ((Either<BaboonCodecException, JToken>.Left)result).Value; e != null; e = e.InnerException)
+            {
+                chain.Add(e.Message);
+            }
+            Assert.That(string.Join(" || ", chain), Does.Contain("without a facade reference"));
+        }
+
         [Test]
         public void CrossFormat_D3IsolatedField_StaticFallbacksResolveEndToEnd()
         {

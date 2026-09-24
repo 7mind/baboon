@@ -19,6 +19,8 @@
 
 import unittest
 
+from BaboonDefinitions.Generated.baboon_codecs import BaboonCodecContext
+
 from BaboonDefinitions.Generated.baboon_any_opaque import AnyMeta
 from BaboonDefinitions.Generated.baboon_codecs_facade import BaboonCodecsFacade
 from BaboonDefinitions.Generated.baboon_runtime_shared import BaboonDomainVersion, BaboonMeta
@@ -70,7 +72,7 @@ class FacadeCrossFormatTests(unittest.TestCase):
         meta = AnyMeta(0x07, DOMAIN_ID, VERSION_STR, INNER_TYPE)
         dict_payload = {"x": 42}
 
-        result = facade.json_to_ueba_bytes(meta, dict_payload)
+        result = facade.json_to_ueba_bytes(BaboonCodecContext.default(), meta, dict_payload)
 
         self.assertIsInstance(result, BaboonRight, msg=f"expected BaboonRight, got {result!r}")
         self.assertIsInstance(result.value, bytes)
@@ -87,7 +89,7 @@ class FacadeCrossFormatTests(unittest.TestCase):
 
         facade = _fresh_facade()
         meta = AnyMeta(0x07, DOMAIN_ID, VERSION_STR, INNER_TYPE)
-        result = facade.json_to_ueba_bytes(meta, {"x": 42})
+        result = facade.json_to_ueba_bytes(BaboonCodecContext.default(), meta, {"x": 42})
         self.assertIsInstance(result, BaboonRight, msg=f"{result!r}")
 
         buf = BytesIO()

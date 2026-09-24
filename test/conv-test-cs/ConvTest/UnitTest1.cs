@@ -119,7 +119,7 @@ namespace ConvTest
                 () => Convtest.Testpkg.BaboonCodecsUeba.Instance);
 
             // ENCODE to a JSON *string* (full meta envelope with the $c content key).
-            var encoded = facade.EncodeToJson(original);
+            var encoded = facade.EncodeToJson(BaboonCodecContext.Compact, original);
             Assert.That(encoded.IsRight, Is.True,
                 "precondition: encode must succeed");
             var wireString = encoded.GetRight().ToString();

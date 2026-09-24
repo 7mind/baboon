@@ -230,6 +230,7 @@ package baboon.runtime.shared {
     // generator always supplies all three. User code calling this directly must provide whatever
     // static context it has, or accept the all-`None` semantics (= no static fallback).
     def jsonToUebaBytes(
+      ctx: BaboonCodecContext,
       meta: AnyMeta,
       json: Json,
       staticDomain: Option[String]  = None,
@@ -241,7 +242,7 @@ package baboon.runtime.shared {
         jsonCodec <- getJsonCodec(typeMeta, exact = false)
         binCodec  <- getBinCodec(typeMeta, exact = false)
         typed <- jsonCodec
-          .decode(BaboonCodecContext.Compact, json).left.map(
+          .decode(ctx, json).left.map(
             e =>
               BaboonCodecException.DecoderFailure(
                 s"jsonToUebaBytes: cannot decode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
@@ -252,7 +253,7 @@ package baboon.runtime.shared {
           val baos = new ByteArrayOutputStream()
           val out  = new LEDataOutputStream(baos)
           try {
-            binCodec.encode(BaboonCodecContext.Compact, out, typed)
+            binCodec.encode(ctx, out, typed)
           } finally {
             out.close()
           }
@@ -271,6 +272,7 @@ package baboon.runtime.shared {
     // registered UEBA codec, then re-encode it via the registered JSON codec. See `jsonToUebaBytes`
     // for the static-fallback contract.
     def uebaToJson(
+      ctx: BaboonCodecContext,
       meta: AnyMeta,
       bytes: Array[Byte],
       staticDomain: Option[String]  = None,
@@ -282,14 +284,14 @@ package baboon.runtime.shared {
         binCodec  <- getBinCodec(typeMeta, exact = false)
         jsonCodec <- getJsonCodec(typeMeta, exact = false)
         typed <- binCodec
-          .decode(BaboonCodecContext.Compact, new LEDataInputStream(new ByteArrayInputStream(bytes))).left.map(
+          .decode(ctx, new LEDataInputStream(new ByteArrayInputStream(bytes))).left.map(
             e =>
               BaboonCodecException.DecoderFailure(
                 s"uebaToJson: cannot decode UEBA payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
                 e,
               )
           )
-        json <- Try(jsonCodec.encode(BaboonCodecContext.Compact, typed)).toEither.left.map(
+        json <- Try(jsonCodec.encode(ctx, typed)).toEither.left.map(
           e =>
             BaboonCodecException.EncoderFailure(
               s"uebaToJson: cannot encode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
@@ -374,11 +376,11 @@ package baboon.runtime.shared {
       decodeFromBin(bytes).flatMap(baboon => convert[BaboonGenerated, T](baboon))
     }
 
-    def encodeToJson[T <: BaboonGenerated: ClassTag](value: T, typeMetaOverride: Option[BaboonTypeMeta]): BaboonValue[Json] = {
+    def encodeToJson[T <: BaboonGenerated: ClassTag](ctx: BaboonCodecContext, value: T, typeMetaOverride: Option[BaboonTypeMeta]): BaboonValue[Json] = {
       val typeMeta = BaboonTypeMeta.from(value)
       (for {
         jsonCodec  <- getJsonCodec(typeMeta, exact = true).toTry
-        jsonContent = jsonCodec.encode(BaboonCodecContext.Compact, value)
+        jsonContent = jsonCodec.encode(ctx, value)
         metaJson    = typeMetaOverride.getOrElse(typeMeta).writeJson
         result      = metaJson.mapObject(_.add(CONTENT_JSON_KEY, jsonContent))
       } yield result).toEither.left.map(
@@ -390,16 +392,16 @@ package baboon.runtime.shared {
       )
     }
 
-    def encodeToJson[T <: BaboonGenerated: ClassTag](value: T): BaboonValue[Json] = {
-      encodeToJson(value, None)
+    def encodeToJson[T <: BaboonGenerated: ClassTag](ctx: BaboonCodecContext, value: T): BaboonValue[Json] = {
+      encodeToJson(ctx, value, None)
     }
 
-    def encodeToJsonString[T <: BaboonGenerated: ClassTag](value: T, typeMetaOverride: Option[BaboonTypeMeta]): BaboonValue[String] = {
-      encodeToJson(value, typeMetaOverride).map(_.noSpaces)
+    def encodeToJsonString[T <: BaboonGenerated: ClassTag](ctx: BaboonCodecContext, value: T, typeMetaOverride: Option[BaboonTypeMeta]): BaboonValue[String] = {
+      encodeToJson(ctx, value, typeMetaOverride).map(_.noSpaces)
     }
 
-    def encodeToJsonString[T <: BaboonGenerated: ClassTag](value: T): BaboonValue[String] = {
-      encodeToJsonString(value, None)
+    def encodeToJsonString[T <: BaboonGenerated: ClassTag](ctx: BaboonCodecContext, value: T): BaboonValue[String] = {
+      encodeToJsonString(ctx, value, None)
     }
 
     def decodeFromJson(value: Json): BaboonValue[Option[BaboonGenerated]] = {

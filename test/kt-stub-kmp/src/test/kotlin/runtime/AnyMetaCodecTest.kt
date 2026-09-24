@@ -353,7 +353,7 @@ class AnyMetaCodecTest {
     fun jsonToUebaBytes_left_onIncompleteMeta() {
         val facade = BaboonCodecsFacade()
         val meta = AnyMeta(0x01.toByte(), null, null, "T")
-        val result = facade.jsonToUebaBytes(meta, JsonPrimitive("x"))
+        val result = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, JsonPrimitive("x"))
         assertTrue(result is Either.Left)
         val msg = (result as Either.Left).value.message ?: ""
         assertTrue(msg.contains("domain"))
@@ -364,7 +364,7 @@ class AnyMetaCodecTest {
     fun uebaToJson_left_onIncompleteMeta() {
         val facade = BaboonCodecsFacade()
         val meta = AnyMeta(0x01.toByte(), null, null, "T")
-        val result = facade.uebaToJson(meta, ByteArray(0))
+        val result = facade.uebaToJson(BaboonCodecContext.Compact, meta, ByteArray(0))
         assertTrue(result is Either.Left)
         val msg = (result as Either.Left).value.message ?: ""
         assertTrue(msg.contains("domain"))
@@ -375,7 +375,7 @@ class AnyMetaCodecTest {
     fun jsonToUebaBytes_left_onNoCodecRegistered() {
         val facade = BaboonCodecsFacade()
         val meta = AnyMeta(0x07.toByte(), "com.example.unknown", "1.0.0", "Unknown")
-        val result = facade.jsonToUebaBytes(meta, buildJsonObject { put("x", 1) })
+        val result = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, buildJsonObject { put("x", 1) })
         assertTrue(result is Either.Left)
         val err = (result as Either.Left).value
         assertTrue(
@@ -388,7 +388,7 @@ class AnyMetaCodecTest {
     fun uebaToJson_left_onNoCodecRegistered() {
         val facade = BaboonCodecsFacade()
         val meta = AnyMeta(0x07.toByte(), "com.example.unknown", "1.0.0", "Unknown")
-        val result = facade.uebaToJson(meta, ByteArray(0))
+        val result = facade.uebaToJson(BaboonCodecContext.Compact, meta, ByteArray(0))
         assertTrue(result is Either.Left)
         val err = (result as Either.Left).value
         assertTrue(err is BaboonCodecException.CodecNotFound)
@@ -401,7 +401,7 @@ class AnyMetaCodecTest {
         val facade = BaboonCodecsFacade()
         // kind 0x03 (B): no domain on wire, version + typeid present.
         val meta = AnyMeta(0x03.toByte(), null, "1.0.0", "T")
-        val result = facade.jsonToUebaBytes(meta, JsonPrimitive("x"), staticDomain = "com.example.unknown")
+        val result = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, JsonPrimitive("x"), staticDomain = "com.example.unknown")
         // Should reach codec lookup (CodecNotFound), not the missing-meta DecoderFailure.
         assertTrue(result is Either.Left)
         val err = (result as Either.Left).value
@@ -417,6 +417,7 @@ class AnyMetaCodecTest {
         // kind 0x01 (C): only typeid on wire.
         val meta = AnyMeta(0x01.toByte(), null, null, "T")
         val result = facade.jsonToUebaBytes(
+            BaboonCodecContext.Compact,
             meta, JsonPrimitive("x"),
             staticDomain = "com.example.unknown",
             staticVersion = "1.0.0",
@@ -431,7 +432,7 @@ class AnyMetaCodecTest {
         val facade = BaboonCodecsFacade()
         // kind 0x06 (D1): domain + version on wire, typeid absent.
         val meta = AnyMeta(0x06.toByte(), "com.example.unknown", "1.0.0", null)
-        val result = facade.jsonToUebaBytes(meta, JsonPrimitive("x"), staticTypeid = "Inner")
+        val result = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, JsonPrimitive("x"), staticTypeid = "Inner")
         assertTrue(result is Either.Left)
         val err = (result as Either.Left).value
         assertTrue(err is BaboonCodecException.CodecNotFound)
@@ -443,6 +444,7 @@ class AnyMetaCodecTest {
         // kind 0x00 (D3): nothing on wire.
         val meta = AnyMeta(0x00.toByte(), null, null, null)
         val result = facade.jsonToUebaBytes(
+            BaboonCodecContext.Compact,
             meta, JsonPrimitive("x"),
             staticDomain = "com.example.unknown",
             staticVersion = "1.0.0",
@@ -458,6 +460,7 @@ class AnyMetaCodecTest {
         val facade = BaboonCodecsFacade()
         val meta = AnyMeta(0x00.toByte(), null, null, null)
         val result = facade.uebaToJson(
+            BaboonCodecContext.Compact,
             meta, ByteArray(0),
             staticDomain = "com.example.unknown",
             staticVersion = "1.0.0",
@@ -475,6 +478,7 @@ class AnyMetaCodecTest {
         // meta.domain ("metawins"), not the static ("staticloses").
         val meta = AnyMeta(0x07.toByte(), "com.example.metawins", "1.0.0", "MetaT")
         val result = facade.jsonToUebaBytes(
+            BaboonCodecContext.Compact,
             meta, JsonPrimitive("x"),
             staticDomain = "com.example.staticloses",
             staticVersion = "9.9.9",
@@ -514,7 +518,7 @@ class AnyMetaCodecTest {
             { StubMeta() },
         )
         val meta = AnyMeta(0x07.toByte(), "com.example.single", "1.0.0", "Unknown")
-        val result = facade.jsonToUebaBytes(meta, JsonPrimitive("x"))
+        val result = facade.jsonToUebaBytes(BaboonCodecContext.Compact, meta, JsonPrimitive("x"))
         assertTrue(result is Either.Left)
         val err = (result as Either.Left).value
         assertTrue(err is BaboonCodecException.CodecNotFound)

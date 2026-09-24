@@ -85,7 +85,7 @@ function encodeInnerViaBin(facade: BaboonCodecsFacade): Uint8Array {
 }
 
 function encodeInnerViaJson(facade: BaboonCodecsFacade): Record<string, unknown> {
-    const result = facade.encodeToJson(SAMPLE_INNER);
+    const result = facade.encodeToJson(BaboonCodecContext.Compact, SAMPLE_INNER);
     if (result.tag !== "Right") throw new Error("encodeToJson failed: " + JSON.stringify(result));
     return result.value;
 }

@@ -13,6 +13,7 @@ import {
     AbstractBaboonJsonCodecs,
     AbstractBaboonUebaCodecs,
     BaboonBinCodec,
+    BaboonCodecContext,
     BaboonDomainVersion,
     BaboonEither,
     BaboonJsonCodec,
@@ -82,7 +83,7 @@ function unwrap<L, R>(e: BaboonEither<L, R>): R {
 }
 
 function envelope(value: FwdAppendVar | FwdMidInsert | FwdStable | FwdEnumHost): Record<string, unknown> {
-    return unwrap(writer.encodeToJson(value)) as Record<string, unknown>;
+    return unwrap(writer.encodeToJson(BaboonCodecContext.Compact, value)) as Record<string, unknown>;
 }
 
 describe('JSON envelope $rv (fwde2e.fwd)', () => {

@@ -210,7 +210,7 @@ fn decode_from_json_latest_round_trips_to_expected_inner() {
     let facade = fresh_facade();
     let val = InnerDyn(sample_inner());
     let json_envelope = facade
-        .encode_to_json(&val)
+        .encode_to_json(&BaboonCodecContext::Compact, &val)
         .expect("encode_to_json InnerDyn");
 
     let result = facade

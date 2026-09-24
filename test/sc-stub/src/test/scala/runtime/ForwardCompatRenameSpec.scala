@@ -82,7 +82,7 @@ class ForwardCompatRenameSpec extends AnyFunSuite {
   }
 
   test("JSON is not readable across the rename under either policy") {
-    val json = writer.encodeToJson(current).toTry.get
+    val json = writer.encodeToJson(BaboonCodecContext.Compact, current).toTry.get
     assert(oldReader(ForwardReadPolicy.Tolerant).decodeFromJson(json).toTry.get.isEmpty)
     assert(oldReader(ForwardReadPolicy.Lossless).decodeFromJson(json).toTry.get.isEmpty)
   }
