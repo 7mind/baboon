@@ -10,9 +10,21 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class RsJsonCodecGenerator(
+  trans: RsTypeTranslator,
   target: RsTarget,
   domain: Domain,
+  evo: BaboonEvolution,
+  enquiries: BaboonEnquiries,
 ) extends RsCodecTranslator {
+
+  // Reuses the transitive `any` analysis that already drives boxing and Ord derivation,
+  // rather than recomputing the same fixpoint here.
+  private val representation = new RsFieldRepresentation(domain, evo, trans, enquiries)
+
+  private def bearsAny(id: TypeId): Boolean = id match {
+    case u: TypeId.User => representation.containsAny(TypeRef.Scalar(u))
+    case _              => false
+  }
 
   override def translate(defn: DomainMember.User, rsRef: RsValue.RsType, srcRef: RsValue.RsType): Option[TextTree[RsValue]] = {
     if (isActive(defn.id)) {
@@ -68,7 +80,7 @@ class RsJsonCodecGenerator(
     * by construction and cannot drift while the two coexist.
     */
   private def ctxEncoder(defn: DomainMember.User, name: RsValue.RsType): TextTree[RsValue] = {
-    val body = if (anyBearing.contains(defn.id)) {
+    val body = if (bearsAny(defn.id)) {
       explicitEncoder(defn, name)
     } else {
       q"""let _ = ctx;
@@ -209,58 +221,6 @@ class RsJsonCodecGenerator(
       case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
     }
     (domainStatic, versionStatic, typeidStatic)
-  }
-
-  /** Does `tpe` reach an `any` position, either directly or through a user type it references?
-    * Drives both which types get a resolver and which fields that resolver has to walk.
-    */
-  private def refBearsAny(tpe: TypeRef): Boolean = tpe match {
-    case _: TypeRef.Any                 => true
-    case TypeRef.Scalar(u: TypeId.User) => anyBearing.contains(u)
-    case _: TypeRef.Scalar              => false
-    case c: TypeRef.Constructor         => c.args.exists(refBearsAny)
-  }
-
-  /** Types that carry an `any` somewhere below them, as a least fixpoint over the typespace.
-    * Iterative rather than recursive because recursive DTOs (`recursive-ok`) make the reference
-    * graph cyclic.
-    */
-  private lazy val anyBearing: Set[TypeId] = {
-    val users = domain.defs.meta.nodes.toList.collect { case (id, u: DomainMember.User) => (id, u) }
-
-    def directAny(tpe: TypeRef): Boolean = tpe match {
-      case _: TypeRef.Any         => true
-      case _: TypeRef.Scalar      => false
-      case c: TypeRef.Constructor => c.args.exists(directAny)
-    }
-
-    def userRefs(tpe: TypeRef): List[TypeId] = tpe match {
-      case TypeRef.Scalar(u: TypeId.User) => List(u)
-      case _: TypeRef.Scalar              => Nil
-      case c: TypeRef.Constructor         => c.args.toList.flatMap(userRefs)
-      case _: TypeRef.Any                 => Nil // the stored value is an opaque, not the underlying type
-    }
-
-    val seeds: Set[TypeId] = users.collect {
-      case (id, DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.exists(f => directAny(f.tpe)) => id
-    }.toSet
-
-    val edges: Map[TypeId, List[TypeId]] = users.map {
-      case (id, u) =>
-        val refs = u.defn match {
-          case d: Typedef.Dto => d.fields.toList.flatMap(f => userRefs(f.tpe))
-          case a: Typedef.Adt => a.dataMembers(domain).toList
-          case _              => Nil
-        }
-        (id, refs)
-    }.toMap
-
-    Iterator
-      .iterate(seeds) {
-        current => current ++ edges.collect { case (id, refs) if refs.exists(current.contains) => id }.toSet
-      }
-      .sliding(2).collectFirst { case Seq(a, b) if a == b => a }
-      .getOrElse(seeds)
   }
 
   def codecName(name: RsValue.RsType): RsValue.RsType = {
