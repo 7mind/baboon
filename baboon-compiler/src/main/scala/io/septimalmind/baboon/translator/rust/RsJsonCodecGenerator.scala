@@ -66,6 +66,8 @@ class RsJsonCodecGenerator(
        |    }
        |
        |    ${ctxEncoder(defn, name).shift(4).trim}
+       |
+       |    ${ctxDecoder(defn, name).shift(4).trim}
        |}""".stripMargin
   }
 
@@ -93,6 +95,163 @@ class RsJsonCodecGenerator(
        |pub fn encode_json(&self, ctx: &crate::baboon_runtime::BaboonCodecContext) -> Result<serde_json::Value, crate::any_opaque::BaboonCodecError> {
        |    ${body.shift(4).trim}
        |}""".stripMargin
+  }
+
+  /** Context-carrying JSON decoder, the counterpart of `encode_json`.
+    *
+    * Decoding never needs the facade — the `any` decoders take no context in any backend, and a
+    * JSON payload always yields the JSON branch — but the method takes one so the two directions
+    * stay symmetric and so a future context-sensitive read has somewhere to go.
+    *
+    * Any-bearing types get an explicit walk; everything else delegates to `serde_json::from_value`,
+    * which is what the derive did, so their accepted wire shape cannot drift while both exist.
+    */
+  private def ctxDecoder(defn: DomainMember.User, name: RsValue.RsType): TextTree[RsValue] = {
+    val body = if (bearsAny(defn.id)) {
+      explicitDecoder(defn, name)
+    } else {
+      q"""let _ = ctx;
+         |serde_json::from_value(wire.clone())
+         |    .map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("{}", e)))""".stripMargin
+    }
+
+    q"""/// JSON decode under a codec context, the counterpart of `encode_json`.
+       |pub fn decode_json(ctx: &crate::baboon_runtime::BaboonCodecContext, wire: &serde_json::Value) -> Result<Self, crate::any_opaque::BaboonCodecError> {
+       |    ${body.shift(4).trim}
+       |}""".stripMargin
+  }
+
+  private def explicitDecoder(defn: DomainMember.User, name: RsValue.RsType): TextTree[RsValue] = {
+    val what = name.name
+    defn.defn match {
+      case d: Typedef.Dto =>
+        val binds = d.fields.toList.map {
+          f =>
+            val rsName  = toSnakeCase(f.name.name)
+            val boxed   = representation.needsBox(f.tpe)
+            val decoded = fieldDec(f.tpe, f.name.name, what)
+            if (boxed) q"$rsName: Box::new($decoded)," else q"$rsName: $decoded,"
+        }
+        val ctor = if (binds.isEmpty) q"Ok(Self {})" else q"""Ok(Self {
+                                                             |    ${binds.joinN().shift(4).trim}
+                                                             |})""".stripMargin
+        q"""let obj = crate::baboon_runtime::json_tools::expect_object(wire, "$what")?;
+           |$ctor""".stripMargin
+
+      case a: Typedef.Adt =>
+        val arms = a.dataMembers(domain).toList.map {
+          mid =>
+            val wireVariantName = mid.name.name.capitalize
+            val rsVariantName   = escapeRustTypeName(wireVariantName)
+            val branchType      = trans.asRsRef(TypeRef.Scalar(mid), domain, evo)
+            q""""$wireVariantName" => Ok(${name.asName}::$rsVariantName($branchType::decode_json(ctx, branch)?)),"""
+        }
+        q"""let obj = crate::baboon_runtime::json_tools::expect_object(wire, "$what")?;
+           |let (tag, branch) = obj.iter().next().ok_or_else(|| {
+           |    crate::baboon_runtime::json_tools::decoder_failure("$what: expected a single-key ADT envelope, got an empty object")
+           |})?;
+           |if obj.len() != 1 {
+           |    return Err(crate::baboon_runtime::json_tools::decoder_failure(format!("$what: expected a single-key ADT envelope, got {} keys", obj.len())));
+           |}
+           |match tag.as_str() {
+           |    ${arms.joinN().shift(4).trim}
+           |    other => Err(crate::baboon_runtime::json_tools::decoder_failure(format!("$what: unknown ADT branch '{}'", other))),
+           |}""".stripMargin
+
+      case _ => q"""serde_json::from_value(wire.clone())
+                   |    .map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("{}", e)))""".stripMargin
+    }
+  }
+
+  /** One field. `opt` is read from the map directly: serde treats an absent `Option` field as
+    * `None`, not as an error, so absent and explicit-null must behave alike.
+    */
+  private def fieldDec(tpe: TypeRef, wireName: String, what: String): TextTree[RsValue] = {
+    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
+      case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
+        q"""match obj.get("$wireName") {
+           |    None | Some(serde_json::Value::Null) => None,
+           |    Some(v) => Some(${valueDec(c.args.head, q"v", what)}),
+           |}""".stripMargin
+      case _ =>
+        valueDec(tpe, q"""crate::baboon_runtime::json_tools::field(obj, "$wireName", "$what")?""", what)
+    }
+  }
+
+  private def valueDec(tpe: TypeRef, ref: TextTree[RsValue], what: String): TextTree[RsValue] = {
+    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
+      case a: TypeRef.Any =>
+        val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+        val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
+        q"crate::any_opaque::AnyOpaque::Json(crate::any_opaque::any_field_codec::any_from_json($ref, ${expectedHex}u8)?)"
+
+      case TypeRef.Scalar(TypeId.Builtins.bytes) => q"""crate::baboon_runtime::json_tools::bytes_from_json($ref, "$what")?"""
+      case TypeRef.Scalar(TypeId.Builtins.f128)  => q"""crate::baboon_runtime::json_tools::decimal_from_json($ref, "$what")?"""
+      case TypeRef.Scalar(TypeId.Builtins.tsu)   => q"""crate::baboon_runtime::json_tools::tsu_from_json($ref, "$what")?"""
+      case TypeRef.Scalar(TypeId.Builtins.tso)   => q"""crate::baboon_runtime::json_tools::tso_from_json($ref, "$what")?"""
+      // Lenient like the `lenient_numeric` attribute the derive carried: 64-bit values may
+      // legitimately arrive as decimal strings from producers that cannot hold them in a number.
+      case TypeRef.Scalar(TypeId.Builtins.i64)   => q"""crate::baboon_runtime::json_tools::read_i64($ref, "$what")?"""
+      case TypeRef.Scalar(TypeId.Builtins.u64)   => q"""crate::baboon_runtime::json_tools::read_u64($ref, "$what")?"""
+
+      case TypeRef.Scalar(_: TypeId.BuiltinScalar) =>
+        val rsT = trans.asRsRef(tpe, domain, evo)
+        q"""serde_json::from_value::<$rsT>($ref.clone()).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("$what: {}", e)))?"""
+
+      case TypeRef.Scalar(u: TypeId.User) =>
+        domain.defs.meta.nodes.get(u) match {
+          case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
+            val rsT = trans.asRsRef(tpe, domain, evo)
+            q"""serde_json::from_value::<$rsT>($ref.clone()).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("$what: {}", e)))?"""
+          case _ =>
+            val rsT = trans.asRsRef(tpe, domain, evo)
+            q"$rsT::decode_json(ctx, $ref)?"
+        }
+
+      case c: TypeRef.Constructor =>
+        c.id match {
+          case TypeId.Builtins.opt =>
+            q"""match $ref {
+               |    serde_json::Value::Null => None,
+               |    v => Some(${valueDec(c.args.head, q"v", what)}),
+               |}""".stripMargin
+          case TypeId.Builtins.lst =>
+            q"""{
+               |    let mut items = Vec::new();
+               |    for item in crate::baboon_runtime::json_tools::expect_array($ref, "$what")?.iter() {
+               |        items.push(${valueDec(c.args.head, q"item", what)});
+               |    }
+               |    items
+               |}""".stripMargin
+          case TypeId.Builtins.set =>
+            q"""{
+               |    let mut items = std::collections::BTreeSet::new();
+               |    for item in crate::baboon_runtime::json_tools::expect_array($ref, "$what")?.iter() {
+               |        items.insert(${valueDec(c.args.head, q"item", what)});
+               |    }
+               |    items
+               |}""".stripMargin
+          case TypeId.Builtins.map =>
+            q"""{
+               |    let mut entries = std::collections::BTreeMap::new();
+               |    for (k, v) in crate::baboon_runtime::json_tools::expect_object($ref, "$what")?.iter() {
+               |        entries.insert(${mapKeyDec(c.args.head, q"k", what)}, ${valueDec(c.args.last, q"v", what)});
+               |    }
+               |    entries
+               |}""".stripMargin
+          case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
+        }
+    }
+  }
+
+  /** JSON object keys arrive as strings; mirror `mapKeyEnc`. */
+  private def mapKeyDec(tpe: TypeRef, ref: TextTree[RsValue], what: String): TextTree[RsValue] = {
+    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
+      case TypeRef.Scalar(TypeId.Builtins.str) => q"($ref).clone()"
+      case _ =>
+        val rsT = trans.asRsRef(tpe, domain, evo)
+        q"""($ref).parse::<$rsT>().map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("$what: bad map key '{}': {}", $ref, e)))?"""
+    }
   }
 
   /** Explicit field-by-field JSON encoder for an any-bearing type.

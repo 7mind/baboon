@@ -79,8 +79,10 @@ object RsCodecTestsTranslator {
             }
 
             // Conversion oracle: while the serde derive is still in place it defines the JSON
-            // shape, so the explicit `encode_json` must agree with it value for value. This is
-            // what lets the derives be removed later without moving the wire.
+            // shape, so the explicit codecs must agree with it in both directions. This is what
+            // lets the derives be removed later without moving the wire. The decode side is
+            // compared against serde on the SAME wire rather than merely round-tripped, so a
+            // shared misreading cannot cancel itself out.
             val encodeMatchesDerive = definition.defn match {
               case _: Typedef.Adt =>
                 q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
@@ -101,6 +103,34 @@ object RsCodecTestsTranslator {
                    |let explicit = fixture.encode_json(&crate::baboon_runtime::BaboonCodecContext::Compact).expect("encode_json failed");
                    |let derived = serde_json::to_value(&fixture).expect("serde encode failed");
                    |assert_eq!(explicit, derived);""".stripMargin
+            }
+
+            val decodeMatchesDerive = definition.defn match {
+              case _: Typedef.Adt =>
+                q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+                   |for fixture in super::${fixtureMethodJson}_all(&mut rnd) {
+                   |    let wire = serde_json::to_value(&fixture).expect("serde encode failed");
+                   |    let explicit = $srcRef::decode_json(&crate::baboon_runtime::BaboonCodecContext::Compact, &wire).expect("decode_json failed");
+                   |    let derived: $srcRef = serde_json::from_value(wire).expect("serde decode failed");
+                   |    assert_eq!(explicit, derived);
+                   |    assert_eq!(explicit, fixture);
+                   |}""".stripMargin
+              case _: Typedef.Enum =>
+                q"""for fixture in $srcRef::all() {
+                   |    let wire = serde_json::to_value(&fixture).expect("serde encode failed");
+                   |    let explicit = $srcRef::decode_json(&crate::baboon_runtime::BaboonCodecContext::Compact, &wire).expect("decode_json failed");
+                   |    let derived: $srcRef = serde_json::from_value(wire).expect("serde decode failed");
+                   |    assert_eq!(explicit, derived);
+                   |    assert_eq!(explicit, fixture);
+                   |}""".stripMargin
+              case _ =>
+                q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+                   |let fixture = super::$fixtureMethodJson(&mut rnd);
+                   |let wire = serde_json::to_value(&fixture).expect("serde encode failed");
+                   |let explicit = $srcRef::decode_json(&crate::baboon_runtime::BaboonCodecContext::Compact, &wire).expect("decode_json failed");
+                   |let derived: $srcRef = serde_json::from_value(wire).expect("serde decode failed");
+                   |assert_eq!(explicit, derived);
+                   |assert_eq!(explicit, fixture);""".stripMargin
             }
 
             q"""#[test]
@@ -132,6 +162,13 @@ object RsCodecTestsTranslator {
                |fn test_${testFnName}_json_encode_matches_derive() {
                |    for _ in 0..${target.generic.codecTestIterations.toString} {
                |        ${encodeMatchesDerive.shift(8).trim}
+               |    }
+               |}
+               |
+               |#[test]
+               |fn test_${testFnName}_json_decode_matches_derive() {
+               |    for _ in 0..${target.generic.codecTestIterations.toString} {
+               |        ${decodeMatchesDerive.shift(8).trim}
                |    }
                |}""".stripMargin
         }.toList
