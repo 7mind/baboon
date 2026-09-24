@@ -203,6 +203,32 @@ pub mod any_field_codec {
         Ok(crate::any_opaque::AnyOpaqueUeba::new(any_meta, any_blob))
     }
 
+    /// Reads an `any` field from its JSON envelope. Always yields the JSON branch — a JSON
+    /// payload is already in JSON form, and no backend's `any` decoder needs a facade. The
+    /// declared kind byte is checked here because only the field site knows it.
+    pub fn any_from_json(
+        wire: &serde_json::Value,
+        expected_kind: u8,
+    ) -> Result<crate::any_opaque::AnyOpaqueJson, crate::any_opaque::BaboonCodecError> {
+        let meta = crate::any_opaque::any_meta_codec::read_json(wire)?;
+        if meta.kind != expected_kind {
+            return Err(crate::any_opaque::BaboonCodecError::decoder_failure(format!(
+                "any: wire kind 0x{:02x} does not match field-declared 0x{:02x}",
+                meta.kind, expected_kind
+            )));
+        }
+        let content = wire
+            .as_object()
+            .and_then(|o| o.get(crate::any_opaque::any_meta_codec::ANY_CONTENT_KEY))
+            .ok_or_else(|| {
+                crate::any_opaque::BaboonCodecError::decoder_failure(format!(
+                    "any: JSON envelope missing '{}' content key",
+                    crate::any_opaque::any_meta_codec::ANY_CONTENT_KEY
+                ))
+            })?;
+        Ok(crate::any_opaque::AnyOpaqueJson::new(meta, content.clone()))
+    }
+
     /// Writes an `any` field as its JSON envelope, transcoding a UEBA-form payload when needed.
     ///
     /// The field site is the only place that knows the declared kind byte and the static
