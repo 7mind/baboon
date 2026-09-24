@@ -203,41 +203,50 @@ pub mod any_field_codec {
         Ok(crate::any_opaque::AnyOpaqueUeba::new(any_meta, any_blob))
     }
 
-    /// Resolves an `any` slot into its JSON-form branch ahead of serde.
+    /// Writes an `any` field as its JSON envelope, transcoding a UEBA-form payload when needed.
     ///
-    /// `serde::Serialize` has no room for a codec context, so `Serialize for AnyOpaque` cannot
-    /// reach the facade a UEBA-form payload needs to transcode itself. Generated types therefore
-    /// rewrite their `any` slots through this helper before handing the value to serde — the
-    /// field site is also the only place the per-field static fallbacks and the declared kind
-    /// byte are known. A slot that is already JSON-form is left untouched.
-    pub fn resolve_any_field_for_json(
+    /// The field site is the only place that knows the declared kind byte and the static
+    /// fallbacks the facade needs to resolve a wire `meta` that deliberately omits what the
+    /// declaration already pins down, so the generated JSON encoder calls through here rather
+    /// than relying on `Serialize for AnyOpaque` — which gets no codec context and therefore no
+    /// facade.
+    pub fn any_to_json(
         ctx: &crate::baboon_runtime::BaboonCodecContext,
         expected_kind: u8,
         static_domain: Option<&str>,
         static_version: Option<&str>,
         static_typeid: Option<&str>,
-        slot: &mut crate::any_opaque::AnyOpaque,
-    ) -> Result<(), crate::any_opaque::BaboonCodecError> {
-        if slot.meta().kind != expected_kind {
+        value: &crate::any_opaque::AnyOpaque,
+    ) -> Result<serde_json::Value, crate::any_opaque::BaboonCodecError> {
+        if value.meta().kind != expected_kind {
             return Err(crate::any_opaque::BaboonCodecError::encoder_failure(format!(
                 "any: meta-kind 0x{:02x} does not match field-declared 0x{:02x}",
-                slot.meta().kind, expected_kind
+                value.meta().kind, expected_kind
             )));
         }
-        let converted = match slot {
-            crate::any_opaque::AnyOpaque::Json(_) => return Ok(()),
+        let inner = match value {
+            crate::any_opaque::AnyOpaque::Json(j) => j.json.clone(),
             crate::any_opaque::AnyOpaque::Ueba(u) => {
                 let f = ctx.facade().ok_or_else(|| {
                     crate::any_opaque::BaboonCodecError::encoder_failure(
                         "Cannot encode AnyOpaque::Ueba into JSON without a facade reference. Construct the codec context via BaboonCodecContext::with_facade(use_indices, facade), or supply AnyOpaque::Json directly.",
                     )
                 })?;
-                let json = f.ueba_to_json(ctx, &u.meta, &u.bytes, static_domain, static_version, static_typeid)?;
-                crate::any_opaque::AnyOpaque::Json(crate::any_opaque::AnyOpaqueJson::new(u.meta.clone(), json))
+                f.ueba_to_json(ctx, &u.meta, &u.bytes, static_domain, static_version, static_typeid)?
             }
         };
-        *slot = converted;
-        Ok(())
+        let mut envelope = crate::any_opaque::any_meta_codec::write_json(value.meta());
+        match envelope.as_object_mut() {
+            Some(map) => {
+                map.insert(crate::any_opaque::any_meta_codec::ANY_CONTENT_KEY.to_string(), inner);
+            }
+            None => {
+                return Err(crate::any_opaque::BaboonCodecError::encoder_failure(
+                    "any: AnyMeta envelope must be a JSON object",
+                ))
+            }
+        }
+        Ok(envelope)
     }
 }
 

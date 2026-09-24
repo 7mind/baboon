@@ -53,28 +53,23 @@ class RsJsonCodecGenerator(
        |        serde_json::from_value(v)
        |    }
        |
-       |    ${ctxEncoder(defn).shift(4).trim}
-       |}${anyResolver(defn, name)}""".stripMargin
+       |    ${ctxEncoder(defn, name).shift(4).trim}
+       |}""".stripMargin
   }
 
   /** Context-carrying JSON encoder, the counterpart of the UEBA side's `encode_ueba(ctx, writer)`.
     *
     * `serde::Serialize` has no room for a codec context, so neither the derive nor the
     * hand-written `Serialize` impls (ADTs, wrapped branches) can reach the facade that an `any`
-    * field holding a UEBA payload needs to transcode itself to JSON. Rather than re-deriving the
-    * whole JSON shape by hand — renames, hex bytes, decimal-as-number, timestamps, user map-key
-    * adapters, ADT wrapping — this resolves the `any` slots to their JSON branch first and then
-    * lets serde produce the document exactly as it always has.
+    * field holding a UEBA payload needs to transcode itself to JSON.
     *
-    * Types with no `any` anywhere below them delegate straight to `serde_json::to_value`, so
-    * their wire shape is the derive's by construction and cannot drift.
+    * Any-bearing types get an explicit field-by-field encoder. Types with no `any` anywhere
+    * below them delegate straight to `serde_json::to_value`, so their wire shape is the derive's
+    * by construction and cannot drift while the two coexist.
     */
-  private def ctxEncoder(defn: DomainMember.User): TextTree[RsValue] = {
+  private def ctxEncoder(defn: DomainMember.User, name: RsValue.RsType): TextTree[RsValue] = {
     val body = if (anyBearing.contains(defn.id)) {
-      q"""let mut resolved = self.clone();
-         |resolved.baboon_resolve_any_for_json(ctx)?;
-         |serde_json::to_value(&resolved)
-         |    .map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!("{}", e)))""".stripMargin
+      explicitEncoder(defn, name)
     } else {
       q"""let _ = ctx;
          |serde_json::to_value(self)
@@ -88,80 +83,110 @@ class RsJsonCodecGenerator(
        |}""".stripMargin
   }
 
-  /** In-place rewrite of every `any` slot reachable from this value into its JSON branch.
-    * Emitted only for any-bearing types; the field site is the only place the per-field static
-    * fallbacks and the declared kind byte are known.
+  /** Explicit field-by-field JSON encoder for an any-bearing type.
+    *
+    * Plain leaves still go through `serde_json::to_value`, which is exact by construction — it
+    * is what the derive called — while the shapes serde only expressed through field attributes
+    * (hex bytes, decimal-as-number, timestamps) are written by the matching `json_tools` helper.
     */
-  private def anyResolver(defn: DomainMember.User, name: RsValue.RsType): TextTree[RsValue] = {
-    if (!anyBearing.contains(defn.id)) return q""
-
-    val body = defn.defn match {
+  private def explicitEncoder(defn: DomainMember.User, name: RsValue.RsType): TextTree[RsValue] = {
+    defn.defn match {
       case d: Typedef.Dto =>
-        val steps = d.fields.toList.filter(f => refBearsAny(f.tpe)).map {
-          f => resolveStep(f.tpe, q"self.${toSnakeCase(f.name.name)}")
+        val inserts = d.fields.toList.map {
+          f =>
+            val wireName = f.name.name
+            q"""obj.insert("$wireName".to_string(), ${fieldEnc(f.tpe, q"self.${toSnakeCase(f.name.name)}")});"""
         }
-        if (steps.isEmpty) q"Ok(())" else q"""${steps.joinN()}
-                                             |Ok(())""".stripMargin
+        val build = if (inserts.isEmpty) q"" else inserts.joinN()
+        q"""let mut obj = serde_json::Map::new();
+           |$build
+           |Ok(serde_json::Value::Object(obj))""".stripMargin
 
       case a: Typedef.Adt =>
         val arms = a.dataMembers(domain).toList.map {
           mid =>
-            val rsVariantName = escapeRustTypeName(mid.name.name.capitalize)
-            if (anyBearing.contains(mid)) {
-              q"""${name.asName}::$rsVariantName(v) => v.baboon_resolve_any_for_json(ctx),"""
-            } else {
-              q"""${name.asName}::$rsVariantName(_) => Ok(()),"""
-            }
+            val wireVariantName = mid.name.name.capitalize
+            val rsVariantName   = escapeRustTypeName(wireVariantName)
+            q"""${name.asName}::$rsVariantName(v) => {
+               |    obj.insert("$wireVariantName".to_string(), v.encode_json(ctx)?);
+               |}""".stripMargin
         }
-        q"""match self {
+        q"""let mut obj = serde_json::Map::new();
+           |match self {
            |    ${arms.joinN().shift(4).trim}
-           |}""".stripMargin
+           |}
+           |Ok(serde_json::Value::Object(obj))""".stripMargin
 
-      case _ => q"Ok(())"
+      case _ => q"""serde_json::to_value(self)
+                   |    .map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!("{}", e)))""".stripMargin
     }
-
-    q"""
-       |
-       |impl ${name.asName} {
-       |    #[doc(hidden)]
-       |    pub fn baboon_resolve_any_for_json(&mut self, ctx: &crate::baboon_runtime::BaboonCodecContext) -> Result<(), crate::any_opaque::BaboonCodecError> {
-       |        ${body.shift(8).trim}
-       |    }
-       |}""".stripMargin
   }
 
-  /** Walks `tpe` down to its `any` positions, rewriting each in place. Mirrors the shape of
-    * `RsUEBACodecGenerator.mkEncoder`'s recursion over collection constructors.
+  /** Encoder expression for one field. Recurses through the collection constructors the same way
+    * `RsUEBACodecGenerator.mkEncoder` does.
     */
-  private def resolveStep(tpe: TypeRef, ref: TextTree[RsValue]): TextTree[RsValue] = {
+  private def fieldEnc(tpe: TypeRef, ref: TextTree[RsValue]): TextTree[RsValue] = {
     BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
       case a: TypeRef.Any =>
         val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
         val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
         val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
-        q"crate::any_opaque::any_field_codec::resolve_any_field_for_json(ctx, ${expectedHex}u8, $staticDom, $staticVer, $staticTid, &mut $ref)?;"
+        q"crate::any_opaque::any_field_codec::any_to_json(ctx, ${expectedHex}u8, $staticDom, $staticVer, $staticTid, &$ref)?"
 
-      case TypeRef.Scalar(_) =>
-        // A user type that transitively carries `any` — recurse into its own resolver.
-        q"$ref.baboon_resolve_any_for_json(ctx)?;"
+      case TypeRef.Scalar(TypeId.Builtins.bytes) =>
+        q"crate::baboon_runtime::json_tools::bytes_to_json(&$ref)"
+      case TypeRef.Scalar(TypeId.Builtins.f128) =>
+        q"crate::baboon_runtime::json_tools::decimal_to_json(&$ref)"
+      case TypeRef.Scalar(TypeId.Builtins.tsu) =>
+        q"crate::baboon_runtime::json_tools::tsu_to_json(&$ref)"
+      case TypeRef.Scalar(TypeId.Builtins.tso) =>
+        q"crate::baboon_runtime::json_tools::tso_to_json(&$ref)"
+
+      case TypeRef.Scalar(_: TypeId.BuiltinScalar) =>
+        q"""serde_json::to_value(&$ref).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!("{}", e)))?"""
+
+      case TypeRef.Scalar(u: TypeId.User) =>
+        domain.defs.meta.nodes.get(u) match {
+          // Foreign leaves keep the host type's own serde impl — Baboon cannot know their shape.
+          case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
+            q"""serde_json::to_value(&$ref).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!("{}", e)))?"""
+          case _ =>
+            q"$ref.encode_json(ctx)?"
+        }
 
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"""if let Some(v) = ($ref).as_mut() {
-               |    ${resolveStep(c.args.head, q"(*v)").shift(4).trim}
+            q"""match &$ref {
+               |    None => serde_json::Value::Null,
+               |    Some(v) => ${fieldEnc(c.args.head, q"(*v)")},
                |}""".stripMargin
           case TypeId.Builtins.lst | TypeId.Builtins.set =>
-            q"""for item in ($ref).iter_mut() {
-               |    ${resolveStep(c.args.head, q"(*item)").shift(4).trim}
+            q"""{
+               |    let mut items = Vec::new();
+               |    for item in ($ref).iter() {
+               |        items.push(${fieldEnc(c.args.head, q"(*item)")});
+               |    }
+               |    serde_json::Value::Array(items)
                |}""".stripMargin
           case TypeId.Builtins.map =>
-            // Keys are never `any` (the typer rejects it); only values can carry one.
-            q"""for (_, v) in ($ref).iter_mut() {
-               |    ${resolveStep(c.args.last, q"(*v)").shift(4).trim}
+            q"""{
+               |    let mut entries = serde_json::Map::new();
+               |    for (k, v) in ($ref).iter() {
+               |        entries.insert(${mapKeyEnc(c.args.head, q"(*k)")}, ${fieldEnc(c.args.last, q"(*v)")});
+               |    }
+               |    serde_json::Value::Object(entries)
                |}""".stripMargin
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
+    }
+  }
+
+  /** JSON object keys are strings; serde_json coerces map keys the same way. */
+  private def mapKeyEnc(tpe: TypeRef, ref: TextTree[RsValue]): TextTree[RsValue] = {
+    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
+      case TypeRef.Scalar(TypeId.Builtins.str) => q"($ref).clone()"
+      case _                                   => q"($ref).to_string()"
     }
   }
 
