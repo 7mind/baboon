@@ -11,11 +11,18 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class RsJsonCodecGenerator(
   trans: RsTypeTranslator,
+  domainTypes: RsDomainTypes,
   target: RsTarget,
   domain: Domain,
   evo: BaboonEvolution,
   enquiries: BaboonEnquiries,
 ) extends RsCodecTranslator {
+
+  // A `map[K, V]` with a user-typed key gets its string keys from the adapter module emitted
+  // beside K. Only the adapter knows how each eligible kind converts — an `id` type has
+  // `Display` but no `FromStr`, a single-primitive wrapper has neither — so the explicit codecs
+  // delegate the whole field to it rather than guessing `to_string()` / `parse::<K>()`.
+  private val mapKeyAdapter = new RsMapKeyAdapter(domain, domainTypes)
 
   // Reuses the transitive `any` analysis that already drives boxing and Ord derivation,
   // rather than recomputing the same fixpoint here.
@@ -208,6 +215,11 @@ class RsJsonCodecGenerator(
             q"$rsT::decode_json(ctx, $ref)?"
         }
 
+      case _ if mapKeyAdapter.userMapKeyAdapterPath(tpe).isDefined =>
+        val path = mapKeyAdapter.userMapKeyAdapterPath(tpe).get
+        // `serde_json::Value` is itself a Deserializer, so the adapter can read straight from it.
+        q"""$path::deserialize($ref.clone()).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("$what: {}", e)))?"""
+
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
@@ -324,6 +336,10 @@ class RsJsonCodecGenerator(
           case _ =>
             q"$ref.encode_json(ctx)?"
         }
+
+      case _ if mapKeyAdapter.userMapKeyAdapterPath(tpe).isDefined =>
+        val path = mapKeyAdapter.userMapKeyAdapterPath(tpe).get
+        q"""$path::serialize(&$ref, serde_json::value::Serializer).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!("{}", e)))?"""
 
       case c: TypeRef.Constructor =>
         c.id match {
