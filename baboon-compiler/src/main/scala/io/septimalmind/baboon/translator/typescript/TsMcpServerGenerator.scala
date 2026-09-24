@@ -139,7 +139,7 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
          |        return this.toolEntries.map(tool => ({ ...tool, method: { ...tool.method }, inputSchema: JSON.parse(JSON.stringify(tool.inputSchema)) }));
          |    }
          |
-         |    protected findTool(name: string): McpToolEntry | undefined {
+         |    protected override findTool(name: string): McpToolEntry | undefined {
          |        return this.toolsByName.get(name);
          |    }
          |

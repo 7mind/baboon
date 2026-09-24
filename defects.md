@@ -10,6 +10,27 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## MIGRATION-2026-09-24 (user migration reports, `bugs.md`)
+
+### [MIGRATION-2026-09-24-D01] Generated TypeScript MCP servers fail strict compilation (TS4114)
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsMcpServerGenerator.scala:142`
+**Description:** The emitted MCP server declares `protected findTool(name: string): McpToolEntry | undefined`, but both runtime base classes define it concretely — `AbstractBaboonMcpServer` and `AbstractAsyncBaboonMcpServer` at `baboon-runtime/typescript/BaboonMcpRuntime.ts:241,382`. Under `noImplicitOverride` (which Deno enables by default) TypeScript rejects the derived member with TS4114, so every generated MCP server fails to compile at the consumer. Reproduced by generating the `mcp-stub-ok` MCP server and running `tsc` with `noImplicitOverride`: exactly one TS4114 at the generated `findTool`. The emitter is shared by the sync and async variants, so both are affected. Not a regression from the facade work — the concrete base implementations predate it.
+**Fix:** Emit `protected override findTool(...)`. Verified the diagnostic count goes 1 -> 0 for both variants. `test/ts-stub/tsconfig.json` gained `noImplicitOverride: true` so the TypeScript lanes enforce what the consumer's toolchain enforces — its absence is why CI never saw this.
+
+### [MIGRATION-2026-09-24-D02] i64/u64 JSON representation disagrees across backends; TypeScript silently rounds
+**Status:** open (blocked on a wire-contract decision)
+**Severity:** major
+**Location:** `CSScalarCodecEmitter.scala:44` (catch-all numeric `JValue`); `TsScalarCodecOps.scala:16,38`; `docs/json-codecs.md:19,23`
+**Description:** `docs/json-codecs.md` specifies signed integers as JSON numbers and `u64` as a decimal string (explicitly to avoid the JavaScript safe-integer limit). Measured against that spec the backends disagree in both directions: C#/Java/Kotlin/Rust emit `i64` as a number (per spec) while TypeScript/Dart/Swift emit it as a decimal string (contrary to spec); C# emits `u64` as a number (contrary to spec) while TypeScript emits a string (per spec). The spec itself is inconsistent — `i64` has exactly the JavaScript precision problem it acknowledges for `u64`.
+Every decoder except TypeScript's is lenient about the two forms. TypeScript's assumed a string and passed whatever it received to `BigInt(...)`; when the producer sent a number, `JSON.parse` had already rounded it, so `Int64.MaxValue` written by C# as `{"appPortalId":9223372036854775807}` decoded to `9223372036854775808n`. The original value is unrecoverable at that layer.
+A third, enabling defect: the generated cross-language JSON test only checks TypeScript-side self-consistency — it decodes the producer's fixture, re-encodes, decodes again and compares the two TypeScript values (`Renamed.test.ts` `test_cs_json`). A value corrupted by the first decode is equally corrupted in both operands, so the assertion holds. The UEBA cross-language path compares real bytes; JSON does not. That is why this survived CI under both v0.0.195 and the current compiler, matching the reporter's observation that binary interchange passes the same maximum-value case.
+**Evidence:** A prototype lenient TypeScript reader that refuses numeric tokens beyond `Number.MAX_SAFE_INTEGER` turns the silent corruption into 8 failing `test_cs_json` cases across the shared model. The rejected values (`843449402620578600`, `-5314845832925431000`, `5219970098605879000`) all carry trailing zeros: they are the rounded doubles, not the integers C# wrote. Patch held at `scratchpad/i64-decoder-fix.patch` with its test; not landed, because correcting only the reader makes the existing C#-to-TypeScript interop fail loudly instead of quietly, which is right but is not a decision the compiler should take on its own.
+**Fix:** Pending. Options: (i) represent `i64` and `u64` as decimal strings in every backend, readers staying lenient for compatibility — lossless and consistent, and already what TypeScript/Dart/Swift do for `i64`; or (ii) keep numeric tokens and require lossless JSON ingress everywhere, which plain `JSON.parse` cannot provide. Either way C#'s `u64` must stop contradicting the spec, the documentation must be aligned, and the cross-language JSON test must assert fidelity to the producer rather than self-consistency.
+
+---
+
 ## FIELD-2026-09-24 (user report + facade review, all backends)
 
 ### [FIELD-2026-09-24-D01] Facade JSON encode entry points take no codec context, so `any` fields holding the other wire form cannot be encoded
