@@ -16,7 +16,9 @@ final class KtScalarCodecEmitter(ktTypes: KtTypes) {
     case TypeId.Builtins.u08 => q"$wire.jsonPrimitive.int.toUByte()"
     case TypeId.Builtins.u16 => q"$wire.jsonPrimitive.int.toUShort()"
     case TypeId.Builtins.u32 => q"$wire.jsonPrimitive.long.toUInt()"
-    case TypeId.Builtins.u64 => q"$wire.jsonPrimitive.long.toULong()"
+    // Lenient: the canonical form is the unsigned decimal string; the older numeric form is a
+    // signed two's-complement Long, which `toULong()` maps back to the same value.
+    case TypeId.Builtins.u64 => q"($wire.jsonPrimitive.content.toULongOrNull() ?: $wire.jsonPrimitive.long.toULong())"
     case TypeId.Builtins.f32 => q"$wire.jsonPrimitive.float"
     case TypeId.Builtins.f64 => q"$wire.jsonPrimitive.double"
     case TypeId.Builtins.f128 =>
@@ -40,11 +42,15 @@ final class KtScalarCodecEmitter(ktTypes: KtTypes) {
     case TypeId.Builtins.i08 => q"$jsonPrimitive($value.toInt())"
     case TypeId.Builtins.i16 => q"$jsonPrimitive($value.toInt())"
     case TypeId.Builtins.i32 => q"$jsonPrimitive($value)"
-    case TypeId.Builtins.i64 => q"$jsonPrimitive($value)"
+    // 64-bit integers go on the wire as decimal strings in every backend — see the C# emitter
+    // and docs/json-codecs.md, "64-bit integers". The decoders stay lenient about numbers.
+    case TypeId.Builtins.i64 => q"$jsonPrimitive($value.toString())"
     case TypeId.Builtins.u08 => q"$jsonPrimitive($value.toInt())"
     case TypeId.Builtins.u16 => q"$jsonPrimitive($value.toInt())"
     case TypeId.Builtins.u32 => q"$jsonPrimitive($value.toLong())"
-    case TypeId.Builtins.u64 => q"$jsonPrimitive($value.toLong())"
+    // `ULong.toString()` is unsigned; the previous `toLong()` wrote u64 values above
+    // Long.MAX_VALUE as negative numbers, which no other backend reads back as the same value.
+    case TypeId.Builtins.u64 => q"$jsonPrimitive($value.toString())"
     case TypeId.Builtins.f32 => q"$jsonPrimitive($value)"
     case TypeId.Builtins.f64 => q"$jsonPrimitive($value)"
     case TypeId.Builtins.f128 =>

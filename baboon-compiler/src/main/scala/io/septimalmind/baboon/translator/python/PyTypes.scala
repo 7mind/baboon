@@ -112,6 +112,10 @@ object PyTypes {
 
   // builtins
   val pyInt          = PyType(pyBuiltins, "int")
+  // `Annotated[int, PlainSerializer(str, ..., when_used="json")]` — see the aliases in
+  // baboon_runtime_shared.py and docs/json-codecs.md, "64-bit integers".
+  val pyI64          = PyType(pyBaboonSharedRuntimeModule, "BaboonI64")
+  val pyU64          = PyType(pyBaboonSharedRuntimeModule, "BaboonU64")
   val pyFloat        = PyType(pyBuiltins, "float")
   val pyDecimal      = PyType(pyDecimalModule, "Decimal")
   val pyBool         = PyType(pyBuiltins, "bool")

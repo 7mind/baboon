@@ -213,16 +213,31 @@ fn any_opaque_json_content_equality() {
     assert_ne!(a, c);
 }
 
-// ===== Custom Serialize/Deserialize for AnyOpaque =====
+// ===== any_field_codec: the JSON envelope for an `any` field =====
+//
+// These used to exercise `Serialize`/`Deserialize for AnyOpaque`. Those impls are gone: a serde
+// impl gets no codec context, so it could never transcode a UEBA-form payload, and having a
+// second encoding path beside the explicit codecs was exactly the drift hazard this work
+// removed. The envelope contract itself is unchanged and now lives in `any_field_codec`.
+
+use baboon_rs_stub::any_opaque::any_field_codec;
 
 #[test]
-fn any_opaque_serialize_json_branch_emits_envelope() {
+fn any_to_json_json_branch_emits_envelope() {
     let payload = serde_json::json!({"foo": 42});
     let opaque = AnyOpaque::Json(AnyOpaqueJson::new(
         mk(0x07, Some("d"), Some("v"), Some("t")),
         payload.clone(),
     ));
-    let serialized = serde_json::to_value(&opaque).expect("serialize");
+    let serialized = any_field_codec::any_to_json(
+        &BaboonCodecContext::Compact,
+        0x07,
+        None,
+        None,
+        None,
+        &opaque,
+    )
+    .expect("encode");
     let obj = serialized.as_object().expect("object");
     assert_eq!(obj.get("$ak"), Some(&serde_json::json!(7)));
     assert_eq!(obj.get("$ad"), Some(&serde_json::json!("d")));
@@ -232,16 +247,23 @@ fn any_opaque_serialize_json_branch_emits_envelope() {
 }
 
 #[test]
-fn any_opaque_serialize_ueba_branch_returns_error() {
-    // The Ueba branch's bytes can't be JSON-serialized without facade access. The custom
-    // Serialize impl errors instead of silently producing wrong wire bytes.
+fn any_to_json_ueba_branch_without_a_facade_returns_error() {
+    // The Ueba branch's bytes can't become JSON without facade access. The encoder errors
+    // instead of silently producing wrong wire bytes.
     let opaque = AnyOpaque::Ueba(AnyOpaqueUeba::new(mk(0x00, None, None, None), vec![1, 2, 3]));
-    let result = serde_json::to_value(&opaque);
-    assert!(result.is_err(), "Ueba branch must not JSON-serialize directly");
+    let result = any_field_codec::any_to_json(
+        &BaboonCodecContext::Compact,
+        0x00,
+        None,
+        None,
+        None,
+        &opaque,
+    );
+    assert!(result.is_err(), "the Ueba branch must not JSON-encode without a facade");
 }
 
 #[test]
-fn any_opaque_deserialize_returns_json_branch() {
+fn any_from_json_returns_the_json_branch() {
     let envelope = serde_json::json!({
         "$ak": 0x07,
         "$ad": "d",
@@ -249,38 +271,41 @@ fn any_opaque_deserialize_returns_json_branch() {
         "$at": "t",
         "$c": {"payload": "value"},
     });
-    let parsed: AnyOpaque = serde_json::from_value(envelope.clone()).expect("deserialize");
-    match parsed {
-        AnyOpaque::Json(j) => {
-            assert_eq!(j.meta, mk(0x07, Some("d"), Some("v"), Some("t")));
-            assert_eq!(j.json, serde_json::json!({"payload": "value"}));
-        }
-        AnyOpaque::Ueba(_) => panic!("Deserialize must always return Json branch"),
-    }
+    let parsed = any_field_codec::any_from_json(&envelope, 0x07).expect("decode");
+    assert_eq!(parsed.meta, mk(0x07, Some("d"), Some("v"), Some("t")));
+    assert_eq!(parsed.json, serde_json::json!({"payload": "value"}));
 }
 
 #[test]
-fn any_opaque_deserialize_round_trip_json_branch() {
+fn any_json_envelope_round_trips() {
     let payload = serde_json::json!({"nested": {"x": 1}});
     let original = AnyOpaque::Json(AnyOpaqueJson::new(
         mk(0x07, Some("d"), Some("v"), Some("t")),
         payload.clone(),
     ));
-    let serialized = serde_json::to_value(&original).expect("serialize");
-    let round: AnyOpaque = serde_json::from_value(serialized).expect("deserialize");
-    assert_eq!(round, original);
+    let serialized = any_field_codec::any_to_json(
+        &BaboonCodecContext::Compact,
+        0x07,
+        None,
+        None,
+        None,
+        &original,
+    )
+    .expect("encode");
+    let round = any_field_codec::any_from_json(&serialized, 0x07).expect("decode");
+    assert_eq!(AnyOpaque::Json(round), original);
 }
 
 #[test]
-fn any_opaque_deserialize_left_on_missing_kind() {
+fn any_from_json_fails_on_missing_kind() {
     let envelope = serde_json::json!({"$c": {}});
-    assert!(serde_json::from_value::<AnyOpaque>(envelope).is_err());
+    assert!(any_field_codec::any_from_json(&envelope, 0x00).is_err());
 }
 
 #[test]
-fn any_opaque_deserialize_left_on_missing_content() {
+fn any_from_json_fails_on_missing_content() {
     let envelope = serde_json::json!({"$ak": 0x00});
-    assert!(serde_json::from_value::<AnyOpaque>(envelope).is_err());
+    assert!(any_field_codec::any_from_json(&envelope, 0x00).is_err());
 }
 
 // ===== BaboonCodecContext + facade plumbing =====
@@ -872,7 +897,16 @@ fn pr11_d05_any_opaque_json_preserves_key_insertion_order() {
         AnyMeta::new(0x07, Some("d".into()), Some("v".into()), Some("t".into())).unwrap(),
         payload,
     ));
-    let serialized = serde_json::to_string(&opaque).expect("serialize");
+    let serialized = any_field_codec::any_to_json(
+        &BaboonCodecContext::Compact,
+        0x07,
+        None,
+        None,
+        None,
+        &opaque,
+    )
+    .expect("encode")
+    .to_string();
     // With preserve_order: $ak, $ad, $av, $at, $c (insertion order).
     // Without (BTreeMap default): $ad, $ak, $at, $av, $c (lexical).
     let ak_pos = serialized.find("\"$ak\"").expect("$ak in output");

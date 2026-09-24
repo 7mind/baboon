@@ -13,7 +13,9 @@ final class TsScalarCodecOps(target: TsTarget) {
       case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 | TypeId.Builtins.f32 |
           TypeId.Builtins.f64 =>
         q"$wire as number"
-      case TypeId.Builtins.i64 | TypeId.Builtins.u64 => q"BigInt($wire as string)"
+      // Lenient like every other backend's decoder, and loud rather than lossy when the
+      // producer sent a number too large for JSON.parse to have preserved. See BaboonInt64.
+      case TypeId.Builtins.i64 | TypeId.Builtins.u64 => q"""$tsBaboonInt64.read($wire, "i64/u64")"""
       case TypeId.Builtins.f128                      => q"$tsBaboonDecimal.fromString($wire as string)"
       case TypeId.Builtins.str | TypeId.Builtins.uid => q"$wire as string"
       case TypeId.Builtins.bytes                     => q"$tsBinTools.hexDecode($wire as string)"

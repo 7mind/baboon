@@ -11,21 +11,46 @@ Baboon's generated JSON codecs aim for predictable, deterministic shapes that ro
   - Scala: `None` becomes `null`; `Some` encodes the wrapped value.
   - C#: `null` reference is encoded as JSON `null`; value types use `WriteOptionVal` and produce `null` or the wrapped value.
 - ADT branches are represented as their branch object; when `wrappedAdtBranchCodecs` is enabled for a target, branches are wrapped as `{ "<TypeName>": { ...payload... } }`.
-- Primitives use native JSON numbers/booleans/strings; 64‑bit unsigned become decimal strings to avoid loss of precision in JavaScript.
+- Primitives use native JSON numbers/booleans/strings; both 64‑bit integer types become decimal strings to avoid loss of precision in JavaScript (see "64‑bit integers").
 
 ## Primitive mappings
 
 - `bit` → JSON boolean.
-- Signed ints/floats → JSON numbers.
+- `i08`/`i16`/`i32` and the floats → JSON numbers.
+- `i64`/`u64` → JSON **string**, in every backend. See "64‑bit integers" below.
 - Unsigned ints:
   - `u08`/`u16` → JSON numbers.
-  - `u32` → JSON number in Scala, number in C# (fits 53 bits).
-  - `u64` → JSON string (Scala uses `toUnsignedBigInt`, C# uses `BigInteger`), because it may exceed JS safe integer range.
+  - `u32` → JSON number (fits 53 bits).
 - `f128` → JSON number via `BigDecimal`/`decimal`.
 - `str` → JSON string (UTF‑8).
 - `bytes` → Base64 string in C# (`ByteString.Encode()`), and `.Parse` on read.
 - `uid` → JSON string (canonical GUID string).
 - `tsu`/`tso` → JSON string using `BaboonTimeFormats` (`formatTsu`/`formatTso` on Scala, `ToString` on C#).
+
+## 64‑bit integers
+
+`i64` and `u64` are written as decimal strings by every backend, and every backend's reader
+accepts **both** the string form and the older JSON‑number form.
+
+The asymmetry is JavaScript's. A JSON number beyond `Number.MAX_SAFE_INTEGER` (2^53 − 1) has
+already been rounded by `JSON.parse` before any codec runs, so a `i64` value such as
+`9223372036854775807` written as a bare number reaches a TypeScript reader as
+`9223372036854775808` — a different, wrong, perfectly valid‑looking integer, and the original is
+unrecoverable at that layer. The same holds for any JavaScript consumer of Baboon JSON, Baboon‑
+generated or not. Writing the decimal string is the only representation all ten backends can both
+produce and consume without loss.
+
+`u64` additionally needs the string form because its upper half does not fit a signed 64‑bit
+number at all; the string always carries the canonical **unsigned** decimal form
+(`18446744073709551615` for `u64` max), never a signed two's‑complement rendering.
+
+Reader leniency is what makes the change backward compatible: a JSON document produced by an
+older compiler, with `i64`/`u64` as numbers, still decodes everywhere. The one case that cannot
+be made compatible is a numeric token above 2^53 read by TypeScript — `JSON.parse` destroyed the
+value before the codec was reached, so `BaboonInt64.read` refuses it with a diagnostic naming the
+producer requirement rather than returning a rounded integer.
+
+Map keys are unaffected: JSON object keys are strings in all cases (see "Map keys").
 
 ## Map keys
 
@@ -222,4 +247,5 @@ Value:
 }
 ```
 
-`u64` keys and values are stringified when needed to preserve precision.
+`u64` keys are strings because every JSON object key is. `u64` and `i64` *values* are strings too
+— see "64-bit integers".

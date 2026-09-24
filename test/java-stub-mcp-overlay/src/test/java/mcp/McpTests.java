@@ -90,7 +90,7 @@ public class McpTests {
         "\"type\":\"object\"," +
         "\"properties\":{" +
           "\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}," +
-          "\"uniqueIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"format\":\"int64\"},\"uniqueItems\":true}," +
+          "\"uniqueIds\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"format\":\"int64\"},\"uniqueItems\":true}," +
           "\"labels\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}," +
           "\"byColor\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}," +
             "\"propertyNames\":{\"type\":\"string\",\"enum\":[\"Red\",\"Green\",\"Blue\"]}}" +
@@ -652,7 +652,7 @@ public class McpTests {
                 // D6/T30: byColor is map[Color,str]; Java encodes/decodes it as a string-keyed
                 // object with enum wire-name keys. Send a NON-EMPTY object conforming to the
                 // inputSchema (exercises the enum key-codec path).
-                MAPPER.readTree("{\"name\":\"McpTools_listCollections\",\"arguments\":{\"tags\":[\"a\",\"b\"],\"uniqueIds\":[1,2],\"labels\":{\"k\":\"v\"},\"byColor\":{\"Green\":\"ok\",\"Red\":\"stop\"}}}")
+                MAPPER.readTree("{\"name\":\"McpTools_listCollections\",\"arguments\":{\"tags\":[\"a\",\"b\"],\"uniqueIds\":[\"1\",\"2\"],\"labels\":{\"k\":\"v\"},\"byColor\":{\"Green\":\"ok\",\"Red\":\"stop\"}}}")
             ));
 
         assertEquals(4, resp.id.intValue());

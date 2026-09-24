@@ -430,6 +430,45 @@ const DOTNET_EPOCH_OFFSET_MS = 62135596800000n;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+/// 64-bit integer reading from JSON.
+///
+/// Backends disagree about how i64/u64 reach the wire: C#/Java/Kotlin/Rust write JSON numbers,
+/// TypeScript/Dart/Swift write decimal strings (docs/json-codecs.md). Every other backend's
+/// decoder accepts both forms; TypeScript's assumed a string and handed whatever it got to
+/// `BigInt(...)`.
+///
+/// That was silently lossy: `JSON.parse` has already rounded a numeric token beyond
+/// `Number.MAX_SAFE_INTEGER` by the time a codec sees it, so `BigInt(9223372036854775807)`
+/// yields `9223372036854775808n`. The original value is unrecoverable at this layer, so the
+/// only honest options are to accept the string form exactly or to refuse a number that cannot
+/// be represented — never to return a quietly corrupted integer.
+export class BaboonInt64 {
+    static read(wire: unknown, what: string): bigint {
+        if (typeof wire === "bigint") return wire;
+        if (typeof wire === "string") {
+            try {
+                return BigInt(wire);
+            } catch (e) {
+                throw new BaboonDecoderFailure(`${what}: '${wire}' is not a 64-bit integer`, { cause: e });
+            }
+        }
+        if (typeof wire === "number") {
+            if (!Number.isInteger(wire)) {
+                throw new BaboonDecoderFailure(`${what}: ${wire} is not an integer`);
+            }
+            if (!Number.isSafeInteger(wire)) {
+                // JSON.parse already rounded this token; the source value cannot be recovered.
+                throw new BaboonDecoderFailure(
+                    `${what}: ${wire} exceeds Number.MAX_SAFE_INTEGER, so JSON.parse has already lost precision. ` +
+                    `The producer must emit 64-bit integers as decimal strings.`,
+                );
+            }
+            return BigInt(wire);
+        }
+        throw new BaboonDecoderFailure(`${what}: expected a decimal string or a number, got ${typeof wire}`);
+    }
+}
+
 export class BinTools {
     static consumeIndex(reader: BaboonBinReader, expectedElements: number): number {
         const header = reader.readByte();

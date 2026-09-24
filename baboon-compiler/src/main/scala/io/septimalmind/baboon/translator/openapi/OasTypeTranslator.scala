@@ -41,11 +41,13 @@ class OasTypeTranslator {
       case TypeId.Builtins.i08   => ("integer", Some("int32"), Map.empty)
       case TypeId.Builtins.i16   => ("integer", Some("int32"), Map.empty)
       case TypeId.Builtins.i32   => ("integer", Some("int32"), Map.empty)
-      case TypeId.Builtins.i64   => ("integer", Some("int64"), Map.empty)
+      // 64-bit integers are carried as decimal strings on the wire (docs/json-codecs.md,
+      // "64-bit integers"), the same treatment `f128` already gets here.
+      case TypeId.Builtins.i64   => ("string", Some("int64"), Map.empty)
       case TypeId.Builtins.u08   => ("integer", Some("int32"), Map("minimum" -> Json.fromInt(0)))
       case TypeId.Builtins.u16   => ("integer", Some("int32"), Map("minimum" -> Json.fromInt(0)))
       case TypeId.Builtins.u32   => ("integer", Some("int32"), Map("minimum" -> Json.fromInt(0)))
-      case TypeId.Builtins.u64   => ("integer", Some("int64"), Map("minimum" -> Json.fromInt(0)))
+      case TypeId.Builtins.u64   => ("string", Some("uint64"), Map.empty)
       case TypeId.Builtins.f32   => ("number", Some("float"), Map.empty)
       case TypeId.Builtins.f64   => ("number", Some("double"), Map.empty)
       case TypeId.Builtins.f128  => ("string", Some("decimal"), Map.empty)

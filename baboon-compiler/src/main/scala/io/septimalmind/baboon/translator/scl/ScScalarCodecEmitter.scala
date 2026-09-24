@@ -36,11 +36,13 @@ object ScScalarCodecEmitter {
     case TypeId.Builtins.i08   => q"$circeJson.fromInt($value.toInt)"
     case TypeId.Builtins.i16   => q"$circeJson.fromInt($value.toInt)"
     case TypeId.Builtins.i32   => q"$circeJson.fromInt($value)"
-    case TypeId.Builtins.i64   => q"$circeJson.fromLong($value)"
+    // 64-bit integers go on the wire as decimal strings in every backend — see the C# emitter
+    // and docs/json-codecs.md, "64-bit integers". `decodeLong` stays lenient about numbers.
+    case TypeId.Builtins.i64   => q"$circeJson.fromString($value.toString)"
     case TypeId.Builtins.u08   => q"$circeJson.fromInt(java.lang.Byte.toUnsignedInt($value))"
     case TypeId.Builtins.u16   => q"$circeJson.fromInt(java.lang.Short.toUnsignedInt($value))"
     case TypeId.Builtins.u32   => q"$circeJson.fromLong(java.lang.Integer.toUnsignedLong($value))"
-    case TypeId.Builtins.u64   => q"$circeJson.fromBigInt($baboonBinTools.toUnsignedBigInt($value))"
+    case TypeId.Builtins.u64   => q"$circeJson.fromString($baboonBinTools.toUnsignedBigInt($value).toString)"
     case TypeId.Builtins.f32   => q"$circeJson.fromFloat($value).get"
     case TypeId.Builtins.f64   => q"$circeJson.fromDouble($value).get"
     case TypeId.Builtins.f128  => q"$circeJson.fromBigDecimal($value)"

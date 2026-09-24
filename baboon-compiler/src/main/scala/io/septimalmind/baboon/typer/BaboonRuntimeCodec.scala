@@ -336,7 +336,7 @@ object BaboonRuntimeCodec {
           }
 
         case TypeId.Builtins.i64 =>
-          json.asNumber.flatMap(_.toLong) match {
+          readWire64(json) match {
             case Some(value) =>
               writer.writeLong(value)
               F.unit
@@ -368,7 +368,7 @@ object BaboonRuntimeCodec {
           }
 
         case TypeId.Builtins.u64 =>
-          json.asNumber.flatMap(_.toLong) match {
+          readWire64(json) match {
             case Some(value) =>
               writer.writeLong(value)
               F.unit
@@ -442,26 +442,34 @@ object BaboonRuntimeCodec {
       }
     }
 
+    /** 64-bit integers arrive as a decimal string, and as a JSON number from a writer older than
+      * the string form (docs/json-codecs.md, "64-bit integers"). `longValue` narrows an unsigned
+      * u64 to the two's-complement Long the UEBA writer expects.
+      */
+    private def readWire64(json: Json): Option[Long] = {
+      json.asNumber
+        .flatMap(_.toBigInt)
+        .orElse(json.asString.flatMap(str => scala.util.Try(BigInt(str)).toOption))
+        .map(_.longValue)
+    }
+
     private def decodeBuiltinScalar(id: TypeId.BuiltinScalar, reader: LEDataInputStream): F[BaboonIssue, Json] = {
       id match {
         case TypeId.Builtins.bit => F.pure(Json.fromBoolean(reader.readBoolean()))
         case TypeId.Builtins.i08 => F.pure(Json.fromInt(reader.readByte().toInt))
         case TypeId.Builtins.i16 => F.pure(Json.fromInt(reader.readShort().toInt))
         case TypeId.Builtins.i32 => F.pure(Json.fromInt(reader.readInt()))
-        case TypeId.Builtins.i64 => F.pure(Json.fromLong(reader.readLong()))
+        // 64-bit integers go on the wire as decimal strings, matching every backend
+        // (docs/json-codecs.md, "64-bit integers").
+        case TypeId.Builtins.i64 => F.pure(Json.fromString(reader.readLong().toString))
         case TypeId.Builtins.u08 => F.pure(Json.fromInt(reader.readByte() & 0xFF))
         case TypeId.Builtins.u16 => F.pure(Json.fromInt(reader.readShort() & 0xFFFF))
         case TypeId.Builtins.u32 => F.pure(Json.fromLong(reader.readInt() & 0xFFFFFFFFL))
         case TypeId.Builtins.u64 =>
           val value = reader.readLong()
-          F.pure(
-            if (value < 0) {
-              // Convert to unsigned BigInt
-              Json.fromBigInt(BigInt(value & Long.MaxValue) + BigInt(Long.MaxValue) + 1)
-            } else {
-              Json.fromLong(value)
-            }
-          )
+          // Unsigned decimal string: the upper half of the u64 range has no signed 64-bit
+          // rendering any other backend would read back as the same value.
+          F.pure(Json.fromString((if (value < 0) BigInt(value) + (BigInt(1) << 64) else BigInt(value)).toString))
         case TypeId.Builtins.f32  => F.pure(Json.fromFloatOrString(reader.readFloat()))
         case TypeId.Builtins.f64  => F.pure(Json.fromDoubleOrString(reader.readDouble()))
         case TypeId.Builtins.f128 => F.pure(Json.fromBigDecimal(BaboonBinTools.readBigDecimal(reader)))

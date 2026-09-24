@@ -715,15 +715,12 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     }
     val hasUuids      = allTypes.contains(TypeId.Builtins.uid)
     val hasDecimals   = allTypes.contains(TypeId.Builtins.f128)
-    val hasJsonCodecs = target.language.generateJsonCodecs
-    // lenient_numeric (requires serde_json) is used whenever any field contains i64/u64
-    val hasLenientNumeric = allTypes.exists {
-      case TypeId.Builtins.i64 | TypeId.Builtins.u64 => true
-      case _                                         => false
-    }
 
     val deps = scala.collection.mutable.ListBuffer.empty[String]
     deps += """serde = { version = "1", features = ["derive"] }"""
+    // `preserve_order` is load-bearing, not a nicety: the explicit JSON encoders build a
+    // `serde_json::Map` per object, and without the feature that Map is a BTreeMap, so every
+    // generated document would come out with its keys alphabetised instead of in field order.
     deps += """serde_json = { version = "1", features = ["preserve_order"], optional = true }"""
     deps += """rust_decimal = { version = "1", features = ["serde-with-str"], optional = true }"""
     deps += """chrono = { version = "0.4", features = ["serde"], optional = true }"""
@@ -731,7 +728,10 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
 
     val defaultFeatures = scala.collection.mutable.ListBuffer.empty[String]
     if (hasDecimals) defaultFeatures += """"decimal""""
-    if (hasJsonCodecs || hasDecimals || hasLenientNumeric) defaultFeatures += """"json-helpers""""
+    // Unconditional: `encode_json`/`decode_json` are emitted for every generated type — they are
+    // also the structural round-trip the conversions copy identical types through — and they are
+    // written in terms of `baboon_runtime::json_tools`, which this feature gates.
+    defaultFeatures += """"json-helpers""""
     if (hasTimestamps) defaultFeatures += """"timestamps""""
     if (hasUuids) defaultFeatures += """"uuids""""
 

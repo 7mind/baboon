@@ -6,7 +6,7 @@
 // test suite from the codegen'd copy.
 //
 // Round-trip test for Custom-foreign map keys (PR-A / PR-65-D01 fix).
-// Verifies that serde_json encode → decode round-trips cleanly when the
+// Verifies that the JSON encode → decode round-trips cleanly when the
 // map key is a wrapper DTO (ItemKey) whose single field is a Custom-foreign type (FStr)
 // that maps to std::string::String in Rust.
 
@@ -21,11 +21,9 @@ fn holder_foreign_map_key_json_round_trip() {
     m.insert(ItemKey { v: "beta".to_string() }, "2".to_string());
     let original = Holder { m };
 
-    let json = serde_json::to_string(&original)
-        .expect("serde_json::to_string should succeed");
+    let json = original.to_json().expect("to_json should succeed");
 
-    let decoded: Holder = serde_json::from_str(&json)
-        .expect("serde_json::from_str should succeed");
+    let decoded: Holder = Holder::from_json(&json).expect("from_json should succeed");
 
     assert_eq!(decoded, original, "round-trip diverged: {:?} vs {:?}", decoded, original);
 }
@@ -34,11 +32,9 @@ fn holder_foreign_map_key_json_round_trip() {
 fn holder_foreign_map_key_json_round_trip_empty() {
     let original = Holder { m: BTreeMap::new() };
 
-    let json = serde_json::to_string(&original)
-        .expect("serde_json::to_string should succeed");
+    let json = original.to_json().expect("to_json should succeed");
 
-    let decoded: Holder = serde_json::from_str(&json)
-        .expect("serde_json::from_str should succeed");
+    let decoded: Holder = Holder::from_json(&json).expect("from_json should succeed");
 
     assert_eq!(decoded, original);
 }

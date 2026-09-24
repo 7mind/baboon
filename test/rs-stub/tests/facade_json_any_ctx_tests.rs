@@ -2,22 +2,18 @@
 // into this stub only by the rs-stub codegen path (rsync + codegen into
 // target/test-regular/rs-stub/). Run from the codegen'd copy, not the source tree.
 //
-// `serde::Serialize` has no room for a codec context, so neither the derive nor the hand-written
-// `Serialize` impls (ADTs, wrapped branches) can reach the facade that an `any` field holding a
-// UEBA payload needs to transcode itself to JSON. The generated `encode_json(ctx)` resolves the
-// `any` slots first — with the per-field kind byte and static fallbacks, which only the field
-// site knows — and then hands the value to serde unchanged.
+// `serde::Serialize` has no room for a codec context, which is why the derive it replaced could
+// never reach the facade that an `any` field holding a UEBA payload needs to transcode itself to
+// JSON. `encode_json(ctx)` carries the context down to every field, including the per-field kind
+// byte and static fallbacks that only the field site knows.
 //
 // Two properties are pinned here:
 //   1. `facade.encode_to_json` transcodes UEBA-form `any` payloads when the context carries a
 //      facade, across all six DSL variants plus the opt/lst/map-value nested positions. Before
 //      the fix this failed regardless of context, because the dyn adapter discarded `ctx` and
 //      called `serde_json::to_value` directly.
-//   2. For values that carry no UEBA-form `any`, `encode_json` is byte-identical to the derive's
-//      `serde_json::to_value`. This is the drift guard: the encoder deliberately does NOT
-//      re-implement the JSON shape (renames, hex bytes, decimal-as-number, timestamps, user
-//      map-key adapters, ADT wrapping) — serde still produces the document, so any divergence
-//      here means the resolve step corrupted something it should have left alone.
+//   2. Whatever `encode_json` writes, `decode_json` reads back unchanged — for a JSON-form
+//      any-bearing value and for an any-free type alike.
 #![allow(dead_code)]
 
 use baboon_rs_stub::any_opaque::{AnyMeta, AnyOpaque, AnyOpaqueUeba};
@@ -134,42 +130,39 @@ fn encode_json_rejects_a_payload_whose_kind_contradicts_the_field() {
     assert!(msg.contains("meta-kind"), "got: {}", msg);
 }
 
-// ===== drift guard: encode_json must agree with the derive wherever no transcoding happens =====
+// ===== round-trip guard: what encode_json writes, decode_json must read back =================
 
 #[test]
-fn encode_json_matches_serde_derive_for_json_form_any() {
+fn encode_json_round_trips_a_json_form_any_bearing_value() {
     let ctx = BaboonCodecContext::with_facade(false, facade_arc());
     let mut rnd = BaboonRandom::new();
     for _ in 0..32 {
         let value = random_holder_json(&mut rnd);
-        let via_encoder = value.encode_json(&ctx).expect("encode_json");
-        let via_derive = serde_json::to_value(&value).expect("to_value");
-        assert_eq!(via_encoder, via_derive, "encode_json must not reshape a JSON-form value");
+        let wire = value.encode_json(&ctx).expect("encode_json");
+        let back = Holder::decode_json(&ctx, &wire).expect("decode_json");
+        assert_eq!(back, value, "encode_json must not reshape a JSON-form value");
     }
 }
 
 #[test]
-fn encode_json_matches_serde_derive_for_any_free_types() {
+fn encode_json_round_trips_an_any_free_type() {
     let ctx = BaboonCodecContext::Compact;
     let mut rnd = BaboonRandom::new();
     for _ in 0..32 {
         let value = random_inner(&mut rnd);
-        assert_eq!(
-            value.encode_json(&ctx).expect("encode_json"),
-            serde_json::to_value(&value).expect("to_value"),
-            "an any-free type must route straight back to the derive",
-        );
+        let wire = value.encode_json(&ctx).expect("encode_json");
+        assert_eq!(Inner::decode_json(&ctx, &wire).expect("decode_json"), value);
     }
 }
 
 #[test]
 fn encode_json_on_a_ueba_form_value_is_the_only_thing_that_needs_a_facade() {
-    // The raw serde path stays ctx-less and must keep refusing UEBA-form payloads: `to_json_value`
-    // has no facade to reach, and silently emitting bytes would break cross-language readers.
+    // The facade-less path must keep refusing UEBA-form payloads: `to_json_value` has no facade
+    // to reach, and silently emitting bytes would break cross-language readers.
     let mut rnd = BaboonRandom::new();
     let value = random_holder(&mut rnd);
     assert!(
-        serde_json::to_value(&value).is_err(),
-        "raw serde must still refuse a UEBA-form `any`",
+        value.to_json_value().is_err(),
+        "the facade-less path must still refuse a UEBA-form `any`",
     );
 }

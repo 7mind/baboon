@@ -41,13 +41,13 @@ impl I2 for MockI2 {
 #[test]
 fn i1_json_test_call_success() {
     let method = BaboonMethodId { service_name: "I1".to_string(), method_name: "testCall".to_string() };
-    let input_json = serde_json::to_string(&I1_testCall_in {}).unwrap();
+    let input_json = (I1_testCall_in {}).to_json().unwrap();
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
     let result = invoke_json_i1(&method, &input_json, &MockI1, &rt, &ctx);
     match result {
         Outcome::Success(json_str) => {
-            let decoded: I1_testCall_out = serde_json::from_str(&json_str).unwrap();
+            let decoded: I1_testCall_out = I1_testCall_out::from_json(&json_str).unwrap();
             assert_eq!(decoded.i00, 42);
         }
         Outcome::Failure(err) => panic!("Expected Success, got Failure({:?})", err.downcast_ref::<BaboonWiringError>()),
@@ -57,7 +57,7 @@ fn i1_json_test_call_success() {
 #[test]
 fn i1_json_test_call2_success() {
     let method = BaboonMethodId { service_name: "I1".to_string(), method_name: "testCall2".to_string() };
-    let input_json = serde_json::to_string(&T7_Empty {}).unwrap();
+    let input_json = (T7_Empty {}).to_json().unwrap();
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
     let result = invoke_json_i1(&method, &input_json, &MockI1, &rt, &ctx);
@@ -67,7 +67,7 @@ fn i1_json_test_call2_success() {
 #[test]
 fn i1_json_domain_error() {
     let method = BaboonMethodId { service_name: "I1".to_string(), method_name: "testCall".to_string() };
-    let input_json = serde_json::to_string(&I1_testCall_in {}).unwrap();
+    let input_json = (I1_testCall_in {}).to_json().unwrap();
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
     let result = invoke_json_i1(&method, &input_json, &FailingI1, &rt, &ctx);
@@ -137,13 +137,13 @@ fn i1_ueba_unknown_method() {
 #[test]
 fn i2_json_no_err_call_success() {
     let method = BaboonMethodId { service_name: "I2".to_string(), method_name: "noErrCall".to_string() };
-    let input_json = serde_json::to_string(&I2_noErrCall_in { value: 123 }).unwrap();
+    let input_json = (I2_noErrCall_in { value: 123 }).to_json().unwrap();
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
     let result = invoke_json_i2(&method, &input_json, &MockI2, &rt, &ctx);
     match result {
         Outcome::Success(json_str) => {
-            let decoded: I2_noErrCall_out = serde_json::from_str(&json_str).unwrap();
+            let decoded: I2_noErrCall_out = I2_noErrCall_out::from_json(&json_str).unwrap();
             assert_eq!(decoded.result, "result_123");
         }
         Outcome::Failure(err) => panic!("Expected Success, got Failure({:?})", err.downcast_ref::<BaboonWiringError>()),

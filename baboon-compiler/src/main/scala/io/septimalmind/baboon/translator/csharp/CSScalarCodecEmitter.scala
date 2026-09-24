@@ -36,6 +36,10 @@ object CSScalarCodecEmitter {
   }
 
   def jsonEncode(b: TypeId.BuiltinScalar, value: TextTree[CSValue], booleanFormat: JsonBooleanFormat): TextTree[CSValue] = b match {
+    // 64-bit integers go on the wire as decimal strings in every backend: a JSON number beyond
+    // 2^53 is already rounded by the time a JavaScript reader sees it (docs/json-codecs.md,
+    // "64-bit integers"). Readers stay lenient about the older numeric form.
+    case TypeId.Builtins.i64 | TypeId.Builtins.u64                                 => q"new $nsJValue($value.ToString($csInvariantCulture.InvariantCulture))"
     case TypeId.Builtins.bytes                                                     => q"new $nsJValue($value.Encode())"
     case TypeId.Builtins.uid                                                       => q"new $nsJValue($value.ToString())"
     case TypeId.Builtins.tsu                                                       => q"new $nsJValue($baboonTimeFormats.TsuToString($value))"

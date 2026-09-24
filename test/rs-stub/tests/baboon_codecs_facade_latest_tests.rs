@@ -96,7 +96,7 @@ impl BaboonAnyJsonCodec for InnerJsonCodec {
         let v = value.as_any().downcast_ref::<InnerDyn>().ok_or_else(|| {
             BaboonCodecError::encoder_failure("InnerJsonCodec.encode: value is not InnerDyn")
         })?;
-        serde_json::to_value(&v.0)
+        v.0.to_json_value()
             .map_err(|e| BaboonCodecError::encoder_failure(format!("InnerJsonCodec.encode: {}", e)))
     }
 
@@ -105,7 +105,7 @@ impl BaboonAnyJsonCodec for InnerJsonCodec {
         _ctx: &BaboonCodecContext,
         wire: &serde_json::Value,
     ) -> Result<Box<dyn BaboonGeneratedDyn>, BaboonCodecError> {
-        let inner: Inner = serde_json::from_value(wire.clone()).map_err(|e| {
+        let inner: Inner = Inner::from_json_value(wire.clone()).map_err(|e| {
             BaboonCodecError::decoder_failure(format!("InnerJsonCodec.decode: {}", e))
         })?;
         Ok(Box::new(InnerDyn(inner)))

@@ -164,7 +164,7 @@ fn expected_inner_payloads() -> Vec<InnerPayload> {
 // cover cross-format conversion within Rust).
 fn create_sample_any_showcase_json() -> AnyShowcase {
     let payloads = expected_inner_payloads();
-    let to_json = |p: &InnerPayload| serde_json::to_value(p).expect("InnerPayload to_json failed");
+    let to_json = |p: &InnerPayload| p.to_json_value().expect("InnerPayload to_json failed");
 
     let meta_a  = AnyMeta::new(0x07, Some(DOMAIN_ID.to_string()), Some(DOMAIN_VER.to_string()), Some(INNER_TYPE_ID.to_string())).expect("metaA");
     let meta_b  = AnyMeta::new(0x03, None, Some(DOMAIN_VER.to_string()), Some(INNER_TYPE_ID.to_string())).expect("metaB");
@@ -501,7 +501,7 @@ fn decode_inner(o: &AnyOpaque) -> InnerPayload {
                 .unwrap_or_else(|e| panic!("InnerPayload UEBA decode failed: {}", e))
         }
         AnyOpaque::Json(j) => {
-            serde_json::from_value(j.json.clone())
+            InnerPayload::from_json_value(j.json.clone())
                 .unwrap_or_else(|e| panic!("InnerPayload JSON decode failed: {}", e))
         }
     }

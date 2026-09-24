@@ -81,7 +81,7 @@ private val REF_LIST_COLLECTIONS = Json.parseToJsonElement(
     "\"type\":\"object\"," +
     "\"properties\":{" +
       "\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}," +
-      "\"uniqueIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"format\":\"int64\"},\"uniqueItems\":true}," +
+      "\"uniqueIds\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"format\":\"int64\"},\"uniqueItems\":true}," +
       "\"labels\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}," +
       "\"byColor\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}," +
         "\"propertyNames\":{\"type\":\"string\",\"enum\":[\"Red\",\"Green\",\"Blue\"]}}" +
@@ -612,7 +612,7 @@ class McpTests {
                 // object with enum-name keys (e.g. {"Green":"ok"}). Send a NON-EMPTY object
                 // — it conforms to the inputSchema (string-keyed object, propertyNames
                 // constrained to the enum wire values) and exercises the enum key-codec path.
-                Json.parseToJsonElement("""{"name":"McpTools_listCollections","arguments":{"tags":["a","b"],"uniqueIds":[1,2],"labels":{"k":"v"},"byColor":{"Green":"ok","Red":"stop"}}}"""),
+                Json.parseToJsonElement("""{"name":"McpTools_listCollections","arguments":{"tags":["a","b"],"uniqueIds":["1","2"],"labels":{"k":"v"},"byColor":{"Green":"ok","Red":"stop"}}}"""),
             ),
         )
 

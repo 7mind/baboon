@@ -28,6 +28,11 @@ class ScalarCodecEmitterTest extends AnyFlatSpec with Matchers {
     render(
       CSScalarCodecEmitter.jsonEncode(bit, q"value", CSScalarCodecEmitter.JsonBooleanFormat.LowercaseString)
     ) shouldBe "new JValue(value.ToString().ToLowerInvariant())"
+    // i64/u64 travel as decimal strings; `JValue.Value<T>()` reads both forms back.
+    render(CSScalarCodecEmitter.jsonEncode(i64, q"value", CSScalarCodecEmitter.JsonBooleanFormat.BooleanValue)) shouldBe
+    "new JValue(value.ToString(CultureInfo.InvariantCulture))"
+    render(CSScalarCodecEmitter.jsonEncode(u64, q"value", CSScalarCodecEmitter.JsonBooleanFormat.BooleanValue)) shouldBe
+    "new JValue(value.ToString(CultureInfo.InvariantCulture))"
     render(CSScalarCodecEmitter.uebaDecode(uid, q"wire")) shouldBe "new Guid(wire.ReadBytes(16))"
     render(CSScalarCodecEmitter.uebaEncode(uid, q"writer", q"value")) shouldBe "writer.Write(value.ToByteArray())"
   }
@@ -39,6 +44,7 @@ class ScalarCodecEmitterTest extends AnyFlatSpec with Matchers {
     }
     render(JvScalarCodecEmitter.jsonDecode(i64, q"wire")) shouldBe "(wire.isTextual() ? Long.parseLong(wire.textValue()) : wire.longValue())"
     render(JvScalarCodecEmitter.jsonDecode(u64, q"wire")) shouldBe "(wire.isTextual() ? Long.parseUnsignedLong(wire.textValue()) : wire.longValue())"
+    render(JvScalarCodecEmitter.jsonEncode(i64, q"value")) shouldBe "new TextNode(Long.toString(value))"
     render(JvScalarCodecEmitter.jsonEncode(u64, q"value")) shouldBe "new TextNode(Long.toUnsignedString(value))"
     render(JvScalarCodecEmitter.uebaDecode(u32, q"wire")) shouldBe "(wire.readInt() & 0xFFFFFFFFL)"
     render(JvScalarCodecEmitter.uebaEncode(u32, q"writer", q"value")) shouldBe "writer.writeInt((int) (value & 0xFFFFFFFFL));"
@@ -49,11 +55,12 @@ class ScalarCodecEmitterTest extends AnyFlatSpec with Matchers {
     (i08, "value.toInt()", "int.toByte()"),
     (i16, "value.toInt()", "int.toShort()"),
     (i32, "value", "int"),
-    (i64, "value", "long"),
+    // i64/u64 travel as decimal strings; the u64 reader still accepts the older signed number.
+    (i64, "value.toString()", "long"),
     (u08, "value.toInt()", "int.toUByte()"),
     (u16, "value.toInt()", "int.toUShort()"),
     (u32, "value.toLong()", "long.toUInt()"),
-    (u64, "value.toLong()", "long.toULong()"),
+    (u64, "value.toString()", null),
     (f32, "value", "float"),
     (f64, "value", "double"),
     (str, "value", "content"),
@@ -66,8 +73,12 @@ class ScalarCodecEmitterTest extends AnyFlatSpec with Matchers {
         kotlinJsonCases.foreach {
           case (id, value, accessor) =>
             kotlin(emitter.jsonEncode(id, q"value")) shouldBe s"JsonPrimitive($value)"
-            kotlin(emitter.jsonDecode(id, q"wire")) shouldBe s"wire.jsonPrimitive.$accessor"
+            if (accessor != null) kotlin(emitter.jsonDecode(id, q"wire")) shouldBe s"wire.jsonPrimitive.$accessor"
         }
+        // u64's reader does not fit the `wire.jsonPrimitive.<accessor>` shape: the canonical form
+        // is the unsigned decimal string, and the fallback keeps the older signed number readable.
+        kotlin(emitter.jsonDecode(u64, q"wire")) shouldBe
+        "(wire.jsonPrimitive.content.toULongOrNull() ?: wire.jsonPrimitive.long.toULong())"
         kotlin(emitter.jsonEncode(bytes, q"value")) shouldBe "JsonPrimitive(value.toHexString())"
         kotlin(emitter.jsonDecode(bytes, q"wire")) shouldBe "ByteString.fromHexString(wire.jsonPrimitive.content)"
         kotlin(emitter.jsonEncode(uid, q"value")) shouldBe "JsonPrimitive(value.toString())"
@@ -137,11 +148,12 @@ class ScalarCodecEmitterTest extends AnyFlatSpec with Matchers {
       (i08, "fromInt(value.toInt)", "decodeByte"),
       (i16, "fromInt(value.toInt)", "decodeShort"),
       (i32, "fromInt(value)", "decodeInt"),
-      (i64, "fromLong(value)", "decodeLong"),
+      // i64/u64 travel as decimal strings; `decodeLong` accepts both forms.
+      (i64, "fromString(value.toString)", "decodeLong"),
       (u08, "fromInt(java.lang.Byte.toUnsignedInt(value))", "decodeByte"),
       (u16, "fromInt(java.lang.Short.toUnsignedInt(value))", "decodeShort"),
       (u32, "fromLong(java.lang.Integer.toUnsignedLong(value))", "decodeInt"),
-      (u64, "fromBigInt(BaboonBinTools.toUnsignedBigInt(value))", "decodeLong"),
+      (u64, "fromString(BaboonBinTools.toUnsignedBigInt(value).toString)", "decodeLong"),
       (f32, "fromFloat(value).get", "decodeFloat"),
       (f64, "fromDouble(value).get", "decodeDouble"),
       (f128, "fromBigDecimal(value)", "decodeBigDecimalLenient"),

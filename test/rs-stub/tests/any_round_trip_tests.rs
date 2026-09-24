@@ -33,7 +33,7 @@ const INNER_TYPE: &str = "my.ok/:#Inner";
 // The Rust generator does not (yet) emit per-domain `BaboonCodecsJson`/`BaboonCodecsUeba`
 // adapters analogous to C#'s `My.Ok.BaboonCodecsJson.Instance`. The cross-format helpers
 // look up codecs by `(domain, version, typeid)` through the facade, so for the round-trip
-// tests we wrap `Inner`'s `BaboonBinEncode`/`BaboonBinDecode` and serde derives in
+// tests we wrap `Inner`'s `BaboonBinEncode`/`BaboonBinDecode` and JSON codecs in
 // trait-object adapters and register them under `INNER_TYPE`.
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,7 +93,7 @@ impl BaboonAnyJsonCodec for InnerJsonCodec {
         let v = value.as_any().downcast_ref::<InnerDyn>().ok_or_else(|| {
             BaboonCodecError::encoder_failure("InnerJsonCodec.encode: value is not InnerDyn")
         })?;
-        serde_json::to_value(&v.0)
+        v.0.to_json_value()
             .map_err(|e| BaboonCodecError::encoder_failure(format!("InnerJsonCodec.encode: {}", e)))
     }
 
@@ -102,7 +102,7 @@ impl BaboonAnyJsonCodec for InnerJsonCodec {
         _ctx: &BaboonCodecContext,
         wire: &serde_json::Value,
     ) -> Result<Box<dyn BaboonGeneratedDyn>, BaboonCodecError> {
-        let inner: Inner = serde_json::from_value(wire.clone()).map_err(|e| {
+        let inner: Inner = Inner::from_json_value(wire.clone()).map_err(|e| {
             BaboonCodecError::decoder_failure(format!("InnerJsonCodec.decode: {}", e))
         })?;
         Ok(Box::new(InnerDyn(inner)))
@@ -153,7 +153,7 @@ fn inner_to_ueba_bytes(inner: &Inner) -> Vec<u8> {
 }
 
 fn inner_to_json(inner: &Inner) -> serde_json::Value {
-    serde_json::to_value(inner).expect("encode Inner json")
+    inner.to_json_value().expect("encode Inner json")
 }
 
 fn sample_inner() -> Inner {
@@ -269,16 +269,16 @@ fn ueba_decode_yields_any_opaque_ueba_with_matching_kind_bytes() {
 #[test]
 fn json_round_trip_all_six_variants_plus_nested_positions_preserve_content() {
     let original = build_json_native_holder();
-    let json = serde_json::to_value(&original).expect("encode JSON");
-    let decoded: Holder = serde_json::from_value(json).expect("decode JSON");
+    let json = original.to_json_value().expect("encode JSON");
+    let decoded: Holder = Holder::from_json_value(json).expect("decode JSON");
     assert_eq!(decoded, original);
 }
 
 #[test]
 fn json_decode_yields_any_opaque_json_with_matching_kind_bytes() {
     let original = build_json_native_holder();
-    let json = serde_json::to_value(&original).expect("encode JSON");
-    let decoded: Holder = serde_json::from_value(json).expect("decode JSON");
+    let json = original.to_json_value().expect("encode JSON");
+    let decoded: Holder = Holder::from_json_value(json).expect("decode JSON");
     assert!(matches!(decoded.f_any, AnyOpaque::Json(_)), "JSON decode must yield AnyOpaque::Json");
     assert_eq!(decoded.f_any.meta().kind, 0x07);
     assert_eq!(decoded.f_domain_this.meta().kind, 0x03);
@@ -445,14 +445,14 @@ fn encode_json_any_into_ueba_without_facade_fails_fast() {
 
 #[test]
 fn encode_ueba_any_into_json_without_facade_fails_fast() {
-    // The serde-derive JSON encoder routes through the custom `Serialize` impl which errors
-    // on the Ueba branch. Bytes can only become JSON via facade cross-convert.
+    // The facade-less JSON encoder refuses the Ueba branch. Bytes can only become JSON via
+    // facade cross-convert.
     let mut mixed = build_json_native_holder();
     mixed.f_any = AnyOpaque::Ueba(AnyOpaqueUeba::new(meta_a(), vec![1, 2]));
-    let res = serde_json::to_value(&mixed);
-    assert!(res.is_err(), "JSON serialize of AnyOpaque::Ueba must fail");
+    let res = mixed.to_json_value();
+    assert!(res.is_err(), "JSON encode of AnyOpaque::Ueba must fail");
     let msg = format!("{}", res.err().unwrap());
-    // Custom Serialize impl includes the workaround pointer.
+    // The refusal includes the workaround pointer.
     assert!(
         msg.contains("ueba_to_json") || msg.contains("AnyOpaque::Ueba"),
         "error must point to the cross-convert path; got: {}",
@@ -464,11 +464,11 @@ fn encode_ueba_any_into_json_without_facade_fails_fast() {
 
 #[test]
 fn json_envelope_carries_ak_and_optional_ad_av_at_and_content_key() {
-    // Sanity: the JSON envelope produced by the serde Serialize embeds the AnyMeta keys ($ak,
-    // $ad?, $av?, $at?) alongside the $c content key. Any change to the envelope that drops
-    // one of these would break cross-language interop.
+    // Sanity: the JSON envelope embeds the AnyMeta keys ($ak, $ad?, $av?, $at?) alongside the
+    // $c content key. Any change to the envelope that drops one of these would break
+    // cross-language interop.
     let original = build_json_native_holder();
-    let token = serde_json::to_value(&original).expect("encode JSON");
+    let token = original.to_json_value().expect("encode JSON");
     let obj = token.as_object().expect("Holder serialises to object");
 
     // f_any → variant A → all four meta keys + $c present.
@@ -504,7 +504,7 @@ fn json_envelope_key_order_is_ak_first() {
     // PR-11-D05 (preserve_order): keys must serialise in insertion order. $ak is inserted first
     // — assert it appears first in the serialised string.
     let original = build_json_native_holder();
-    let s = serde_json::to_string(&original).expect("serialize");
+    let s = original.to_json().expect("serialize");
     // Find the start of fAny's object value, then assert "$ak" appears before "$ad"/"$c".
     let any_idx = s.find("\"fAny\":").expect("fAny key present");
     let suffix = &s[any_idx..];
