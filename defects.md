@@ -10,6 +10,17 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## RSJSON-2026-09-24 (Rust explicit JSON codec conversion)
+
+### [RSJSON-2026-09-24-N01] No fixture combines an `any` field with a user-typed map key
+**Status:** open (coverage gap; the defect it hid is fixed)
+**Severity:** minor
+**Location:** `baboon-compiler/src/test/resources/baboon/` (shared model corpus)
+**Description:** The explicit JSON codecs take the field-by-field path only for any-bearing types; everything else delegates to serde. A DTO that is BOTH any-bearing and carries a `map[K, V]` with a user-typed key therefore exercises a combination no fixture contains, and the first cut of the decoder emitted `(k).parse::<K>()` for it. That compiles only for enums: an `id` type has `Display` but deliberately no `FromStr` (its reader is the free `parse_repr`), and a single-primitive wrapper has neither — the adapter peels it to the inner scalar. Generated Rust for such a model would not compile, while all 894 corpus tests stayed green. Found by constructing the combination by hand and compiling the output as a throwaway crate; fixed by routing those fields through the emitted adapter module (see the shared `RsMapKeyAdapter`).
+**Fix:** Pending — add a fixture carrying `any` alongside id-keyed, enum-keyed and wrapper-keyed maps. Deliberately not added with the fix: it belongs in the shared model dir, so all nine backends would have to handle the combination at once, which is likely to surface further gaps and is its own piece of work. Until then the combination is correct but only covered by an ad-hoc probe.
+
+---
+
 ## MIGRATION-2026-09-24 (user migration reports, `bugs.md`)
 
 ### [MIGRATION-2026-09-24-D01] Generated TypeScript MCP servers fail strict compilation (TS4114)
