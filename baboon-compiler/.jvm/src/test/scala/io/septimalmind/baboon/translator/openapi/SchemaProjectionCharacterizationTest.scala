@@ -29,7 +29,8 @@ class SchemaProjectionCharacterizationTest extends AnyWordSpec {
       val schema  = parse(oas.typeRefSchema(enumMap, Set(color)))
       assert(schema.hcursor.downField("propertyNames").get[String]("$ref").toOption.contains("#/components/schemas/schema_test_Color"))
       val numericMap = TypeRef.Constructor(TypeId.Builtins.map, NEList(TypeRef.Scalar(TypeId.Builtins.i32), TypeRef.Scalar(TypeId.Builtins.str)))
-      assert(parse(oas.typeRefSchema(numericMap)).hcursor.get[String]("type").toOption.contains("array"))
+      // JSON codecs write every map as a string-keyed object (#95); GraphQL keeps its entry-list projection
+      assert(parse(oas.typeRefSchema(numericMap)) == parse("""{"type":"object","additionalProperties":{"type":"string"}}"""))
       assert(gql.fieldTypeStr(numericMap) == "[BaboonMapEntry_Int_String!]!")
     }
 

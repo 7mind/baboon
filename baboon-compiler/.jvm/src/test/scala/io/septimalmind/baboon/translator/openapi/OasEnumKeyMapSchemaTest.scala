@@ -23,8 +23,9 @@ import org.scalatest.wordspec.AnyWordSpec
   *   2. `map[str, str]` — string key → plain additionalProperties object, no
   *      `propertyNames` (regression guard: the enum-key path must not fire for
   *      plain string keys).
-  *   3. `map[i32, str]` — non-string non-enum key → entry-array form (regression
-  *      guard: the enum-key path must not fire for non-string/non-enum keys).
+  *   3. `map[i32, str]` — non-string non-enum key → string-keyed object without
+  *      `propertyNames`, the form every JSON codec writes (#95; previously an
+  *      entry array that no codec produced).
   *   4. Foreign-rt-resolves-to-enum via Constructor arg-recursion: the production
   *      renderDto:165 path resolves the WHOLE field TypeRef.Constructor(map,
   *      [foreignKey, val]) via resolveTypeRef, which recurses through Constructor
@@ -98,14 +99,13 @@ class OasEnumKeyMapSchemaTest extends AnyWordSpec {
       assert(!schema.contains(""""propertyNames""""), s"must NOT have propertyNames for uid key; got: $schema")
     }
 
-    // Case 3: non-string non-enum key — must produce entry-array form ---
+    // Case 3: non-string non-enum key — string-keyed object, no propertyNames (#95) ---
 
-    "produce an array-of-entries schema for map[i32, str] (regression guard)" in {
+    "produce a plain additionalProperties object for map[i32, str] (#95)" in {
       val schema = mapSchema(TypeRef.Scalar(TypeId.Builtins.i32), TypeRef.Scalar(TypeId.Builtins.str))
-      assert(!schema.startsWith("""{"type": "object""""), s"must NOT be type:object for i32 key; got: $schema")
-      assert(schema.contains(""""type": "array""""), s"expected type:array; got: $schema")
-      assert(schema.contains(""""key""""), s"expected entry-array key schema; got: $schema")
-      assert(schema.contains(""""value""""), s"expected entry-array value schema; got: $schema")
+      assert(schema.contains(""""type": "object""""), s"expected type:object; got: $schema")
+      assert(schema.contains(""""additionalProperties""""), s"expected additionalProperties; got: $schema")
+      assert(!schema.contains(""""type": "array""""), s"must NOT be an entry array; got: $schema")
       assert(!schema.contains(""""propertyNames""""), s"must NOT have propertyNames for i32 key; got: $schema")
     }
 
@@ -115,7 +115,7 @@ class OasEnumKeyMapSchemaTest extends AnyWordSpec {
     // resolveTypeRef's Constructor branch (OasTypeTranslator.scala:40-42) recurses
     // into each arg, converting foreignRef -> colorRef.
     // If that Constructor arg-recursion were no-op'd, foreignId would NOT be in
-    // enumKeys, mapSchema would produce the entry-array form, and the propertyNames
+    // enumKeys, mapSchema would produce an object without propertyNames, and the propertyNames
     // assertion below would fail — i.e. this case PINS the invariant.
 
     "produce string-keyed-object schema when Constructor arg-recursion resolves a foreign key to an enum (D10 renderDto pre-resolution invariant)" in {

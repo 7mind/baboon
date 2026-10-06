@@ -1,0 +1,48 @@
+// Map key kinds whose JSON wire form every codec writes as a string-keyed object
+// (https://github.com/7mind/baboon/issues/95). Isolated from the shared model-dir.
+
+model example.maps
+
+version "1.0.0"
+
+id StrId : derived[json], derived[ueba] {
+  value: str
+}
+
+id UidId : derived[json], derived[ueba] {
+  value: uid
+}
+
+data StrWrapper : derived[json], derived[ueba] {
+  value: str
+}
+
+enum Color {
+  Red
+  Green
+}
+
+root data Holder : derived[json], derived[ueba] {
+  byStr: map[str, i32]
+  byUid: map[uid, i32]
+  byEnum: map[Color, i32]
+  byInt: map[i32, i32]
+  byStrId: map[StrId, i32]
+  byUidId: map[UidId, i32]
+  byWrapper: map[StrWrapper, i32]
+}
+
+root service MapTools {
+  def put (
+    data in {
+      byStr: map[str, i32]
+      byUid: map[uid, i32]
+      byEnum: map[Color, i32]
+      byInt: map[i32, i32]
+      byStrId: map[StrId, i32]
+      byUidId: map[UidId, i32]
+      byWrapper: map[StrWrapper, i32]
+    }
+    data out { ok: bit }
+  )
+}

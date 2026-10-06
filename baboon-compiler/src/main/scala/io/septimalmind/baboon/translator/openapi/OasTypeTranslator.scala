@@ -131,23 +131,19 @@ class OasTypeTranslator {
 
   /** JSON Schema for a map type.
     *
-    * String-keyed maps become `{"type": "object", "additionalProperties": ...}`.
-    * ENUM-keyed maps also become string-keyed objects (D6/T30: every backend's
-    * JSON codec stringifies an enum map key to its wire-name and emits a
-    * string-keyed JSON object, so the schema must declare a string-keyed object
-    * — not an entry-array — to match the wire), with `propertyNames` constrained
-    * to the enum component. Other non-string-keyed maps become arrays of
-    * `{key, value}` entry objects.
+    * Every backend's JSON codec writes a map as a string-keyed object whatever the key type
+    * (docs/json-codecs.md, "Map keys"): `str`/`uid` keys as is, enum keys by wire-name, other
+    * scalars, `id` types and single-field wrappers by their canonical string form. So every map is
+    * `{"type": "object", "additionalProperties": ...}`; ENUM-keyed maps additionally constrain
+    * `propertyNames` to the enum component (D6/T30, #95).
     */
   private def mapSchema(keyRef: TypeRef, valRef: TypeRef, enumKeys: Set[TypeId.User]): Json = {
     val valSchema = typeRefSchemaValue(valRef, enumKeys)
     keyRef match {
       case TypeRef.Scalar(id: TypeId.User) if enumKeys.contains(id) =>
         JsonSchema.objectMap(valSchema, Some(componentRef(id)))
-      case _ if isStringKey(keyRef) =>
-        JsonSchema.objectMap(valSchema, None)
       case _ =>
-        JsonSchema.entryMap(typeRefSchemaValue(keyRef, enumKeys), valSchema)
+        JsonSchema.objectMap(valSchema, None)
     }
   }
 
@@ -156,14 +152,6 @@ class OasTypeTranslator {
     */
   def enumKeysOf(domain: Domain): Set[TypeId.User] =
     SchemaReferences.prepare(domain).enums.keySet
-
-  private def isStringKey(ref: TypeRef): Boolean = {
-    ref match {
-      case TypeRef.Scalar(TypeId.Builtins.str) => true
-      case TypeRef.Scalar(TypeId.Builtins.uid) => true
-      case _                                   => false
-    }
-  }
 
   def scalarSchemaJson(id: TypeId.BuiltinScalar): String = {
     fragmentPrinter.print(scalarSchemaValue(id))

@@ -275,26 +275,16 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     }
   }
 
-  /** Map schema: string-keyed → object+additionalProperties; ENUM-keyed →
-    * object+additionalProperties with `propertyNames` constrained to the enum's
-    * wire values (D6/T30: every backend's JSON codec stringifies an enum map key
-    * to its wire-name and emits a string-keyed JSON object, so the inputSchema
-    * must declare a string-keyed object — not an entry-array — to match the
-    * wire); other non-string-keyed (foreign/id key) → array of `{key,value}`
-    * entry objects (JSON has no native non-string-keyed map). Mirrors the OAS
-    * map shape but with local element refs.
+  /** Map schema: every map is a string-keyed object + additionalProperties, as every backend's
+    * JSON codec writes it whatever the key type (docs/json-codecs.md, "Map keys"; #95); ENUM-keyed
+    * maps additionally constrain `propertyNames` to the enum's wire values (D6/T30). Mirrors the
+    * OAS map shape but with local element refs.
     */
   private def mapSchema(keyRef: TypeRef, valRef: TypeRef, ctx: SchemaReferences): Json = {
     val valSchema = fieldSchema(valRef, ctx)
     enumKey(keyRef, ctx) match {
-      case Some(e) =>
-        JsonSchema.objectMap(valSchema, Some(enumSchema(e)))
-      case None =>
-        if (isStringKey(keyRef)) {
-          JsonSchema.objectMap(valSchema, None)
-        } else {
-          JsonSchema.entryMap(fieldSchema(keyRef, ctx), valSchema)
-        }
+      case Some(e) => JsonSchema.objectMap(valSchema, Some(enumSchema(e)))
+      case None    => JsonSchema.objectMap(valSchema, None)
     }
   }
 
@@ -306,12 +296,6 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
       case TypeRef.Scalar(id: TypeId.User) => ctx.enums.get(id)
       case _                               => None
     }
-
-  private def isStringKey(ref: TypeRef): Boolean = ref match {
-    case TypeRef.Scalar(TypeId.Builtins.str) => true
-    case TypeRef.Scalar(TypeId.Builtins.uid) => true
-    case _                                   => false
-  }
 
   // ── foreign-type scalar resolution ────────────────────────────────────────
 
