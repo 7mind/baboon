@@ -950,9 +950,11 @@ Run manual Scala compatibility tests.
 ```bash
 dep action.test-gen-compat-scala
 dep action.test-gen-compat-cs
+dep action.test-gen-compat-python
 dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-kotlin-kmp
 dep action.test-gen-compat-java
 dep action.test-gen-compat-dart
 dep action.test-gen-compat-swift
@@ -979,10 +981,19 @@ ret success:bool=true
 
 # action: test-manual-python
 
-Run Python conversion test
+Run Python conversion test. The tests read every language's compatibility
+output, so the action depends on every generator it reads (#98).
 
 ```bash
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
 dep action.test-gen-compat-python
+dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
 pushd ./test/conv-test-py
 if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m unittest discover -s .
