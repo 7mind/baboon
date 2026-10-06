@@ -1,0 +1,11 @@
+// A type that changes in 2.0.0 and reverts in 3.0.0. A selection that skips 2.0.0 reloads, but its
+// evolution claims 3.0.0 payloads are byte-identical to 1.0.0 ones, a bound a 2.0.0 reader would
+// trust and misread.
+
+model zipdemo.revert
+
+version "1.0.0"
+
+root data Flip {
+  a: i32
+}

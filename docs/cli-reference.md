@@ -66,7 +66,7 @@ directory *or* a single `*.baboon` file.
 | `:openapi` | Generate OpenAPI 3.1 component schemas (no codecs) |
 | `:lsp` | Start the LSP server ([docs](lsp-integration.md)) |
 | `:explore` | Start the interactive explorer ([docs](explorer-mode.md)) |
-| `:scheme` | Emit a cleaned-up single `.baboon` file for one domain version |
+| `:scheme` | Emit a cleaned-up `.baboon` file for one domain version, or a ZIP of many |
 | `:diff` | Report the schema diff between two versions of a domain |
 | `:bincompat` | Check wire/binary compatibility between two versions of a domain (exit code is the verdict) |
 
@@ -288,19 +288,73 @@ fields.
 
 ### `:scheme`
 
-Renders one domain version back into a single, cleaned-up `.baboon` file
-(definitions toposorted, includes inlined, ADT-owned and service-inline types
-nested, dependency comments added).
+Renders domain versions back into cleaned-up `.baboon` files (definitions
+toposorted, includes inlined, ADT-owned and service-inline types nested,
+dependency comments added). Two mutually exclusive modes:
+
+**Single schema** — one domain version, to a file or to stdout:
 
 | Option | Description |
 |---|---|
-| `--domain <name>` | Domain name, e.g. `my.domain.name`. |
-| `--version <version>` | Version string, e.g. `1.0.0`. |
+| `--domain <name>` | Domain name, e.g. `my.domain.name`. Requires `--version`. |
+| `--version <version>` | Version string, e.g. `1.0.0`. Requires `--domain`. |
 | `--target <file>` | Output file path. **Optional** — when omitted, the scheme is printed to **stdout** with no log output around it, so it can be piped. |
+
+**Archive** — many domain versions, into one ZIP:
+
+| Option | Description |
+|---|---|
+| `--domains <selectors>` | Comma-separated `domain@version` selectors. Requires `--zip-output`. |
+| `--zip-output <file>` | ZIP archive to write. Requires `--domains`. |
+
+Combining an option of one mode with an option of the other, or giving one
+option of a pair without its partner, is a CLI error.
+
+Selectors: each item is trimmed and is `domain@version`, where either component
+is an exact value or the whole-component wildcard `*` (no other glob syntax):
+`*@*` (everything), `my.domain@*` (all versions of a domain),
+`my.domain@1.0.0,my.domain@2.0.0` (exact versions), `*@1.0.0` (that version
+wherever present). Matches are unioned and deduplicated. A malformed selector,
+or one that matches nothing, is an error that lists the available domain
+versions.
+
+Per domain, the selection must be a **contiguous** range of its versions. A
+rendered schema records evolution against the version immediately before it —
+`was[...]` type renames, `was` field and enum-member renames — and reloading an
+archive compares consecutive *archived* versions. A selection that skips a
+version therefore cannot be reloaded faithfully: a rename aimed at the skipped
+version fails to load (`InvalidTypeRename`), and a type that changed in the
+skipped version and changed back would be reported byte-identical across it,
+a compatibility bound that readers of the skipped version would trust.
+Gapped selections are rejected instead of silently adding versions or dropping
+evolution. A range that starts after a domain's first version is fine: its first
+schema keeps its own `was` declarations, and compatibility bounds computed from
+the archive are never wider than the full lineage's.
+
+Archive contract (written by `:scheme`, read by the JavaScript
+`BaboonCompiler.loadMany`):
+
+- one UTF-8 entry per selected domain version at
+  `schemas/<domain>/<version>.baboon`, sorted by path; no directory entries;
+- compression method 0 (stored), sizes and CRC-32 in the local headers, the
+  DOS timestamp 1980-01-01 00:00:00, no extra fields and no comments, so
+  identical inputs produce identical bytes regardless of time zone;
+- the archive is written to a temporary sibling file and moved into place
+  atomically; nothing is written when selection, rendering or writing fails.
+
+`loadMany` accepts any archive that follows these rules: stored entries only
+(other compression methods, encryption, ZIP64 and multi-disk archives are
+rejected); relative `/`-separated paths without empty, `.` or `..` segments,
+backslashes, drive prefixes or NUL, UTF-8 (flag bit 11) or ASCII names, no
+duplicates. Directory entries are ignored, `*.baboon` entries are loaded together
+as one model, `*.bmo` entries are available to `include` (paths resolve against
+the archive root, as against a `--model-dir`), and any other entry is an error.
 
 ```bash
 baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
 baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 > cleaned.baboon
+baboon --model-dir ./models :scheme --domains="*@*" --zip-output=./schemas.zip
+baboon --model-dir ./models :scheme --domains="my.pkg@2.0.0,my.pkg@3.0.0" --zip-output=./schemas.zip
 ```
 
 ### `:diff`

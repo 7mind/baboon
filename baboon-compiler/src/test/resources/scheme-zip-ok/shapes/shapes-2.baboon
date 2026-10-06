@@ -1,0 +1,19 @@
+model zipdemo.shapes
+
+version "2.0.0"
+
+import "1.0.0" { * } without {
+  Order
+}
+
+// A declared field rename: UEBA bytes are unchanged (prefix bounds reach 1.0.0) while the JSON
+// key changes (no json-additive bound below 2.0.0).
+root data Order {
+  id: uid
+  colour: Color was color
+  price: Cents
+  tags: map[Opaque, str]
+  at: geo.Point
+  shape: Shape
+  label: opt[str]
+}

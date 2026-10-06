@@ -1,0 +1,7 @@
+model zipdemo.evo
+
+version "3.0.0"
+
+root data New : was[Mid] {
+  x: i32
+}

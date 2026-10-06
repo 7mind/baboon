@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.typer
 
-import io.circe.Json
+import io.circe.{Json, JsonObject}
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, RuntimeCodecIssue}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.Error2
@@ -15,9 +15,35 @@ import scala.util.Try
 trait BaboonRuntimeCodec[F[+_, +_]] {
   def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json]
   def encode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): F[BaboonIssue, Vector[Byte]]
+
+  /** [[decode]] that fails when bytes remain after the value instead of ignoring them. */
+  def decodeComplete(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json]
+
+  /** [[encode]] that fails on JSON object keys a DTO does not declare instead of dropping them. */
+  def encodeComplete(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): F[BaboonIssue, Vector[Byte]]
 }
 
 object BaboonRuntimeCodec {
+
+  private final case class EncodeMode(indexed: Boolean, rejectUnknownFields: Boolean)
+
+  /** UEBA byte width and the exact accepted range of an integer builtin. */
+  private final case class IntegerKind(width: Int, min: BigInt, max: BigInt) {
+    def contains(value: BigInt): Boolean = value >= min && value <= max
+  }
+
+  private val Wide: Int = 8
+
+  private val IntegerKinds: Map[TypeId.BuiltinScalar, IntegerKind] = Map(
+    TypeId.Builtins.i08 -> IntegerKind(1, BigInt(Byte.MinValue), BigInt(Byte.MaxValue)),
+    TypeId.Builtins.u08 -> IntegerKind(1, BigInt(0), BigInt(0xFF)),
+    TypeId.Builtins.i16 -> IntegerKind(2, BigInt(Short.MinValue), BigInt(Short.MaxValue)),
+    TypeId.Builtins.u16 -> IntegerKind(2, BigInt(0), BigInt(0xFFFF)),
+    TypeId.Builtins.i32 -> IntegerKind(4, BigInt(Int.MinValue), BigInt(Int.MaxValue)),
+    TypeId.Builtins.u32 -> IntegerKind(4, BigInt(0), BigInt(0xFFFFFFFFL)),
+    TypeId.Builtins.i64 -> IntegerKind(Wide, BigInt(Long.MinValue), BigInt(Long.MaxValue)),
+    TypeId.Builtins.u64 -> IntegerKind(Wide, BigInt(0), (BigInt(1) << 64) - 1),
+  )
 
   class BaboonRuntimeCodecImpl[F[+_, +_]: Error2]() extends BaboonRuntimeCodec[F] {
     private val F         = Error2[F]
@@ -40,17 +66,46 @@ object BaboonRuntimeCodec {
       .toFormatter()
 
     override def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] = {
-      val dom     = getDom(family, pkg, version)
-      val typedef = getDef(dom, idString)
-      val input   = new LEDataInputStream(new ByteArrayInputStream(data.toArray))
+      decodeWith(family, pkg, version, idString, data, requireCompleteInput = false)
+    }
 
-      typedef match {
-        case u: DomainMember.User => decodeUserType(dom, u.defn, input)
-        case _                    => F.fail(RuntimeCodecIssue.UnexpectedDomainMemberType(typedef.id, s"Expected User type, got: ${typedef.getClass.getSimpleName}"))
-      }
+    override def decodeComplete(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] = {
+      decodeWith(family, pkg, version, idString, data, requireCompleteInput = true)
     }
 
     override def encode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): F[BaboonIssue, Vector[Byte]] = {
+      encodeWith(family, pkg, version, idString, json, EncodeMode(indexed, rejectUnknownFields = false))
+    }
+
+    override def encodeComplete(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): F[BaboonIssue, Vector[Byte]] = {
+      encodeWith(family, pkg, version, idString, json, EncodeMode(indexed, rejectUnknownFields = true))
+    }
+
+    private def decodeWith(
+      family: BaboonFamily,
+      pkg: Pkg,
+      version: Version,
+      idString: String,
+      data: Vector[Byte],
+      requireCompleteInput: Boolean,
+    ): F[BaboonIssue, Json] = {
+      val dom     = getDom(family, pkg, version)
+      val typedef = getDef(dom, idString)
+      val bytes   = new ByteArrayInputStream(data.toArray)
+      val input   = new LEDataInputStream(bytes)
+
+      typedef match {
+        case u: DomainMember.User =>
+          decodeUserType(dom, u.defn, input).flatMap {
+            json =>
+              val remaining = bytes.available()
+              if (requireCompleteInput && remaining > 0) F.fail(RuntimeCodecIssue.TrailingBytes(u.id, remaining)) else F.pure(json)
+          }
+        case _ => F.fail(RuntimeCodecIssue.UnexpectedDomainMemberType(typedef.id, s"Expected User type, got: ${typedef.getClass.getSimpleName}"))
+      }
+    }
+
+    private def encodeWith(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json, mode: EncodeMode): F[BaboonIssue, Vector[Byte]] = {
       val dom     = getDom(family, pkg, version)
       val typedef = getDef(dom, idString)
       val output  = new ByteArrayOutputStream()
@@ -58,7 +113,7 @@ object BaboonRuntimeCodec {
 
       typedef match {
         case u: DomainMember.User =>
-          encodeUserType(dom, u.defn, json, writer, indexed).map {
+          encodeUserType(dom, u.defn, json, writer, mode).map {
             _ =>
               writer.flush()
               Vector.from(output.toByteArray)
@@ -76,14 +131,14 @@ object BaboonRuntimeCodec {
     }
 
     // Encode user-defined types
-    private def encodeUserType(dom: Domain, typedef: Typedef.User, json: Json, writer: LEDataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
+    private def encodeUserType(dom: Domain, typedef: Typedef.User, json: Json, writer: LEDataOutputStream, mode: EncodeMode): F[BaboonIssue, Unit] = {
       typedef match {
-        case dto: Typedef.Dto   => encodeDto(dom, dto, json, writer, indexed)
+        case dto: Typedef.Dto   => encodeDto(dom, dto, json, writer, mode)
         case enum: Typedef.Enum => encodeEnum(dom, enum, json, writer)
-        case adt: Typedef.Adt   => encodeAdt(dom, adt, json, writer, indexed)
+        case adt: Typedef.Adt   => encodeAdt(dom, adt, json, writer, mode)
         case f: Typedef.Foreign =>
           f.runtimeMapping match {
-            case Some(typeRef) => encodeTypeRef(dom, typeRef, json, writer, indexed)
+            case Some(typeRef) => encodeTypeRef(dom, typeRef, json, writer, mode)
             case None          => F.fail(RuntimeCodecIssue.CannotEncodeType(typedef.id, "Foreign types without rt binding cannot be encoded"))
           }
         case _: Typedef.Service  => F.fail(RuntimeCodecIssue.CannotEncodeType(typedef.id, "Service types cannot be encoded"))
@@ -108,15 +163,17 @@ object BaboonRuntimeCodec {
     }
 
     // DTO encoding/decoding
-    private def encodeDto(dom: Domain, dto: Typedef.Dto, json: Json, writer: LEDataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
+    private def encodeDto(dom: Domain, dto: Typedef.Dto, json: Json, writer: LEDataOutputStream, mode: EncodeMode): F[BaboonIssue, Unit] = {
       json.asObject match {
-        case None      => F.fail(RuntimeCodecIssue.ExpectedJsonObject(dto.id.toString, json))
+        case None => F.fail(RuntimeCodecIssue.ExpectedJsonObject(dto.id.toString, json))
+        case Some(obj) if mode.rejectUnknownFields && undeclaredFields(dto, obj).nonEmpty =>
+          F.fail(RuntimeCodecIssue.UnknownJsonFields(dto.id, undeclaredFields(dto, obj)))
         case Some(obj) =>
           // Write header byte
-          val header: Byte = if (indexed) 1 else 0
+          val header: Byte = if (mode.indexed) 1 else 0
           writer.writeByte(header.toInt)
 
-          if (indexed) {
+          if (mode.indexed) {
             // In indexed mode: collect field data in buffer, write index, then data
             val fieldDataBuffer = new ByteArrayOutputStream()
             val fieldDataWriter = new LEDataOutputStream(fieldDataBuffer)
@@ -129,7 +186,7 @@ object BaboonRuntimeCodec {
                 if (enquiries.uebaLen(dom.defs.meta.nodes, field.tpe).isVariable) {
                   // Variable-length field: record position, write to buffer, record length
                   val before = fieldDataBuffer.size()
-                  encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, indexed).map {
+                  encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, mode).map {
                     _ =>
                       val after  = fieldDataBuffer.size()
                       val length = after - before
@@ -138,7 +195,7 @@ object BaboonRuntimeCodec {
                   }
                 } else {
                   // Fixed-length field: just write to buffer
-                  encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, indexed).map {
+                  encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, mode).map {
                     _ => fieldDataBuffer.size()
                   }
                 }
@@ -162,10 +219,14 @@ object BaboonRuntimeCodec {
             F.traverse_(dto.fields) {
               field =>
                 val fieldJson = obj(field.name.name).getOrElse(Json.Null)
-                encodeTypeRef(dom, field.tpe, fieldJson, writer, indexed)
+                encodeTypeRef(dom, field.tpe, fieldJson, writer, mode)
             }
           }
       }
+    }
+
+    private def undeclaredFields(dto: Typedef.Dto, obj: JsonObject): List[String] = {
+      obj.keys.filterNot(key => dto.fields.exists(_.name.name == key)).toList
     }
 
     private def decodeDto(dom: Domain, dto: Typedef.Dto, reader: LEDataInputStream): F[BaboonIssue, Json] = {
@@ -221,7 +282,7 @@ object BaboonRuntimeCodec {
     }
 
     // ADT encoding/decoding
-    private def encodeAdt(dom: Domain, adt: Typedef.Adt, json: Json, writer: LEDataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
+    private def encodeAdt(dom: Domain, adt: Typedef.Adt, json: Json, writer: LEDataOutputStream, mode: EncodeMode): F[BaboonIssue, Unit] = {
       json.asObject match {
         case None      => F.fail(RuntimeCodecIssue.ExpectedJsonObject(adt.id.toString, json))
         case Some(obj) =>
@@ -243,7 +304,7 @@ object BaboonRuntimeCodec {
               // Encode the branch value
               val branchId  = dataMembers(branchIdx)
               val branchDef = dom.defs.meta.nodes(branchId).asInstanceOf[DomainMember.User].defn
-              encodeUserType(dom, branchDef, branchValue, writer, indexed)
+              encodeUserType(dom, branchDef, branchValue, writer, mode)
             }
           }
       }
@@ -265,10 +326,10 @@ object BaboonRuntimeCodec {
     }
 
     // TypeRef encoding/decoding
-    private def encodeTypeRef(dom: Domain, tpe: TypeRef, json: Json, writer: LEDataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
+    private def encodeTypeRef(dom: Domain, tpe: TypeRef, json: Json, writer: LEDataOutputStream, mode: EncodeMode): F[BaboonIssue, Unit] = {
       tpe match {
-        case TypeRef.Scalar(id)            => encodeScalar(dom, id, json, writer, indexed)
-        case TypeRef.Constructor(id, args) => encodeConstructor(dom, id, args.toList, json, writer, indexed)
+        case TypeRef.Scalar(id)            => encodeScalar(dom, id, json, writer, mode)
+        case TypeRef.Constructor(id, args) => encodeConstructor(dom, id, args.toList, json, writer, mode)
         case _: TypeRef.Any                => AnyPlaceholder.notSupportedYet("BaboonRuntimeCodec.encodeTypeRef")
       }
     }
@@ -282,12 +343,12 @@ object BaboonRuntimeCodec {
     }
 
     // Scalar encoding/decoding
-    private def encodeScalar(dom: Domain, id: TypeId.Scalar, json: Json, writer: LEDataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
+    private def encodeScalar(dom: Domain, id: TypeId.Scalar, json: Json, writer: LEDataOutputStream, mode: EncodeMode): F[BaboonIssue, Unit] = {
       id match {
         case s: TypeId.BuiltinScalar => encodeBuiltinScalar(s, json, writer)
         case u: TypeId.User =>
           val typedef = dom.defs.meta.nodes(u).asInstanceOf[DomainMember.User].defn
-          encodeUserType(dom, typedef, json, writer, indexed)
+          encodeUserType(dom, typedef, json, writer, mode)
       }
     }
 
@@ -311,68 +372,16 @@ object BaboonRuntimeCodec {
             case None => F.fail(RuntimeCodecIssue.ExpectedJsonBoolean(json))
           }
 
-        case TypeId.Builtins.i08 =>
-          json.asNumber.flatMap(_.toLong).map(_.toByte) match {
+        case integer if IntegerKinds.contains(integer) =>
+          val kind = IntegerKinds(integer)
+          // 64-bit integers arrive as a decimal string, and as a JSON number from a writer older than
+          // the string form (docs/json-codecs.md, "64-bit integers")
+          val parsed = json.asNumber.flatMap(_.toBigInt).orElse(if (kind.width == Wide) json.asString.flatMap(parseInteger) else None)
+          parsed.filter(kind.contains) match {
             case Some(value) =>
-              writer.writeByte(value.toInt)
+              writeInteger(kind, value, writer)
               F.unit
-            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i08", json))
-          }
-
-        case TypeId.Builtins.i16 =>
-          json.asNumber.flatMap(_.toLong).map(_.toShort) match {
-            case Some(value) =>
-              writer.writeShort(value.toInt)
-              F.unit
-            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i16", json))
-          }
-
-        case TypeId.Builtins.i32 =>
-          json.asNumber.flatMap(_.toInt) match {
-            case Some(value) =>
-              writer.writeInt(value)
-              F.unit
-            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i32", json))
-          }
-
-        case TypeId.Builtins.i64 =>
-          readWire64(json) match {
-            case Some(value) =>
-              writer.writeLong(value)
-              F.unit
-            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i64", json))
-          }
-
-        case TypeId.Builtins.u08 =>
-          json.asNumber.flatMap(_.toLong).map(_.toByte) match {
-            case Some(value) =>
-              writer.writeByte(value.toInt)
-              F.unit
-            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u08", json))
-          }
-
-        case TypeId.Builtins.u16 =>
-          json.asNumber.flatMap(_.toLong).map(_.toShort) match {
-            case Some(value) =>
-              writer.writeShort(value.toInt)
-              F.unit
-            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u16", json))
-          }
-
-        case TypeId.Builtins.u32 =>
-          json.asNumber.flatMap(_.toInt) match {
-            case Some(value) =>
-              writer.writeInt(value)
-              F.unit
-            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u32", json))
-          }
-
-        case TypeId.Builtins.u64 =>
-          readWire64(json) match {
-            case Some(value) =>
-              writer.writeLong(value)
-              F.unit
-            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u64", json))
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber(integer.name.name, json))
           }
 
         case TypeId.Builtins.f32 =>
@@ -442,15 +451,16 @@ object BaboonRuntimeCodec {
       }
     }
 
-    /** 64-bit integers arrive as a decimal string, and as a JSON number from a writer older than
-      * the string form (docs/json-codecs.md, "64-bit integers"). `longValue` narrows an unsigned
-      * u64 to the two's-complement Long the UEBA writer expects.
-      */
-    private def readWire64(json: Json): Option[Long] = {
-      json.asNumber
-        .flatMap(_.toBigInt)
-        .orElse(json.asString.flatMap(str => scala.util.Try(BigInt(str)).toOption))
-        .map(_.longValue)
+    private def parseInteger(text: String): Option[BigInt] = Try(BigInt(text)).toOption
+
+    /** UEBA stores every integer as its two's-complement low `width` bytes, so unsigned values above the signed range narrow as such. */
+    private def writeInteger(kind: IntegerKind, value: BigInt, writer: LEDataOutputStream): Unit = {
+      kind.width match {
+        case 1    => writer.writeByte(value.toInt)
+        case 2    => writer.writeShort(value.toInt)
+        case 4    => writer.writeInt(value.toInt)
+        case Wide => writer.writeLong(value.longValue)
+      }
     }
 
     private def decodeBuiltinScalar(id: TypeId.BuiltinScalar, reader: LEDataInputStream): F[BaboonIssue, Json] = {
@@ -490,7 +500,7 @@ object BaboonRuntimeCodec {
     }
 
     // Constructor (collection) encoding/decoding
-    private def encodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], json: Json, writer: LEDataOutputStream, indexed: Boolean)
+    private def encodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], json: Json, writer: LEDataOutputStream, mode: EncodeMode)
       : F[BaboonIssue, Unit] = {
       id match {
         case TypeId.Builtins.opt =>
@@ -499,7 +509,7 @@ object BaboonRuntimeCodec {
             F.unit
           } else {
             writer.writeByte(1)
-            encodeTypeRef(dom, args.head, json, writer, indexed)
+            encodeTypeRef(dom, args.head, json, writer, mode)
           }
 
         case TypeId.Builtins.lst =>
@@ -507,7 +517,7 @@ object BaboonRuntimeCodec {
             case None => F.fail(RuntimeCodecIssue.ExpectedJsonArray("list", json))
             case Some(arr) =>
               writer.writeInt(arr.size)
-              F.traverse_(arr)(elem => encodeTypeRef(dom, args.head, elem, writer, indexed))
+              F.traverse_(arr)(elem => encodeTypeRef(dom, args.head, elem, writer, mode))
           }
 
         case TypeId.Builtins.set =>
@@ -515,7 +525,7 @@ object BaboonRuntimeCodec {
             case None => F.fail(RuntimeCodecIssue.ExpectedJsonArray("set", json))
             case Some(arr) =>
               writer.writeInt(arr.size)
-              F.traverse_(arr)(elem => encodeTypeRef(dom, args.head, elem, writer, indexed))
+              F.traverse_(arr)(elem => encodeTypeRef(dom, args.head, elem, writer, mode))
           }
 
         case TypeId.Builtins.map =>
@@ -527,7 +537,7 @@ object BaboonRuntimeCodec {
                 case (key, value) =>
                   for {
                     _ <- encodeMapKey(dom, args.head, key, writer)
-                    _ <- encodeTypeRef(dom, args.last, value, writer, indexed)
+                    _ <- encodeTypeRef(dom, args.last, value, writer, mode)
                   } yield ()
               }
           }
@@ -582,30 +592,14 @@ object BaboonRuntimeCodec {
             case TypeId.Builtins.bit =>
               writer.writeBoolean(key.toBoolean)
               F.unit
-            case TypeId.Builtins.i08 =>
-              writer.writeByte(key.toByte.toInt)
-              F.unit
-            case TypeId.Builtins.i16 =>
-              writer.writeShort(key.toShort.toInt)
-              F.unit
-            case TypeId.Builtins.i32 =>
-              writer.writeInt(key.toInt)
-              F.unit
-            case TypeId.Builtins.i64 =>
-              writer.writeLong(key.toLong)
-              F.unit
-            case TypeId.Builtins.u08 =>
-              writer.writeByte(key.toByte.toInt)
-              F.unit
-            case TypeId.Builtins.u16 =>
-              writer.writeShort(key.toShort.toInt)
-              F.unit
-            case TypeId.Builtins.u32 =>
-              writer.writeInt(key.toInt)
-              F.unit
-            case TypeId.Builtins.u64 =>
-              writer.writeLong(key.toLong)
-              F.unit
+            case integer if IntegerKinds.contains(integer) =>
+              val kind = IntegerKinds(integer)
+              parseInteger(key).filter(kind.contains) match {
+                case Some(value) =>
+                  writeInteger(kind, value, writer)
+                  F.unit
+                case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber(integer.name.name, Json.fromString(key)))
+              }
             case TypeId.Builtins.f32 =>
               writer.writeFloat(key.toFloat)
               F.unit

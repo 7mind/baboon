@@ -448,12 +448,16 @@ case class OasCLIOptions(
 ) extends SharedCLIOptions
 
 case class SchemeCLIOptions(
-  @HelpMessage("Domain name (e.g., 'my.domain.name')")
-  domain: String,
-  @HelpMessage("Version (e.g., '1.0.0')")
-  version: String,
-  @HelpMessage("Target output file path (when absent, the scheme is printed to stdout)")
+  @HelpMessage("Domain name (e.g., 'my.domain.name'); single-schema mode, requires --version")
+  domain: Option[String],
+  @HelpMessage("Version (e.g., '1.0.0'); single-schema mode, requires --domain")
+  version: Option[String],
+  @HelpMessage("Target output file path (when absent, the scheme is printed to stdout); single-schema mode")
   target: Option[String],
+  @HelpMessage("Comma-separated domain@version selectors, '*' for a whole component (e.g. '*@*', 'my.domain@*', '*@1.0.0'); archive mode, requires --zip-output")
+  domains: Option[String],
+  @HelpMessage("ZIP archive receiving one schemas/<domain>/<version>.baboon entry per selected version; archive mode, requires --domains")
+  zipOutput: Option[String],
 )
 
 case class DiffCLIOptions(

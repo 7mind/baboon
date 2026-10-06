@@ -1,0 +1,8 @@
+model zipdemo.revert
+
+version "2.0.0"
+
+root data Flip {
+  a: i32
+  b: opt[str]
+}

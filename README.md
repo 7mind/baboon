@@ -153,7 +153,7 @@ The CLI is multi-modal: global options (model inputs, lockfile, evolution metada
 - `:graphql`, `:openapi` - Schema-only outputs (GraphQL SDL, OpenAPI 3.1 component schemas)
 - `:explore` - Launch [Interactive Explorer](docs/explorer-mode.md)
 - `:lsp` - Start [LSP Server](docs/lsp-integration.md)
-- `:scheme` - Emit a cleaned-up single `.baboon` file for a domain version
+- `:scheme` - Emit a cleaned-up `.baboon` file for a domain version, or a ZIP archive of many (`--domains`, `--zip-output`)
 
 **Full option reference (global and per-target): [docs/cli-reference.md](docs/cli-reference.md)**, or run `baboon --help`.
 

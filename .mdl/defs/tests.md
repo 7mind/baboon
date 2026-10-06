@@ -3661,6 +3661,7 @@ dep action.test-diff
 dep action.test-diff-ref
 dep action.test-no-args-help
 dep action.test-bincompat
+dep action.test-js-npm
 
 # D40/T182: zero-service MCP lanes — permanent regression guard that the MCP
 # runtime is emitted (and the overlay compiles) even for a model with @root
@@ -3693,6 +3694,177 @@ dep action.test-swift-mcp-zero
 # now green, so the lanes are wired in as a permanent regression guard.
 dep action.test-gen-cs-adt-capture
 dep action.test-cs-adt-capture
+
+ret success:bool=true
+```
+
+# action: test-js-npm
+
+CLI -> ZIP -> JS acceptance for the npm package: `:scheme --zip-output`,
+`BaboonCompiler.loadMany` and the envelope conversions (`encodedEnvelopeLoaded`,
+`decodeEnvelopeLoaded`). Builds the Scala.js bundle (fastLinkJS) and assembles the
+package from `npm-template` the way `publish-npm` does, then:
+
+1. writes a schema archive with the native binary (twice, and once more under a
+   different time zone) and requires identical bytes; checks it with Python's
+   `zipfile` as an independent reader; rewrites it with `zipfile` as stored
+   (directory entries, extra fields) and deflated (an unsupported method) copies,
+   and writes archives whose schema includes a `*.bmo` entry;
+2. requires a failing selection to publish nothing, mixed or incomplete
+   `:scheme` flags to fail, and single-schema stdout to be exactly the
+   `--target` file's content (pure DSL);
+3. runs the published `test.js`, the type-level `types-check.ts` (`tsc
+   --noEmit`, TypeScript pinned to the ts-stub's version),
+   `archive-acceptance.mjs` against those archives, and
+   `declarations-acceptance.mjs` (index.d.ts declares exactly the exports; needs
+   the unminified fastLinkJS bundle).
+
+Runs after `test-sbt-basic`: both use the root sbt build.
+
+```bash
+dep action.build
+dep action.test-sbt-basic
+
+set -euo pipefail
+
+BABOON_BIN="${action.build.binary}"
+PROJECT_ROOT="${sys.project-root}"
+WORK="${PROJECT_ROOT}/target/test-js-npm"
+PACKAGE="${WORK}/package"
+ARCHIVES="${WORK}/archives"
+RESOURCES="${PROJECT_ROOT}/baboon-compiler/src/test/resources"
+TYPESCRIPT_VERSION="5.7.3"
+
+rm -rf "$WORK"
+mkdir -p "$PACKAGE" "$ARCHIVES"
+
+sbt "++2.13 baboonJS/fastLinkJS"
+JS_DIST_DIR="${PROJECT_ROOT}/baboon-compiler/.js/target/scala-2.13/baboon-fastopt"
+if [[ ! -f "${JS_DIST_DIR}/main.js" ]]; then
+  echo "FAIL: Scala.js output is missing at ${JS_DIST_DIR}/main.js" >&2
+  exit 1
+fi
+
+MODELS=(
+  --model-dir "${RESOURCES}/scheme-zip-ok"
+  --model-dir "${RESOURCES}/baboon/fwd-e2e-ok"
+  --model-dir "${RESOURCES}/baboon/fwd-e2e-chain-ok"
+)
+
+"$BABOON_BIN" "${MODELS[@]}" :scheme --domains="*@*" --zip-output="${ARCHIVES}/schemas.zip"
+"$BABOON_BIN" "${MODELS[@]}" :scheme --domains=" *@* " --zip-output="${ARCHIVES}/again.zip"
+TZ=Pacific/Kiritimati "$BABOON_BIN" "${MODELS[@]}" :scheme --domains="zipdemo.revert@*,*@*" --zip-output="${ARCHIVES}/elsewhere.zip"
+for other in again elsewhere; do
+  if ! cmp "${ARCHIVES}/schemas.zip" "${ARCHIVES}/${other}.zip"; then
+    echo "FAIL: identical selections produced different archive bytes (${other}.zip)" >&2
+    exit 1
+  fi
+done
+python3 -m zipfile -t "${ARCHIVES}/schemas.zip"
+python3 - "${ARCHIVES}/schemas.zip" <<'PY'
+import sys, zipfile
+names = zipfile.ZipFile(sys.argv[1]).namelist()
+expected = sorted(f"schemas/{d}/{v}.baboon" for d, vs in {
+    "fwde2e.chain": ["1.0.0", "2.0.0", "3.0.0"],
+    "fwde2e.fwd": ["1.0.0", "2.0.0"],
+    "zipdemo.evo": ["1.0.0", "2.0.0", "3.0.0"],
+    "zipdemo.revert": ["1.0.0", "2.0.0", "3.0.0"],
+    "zipdemo.shapes": ["1.0.0", "2.0.0"],
+}.items() for v in vs)
+if names != expected:
+    sys.exit(f"FAIL: archive entries {names} != {expected}")
+PY
+
+# the same schemas from another writer: directory entries and an extended-timestamp extra
+# field (stored), and the deflate method `loadMany` does not support
+python3 - "${ARCHIVES}/schemas.zip" "${ARCHIVES}/other-stored.zip" "${ARCHIVES}/other-deflated.zip" <<'PY'
+import struct, sys, zipfile
+source = zipfile.ZipFile(sys.argv[1])
+for target, method in ((sys.argv[2], zipfile.ZIP_STORED), (sys.argv[3], zipfile.ZIP_DEFLATED)):
+    with zipfile.ZipFile(target, "w") as out:
+        directories = sorted({name.rsplit("/", 1)[0] + "/" for name in source.namelist()} | {"schemas/"})
+        for directory in directories:
+            out.writestr(zipfile.ZipInfo(directory, date_time=(2020, 1, 1, 0, 0, 0)), b"")
+        for name in source.namelist():
+            info = zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0))
+            info.compress_type = method
+            info.extra = struct.pack("<HHBI", 0x5455, 5, 1, 1577836800)
+            out.writestr(info, source.read(name))
+PY
+
+# an archive whose schema includes a *.bmo entry (resolved against the archive root), and one
+# whose include path leaves the archive
+python3 - "${ARCHIVES}/with-include.zip" "${ARCHIVES}/escaping-include.zip" <<'PY'
+import sys, zipfile
+included = b"root data Included {\n  x: i32\n}\n"
+for target, include in ((sys.argv[1], "shared/defs.bmo"), (sys.argv[2], "../shared/defs.bmo")):
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_STORED) as out:
+        out.writestr("models/inc/1.0.0.baboon", f'model zipdemo.inc\n\nversion "1.0.0"\n\ninclude "{include}"\n')
+        out.writestr("shared/defs.bmo", included)
+PY
+
+# a failing selection publishes nothing
+for selection in "no.such@*" "zipdemo.evo@1.0.0,zipdemo.evo@3.0.0"; do
+  if "$BABOON_BIN" "${MODELS[@]}" :scheme --domains="$selection" --zip-output="${ARCHIVES}/failed.zip"; then
+    echo "FAIL: :scheme accepted the selection '$selection'" >&2
+    exit 1
+  fi
+  if [[ -e "${ARCHIVES}/failed.zip" ]]; then
+    echo "FAIL: a failed :scheme run left ${ARCHIVES}/failed.zip behind" >&2
+    exit 1
+  fi
+done
+if ls -A "$ARCHIVES" | grep -q '\.tmp$'; then
+  echo "FAIL: temporary files left in ${ARCHIVES}" >&2
+  exit 1
+fi
+
+# the two modes do not mix, and each needs both of its flags (no globbing of the selectors)
+set -f
+for flags in "--domain=zipdemo.evo --version=1.0.0 --zip-output=${ARCHIVES}/mixed.zip" \
+             "--domains=*@* --target=${ARCHIVES}/mixed.baboon" \
+             "--domains=*@*" \
+             "--zip-output=${ARCHIVES}/mixed.zip" \
+             "--domain=zipdemo.evo" \
+             "--domains=zipdemo.*@1.0.0 --zip-output=${ARCHIVES}/mixed.zip"; do
+  # shellcheck disable=SC2086
+  if "$BABOON_BIN" "${MODELS[@]}" :scheme $flags >/dev/null 2>&1; then
+    echo "FAIL: :scheme accepted '$flags'" >&2
+    exit 1
+  fi
+done
+set +f
+
+# single-schema stdout is exactly the rendered schema plus println's line terminator
+"$BABOON_BIN" "${MODELS[@]}" :scheme --domain=zipdemo.shapes --version=2.0.0 --target="${ARCHIVES}/shapes.baboon" >/dev/null
+"$BABOON_BIN" "${MODELS[@]}" :scheme --domain=zipdemo.shapes --version=2.0.0 > "${ARCHIVES}/shapes.stdout"
+python3 - "${ARCHIVES}/shapes.baboon" "${ARCHIVES}/shapes.stdout" <<'PY'
+import sys
+schema, stdout = (open(path, "rb").read() for path in sys.argv[1:3])
+if stdout not in (schema + b"\n", schema + b"\r\n"):
+    sys.exit(f"FAIL: :scheme stdout is not exactly the rendered schema:\n{stdout[:400]!r}\n...expected...\n{schema[:400]!r}")
+PY
+
+cp "${JS_DIST_DIR}/"* "$PACKAGE"/
+cp "${PROJECT_ROOT}/baboon-compiler/npm-template/"* "$PACKAGE"/
+cp "${PROJECT_ROOT}/LICENSE" "$PACKAGE"/
+python3 - "${PACKAGE}/package.json" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+open(path, "w").write(text.replace("VERSION_PLACEHOLDER", "0.0.0-test"))
+PY
+
+cd "$PACKAGE"
+npm install
+npm test
+npx --yes --package "typescript@${TYPESCRIPT_VERSION}" tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 types-check.ts
+BABOON_SCHEMA_ZIP="${ARCHIVES}/schemas.zip" \
+BABOON_OTHER_STORED_ZIP="${ARCHIVES}/other-stored.zip" \
+BABOON_OTHER_DEFLATED_ZIP="${ARCHIVES}/other-deflated.zip" \
+BABOON_INCLUDE_ZIP="${ARCHIVES}/with-include.zip" \
+BABOON_ESCAPING_INCLUDE_ZIP="${ARCHIVES}/escaping-include.zip" \
+  npx ava archive-acceptance.mjs declarations-acceptance.mjs
 
 ret success:bool=true
 ```

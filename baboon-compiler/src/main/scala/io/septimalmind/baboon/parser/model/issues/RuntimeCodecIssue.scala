@@ -33,6 +33,16 @@ object RuntimeCodecIssue {
 
   case class UnexpectedDomainMemberType(typeId: TypeId, reason: String) extends RuntimeCodecIssue
 
+  case class UnknownJsonFields(typeId: TypeId, fields: List[String]) extends RuntimeCodecIssue
+  case class TrailingBytes(typeId: TypeId, count: Int) extends RuntimeCodecIssue
+
+  /** The top-level `BaboonTypeMeta` envelope (docs/spec/codec-envelope.md) is malformed or truncated. */
+  case class InvalidEnvelope(reason: String) extends RuntimeCodecIssue
+  /** The envelope names a domain, version or type the loaded model cannot read. */
+  case class UnknownEnvelopeIdentity(reason: String) extends RuntimeCodecIssue
+  /** Converting the envelope cannot be proven lossless. */
+  case class LossyEnvelopeConversion(reason: String) extends RuntimeCodecIssue
+
   // Printers
   implicit val expectedJsonObjectPrinter: IssuePrinter[ExpectedJsonObject] =
     (issue: ExpectedJsonObject) => s"Expected JSON object for ${issue.typeId}, got: ${issue.actual}"
@@ -87,4 +97,19 @@ object RuntimeCodecIssue {
 
   implicit val unexpectedDomainMemberTypePrinter: IssuePrinter[UnexpectedDomainMemberType] =
     (issue: UnexpectedDomainMemberType) => s"Unexpected domain member type ${issue.typeId}: ${issue.reason}"
+
+  implicit val unknownJsonFieldsPrinter: IssuePrinter[UnknownJsonFields] =
+    (issue: UnknownJsonFields) => s"JSON object for ${issue.typeId} has fields the type does not declare: ${issue.fields.mkString(", ")}"
+
+  implicit val trailingBytesPrinter: IssuePrinter[TrailingBytes] =
+    (issue: TrailingBytes) => s"${issue.count} unread byte(s) after the encoded ${issue.typeId}"
+
+  implicit val invalidEnvelopePrinter: IssuePrinter[InvalidEnvelope] =
+    (issue: InvalidEnvelope) => s"Invalid envelope: ${issue.reason}"
+
+  implicit val unknownEnvelopeIdentityPrinter: IssuePrinter[UnknownEnvelopeIdentity] =
+    (issue: UnknownEnvelopeIdentity) => s"Unknown envelope identity: ${issue.reason}"
+
+  implicit val lossyEnvelopeConversionPrinter: IssuePrinter[LossyEnvelopeConversion] =
+    (issue: LossyEnvelopeConversion) => s"Refusing lossy envelope conversion: ${issue.reason}"
 }

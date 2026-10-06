@@ -3,13 +3,13 @@ package io.septimalmind.baboon
 import distage.*
 import io.circe.Json
 import io.circe.parser.parse as parseJson
-import io.septimalmind.baboon.parser.BaboonParser
+import io.septimalmind.baboon.parser.{BaboonArchiveInputs, BaboonInclusionResolver, BaboonParser}
 import io.septimalmind.baboon.parser.model.{FSPath, InputOffset, InputPointer}
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, IssuePrinter, ParserIssue, TyperIssue, VerificationIssue}
 import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.explore.RandomJsonGenerator
-import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonRuntimeCodec}
+import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonRuntimeCodec, BaboonRuntimeEnvelopeCodec, BinEnvelopeOptions, BinEnvelopeVersion}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, DomainMember, Pkg, Typedef, Version}
 import io.septimalmind.baboon.util.{BLogger, BLoggerJS}
 import izumi.functional.bio.unsafe.MaybeSuspend2
@@ -848,11 +848,86 @@ object BaboonJS {
           new BaboonLoadedModelImpl(family)
       }.recover {
         case e: Throwable =>
-          throw new RuntimeException(s"Loading failed: ${e.getMessage}")
+          throw loadingFailure(e)
       }.toJSPromise
     } catch {
       case e: Throwable =>
-        Future.failed(new RuntimeException(s"Loading failed: ${e.getMessage}")).toJSPromise
+        Future.failed(loadingFailure(e)).toJSPromise
+    }
+  }
+
+  /**
+    * Load a Baboon model from a ZIP archive held in memory (async), e.g. one written by
+    * `baboon :scheme --domains=... --zip-output=...`.
+    *
+    * @param archive Exactly one of `{ bytes: Uint8Array }` or `{ base64: string }` (standard base64, not a data URL)
+    * @return JS Promise of the same opaque handle `load` returns; rejected like `load` on any failure
+    */
+  @JSExport
+  def loadMany(archive: js.Any): js.Promise[BaboonLoadedModel] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+    try {
+      archiveBytes(archive).flatMap(bytes => BaboonArchiveInputs.fromZip(bytes).left.map(_.toList.mkString("; "))) match {
+        case Left(error) =>
+          Future.failed(new RuntimeException(s"Loading failed: $error")).toJSPromise
+        case Right(inputs) =>
+          import izumi.distage.modules.support.unsafe.EitherSupport.*
+          import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+          type F[+E, +A] = Either[E, A]
+
+          loadArchiveInternal[F](inputs).map {
+            family =>
+              new BaboonLoadedModelImpl(family): BaboonLoadedModel
+          }.recover {
+            case e: Throwable =>
+              throw loadingFailure(e)
+          }.toJSPromise
+      }
+    } catch {
+      case e: Throwable =>
+        Future.failed(loadingFailure(e)).toJSPromise
+    }
+  }
+
+  private val ArchiveBytesKey  = "bytes"
+  private val ArchiveBase64Key = "base64"
+
+  /** `loadMany`'s argument: an object with exactly one of `bytes` (a Uint8Array) or `base64` (a string); undefined-valued keys count as absent. */
+  private def archiveBytes(archive: js.Any): Either[String, Array[Byte]] = {
+    val expected = s"loadMany expects an object with exactly one of '$ArchiveBytesKey' (Uint8Array) or '$ArchiveBase64Key' (base64 string)"
+    if (archive == null || js.typeOf(archive) != "object" || js.Array.isArray(archive)) {
+      Left(expected)
+    } else {
+      val dict = archive.asInstanceOf[js.Dictionary[js.Any]]
+      js.Object.keys(archive.asInstanceOf[js.Object]).toList.filterNot(key => js.isUndefined(dict(key))) match {
+        case List(ArchiveBytesKey) =>
+          dict(ArchiveBytesKey) match {
+            case bytes: js.typedarray.Uint8Array => Right(uint8ArrayToBytes(bytes))
+            case _                               => Left(s"'$ArchiveBytesKey' must be a Uint8Array")
+          }
+        case List(ArchiveBase64Key) =>
+          (dict(ArchiveBase64Key): Any) match {
+            case base64: String =>
+              scala.util.Try(java.util.Base64.getDecoder.decode(base64)).toEither.left.map(_ => s"'$ArchiveBase64Key' is not valid base64 (standard alphabet, no data: URL prefix, no whitespace)")
+            case _ => Left(s"'$ArchiveBase64Key' must be a string")
+          }
+        case keys => Left(s"$expected; got keys: ${keys.mkString(", ")}")
+      }
+    }
+  }
+
+  private def uint8ArrayToBytes(data: js.typedarray.Uint8Array): Array[Byte] = {
+    import scala.scalajs.js.typedarray.*
+    new Int8Array(data.buffer, data.byteOffset, data.length).toArray
+  }
+
+  /** `load` and `loadMany` reject with the same message shape; model issues are listed with their source paths. */
+  private def loadingFailure(e: Throwable): Throwable = {
+    import IssuePrinter.*
+    e match {
+      case compilation: BaboonCompilationException => new RuntimeException(s"Loading failed: ${compilation.issues.toList.stringifyIssues}")
+      case other                                   => new RuntimeException(s"Loading failed: ${other.getMessage}")
     }
   }
 
@@ -1036,6 +1111,29 @@ object BaboonJS {
             (for {
               family <- loader.load(inputs.toList)
             } yield family).leftMap(issues => new BaboonCompilationException(issues))
+        }
+    )
+  }
+
+  /** Loads all of the archive's schemas together; `*.bmo` entries only serve includes, which resolve against the archive root. */
+  private def loadArchiveInternal[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
+    archive: BaboonArchiveInputs
+  )(implicit
+    quasiIO: QuasiIO[F[Throwable, _]],
+    runner: QuasiIORunner[F[Throwable, _]],
+  ): Future[BaboonFamily] = {
+    val logger          = new BLoggerJS(false)
+    val compilerOptions = createCompilerOptions(archive.all, Seq.empty, debug = false)
+    val m = new BaboonModuleJS[F](archive.all, logger, ParallelErrorAccumulatingOps2[F], compilerOptions).overriddenBy(new ModuleDef {
+      make[BaboonInclusionResolver[F]].fromValue(new BaboonArchiveInputs.ArchiveInclusionResolver[F](archive.all): BaboonInclusionResolver[F])
+    })
+
+    runner.runFuture(
+      Injector
+        .NoCycles[F[Throwable, _]]()
+        .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
+          (loader: BaboonLoaderJS[F]) =>
+            loader.load(archive.models.toList).leftMap(issues => new BaboonCompilationException(issues))
         }
     )
   }
@@ -1317,6 +1415,150 @@ object BaboonJS {
             JSDecodeResult.failure(s"Decoding failed: ${e.getMessage}")
           ).toJSPromise
     }
+  }
+
+  /**
+    * Convert a JSON top-level envelope (`$mv`, `$d`, `$v`, `$t`, `$uv`, `$rv`, `$c`) into a binary UEBA
+    * envelope (async). Domain, version and type come from the envelope and are preserved; this is
+    * format conversion, not migration (see `BaboonRuntimeEnvelopeCodec`).
+    *
+    * @param model Loaded Baboon model
+    * @param json JSON envelope
+    * @param options `{ envelopeVersion: 1 | 2, indexed: boolean }`
+    * @return JS Promise that resolves to encode result with the binary envelope or error
+    */
+  @JSExport
+  def encodedEnvelopeLoaded(
+    model: BaboonLoadedModel,
+    json: String,
+    options: js.Any,
+  ): js.Promise[JSEncodeResult] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+
+    try {
+      (loadedFamily(model), envelopeOptions(options), parseJson(json).left.map(e => s"Invalid JSON: ${e.getMessage}")) match {
+        case (Right(family), Right(opts), Right(envelope)) =>
+          import izumi.distage.modules.support.unsafe.EitherSupport.*
+          import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+          type F[+E, +A] = Either[E, A]
+
+          envelopeInternal[F, Vector[Byte]](codec => codec.jsonToUeba(family, envelope, opts)).map {
+            data => JSEncodeResult.success(bytesToUint8Array(data))
+          }.recover {
+            case e: Throwable => JSEncodeResult.failure(s"Envelope encoding failed: ${e.getMessage}")
+          }.toJSPromise
+        case (family, opts, envelope) =>
+          val errors = List(family, opts, envelope).collect { case Left(error) => error }
+          Future.successful(JSEncodeResult.failure(s"Envelope encoding failed: ${errors.mkString("; ")}")).toJSPromise
+      }
+    } catch {
+      case e: Throwable =>
+        Future.successful(JSEncodeResult.failure(s"Envelope encoding failed: ${e.getMessage}")).toJSPromise
+    }
+  }
+
+  /**
+    * Convert a binary UEBA top-level envelope (v1 or v2; compact or indexed payload) into a JSON envelope
+    * string (async). Domain, version and type come from the envelope and are preserved.
+    *
+    * @param model Loaded Baboon model
+    * @param data Binary envelope
+    * @return JS Promise that resolves to decode result with the JSON envelope or error
+    */
+  @JSExport
+  def decodeEnvelopeLoaded(
+    model: BaboonLoadedModel,
+    data: js.Any,
+  ): js.Promise[JSDecodeResult] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+
+    try {
+      val bytes = data match {
+        case u: js.typedarray.Uint8Array => Right(Vector.from(uint8ArrayToBytes(u)))
+        case _                           => Left("data must be a Uint8Array")
+      }
+      (loadedFamily(model), bytes) match {
+        case (Right(family), Right(envelope)) =>
+          import izumi.distage.modules.support.unsafe.EitherSupport.*
+          import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+          type F[+E, +A] = Either[E, A]
+
+          envelopeInternal[F, Json](codec => codec.uebaToJson(family, envelope)).map {
+            json => JSDecodeResult.success(json.noSpaces)
+          }.recover {
+            case e: Throwable => JSDecodeResult.failure(s"Envelope decoding failed: ${e.getMessage}")
+          }.toJSPromise
+        case (family, envelope) =>
+          val errors = List(family, envelope).collect { case Left(error) => error }
+          Future.successful(JSDecodeResult.failure(s"Envelope decoding failed: ${errors.mkString("; ")}")).toJSPromise
+      }
+    } catch {
+      case e: Throwable =>
+        Future.successful(JSDecodeResult.failure(s"Envelope decoding failed: ${e.getMessage}")).toJSPromise
+    }
+  }
+
+  private def loadedFamily(model: js.Any): Either[String, BaboonFamily] = {
+    model match {
+      case loaded: BaboonLoadedModelImpl => Right(loaded.family)
+      case _                             => Left("model is not a handle returned by load or loadMany")
+    }
+  }
+
+  private val EnvelopeVersionKey = "envelopeVersion"
+  private val IndexedKey         = "indexed"
+
+  private def envelopeOptions(options: js.Any): Either[String, BinEnvelopeOptions] = {
+    val expected = s"options must be { $EnvelopeVersionKey: 1 | 2, $IndexedKey: boolean }"
+    if (options == null || js.typeOf(options) != "object" || js.Array.isArray(options)) {
+      Left(expected)
+    } else {
+      val dict = options.asInstanceOf[js.Dictionary[js.Any]]
+      val keys = js.Object.keys(options.asInstanceOf[js.Object]).toList.sorted
+      val version = dict.get(EnvelopeVersionKey).map(_.asInstanceOf[Any]) match {
+        case Some(1) => Right(BinEnvelopeVersion.V1)
+        case Some(2) => Right(BinEnvelopeVersion.V2)
+        case other   => Left(s"$expected; unsupported $EnvelopeVersionKey: ${other.map(value => String.valueOf(value)).getOrElse("missing")}")
+      }
+      val indexed = dict.get(IndexedKey).map(_.asInstanceOf[Any]) match {
+        case Some(flag: Boolean) => Right(flag)
+        case _                   => Left(s"$expected; $IndexedKey must be a boolean")
+      }
+      if (keys != List(EnvelopeVersionKey, IndexedKey)) {
+        Left(s"$expected; got keys: ${keys.mkString(", ")}")
+      } else {
+        for {
+          v <- version
+          i <- indexed
+        } yield BinEnvelopeOptions(v, i)
+      }
+    }
+  }
+
+  private def bytesToUint8Array(data: Vector[Byte]): js.typedarray.Uint8Array = {
+    val uint8Array = new js.typedarray.Uint8Array(data.length)
+    data.indices.foreach(i => uint8Array(i) = (data(i) & 0xFF).toShort)
+    uint8Array
+  }
+
+  private def envelopeInternal[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2, A: Tag](
+    action: BaboonRuntimeEnvelopeCodec[F] => F[BaboonIssue, A]
+  )(implicit
+    quasiIO: QuasiIO[F[Throwable, _]],
+    runner: QuasiIORunner[F[Throwable, _]],
+  ): Future[A] = {
+    val m = new BaboonCodecModuleJS[F](ParallelErrorAccumulatingOps2[F])
+    runner.runFuture(
+      Injector
+        .NoCycles[F[Throwable, _]]()
+        .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
+          (codec: BaboonRuntimeEnvelopeCodec[F]) =>
+            import IssuePrinter.*
+            action(codec).leftMap(issue => new RuntimeException(issue.stringify))
+        }
+    )
   }
 
   /**

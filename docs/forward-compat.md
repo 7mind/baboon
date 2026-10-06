@@ -466,6 +466,14 @@ combination byte-for-byte as `Strict` writes it.
 | UEBA v2 | irrelevant | `Tolerant` (default) | `readableMin` (prefix bound), falling back to `minCompat` | decodes prefix-readable payloads with its newest codec; trailing appended fields unread |
 | UEBA v2 | irrelevant | `Lossless` | `minCompat` only | decodes only byte-identical payloads |
 
+The JavaScript envelope conversions (`BaboonCompiler.encodedEnvelopeLoaded` /
+`decodeEnvelopeLoaded`, `BaboonRuntimeEnvelopeCodec` in the compiler) are such a
+re-encoding intermediary. They read with the writer's exact version when it is
+loaded and otherwise apply `Lossless` — refusing binary v1 envelopes from unknown
+versions outright, since their single bound may be a `Tolerant` prefix bound — and
+they recompute the output format's bounds from the loaded model rather than copying
+the input's (`$rv` and binary `readableMin` are different tiers).
+
 ## Relationship to sameIn
 
 `identical` forward tiers imply membership in the `sameIn` run. Historically

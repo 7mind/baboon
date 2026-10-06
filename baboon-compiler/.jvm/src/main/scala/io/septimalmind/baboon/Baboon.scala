@@ -10,7 +10,7 @@ import io.septimalmind.baboon.BaboonModeAxis
 import io.septimalmind.baboon.bincompat.{BincompatClassifier, BincompatRenderer, BincompatResolver}
 import io.septimalmind.baboon.diff.{BaboonDiffRenderer, VersionRef}
 import io.septimalmind.baboon.git.{GitInvokerImpl, GitModelMaterializer, GitModelMaterializerErrors, TempWorktreeFactory}
-import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
+import io.septimalmind.baboon.scheme.{BaboonSchemeRenderer, SchemeArchive, SchemeSelection, SchemeSelector, SchemeZipWriter}
 import io.septimalmind.baboon.typer.{BaboonComparator, BaboonEnquiries}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, Domain, Pkg, Version}
 import io.septimalmind.baboon.util.BLogger
@@ -139,7 +139,7 @@ object Baboon {
        |  :openapi                 Generate OpenAPI 3.1 component schemas
        |  :lsp                     Start LSP server
        |  :explore                 Start interactive explorer
-       |  :scheme                  Emit a cleaned-up single .baboon file for a domain version
+       |  :scheme                  Emit a cleaned-up .baboon file for a domain version, or a ZIP of many
        |  :diff                    Report the schema diff between two versions of a domain
        |  :bincompat               Check binary compatibility between two versions of a domain
        |
@@ -174,10 +174,17 @@ object Baboon {
        |  --service-result-hkt-signature <sig>  HKT type parameter signature (e.g. '[+_, +_]')
        |
        |$languageSections
-       |Scheme options (:scheme):
-       |  --domain <name>          Domain name (e.g., 'my.domain.name')
-       |  --version <version>      Version string (e.g., '1.0.0')
+       |Scheme options (:scheme), single-schema mode:
+       |  --domain <name>          Domain name (e.g., 'my.domain.name'); requires --version
+       |  --version <version>      Version string (e.g., '1.0.0'); requires --domain
        |  --target <file>          Target output file path (when absent, the scheme is printed to stdout)
+       |Scheme options (:scheme), archive mode (cannot be combined with the options above):
+       |  --domains <selectors>    Comma-separated domain@version selectors; '*' stands for a whole
+       |                           component: '*@*', 'my.domain@*', '*@1.0.0', 'a.b@1.0.0,a.b@2.0.0'.
+       |                           Each selector must match something; per domain the selection must
+       |                           be a contiguous range of versions. Requires --zip-output
+       |  --zip-output <file>      ZIP archive with one schemas/<domain>/<version>.baboon entry per
+       |                           selected version, loadable by the JS BaboonCompiler.loadMany
        |
        |Diff options (:diff):
        |  --domain <name>          Domain name (e.g., 'my.domain.name')
@@ -207,6 +214,7 @@ object Baboon {
        |  baboon --model-dir ./models :lsp --port 5007
        |  baboon --model-dir ./models :explore
        |  baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
+       |  baboon --model-dir ./models :scheme --domains="*@*" --zip-output=./schemas.zip
        |  baboon --model-dir ./models :diff --domain=my.pkg --from=1.0.0 --to=2.0.0 --format=json
        |  baboon --model-dir ./models :diff --domain=my.pkg --from=2.0.0@HEAD~1 --to=2.0.0
        |  baboon --model-dir ./models :bincompat --domain=my.pkg --from=3.0.0@HEAD~3 --to=3.0.0
@@ -258,8 +266,10 @@ object Baboon {
     val artifact  = implicitly[IzArtifactMaterializer]
     val isLspMode = args.contains(":lsp") || args.contains("lsp")
 
-    // Print banner to stderr in LSP mode to avoid breaking the protocol
-    val bannerOut = if (isLspMode) System.err else System.out
+    // Print banner to stderr in LSP mode to avoid breaking the protocol, and in scheme mode,
+    // whose stdout output (no --target) must be nothing but the rendered schema
+    val isSchemeArg = args.contains(":scheme")
+    val bannerOut   = if (isLspMode || isSchemeArg) System.err else System.out
     bannerOut.println(s"Baboon ${artifact.get.shortInfo}")
 
     if (args.contains("--help") || args.contains("-h")) {
@@ -339,15 +349,16 @@ object Baboon {
           val out = for {
             generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
             schemeOptions  <- CaseApp.parse[SchemeCLIOptions](schemeModality.args).leftMap(e => NEList(s"Can't parse scheme CLI: $e"))
-          } yield {
-            val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
-            val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            schemeMode     <- SchemeCLIMode.parse(schemeOptions._1)
+            directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            _ <- {
+              import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
+              import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
 
-            import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
-            import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
-
-            schemeEntrypoint(directoryInputs, individualInputs, schemeOptions._1)
-          }
+              schemeEntrypoint(directoryInputs, individualInputs, schemeMode)
+            }
+          } yield ()
           out match {
             case Left(value) =>
               System.err.println(value.toList.niceList())
@@ -992,7 +1003,7 @@ object Baboon {
   private def schemeEntrypoint(
     directoryInputs: Set[FSPath],
     individualInputs: Set[FSPath],
-    schemeOptions: SchemeCLIOptions,
+    schemeMode: SchemeCLIMode,
   )(implicit
     quasiIO: QuasiIO[Either[Throwable, _]],
     runner: QuasiIORunner[Either[Throwable, _]],
@@ -1001,17 +1012,82 @@ object Baboon {
     parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
     tag: TagKK[EitherF],
     defaultModule2: DefaultModule2[EitherF],
-  ): Unit = {
-    val pkg     = Pkg(NEList.unsafeFrom(schemeOptions.domain.split("\\.").toList))
-    val version = Version.parse(schemeOptions.version)
-
-    schemeOptions.target match {
-      case Some(target) =>
+  ): Either[NEList[String], Unit] = {
+    schemeMode match {
+      case SchemeCLIMode.Single(pkg, version, Some(target)) =>
         // TARGET PRESENT: Compiler axis (BLoggerImpl => stdout diagnostics + file write).
-        schemeEntrypointToFile(directoryInputs, individualInputs, pkg, version, target)
-      case None =>
+        Right(schemeEntrypointToFile(directoryInputs, individualInputs, pkg, version, target))
+      case SchemeCLIMode.Single(pkg, version, None) =>
         // TARGET ABSENT: Explorer axis (Noop BLogger) + scheme printed to Console.out.
-        schemeEntrypointToStdout(directoryInputs, individualInputs, pkg, version)
+        Right(schemeEntrypointToStdout(directoryInputs, individualInputs, pkg, version))
+      case SchemeCLIMode.Archive(selectors, zipOutput) =>
+        schemeArchiveEntrypoint(directoryInputs, individualInputs, selectors, zipOutput)
+    }
+  }
+
+  /** `:scheme --domains --zip-output`: renders every selected domain version (see [[SchemeSelection.resolve]])
+    * into one deterministic archive. Nothing is written unless selection and rendering succeed for all of them.
+    */
+  private[baboon] def schemeArchiveEntrypoint(
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    selectors: NEList[SchemeSelector],
+    zipOutput: String,
+  )(implicit
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
+  ): Either[NEList[String], Unit] = {
+    val options = CompilerOptions(
+      debug                    = false,
+      individualInputs         = individualInputs,
+      directoryInputs          = directoryInputs,
+      targets                  = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockfile                 = None,
+      emitOnly                 = None,
+    )
+    val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
+    import PathTools.*
+
+    runner.run {
+      Injector
+        .NoCycles[EitherF[Throwable, _]]()
+        .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
+          (loader: BaboonLoader[EitherF], logger: BLogger, renderer: BaboonSchemeRenderer) =>
+            for {
+              inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
+                dir =>
+                  IzFiles
+                    .walk(dir.toFile)
+                    .filter(_.toFile.getName.endsWith(".baboon"))
+              })
+              _ <- F.maybeSuspend {
+                logger.message(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
+              }
+
+              loadedModels <- loader.load(inputModels.toList).catchAll {
+                value =>
+                  System.err.println("Loader failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(4)
+              }
+
+              written <- F.maybeSuspend {
+                for {
+                  selection <- SchemeSelection.resolve(loadedModels, selectors)
+                  entries   <- SchemeArchive.render(renderer, loadedModels, selection)
+                  path      <- SchemeZipWriter.writeAtomically(Paths.get(zipOutput), SchemeZipWriter.toBytes(entries)).left.map(NEList(_))
+                } yield {
+                  logger.message(s"Schemes written to: $path${entries.toList.map(_.path).niceList()}")
+                }
+              }
+            } yield written
+        }
     }
   }
 

@@ -349,6 +349,13 @@ Per-backend runtime sources (where the envelope codec lives):
 - Dart: `baboon-compiler/src/main/resources/baboon-runtime/dart/baboon_runtime.dart`
 - Swift: `baboon-compiler/src/main/resources/baboon-runtime/swift/baboon_type_meta.swift` (same module as `baboon_runtime.swift`)
 
+The compiler itself reads and writes envelopes when it converts between them with
+the interpreted runtime codec (`BaboonRuntimeEnvelopeCodec`, exposed in JavaScript as
+`BaboonCompiler.encodedEnvelopeLoaded` / `decodeEnvelopeLoaded`). It uses a compile-side
+copy of the Scala runtime's `object BaboonTypeMetaCodec` in
+`baboon-compiler/src/main/scala/baboon/runtime/shared/BaboonRuntimeShared.scala`, kept
+byte-equal to the shipped one by `TypeMetaCodecParityTest`, not a separate implementation.
+
 All ten implementations share the field set and layout in § 1–§ 2;
 divergences are interop bugs.
 

@@ -1,0 +1,78 @@
+// Envelope-conversion fixture: DTO, enum, ADT, namespaced type, rt-mapped foreign value,
+// no-rt foreign map key; plus no-rt foreign and `any` fields, which the runtime codec rejects.
+
+model zipdemo.shapes
+
+version "1.0.0"
+
+foreign Cents {
+  rt = i64
+  scala = "scala.Long"
+}
+
+foreign Opaque {
+  scala = "java.lang.String"
+}
+
+enum Color {
+  Red
+  Green
+}
+
+root adt Shape {
+  data Circle {
+    r: f64
+  }
+  data Square {
+    side: i32
+  }
+}
+
+ns geo {
+  root data Point {
+    x: i32
+    y: i32
+  }
+}
+
+root data Order {
+  id: uid
+  color: Color
+  price: Cents
+  tags: map[Opaque, str]
+  at: geo.Point
+  shape: Shape
+  label: opt[str]
+}
+
+root data Counter {
+  n: u32
+}
+
+// every integer kind at its range boundaries (https://github.com/7mind/baboon/issues/97)
+root data Ranges {
+  a: i08
+  b: u08
+  c: i16
+  d: u16
+  e: i32
+  u: u32
+  f: i64
+  g: u64
+}
+
+root data RangeKeys {
+  a: map[i08, str]
+  b: map[u08, str]
+  d: map[u16, str]
+  u: map[u32, str]
+  g: map[u64, str]
+}
+
+root data WithOpaque {
+  o: Opaque
+}
+
+root data WithAny {
+  v: any
+}

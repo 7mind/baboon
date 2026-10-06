@@ -1,0 +1,12 @@
+// :scheme --zip-output / loadMany fixture (isolated from the shared model-dir).
+//
+// Three versions whose type renames chain through 2.0.0 (Old -> Mid -> New). A selection that
+// skips 2.0.0 cannot be reloaded: the `was[Mid]` declaration in 3.0.0 has no source in 1.0.0.
+
+model zipdemo.evo
+
+version "1.0.0"
+
+root data Old {
+  x: i32
+}
