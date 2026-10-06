@@ -58,7 +58,7 @@ class TsMcpServerGenerator[F[+_, +_]: Error2](
 
     val runtimeFile =
       "BaboonMcpRuntime.ts" -> OutputFile(
-        BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonMcpRuntime.ts"),
+        TsImportSuffix(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonMcpRuntime.ts"), sfx),
         io.septimalmind.baboon.CompilerProduct.Runtime,
       )
     F.pure(Sources((runtimeFile :: perService).toMap))

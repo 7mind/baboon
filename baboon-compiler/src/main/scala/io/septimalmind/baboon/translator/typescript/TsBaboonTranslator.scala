@@ -336,21 +336,21 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         List(
           TsDefnTranslator.Output(
             "BaboonSharedRuntime.ts",
-            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedRuntime.ts")),
+            TextTree.verbatim(TsImportSuffix(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedRuntime.ts"), target.language.importSuffix)),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
           ),
           TsDefnTranslator.Output(
             "BaboonAnyOpaque.ts",
-            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonAnyOpaque.ts")),
+            TextTree.verbatim(TsImportSuffix(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonAnyOpaque.ts"), target.language.importSuffix)),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
           ),
           TsDefnTranslator.Output(
             "BaboonCodecsFacade.ts",
-            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonCodecsFacade.ts")),
+            TextTree.verbatim(TsImportSuffix(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonCodecsFacade.ts"), target.language.importSuffix)),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
@@ -360,7 +360,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             // `verbatim` (not `text`): the file contains backslash characters
             // (escape-handling) that would crash Scala's
             // StringContext.processEscapes if routed through `text`.
-            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/baboon-identifier-repr.ts")),
+            TextTree.verbatim(TsImportSuffix(BaboonRuntimeResources.read("baboon-runtime/typescript/baboon-identifier-repr.ts"), target.language.importSuffix)),
             tsBaboonIdReprModule,
             CompilerProduct.Runtime,
             doNotModify = true,
@@ -378,7 +378,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         List(
           TsDefnTranslator.Output(
             "BaboonSharedFixture.ts",
-            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedFixture.ts")),
+            TextTree.verbatim(TsImportSuffix(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedFixture.ts"), target.language.importSuffix)),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
@@ -394,7 +394,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         List(
           TsDefnTranslator.Output(
             "CrossLanguageFixturePath.ts",
-            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/CrossLanguageFixturePath.ts")),
+            TextTree.verbatim(TsImportSuffix(BaboonRuntimeResources.read("baboon-runtime/typescript/CrossLanguageFixturePath.ts"), target.language.importSuffix)),
             tsCrossLangFixtureModule,
             CompilerProduct.Test,
             doNotModify = true,
