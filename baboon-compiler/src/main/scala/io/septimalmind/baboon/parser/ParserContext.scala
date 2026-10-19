@@ -16,6 +16,8 @@ case class ParserContext(file: FSPath, content: String) {
   // (Parsed.Failure) and cannot directly carry a typed `ParserIssue`.
   @volatile var stackedDocAt: Option[InputPointer] = None
 
+  val lineIndex = new LineIndex(content)
+
   val defMeta     = new DefMeta(this)
   val defDocs     = new io.septimalmind.baboon.parser.defns.base.DefDocs(this)
   val defEnum     = new DefEnum(this, defMeta)

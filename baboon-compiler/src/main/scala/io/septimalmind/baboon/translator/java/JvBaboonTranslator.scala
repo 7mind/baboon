@@ -13,11 +13,12 @@ import izumi.fundamentals.collections.nonempty.NEList
 import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import izumi.fundamentals.platform.functional.Identity
 
 class JvBaboonTranslator[F[+_, +_]: Error2](
   trans: JvTypeTranslator,
   convTransFac: JvConversionTranslator.Factory[F],
-  defnTranslator: Subcontext[JvDefnTranslator[F]],
+  defnTranslator: Subcontext[Identity, JvDefnTranslator[F]],
   target: JvTarget,
   jvTreeTools: JvTreeTools,
   jvFiles: JvFileTools,

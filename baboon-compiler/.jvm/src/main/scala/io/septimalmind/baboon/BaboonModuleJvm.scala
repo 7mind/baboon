@@ -10,6 +10,7 @@ import io.septimalmind.baboon.util.{FileContentProvider, JvmFileContentProvider}
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, ParallelErrorAccumulatingOps2}
 import izumi.reflect.TagKK
+import izumi.fundamentals.platform.functional.Identity
 
 class SharedTranspilerJvmModule[F[+_, +_]: TagKK](implicit @annotation.unused evidence: Error2[F]) extends ModuleDef {
   make[BaboonCompiler[F]].from[BaboonCompiler.BaboonCompilerImpl[F]]
@@ -100,7 +101,7 @@ class BaboonModuleJvm[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   make[BaboonLoader[F]].from[BaboonLoader.BaboonLoaderImpl[F]]
   make[BaboonInclusionResolver[F]].from[BaboonInclusionResolverImpl[F]]
 
-  makeSubcontext[ExploreContext[F]]
+  makeSubcontext[Identity, ExploreContext[F]]
     .localDependencies(List(DIKey[BaboonFamily], DIKey[ExploreInputs]))
     .withSubmodule(new ModuleDef {
       make[ExploreContext[F]]

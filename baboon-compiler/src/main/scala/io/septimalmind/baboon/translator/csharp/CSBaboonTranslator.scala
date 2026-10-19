@@ -15,6 +15,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import izumi.fundamentals.platform.functional.Identity
 
 class CSBaboonTranslator[F[+_, +_]: Error2](
   trans: CSTypeTranslator,
@@ -22,7 +23,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   target: CSTarget,
   csTrees: CSTreeTools,
   csFiles: CSFileTools,
-  translator: Subcontext[CSDefnTranslator[F]],
+  translator: Subcontext[Identity, CSDefnTranslator[F]],
   mcpHook: McpServerGeneratorHook[F],
 ) extends BaboonAbstractTranslator[F] {
 

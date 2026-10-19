@@ -6,9 +6,9 @@ import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, ParserIssue}
 import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model._
 import io.septimalmind.baboon.util.BLogger
+import izumi.distage.modules.support.unsafe.EitherSupport
 import izumi.functional.bio.Error2
 import izumi.functional.bio.impl.BioEither
-import izumi.functional.quasi.QuasiIORunner
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap, NEString}
 import izumi.fundamentals.graphs.DG
 import izumi.fundamentals.graphs.struct.AdjacencyPredList
@@ -25,7 +25,7 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
   "JvmBaboonCompiler.reload" should {
     "forward previous family and mark all inputs as unparsed" in {
       val manager  = new RecordingManager[EitherF]
-      val runner   = new EitherRunner
+      val runner   = EitherSupport.quasiIORunnerEither
       val compiler = new JvmBaboonCompiler[EitherF](manager, runner, BLogger.Noop)
 
       val inputA = BaboonParser.Input(path("a.baboon"), "content-a")
@@ -43,7 +43,7 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
 
     "deduplicate inputs with the same path without throwing AssertionError" in {
       val manager  = new RecordingManager[EitherF]
-      val runner   = new EitherRunner
+      val runner   = EitherSupport.quasiIORunnerEither
       val compiler = new JvmBaboonCompiler[EitherF](manager, runner, BLogger.Noop)
 
       val inputA     = BaboonParser.Input(path("a.baboon"), "content-a")
@@ -58,7 +58,7 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
 
     "keep the first occurrence when duplicate paths have differing content" in {
       val manager  = new RecordingManager[EitherF]
-      val runner   = new EitherRunner
+      val runner   = EitherSupport.quasiIORunnerEither
       val compiler = new JvmBaboonCompiler[EitherF](manager, runner, BLogger.Noop)
 
       val inputA        = BaboonParser.Input(path("a.baboon"), "content-a")
@@ -82,13 +82,6 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
   private def pathOf(input: BaboonParser.ReloadInput): FSPath = input match {
     case BaboonParser.ReloadInput.Unparsed(path, _) => path
     case BaboonParser.ReloadInput.Parsed(path, _)   => path
-  }
-
-  private final class EitherRunner extends QuasiIORunner[Either[Throwable, _]] {
-    override def run[A](fa: => Either[Throwable, A]): A = fa match {
-      case Right(value) => value
-      case Left(error)  => throw error
-    }
   }
 
   private final class RecordingManager[F[+_, +_]: Error2] extends BaboonFamilyManager[F] {

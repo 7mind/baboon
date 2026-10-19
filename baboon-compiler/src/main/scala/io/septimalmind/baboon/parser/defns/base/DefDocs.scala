@@ -2,7 +2,6 @@ package io.septimalmind.baboon.parser.defns.base
 
 import fastparse.*
 import io.septimalmind.baboon.parser.ParserContext
-import io.septimalmind.baboon.parser.defns.DefMeta
 import io.septimalmind.baboon.parser.model.{InputPointer, RawDocComment}
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
@@ -79,8 +78,8 @@ class DefDocs(context: ParserContext) {
         if (DefDocs.isEmptyDocBody(body)) {
           None
         } else {
-          val begin = DefMeta.makePos(context.content, start)
-          val end   = DefMeta.makePos(context.content, stop)
+          val begin = context.lineIndex.at(start)
+          val end   = context.lineIndex.at(stop)
           val raw   = "/**" + body + "*/"
           Some(RawDocComment(raw, InputPointer.Full(context.file, begin, end)))
         }
@@ -133,7 +132,7 @@ class DefDocs(context: ParserContext) {
     // two-stage form sidesteps the macro's quirk.
     val capture = P((prefixDoc ~ plainWs ~ (Index ~ &("/" ~ "*" ~ "*")).?).?).map {
       case Some((doc, Some(idx2))) =>
-        val begin = DefMeta.makePos(context.content, idx2)
+        val begin = context.lineIndex.at(idx2)
         val pos   = InputPointer.Offset(context.file, begin)
         context.stackedDocAt = Some(pos)
         (doc, true)
@@ -163,8 +162,8 @@ class DefDocs(context: ParserContext) {
         if (trimmed.isEmpty) {
           None
         } else {
-          val begin = DefMeta.makePos(context.content, start)
-          val end   = DefMeta.makePos(context.content, stop)
+          val begin = context.lineIndex.at(start)
+          val end   = context.lineIndex.at(stop)
           val raw   = "//!" + body
           Some(RawDocComment(raw, InputPointer.Full(context.file, begin, end)))
         }

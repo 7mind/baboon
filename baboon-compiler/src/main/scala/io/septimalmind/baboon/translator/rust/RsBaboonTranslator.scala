@@ -13,11 +13,12 @@ import izumi.fundamentals.collections.nonempty.NEList
 import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import izumi.fundamentals.platform.functional.Identity
 
 class RsBaboonTranslator[F[+_, +_]: Error2](
   trans: RsTypeTranslator,
   convTransFac: RsConversionTranslator.Factory[F],
-  defnTranslator: Subcontext[RsDefnTranslator[F]],
+  defnTranslator: Subcontext[Identity, RsDefnTranslator[F]],
   target: RsTarget,
   rsFiles: RsFileTools,
   mcpHook: McpServerGeneratorHook[F],

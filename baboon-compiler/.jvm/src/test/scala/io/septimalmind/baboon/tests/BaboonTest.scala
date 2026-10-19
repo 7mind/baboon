@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.tests
 
+import distage.ModuleDef
 import distage.plugins.PluginBase
 import io.septimalmind.baboon.*
 import io.septimalmind.baboon.CompilerTarget.CSTarget
@@ -7,7 +8,7 @@ import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
 import io.septimalmind.baboon.typer.model.BaboonFamily
-import izumi.distage.modules.DefaultModule2
+import izumi.distage.modules.{DefaultModule, DefaultModule2}
 import izumi.distage.modules.support.unsafe.EitherSupport
 import izumi.distage.plugins.PluginConfig
 import izumi.distage.testkit.model.TestConfig
@@ -16,7 +17,7 @@ import izumi.functional.bio.unsafe.UnsafeInstances
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzResources
-import izumi.reflect.TagKK
+import izumi.reflect.{TagK, TagKK}
 
 abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()(using BaboonTestModule[F].defaultModule, implicitly[TagKK[F]]) {
   override protected def config: TestConfig = super.config.copy(
@@ -96,7 +97,13 @@ object BaboonTest {
     @inline def apply[F[+_, +_]](implicit baboonTestModule: BaboonTestModule[F]): BaboonTestModule[F] = baboonTestModule
 
     implicit val eitherBaboonTestModule: BaboonTestModule[Either] = {
-      new BaboonTestModule[Either]()(using EitherSupport.defaultModuleEither)
+      // izumi 1.3.0-M4: the testkit resolves TagK of the test effect from the object graph, and
+      // EitherSupport's DefaultModule (unlike the BIO and cats ones) does not bind it;
+      // https://github.com/7mind/izumi/issues/2367
+      val withTag = EitherSupport.defaultModuleEither.module ++ new ModuleDef {
+        addImplicit[TagK[Either[Throwable, _]]]
+      }
+      new BaboonTestModule[Either]()(using DefaultModule[Either[Throwable, _]](withTag))
     }
   }
   sealed trait BaboonTestModuleLowPriorityInstances {

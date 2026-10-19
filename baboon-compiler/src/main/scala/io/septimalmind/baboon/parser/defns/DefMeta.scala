@@ -5,8 +5,6 @@ import io.septimalmind.baboon.parser.ParserContext
 import io.septimalmind.baboon.parser.defns.base.{idt, kw}
 import io.septimalmind.baboon.parser.model.*
 
-import scala.util.parsing.input.OffsetPosition
-
 class DefMeta(context: ParserContext) {
   // Prefix-doc capture (PR-30.2). Wired into `withMeta` and `member` below
   // so every `RawNodeMeta`-bearing position automatically picks up an
@@ -26,8 +24,8 @@ class DefMeta(context: ParserContext) {
     import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     (Index ~ defparser ~ Index).map {
       case (start, value, stop) =>
-        val begin = DefMeta.makePos(context.content, start)
-        val end   = DefMeta.makePos(context.content, stop)
+        val begin = context.lineIndex.at(start)
+        val end   = context.lineIndex.at(stop)
         (InputPointer.Full(context.file, begin, end), value)
     }
   }
@@ -83,11 +81,4 @@ class DefMeta(context: ParserContext) {
     }
   }
 
-}
-
-object DefMeta {
-  def makePos(s: CharSequence, index: Int): InputOffset = {
-    val pos = OffsetPosition(s, index)
-    InputOffset(index, pos.line, pos.column)
-  }
 }

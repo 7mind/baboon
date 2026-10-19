@@ -27,6 +27,7 @@ import izumi.fundamentals.platform.strings.IzString.*
 import izumi.distage.model.definition.Activation
 
 import java.nio.file.{Path, Paths}
+import izumi.fundamentals.platform.functional.Identity
 
 object Baboon {
   private type EitherF[+e, +a] = Either[e, a]
@@ -882,7 +883,7 @@ object Baboon {
     val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F])
     import PathTools.*
 
-    runner.run {
+    runner.runBlocking {
       Injector
         .NoCycles[F[Throwable, _]]()
         .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
@@ -961,11 +962,11 @@ object Baboon {
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
 
-    runner.run {
+    runner.runBlocking {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
         .produceRun(m, Activation(BaboonModeAxis.Explorer)) {
-          (loader: BaboonLoader[EitherF], logger: BLogger, exploreContext: Subcontext[ExploreContext[EitherF]]) =>
+          (loader: BaboonLoader[EitherF], logger: BLogger, exploreContext: Subcontext[Identity, ExploreContext[EitherF]]) =>
             for {
               inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
                 dir =>
@@ -1054,7 +1055,7 @@ object Baboon {
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
 
-    runner.run {
+    runner.runBlocking {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
         .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
@@ -1270,7 +1271,7 @@ object Baboon {
     }
 
     def runInjector(fromPaths: List[Path], toPaths: List[Path]): Unit = {
-      runner.run {
+      runner.runBlocking {
         Injector
           .NoCycles[EitherF[Throwable, _]]()
           .produceRun(m, activation) {
@@ -1312,7 +1313,7 @@ object Baboon {
     // The materializer git pre-flight (both sides, if pinned) runs BEFORE the injector; the injector
     // then runs INSIDE the still-live worktree bracket(s). A MaterializeFailure is rendered to a
     // distinct nonzero exit code by GitModelMaterializerErrors.
-    runner.run {
+    runner.runBlocking {
       withSidePaths(fromRef.ref) {
         fromPaths =>
           withSidePaths(toRef.ref) {
@@ -1359,7 +1360,7 @@ object Baboon {
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
 
-    runner.run {
+    runner.runBlocking {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
         .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
@@ -1476,7 +1477,7 @@ object Baboon {
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
 
-    runner.run {
+    runner.runBlocking {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
         .produceRun(m, Activation(BaboonModeAxis.Explorer)) {
@@ -1580,7 +1581,7 @@ object Baboon {
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
 
-    runner.run {
+    runner.runBlocking {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
         .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
@@ -1663,7 +1664,7 @@ object Baboon {
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
 
-    runner.run {
+    runner.runBlocking {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
         .produceRun(m, Activation(BaboonModeAxis.Explorer)) {
@@ -1715,7 +1716,7 @@ object Baboon {
     )
     val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F])
 
-    runner.run {
+    runner.runBlocking {
       val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
       val lspModule = new BaboonLspModuleJvm[F](
         modelDirs    = cliModelDirs,
@@ -1843,7 +1844,7 @@ object Baboon {
 
     // Explorer axis + Noop BLogger => stdout carries ONLY the verdict (G32). The resolver git
     // pre-flight (for any @ref side) runs inside its own bracket via resolvePair.
-    runner.run {
+    runner.runBlocking {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
         .produceRun(m, Activation(BaboonModeAxis.Explorer)) {

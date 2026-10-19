@@ -33,6 +33,7 @@ import izumi.functional.bio.Monad2
 import izumi.functional.bio.ParallelErrorAccumulatingOps2
 import izumi.reflect.TagKK
 import io.septimalmind.baboon.translator.{DomainEnquiries, DomainEvolution}
+import izumi.fundamentals.platform.functional.Identity
 
 class BaboonSharedModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK] extends ModuleDef {
   // not all the definitions are required for parent locator, so it's easier to double-include
@@ -83,7 +84,7 @@ class SharedTranspilerModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
-  makeSubcontext[CSDefnTranslator[F]]
+  makeSubcontext[Identity, CSDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution], DIKey[BaboonLineage]))
     .withSubmodule(new ModuleDef {
       make[CSDefnTranslator[F]].from[CSDefnTranslator.CSDefnTranslatorImpl[F]]
@@ -121,7 +122,7 @@ class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 class BaboonCommonScModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
-  makeSubcontext[ScDefnTranslator[F]]
+  makeSubcontext[Identity, ScDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[DomainEvolution]
@@ -156,7 +157,7 @@ class BaboonCommonScModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 class BaboonCommonPyModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
-  makeSubcontext[PyDefnTranslator[F]]
+  makeSubcontext[Identity, PyDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[PyDefnTranslator[F]].from[PyDefnTranslatorImpl[F]]
@@ -192,7 +193,7 @@ class BaboonCommonPyModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
-  makeSubcontext[RsDefnTranslator[F]]
+  makeSubcontext[Identity, RsDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[RsDefnTranslator[F]].from[RsDefnTranslator.RsDefnTranslatorImpl[F]]
@@ -228,7 +229,7 @@ class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 class BaboonCommonTsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
-  makeSubcontext[TsDefnTranslator[F]]
+  makeSubcontext[Identity, TsDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[TsDefnTranslator[F]].from[TsDefnTranslator.TsDefnTranslatorImpl[F]]
@@ -263,7 +264,7 @@ class BaboonCommonTsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 class BaboonCommonKtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
-  makeSubcontext[KtDefnTranslator[F]]
+  makeSubcontext[Identity, KtDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[DomainEvolution]
@@ -299,7 +300,7 @@ class BaboonCommonKtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 class BaboonCommonJvModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
-  makeSubcontext[JvDefnTranslator[F]]
+  makeSubcontext[Identity, JvDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[DomainEvolution]
@@ -334,7 +335,7 @@ class BaboonCommonJvModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 class BaboonCommonDtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
-  makeSubcontext[DtDefnTranslator[F]]
+  makeSubcontext[Identity, DtDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[DomainEvolution]
@@ -369,7 +370,7 @@ class BaboonCommonDtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
 class BaboonCommonSwModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
-  makeSubcontext[SwDefnTranslator[F]]
+  makeSubcontext[Identity, SwDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[DomainEvolution]

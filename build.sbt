@@ -10,7 +10,7 @@ lazy val isAmd64: Boolean = System.getProperty("os.arch") == "amd64"
 
 ThisBuild / scalaVersion := "2.13.18"
 
-lazy val izumiVersion = "1.2.25"
+lazy val izumiVersion = "1.3.0-M4"
 
 // Shared settings for both JVM and JS
 lazy val sharedSettings = Seq(
@@ -25,9 +25,6 @@ lazy val sharedSettings = Seq(
   ).map("io.7mind.izumi" %%% _ % izumiVersion),
   libraryDependencies ++= Seq(
     "io.github.classgraph" % "classgraph" % "4.8.195"
-  ),
-  libraryDependencies ++= Seq(
-    "org.scala-lang.modules" %%% "scala-parser-combinators" % "2.5.0"
   ),
   libraryDependencies ++= Seq(
     "org.scalatest" %%% "scalatest" % "3.2.20" % Test,
@@ -90,6 +87,10 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
       "com.github.alexarchambault" %% "case-app" % "2.1.0",
       "org.jline" % "jline" % "4.4.5",
       "io.7mind.izumi" %% "distage-testkit-scalatest" % izumiVersion % Test,
+      // izumi 1.3.0-M4: the testkit's default runner loads zio classes even for non-ZIO effects,
+      // while declaring zio optional (NoClassDefFoundError: zio/Supervisor without this);
+      // https://github.com/7mind/izumi/issues/2366
+      "dev.zio" %% "zio" % "2.1.24" % Test,
       // Real Draft 2020-12 JSON-Schema validator for the MCP inputSchema
       // well-formedness gate (JVM test scope only — never shipped).
       "com.networknt" % "json-schema-validator" % "3.0.7" % Test
@@ -132,7 +133,7 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
   .jsSettings(
     scalaJSLinkerConfig ~= {
       _.withModuleKind(ModuleKind.ESModule)
-       .withModuleSplitStyle(ModuleSplitStyle.SmallestModules)
+       .withModuleSplitStyle(ModuleSplitStyle.FewestModules)
     },
     scalaJSUseMainModuleInitializer := false,
     libraryDependencies += "io.github.cquiroz" %%% "scala-java-time" % "2.6.0",

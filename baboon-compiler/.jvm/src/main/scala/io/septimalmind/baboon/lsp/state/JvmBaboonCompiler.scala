@@ -22,7 +22,7 @@ class JvmBaboonCompiler[F[+_, +_]: Error2](
     previous: Option[BaboonFamily],
   ): Either[NEList[BaboonIssue], BaboonFamily] = {
     val F = implicitly[Error2[F]]
-    runner.run(
+    runner.runBlocking(
       F.catchAll(
         F.flatMap(buildReloadInputs(inputs.toList)) {
           reloadInputs =>

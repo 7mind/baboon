@@ -14,9 +14,10 @@ import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.platform.strings.TextTree.Quote
+import izumi.fundamentals.platform.functional.Identity
 
 class PyBaboonTranslator[F[+_, +_]: Error2](
-  translator: Subcontext[PyDefnTranslator[F]],
+  translator: Subcontext[Identity, PyDefnTranslator[F]],
   convTransFactory: PyConversionTranslator.Factory[F],
   target: PyTarget,
   pyFileTools: PyFileTools,

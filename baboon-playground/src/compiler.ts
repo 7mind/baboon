@@ -1,4 +1,3 @@
-import { sha256 as jsSha256 } from "js-sha256";
 import type { CompilerOptions } from "./options.ts";
 
 interface JSInputFile {
@@ -219,38 +218,11 @@ function detectLanguageByPath(path: string): BaboonTargetLanguage | null {
   return null;
 }
 
-class BrowserSha256 {
-  private hash: ReturnType<typeof jsSha256.create>;
-
-  constructor() {
-    this.hash = jsSha256.create();
-  }
-
-  update(data: number[]): this {
-    this.hash.update(data);
-    return this;
-  }
-
-  digest(encoding: string): string {
-    if (encoding === "hex") {
-      return this.hash.hex();
-    }
-    throw new Error(`Unsupported digest encoding: ${encoding}`);
-  }
-}
-
-function installSha256Polyfill(): void {
-  if (typeof (globalThis as Record<string, unknown>).sha256 === "undefined") {
-    (globalThis as Record<string, unknown>).sha256 = BrowserSha256;
-  }
-}
-
 let compilerPromise: Promise<BaboonCompilerAPI> | null = null;
 
 function getCompiler(): Promise<BaboonCompilerAPI> {
   if (!compilerPromise) {
     compilerPromise = (async () => {
-      installSha256Polyfill();
       const compilerUrl = new URL("./compiler/main.js", document.baseURI).href;
       const module = await import(/* @vite-ignore */ compilerUrl) as {
         BaboonCompiler: BaboonCompilerAPI;
