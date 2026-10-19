@@ -655,6 +655,7 @@ object BaboonComparator {
         fullyModified,
         validRenames,
       )
+      val step = EvolutionStep(prev.version, last.version)
 
       for {
         _ <- F.traverseAccumErrors(renamesOntoLiveTypes)(issue => F.fail(BaboonIssue.of(issue)))
@@ -666,7 +667,7 @@ object BaboonComparator {
 
             (defOld, defNew) match {
               case (uold: DomainMember.User, unew: DomainMember.User) =>
-                diff(changes, uold.defn, unew.defn).map(diff => (id, diff))
+                diff(step, changes, uold.defn, unew.defn).map(diff => (id, diff))
 
               case (o, n) =>
                 F.fail(BaboonIssue.of(EvolutionIssue.IncomparableTypedefs(o, n)))
@@ -680,7 +681,7 @@ object BaboonComparator {
 
             (defOld, defNew) match {
               case (uold: DomainMember.User, unew: DomainMember.User) =>
-                diff(changes, uold.defn, unew.defn).map(diff => (oldId, diff))
+                diff(step, changes, uold.defn, unew.defn).map(diff => (oldId, diff))
 
               case (o, n) =>
                 F.fail(BaboonIssue.of(EvolutionIssue.IncomparableTypedefs(o, n)))
@@ -690,7 +691,7 @@ object BaboonComparator {
         indexedDiffs <- F.fromEither(allDiffs.toUniqueMap(e => BaboonIssue.of(EvolutionIssue.NonUniqueDiffs(e))))
       } yield {
         BaboonDiff(
-          EvolutionStep(prev.version, last.version),
+          step,
           changes,
           indexedDiffs,
         )
@@ -698,6 +699,7 @@ object BaboonComparator {
     }
 
     private def diff(
+      step: EvolutionStep,
       changes: BaboonChanges,
       prevDef: Typedef.User,
       nextDef: Typedef.User,
@@ -717,8 +719,40 @@ object BaboonComparator {
           diffServices(s1, s2)
         case (c1: Typedef.Contract, c2: Typedef.Contract) =>
           diffContracts(c1, c2)
+        case (f1: Typedef.Foreign, f2: Typedef.Foreign) =>
+          diffForeigns(step, f1, f2)
         case (o1, o2) =>
-          F.fail(BaboonIssue.of(EvolutionIssue.MismatchingTypedefs(o1, o2)))
+          F.fail(BaboonIssue.of(EvolutionIssue.TypeKindChanged(step, o1, o2)))
+      }
+    }
+
+    // `rt` and the set of bound languages may change: in every language bound on both sides the
+    // value keeps its native type, which is what lets conversions copy foreign values as they are
+    private def diffForeigns(
+      step: EvolutionStep,
+      f1: Typedef.Foreign,
+      f2: Typedef.Foreign,
+    ): F[NEList[BaboonIssue], TypedefDiff] = {
+      val languages = (f1.bindings.keySet ++ f2.bindings.keySet).toList.sortBy(_.asString)
+      val rebound = languages.flatMap {
+        lang =>
+          (f1.bindings.get(lang), f2.bindings.get(lang)) match {
+            case (Some(prev), Some(next)) if prev != next => List(EvolutionIssue.ForeignBindingChanged(step, f2.id, prev, next))
+            case _                                        => Nil
+          }
+      }
+      val runtimeMapping = Option.when(f1.runtimeMapping != f2.runtimeMapping)(ForeignOp.ChangeRuntimeMapping(f1.runtimeMapping, f2.runtimeMapping))
+      val bindingOps = languages.flatMap {
+        lang =>
+          (f1.bindings.get(lang), f2.bindings.get(lang)) match {
+            case (None, Some(added))   => List(ForeignOp.AddBinding(added))
+            case (Some(removed), None) => List(ForeignOp.RemoveBinding(removed))
+            case _                     => Nil
+          }
+      }
+      NEList.from(rebound) match {
+        case Some(issues) => F.fail(issues.map(issue => issue: BaboonIssue))
+        case None         => F.pure(TypedefDiff.ForeignDiff(runtimeMapping.toList ++ bindingOps))
       }
     }
 

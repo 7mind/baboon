@@ -10,6 +10,7 @@ object TypedefDiff {
   case class AdtDiff(ops: List[AdtOp]) extends TypedefDiff
   case class ServiceDiff(ops: List[ServiceOp]) extends TypedefDiff
   case class ContractDiff(ops: List[ContractOp]) extends TypedefDiff
+  case class ForeignDiff(ops: List[ForeignOp]) extends TypedefDiff
 }
 
 sealed trait AbstractOp
@@ -54,6 +55,14 @@ object ServiceOp {
   case class AddMethod(m: Typedef.MethodDef) extends ServiceOp
   case class RemoveMethod(m: Typedef.MethodDef) extends ServiceOp
   case class KeepMethod(m: Typedef.MethodDef) extends ServiceOp
+}
+
+/** A foreign type is opaque: only its declaration changes. */
+sealed trait ForeignOp extends AbstractOp
+object ForeignOp {
+  case class ChangeRuntimeMapping(from: Option[TypeRef], to: Option[TypeRef]) extends ForeignOp
+  case class AddBinding(entry: Typedef.ForeignEntry) extends ForeignOp
+  case class RemoveBinding(entry: Typedef.ForeignEntry) extends ForeignOp
 }
 
 sealed trait ContractOp extends AbstractOp

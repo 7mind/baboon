@@ -72,6 +72,13 @@ final class OpDiffFormatter(useColor: Boolean) {
       s"$red- contract ${id.name.name}$reset"
     case ContractOp.KeepContract(id) =>
       s"$dim= contract ${id.name.name}$reset"
+
+    case ForeignOp.ChangeRuntimeMapping(from, to) =>
+      s"$yellow~ rt$reset: ${from.map(formatTypeRef).getOrElse("none")} -> ${to.map(formatTypeRef).getOrElse("none")}"
+    case ForeignOp.AddBinding(entry) =>
+      s"$green+ ${entry.lang.asString} binding$reset"
+    case ForeignOp.RemoveBinding(entry) =>
+      s"$red- ${entry.lang.asString} binding$reset"
   }
 
   private def formatModification(modification: RefModification): String = modification match {

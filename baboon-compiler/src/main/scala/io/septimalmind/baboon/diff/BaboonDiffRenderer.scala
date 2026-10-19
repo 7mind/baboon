@@ -117,6 +117,7 @@ final class BaboonDiffRenderer {
     case _: TypedefDiff.AdtDiff      => "adt"
     case _: TypedefDiff.ServiceDiff  => "service"
     case _: TypedefDiff.ContractDiff => "contract"
+    case _: TypedefDiff.ForeignDiff  => "foreign"
   }
 
   /** Fully-qualified rendering used both as the stable sort key and as the

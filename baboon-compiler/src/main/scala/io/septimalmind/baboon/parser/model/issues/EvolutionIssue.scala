@@ -25,7 +25,11 @@ object EvolutionIssue {
 
   case class NonUniqueDiffs(nonUniqueDiffs: Map[TypeId, List[TypedefDiff]]) extends EvolutionIssue with BaboonBug
 
-  case class MismatchingTypedefs(o1: Typedef.User, o2: Typedef.User) extends EvolutionIssue with BaboonBug
+  /** A type id names a different kind of type (`data` -> `enum`, ...) in the next version. */
+  case class TypeKindChanged(step: EvolutionStep, prev: Typedef.User, next: Typedef.User) extends EvolutionIssue
+
+  /** Conversions copy foreign values as they are, so a language's binding cannot change in place. */
+  case class ForeignBindingChanged(step: EvolutionStep, id: TypeId.User, prev: Typedef.ForeignEntry, next: Typedef.ForeignEntry) extends EvolutionIssue
 
   case class InvalidFieldRename(typeId: TypeId, newFieldName: FieldName, prevFieldName: FieldName) extends EvolutionIssue
 
@@ -126,15 +130,39 @@ object EvolutionIssue {
       }
     }
 
-  implicit val mismatchingTypedefsPrinter: IssuePrinter[MismatchingTypedefs] =
-    new BugPrinter[MismatchingTypedefs] {
-      override def errorMessage(bug: MismatchingTypedefs): String = {
-        s"""Mismatching type defs:
-           |   ${bug.o1.toString}
-           |   ${bug.o2.toString}
-           |""".stripMargin
-      }
+  implicit val typeKindChangedPrinter: IssuePrinter[TypeKindChanged] =
+    (issue: TypeKindChanged) => {
+      s"""Type ${issue.next.id.toString} is declared `${kindOf(issue.prev)}` in ${issue.step.from} but `${kindOf(issue.next)}` in ${issue.step.to}.
+         |   A type cannot change its kind between versions: give the new `${kindOf(issue.next)}` another name,
+         |   and remove the old `${kindOf(issue.prev)}` or keep it alongside.
+         |""".stripMargin
     }
+
+  implicit val foreignBindingChangedPrinter: IssuePrinter[ForeignBindingChanged] =
+    (issue: ForeignBindingChanged) => {
+      s"""Foreign type ${issue.id.toString} changes its ${issue.prev.lang.asString} binding between ${issue.step.from} and ${issue.step.to}:
+         |   ${bindingOf(issue.prev)} -> ${bindingOf(issue.next)}
+         |   Conversions copy foreign values as they are, so a binding cannot change in place; declare a new
+         |   foreign type for the new representation. `rt` may change, and bindings may be added or removed.
+         |""".stripMargin
+    }
+
+  private def kindOf(defn: Typedef.User): String = defn match {
+    case d: Typedef.Dto if d.isIdentifier => "id"
+    case _: Typedef.Dto                   => "data"
+    case _: Typedef.Adt                   => "adt"
+    case _: Typedef.Enum                  => "enum"
+    case _: Typedef.Foreign               => "foreign"
+    case _: Typedef.Contract              => "contract"
+    case _: Typedef.Service               => "service"
+  }
+
+  private def bindingOf(entry: Typedef.ForeignEntry): String = entry.mapping match {
+    case Typedef.ForeignMapping.Custom(decl, attrs) =>
+      val attributes = if (attrs.attrs.isEmpty) "" else attrs.attrs.map(a => s"\"${a.name}\" = \"${a.value}\"").mkString(" with { ", " ", " }")
+      s"\"$decl\"$attributes"
+    case Typedef.ForeignMapping.BaboonRef(typeRef) => typeRef.toString
+  }
 
   implicit val invalidFieldRenamePrinter: IssuePrinter[InvalidFieldRename] =
     (issue: InvalidFieldRename) => {

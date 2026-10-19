@@ -102,11 +102,10 @@ object BaboonRules {
               case _ if diff.changes.removed.contains(id) && !isRenamed =>
                 F.pure(RemovedTypeNoConversion(id))
 
-              case _: Typedef.Foreign if sameLocalStruct =>
-                F.pure(NonDataTypeTypeNoConversion(id))
-
+              // the comparator rejects a binding changed in place, so every language bound in both
+              // versions keeps its native type and hosts copy foreign values as they are
               case _: Typedef.Foreign =>
-                F.pure(CustomConversionRequired(id, DerivationFailure.Foreign, targetTpe))
+                F.pure(NonDataTypeTypeNoConversion(id))
 
               case _: Typedef.Dto =>
                 assert(shallowChanged || isRenamed)
