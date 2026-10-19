@@ -1817,8 +1817,10 @@ object BaboonJS {
             } else {
               Some(InputPointer.JustFile(path))
             }
-          case ParserIssue.IncludeNotFound(path) =>
-            Some(InputPointer.JustFile(FSPath.parse(NEString.unsafeFrom(path))))
+          case ParserIssue.IncludeNotFound(include, _) =>
+            Some(include.meta.pos)
+          case ParserIssue.IncludeAmbiguous(include, _) =>
+            Some(include.meta.pos)
           case ParserIssue.StackedDocComments(pos) =>
             Some(pos)
         }

@@ -5,7 +5,7 @@ import io.septimalmind.baboon.parser.{BaboonArchiveInputs, BaboonParser}
 import io.septimalmind.baboon.scheme.*
 import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.util.{Crc32, StoredZipReader}
+import io.septimalmind.baboon.util.{Crc32, ZipReader}
 import io.septimalmind.baboon.{Baboon, BaboonLoader}
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.fundamentals.platform.files.IzFiles
@@ -140,7 +140,7 @@ final class SchemeArchiveTest extends BaboonTest[Either] {
           } finally TimeZone.setDefault(original)
         assert(java.util.Arrays.equals(first, shifted))
 
-        val entries = StoredZipReader.read(first).fold(fail(_), identity)
+        val entries = ZipReader.read(first).fold(fail(_), identity)
         assert(entries.map(_.path) == entries.map(_.path).sorted)
         assert(entries.forall(!_.isDirectory))
         // first local header: method 0, DOS time 00:00:00, DOS date 1980-01-01, no extra field
@@ -212,7 +212,13 @@ final class SchemeArchiveTest extends BaboonTest[Either] {
   }
 
   "archive input reading" should {
-    "reject archives that are not stored ZIPs within the contract" in {
+    "read deflated entries, as ZIP tools write them" in {
+      val model  = "model a.b\n\nversion \"1.0.0\"\n\nroot data X {\n  x: i32\n}\n" * 50
+      val inputs = BaboonArchiveInputs.fromZip(deflated("schemas/a.b/1.0.0.baboon", model.getBytes(StandardCharsets.UTF_8))).fold(e => fail(e.toString), identity)
+      assert(inputs.models.toList.map(input => (input.path.asString, input.content)) == List(("schemas/a.b/1.0.0.baboon", model)))
+    }
+
+    "reject archives that are not ZIPs within the contract" in {
       val model                              = "model a.b\n\nversion \"1.0.0\"\n\nroot data X {\n  x: i32\n}\n".getBytes(StandardCharsets.UTF_8)
       val good                               = RawEntry("schemas/a.b/1.0.0.baboon".getBytes(StandardCharsets.UTF_8), model, Utf8Flag, Stored, None)
       def errors(bytes: Array[Byte]): String = BaboonArchiveInputs.fromZip(bytes).fold(_.toList.mkString("\n"), r => fail(s"accepted: $r"))
@@ -221,7 +227,8 @@ final class SchemeArchiveTest extends BaboonTest[Either] {
       assert(errors(Array.emptyByteArray).contains("not a ZIP archive"))
       assert(errors("PK not really".getBytes(StandardCharsets.UTF_8)).contains("not a ZIP archive"))
       assert(errors(build(List(good)).dropRight(1)).contains("not a ZIP archive"))
-      assert(errors(deflated("schemas/a.b/1.0.0.baboon", model)).contains("compression method 8"))
+      assert(errors(build(List(good.copy(method = Bzip2)))).contains("compression method 12"))
+      assert(errors(build(List(good.copy(method = Deflated)))).contains("does not inflate"))
       assert(errors(build(List(good.copy(crc = Some(0L))))).contains("CRC-32"))
       assert(errors(build(List(good.copy(flags = Utf8Flag | 0x0001)))).contains("encrypted"))
       assert(errors(build(List(good.copy(name = Array(0x61, 0xFF, 0x2E, 0x62).map(_.toByte))))).contains("not valid UTF-8"))
@@ -242,17 +249,33 @@ final class SchemeArchiveTest extends BaboonTest[Either] {
       assert(withDirectory.models.toList.map(_.path.asString) == List("schemas/a.b/1.0.0.baboon") && withDirectory.includables.isEmpty)
     }
 
-    "resolve includes against the archive root only" in {
-      val defs                                  = BaboonParser.Input(FSPath.parse(NEString.unsafeFrom("shared/defs.bmo")), "data D {}")
-      val model                                 = BaboonParser.Input(FSPath.parse(NEString.unsafeFrom("schemas/a/1.0.0.baboon")), "model a")
-      val resolver                              = new BaboonArchiveInputs.ArchiveInclusionResolver[Either](List(defs, model))
-      def resolve(path: String): Option[String] = resolver.resolveInclude(RawInclude(RawNodeMeta(InputPointer.Undefined), path)).map(_._1.asString)
+    "resolve includes relative to the including entry, then against the archive root" in {
+      def input(path: String, content: String) = BaboonParser.Input(FSPath.parse(NEString.unsafeFrom(path)), content)
+      val including                            = FSPath.parse(NEString.unsafeFrom("schemas/a/1.0.0.baboon"))
+      val resolver = new BaboonArchiveInputs.ArchiveInclusionResolver[Either](
+        List(
+          input("shared/defs.bmo", "data D {}"),
+          input("schemas/a/1.0.0.baboon", "model a"),
+          input("schemas/a/local.bmo", "data L {}"),
+          input("schemas/b/shared/defs.bmo", "data B {}"),
+        )
+      )
+      def resolve(path: String): Option[String] = resolver.resolveInclude(RawInclude(RawNodeMeta(InputPointer.Undefined), path), including).toOption.map(_._1.asString)
+      assert(resolve("local.bmo") == Some("schemas/a/local.bmo"))
+      assert(resolve("../b/shared/defs.bmo") == Some("schemas/b/shared/defs.bmo"))
+      assert(resolve("../../shared/defs.bmo") == Some("shared/defs.bmo"))
       assert(resolve("shared/defs.bmo") == Some("shared/defs.bmo"))
       assert(resolve("./shared//defs.bmo") == Some("shared/defs.bmo"))
       assert(resolve("schemas/../shared/defs.bmo") == Some("shared/defs.bmo"))
-      assert(resolve("../shared/defs.bmo").isEmpty)
+      assert(resolve("../../../shared/defs.bmo").isEmpty)
       assert(resolve("/shared/defs.bmo").isEmpty)
       assert(resolve("defs.bmo").isEmpty)
+      // next to the including entry wins over the archive root
+      val shadowed =
+        new BaboonArchiveInputs.ArchiveInclusionResolver[Either](List(input("shared/defs.bmo", "data D {}"), input("schemas/a/shared/defs.bmo", "data S {}")))
+      assert(
+        shadowed.resolveInclude(RawInclude(RawNodeMeta(InputPointer.Undefined), "shared/defs.bmo"), including).map(_._1.asString) == Right("schemas/a/shared/defs.bmo")
+      )
     }
   }
 }
@@ -260,6 +283,8 @@ final class SchemeArchiveTest extends BaboonTest[Either] {
 object SchemeArchiveTest {
   val Utf8Flag: Int = 0x0800
   val Stored: Int   = 0
+  val Deflated: Int = 8
+  val Bzip2: Int    = 12
 
   final case class RawEntry(name: Array[Byte], data: Array[Byte], flags: Int, method: Int, crc: Option[Long])
 

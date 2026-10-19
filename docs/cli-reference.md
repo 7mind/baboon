@@ -66,7 +66,7 @@ directory *or* a single `*.baboon` file.
 | `:openapi` | Generate OpenAPI 3.1 component schemas (no codecs) |
 | `:lsp` | Start the LSP server ([docs](lsp-integration.md)) |
 | `:explore` | Start the interactive explorer ([docs](explorer-mode.md)) |
-| `:scheme` | Emit a cleaned-up `.baboon` file for one domain version, or a ZIP of many |
+| `:scheme` | Emit a cleaned-up `.baboon` file for one domain version, or a schema archive (`.bsm`) of many |
 | `:diff` | Report the schema diff between two versions of a domain |
 | `:bincompat` | Check wire/binary compatibility between two versions of a domain (exit code is the verdict) |
 
@@ -300,12 +300,13 @@ dependency comments added). Two mutually exclusive modes:
 | `--version <version>` | Version string, e.g. `1.0.0`. Requires `--domain`. |
 | `--target <file>` | Output file path. **Optional** — when omitted, the scheme is printed to **stdout** with no log output around it, so it can be piped. |
 
-**Archive** — many domain versions, into one ZIP:
+**Archive** — many domain versions, into one Baboon schema archive: a ZIP file,
+conventionally named `*.bsm`:
 
 | Option | Description |
 |---|---|
 | `--domains <selectors>` | Comma-separated `domain@version` selectors. Requires `--zip-output`. |
-| `--zip-output <file>` | ZIP archive to write. Requires `--domains`. |
+| `--zip-output <file>` | Schema archive to write (e.g. `schemas.bsm`). Requires `--domains`. |
 
 Combining an option of one mode with an option of the other, or giving one
 option of a pair without its partner, is a CLI error.
@@ -342,19 +343,21 @@ Archive contract (written by `:scheme`, read by the JavaScript
 - the archive is written to a temporary sibling file and moved into place
   atomically; nothing is written when selection, rendering or writing fails.
 
-`loadMany` accepts any archive that follows these rules: stored entries only
+`loadMany` accepts any ZIP archive that follows these rules, so ordinary zip tools
+can write one (`cd models && zip -r ../schemas.bsm . -i '*.baboon' '*.bmo'`): stored or deflated entries
 (other compression methods, encryption, ZIP64 and multi-disk archives are
 rejected); relative `/`-separated paths without empty, `.` or `..` segments,
 backslashes, drive prefixes or NUL, UTF-8 (flag bit 11) or ASCII names, no
 duplicates. Directory entries are ignored, `*.baboon` entries are loaded together
-as one model, `*.bmo` entries are available to `include` (paths resolve against
-the archive root, as against a `--model-dir`), and any other entry is an error.
+as one model, `*.bmo` entries are available to `include` (paths resolve as on
+the command line: next to the including entry first, then against the archive
+root, which plays the role of a `--model-dir`), and any other entry is an error.
 
 ```bash
 baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
 baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 > cleaned.baboon
-baboon --model-dir ./models :scheme --domains="*@*" --zip-output=./schemas.zip
-baboon --model-dir ./models :scheme --domains="my.pkg@2.0.0,my.pkg@3.0.0" --zip-output=./schemas.zip
+baboon --model-dir ./models :scheme --domains="*@*" --zip-output=./schemas.bsm
+baboon --model-dir ./models :scheme --domains="my.pkg@2.0.0,my.pkg@3.0.0" --zip-output=./schemas.bsm
 ```
 
 ### `:diff`

@@ -6,16 +6,16 @@ import scala.util.Try
 
 final case class ZipArchiveEntry(path: String, isDirectory: Boolean, data: Array[Byte])
 
-/** In-memory reader for ZIP archives whose entries are stored (compression method 0) — the form
-  * `baboon :scheme --zip-output` writes. Pure Scala, so it runs unchanged on Scala.js, where
-  * `java.util.zip` does not exist.
+/** In-memory reader for ZIP archives whose entries are stored (method 0, what `baboon :scheme
+  * --zip-output` writes) or deflated (method 8, what most ZIP tools write). Pure Scala, so it runs
+  * unchanged on Scala.js, where `java.util.zip` does not exist.
   *
   * Rejected: other compression methods, encryption, ZIP64, multi-disk archives, CRC-32 or size
   * mismatches, local headers that disagree with the central directory, entry names that are not
   * UTF-8 (general-purpose flag bit 11) or plain ASCII, and truncated or overlapping structures.
   * Entry paths are returned verbatim; path policy belongs to the caller.
   */
-object StoredZipReader {
+object ZipReader {
   private val EndOfCentralDirectorySignature = 0x06054B50
   private val CentralDirectorySignature      = 0x02014B50
   private val LocalHeaderSignature           = 0x04034B50
@@ -26,6 +26,7 @@ object StoredZipReader {
   private val MaxCommentLength          = 0xFFFF
 
   private val MethodStored         = 0
+  private val MethodDeflated       = 8
   private val FlagEncrypted        = 0x0001
   private val FlagStrongEncryption = 0x0040
   private val FlagUtf8Names        = 0x0800
@@ -115,18 +116,29 @@ object StoredZipReader {
           name <- decodeName(nameBytes, flags)
           _ <-
             if ((flags & (FlagEncrypted | FlagStrongEncryption)) != 0) Left(s"entry '$name' is encrypted")
-            else if (method != MethodStored) Left(s"entry '$name' uses compression method $method; only stored entries (method 0) are supported")
-            else if (compressedSize != size) Left(s"entry '$name' is stored but its compressed and uncompressed sizes differ")
-            else if (compressedSize == Zip64Marker32 || localOffset == Zip64Marker32) Left(s"entry '$name' needs ZIP64, which is not supported")
+            else if (method != MethodStored && method != MethodDeflated)
+              Left(s"entry '$name' uses compression method $method; only stored (0) and deflated (8) entries are supported")
+            else if (method == MethodStored && compressedSize != size) Left(s"entry '$name' is stored but its compressed and uncompressed sizes differ")
+            else if (compressedSize == Zip64Marker32 || size == Zip64Marker32 || localOffset == Zip64Marker32) Left(s"entry '$name' needs ZIP64, which is not supported")
             else Right(())
-          data <- readLocalData(bytes, localOffset, nameBytes, compressedSize, eocd).left.map(error => s"entry '$name': $error")
-          _    <- if (Crc32.of(data) == crc) Right(()) else Left(s"entry '$name' fails its CRC-32 check")
+          raw <- readLocalData(bytes, localOffset, nameBytes, method, compressedSize, eocd).left.map(error => s"entry '$name': $error")
+          data <-
+            if (method == MethodDeflated) Inflate.inflate(raw, size).left.map(error => s"entry '$name' does not inflate: $error")
+            else Right(raw)
+          _ <- if (Crc32.of(data) == crc) Right(()) else Left(s"entry '$name' fails its CRC-32 check")
         } yield (ZipArchiveEntry(name, name.endsWith(DirectorySuffix), data), next)
       }
     }
   }
 
-  private def readLocalData(bytes: Array[Byte], localOffset: Long, centralName: Array[Byte], size: Long, eocd: EndOfCentralDirectory): Either[String, Array[Byte]] = {
+  private def readLocalData(
+    bytes: Array[Byte],
+    localOffset: Long,
+    centralName: Array[Byte],
+    centralMethod: Int,
+    size: Long,
+    eocd: EndOfCentralDirectory,
+  ): Either[String, Array[Byte]] = {
     if (localOffset + LocalHeaderFixedSize > eocd.directoryOffset || u32(bytes, localOffset.toInt) != LocalHeaderSignature) {
       Left("missing or truncated local header")
     } else {
@@ -136,7 +148,7 @@ object StoredZipReader {
       val extraLength = u16(bytes, start + 28)
       val dataStart   = start.toLong + LocalHeaderFixedSize + nameLength + extraLength
       val localName   = bytes.slice(start + LocalHeaderFixedSize, start + LocalHeaderFixedSize + nameLength)
-      if (method != MethodStored) {
+      if (method != centralMethod) {
         Left("local header disagrees with the central directory on the compression method")
       } else if (!java.util.Arrays.equals(localName, centralName)) {
         Left("local header disagrees with the central directory on the entry name")

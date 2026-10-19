@@ -21,8 +21,10 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
         pi match {
           case ParserIssue.ParserFailed(error, _) =>
             (parseErrorRange(error), s"Parse error: ${error.msg}", DiagnosticSeverity.Error)
-          case ParserIssue.IncludeNotFound(path) =>
-            (positionConverter.defaultRange, s"Include not found: $path", DiagnosticSeverity.Error)
+          case ParserIssue.IncludeNotFound(include, _) =>
+            (positionConverter.fromMeta(include.meta), s"Include not found: ${include.value}", DiagnosticSeverity.Error)
+          case ParserIssue.IncludeAmbiguous(include, candidates) =>
+            (positionConverter.fromMeta(include.meta), s"Ambiguous include: ${include.value} (${candidates.mkString(", ")})", DiagnosticSeverity.Error)
           case ParserIssue.StackedDocComments(pos) =>
             val range = pos match {
               case s: io.septimalmind.baboon.parser.model.InputPointer.StartOffsetKnown =>

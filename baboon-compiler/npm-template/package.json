@@ -9,17 +9,28 @@
       "import": "./index.js",
       "types": "./index.d.ts"
     },
-    "./main.js": "./main.js"
+    "./main.js": "./main.js",
+    "./worker.js": "./worker.js",
+    "./worker-client.js": {
+      "types": "./worker-client.d.ts",
+      "import": "./worker-client.js"
+    },
+    "./worker-server.js": {
+      "types": "./worker-server.d.ts",
+      "import": "./worker-server.js"
+    }
   },
   "types": "index.d.ts",
   "files": [
     "*.js",
     "*.js.map",
-    "index.d.ts",
+    "*.d.ts",
     "README.md",
     "LICENSE"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./worker.js"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true

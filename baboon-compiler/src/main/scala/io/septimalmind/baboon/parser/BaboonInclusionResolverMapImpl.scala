@@ -2,6 +2,7 @@ package io.septimalmind.baboon.parser
 
 import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.parser.model.{FSPath, RawInclude}
+import io.septimalmind.baboon.parser.model.issues.ParserIssue
 import izumi.fundamentals.collections.nonempty.NEString
 
 class BaboonInclusionResolverMapImpl[F[+_, +_]](
@@ -11,24 +12,14 @@ class BaboonInclusionResolverMapImpl[F[+_, +_]](
 
   private val inputsCache: Map[FSPath, String] = inputs.map(i => i.path -> i.content).toMap
 
-  private def resolvePath(baseDir: FSPath, relativePath: String): FSPath = {
-    val relativeSegments   = relativePath.split("/").toSeq.filter(_.nonEmpty)
-    val relativeNESegments = relativeSegments.map(NEString.unsafeFrom)
-
-    baseDir match {
-      case FSPath.Full(location, name) =>
-        FSPath((location :+ name) ++ relativeNESegments)
-      case FSPath.Relative(location, name) =>
-        FSPath((location :+ name) ++ relativeNESegments)
-      case FSPath.Name(name) =>
-        FSPath(Seq(name) ++ relativeNESegments)
-    }
+  def resolveInclude(inc: RawInclude, includedFrom: FSPath): Either[ParserIssue, (FSPath, String)] = {
+    val relative = BaboonInclusionResolver.against(BaboonInclusionResolver.directoryOf(includedFrom), inc.value)
+    val roots    = options.directoryInputs.toList.flatMap(dir => BaboonInclusionResolver.against(dir.asString, inc.value)).sorted
+    BaboonInclusionResolver.resolve(inc, relative, roots)(read, identity)
   }
 
-  def resolveInclude(inc: RawInclude): Option[(FSPath, String)] = {
-    options.directoryInputs.iterator
-      .map(dir => resolvePath(dir, inc.value))
-      .flatMap(resolvedPath => inputsCache.get(resolvedPath).map(content => resolvedPath -> content))
-      .nextOption()
+  private def read(path: String): Option[(FSPath, String)] = {
+    val key = FSPath.parse(NEString.unsafeFrom(path))
+    inputsCache.get(key).map(content => key -> content)
   }
 }

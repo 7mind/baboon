@@ -85,7 +85,49 @@ console.log(JSON.parse(decoded.json));
 
 ## Environment
 
-The entrypoint installs a small SHA-256 shim using Node's built-in `crypto` module. For browser or sandboxed runtimes, provide a `globalThis.sha256` constructor with `update` and `digest` methods before importing `@7mind.io/baboon`.
+The package is plain ES modules with no runtime dependencies: the compiler is a single
+`main.js`, and it needs no host-provided globals, so the same files run in Node, in
+browsers and in Web Workers.
+
+## Running in a Web Worker
+
+Loading and type-checking a model is synchronous and CPU-bound: a large multi-version
+archive can keep a thread busy for seconds. To keep a page responsive, run the compiler
+in a Web Worker. `worker.js` is a ready-made module-worker entry, and `connectBaboonWorker`
+gives the main thread the same methods as `BaboonCompiler`, each returning a `Promise`;
+the main thread never downloads or parses the compiler bundle:
+
+```javascript
+// baboon.worker.js — the worker's entry, one line:
+import "@7mind.io/baboon/worker.js";
+```
+
+```javascript
+import { connectBaboonWorker } from "@7mind.io/baboon/worker-client.js";
+
+// `new Worker(new URL("./x.js", import.meta.url), { type: "module" })` is the form bundlers
+// document for emitting a module worker with its dependencies.
+const worker = new Worker(new URL("./baboon.worker.js", import.meta.url), { type: "module" });
+const baboon = connectBaboonWorker(worker);
+
+const model = await baboon.loadMany({ bytes });                 // runs in the worker
+const result = await baboon.decodeEnvelopeLoaded(model, envelope);
+await baboon.release(model);                                    // frees it in the worker
+```
+
+Without a bundler, point the worker at the package file itself
+(`new Worker("/node_modules/@7mind.io/baboon/worker.js", { type: "module" })`, or wherever it
+is served).
+
+- Models stay in the worker; the main thread holds opaque handles, usable only through
+  the connection that loaded them, until `release(model)`.
+- Arguments and results are copied with the structured-clone algorithm (no transfer):
+  the caller keeps its buffers.
+- A worker-side failure rejects with the same message the in-thread call would; if the
+  worker script fails to load or crashes, pending and later calls reject.
+- To serve on another port (a `MessagePort`, Node's `worker_threads`), call
+  `serveBaboon(port)` from `@7mind.io/baboon/worker-server.js` in the worker and
+  `connectBaboonWorker(otherPort)` on the other side.
 
 ## API surface
 
@@ -107,11 +149,11 @@ model issues are listed with the paths of the files (or archive entries) they co
 
 ### Loading a schema archive
 
-`loadMany` loads every schema of a ZIP archive held in memory, together, through the
-same pipeline as `load`, and returns the same handle:
+`loadMany` loads every schema of a schema archive (a ZIP file, conventionally `*.bsm`)
+held in memory, together, through the same pipeline as `load`, and returns the same handle:
 
 ```javascript
-// e.g. written by: baboon --model-dir ./models :scheme --domains="*@*" --zip-output=schemas.zip
+// e.g. written by: baboon --model-dir ./models :scheme --domains="*@*" --zip-output=schemas.bsm
 const model = await BaboonCompiler.loadMany({ bytes: new Uint8Array(await response.arrayBuffer()) });
 const same = await BaboonCompiler.loadMany({ base64: "UEsDBAoAAAg..." }); // plain base64, not a data: URL
 ```
@@ -119,13 +161,14 @@ const same = await BaboonCompiler.loadMany({ base64: "UEsDBAoAAAg..." }); // pla
 Pass exactly one of `bytes` (a `Uint8Array`, Node's `Buffer` included) or `base64` (the
 standard alphabet; no `data:` prefix, no whitespace). Archive contract:
 
-- entries must be stored (compression method 0) — what `baboon :scheme --zip-output`
-  writes and `zip -0` produces; deflated entries, encryption and ZIP64 are rejected;
+- entries must be stored (method 0, what `baboon :scheme --zip-output` writes) or
+  deflated (method 8, what zip tools write by default); other methods, encryption and
+  ZIP64 are rejected;
 - entry paths must be relative `/`-separated paths without empty, `.` or `..` segments,
   backslashes or drive prefixes, and unique;
 - directory entries are ignored; `*.baboon` entries are the schemas (UTF-8, at least one);
-  `*.bmo` entries are only available to `include`, whose paths resolve against the
-  archive root; any other entry is rejected;
+  `*.bmo` entries are only available to `include`, whose paths resolve next to the
+  including entry first, then against the archive root; any other entry is rejected;
 - CRC-32 checksums are verified.
 
 Archives are read in memory with no extra dependency, in Node and in browsers alike.

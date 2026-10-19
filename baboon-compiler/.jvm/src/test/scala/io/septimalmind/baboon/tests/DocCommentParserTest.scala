@@ -353,7 +353,8 @@ final class DocCommentParserTest extends AnyWordSpec {
           |data Foo { x: i32 }
           |""".stripMargin
       val resolver = new io.septimalmind.baboon.parser.BaboonInclusionResolver[Either] {
-        def resolveInclude(inc: io.septimalmind.baboon.parser.model.RawInclude): Option[(FSPath, String)] = None
+        def resolveInclude(inc: io.septimalmind.baboon.parser.model.RawInclude, includedFrom: FSPath): Either[ParserIssue, (FSPath, String)] =
+          Left(ParserIssue.IncludeNotFound(inc, List.empty))
       }
       val parser = new BaboonParser.BaboonParserImpl[Either](resolver)
       val res    = parser.parse(BaboonParser.Input(dummyPath, src))
@@ -482,7 +483,8 @@ final class DocCommentParserTest extends AnyWordSpec {
           |data Foo { x: i32 }
           |""".stripMargin
       val resolver = new io.septimalmind.baboon.parser.BaboonInclusionResolver[Either] {
-        def resolveInclude(inc: io.septimalmind.baboon.parser.model.RawInclude): Option[(FSPath, String)] = None
+        def resolveInclude(inc: io.septimalmind.baboon.parser.model.RawInclude, includedFrom: FSPath): Either[ParserIssue, (FSPath, String)] =
+          Left(ParserIssue.IncludeNotFound(inc, List.empty))
       }
       val parser = new BaboonParser.BaboonParserImpl[Either](resolver)
       val res    = parser.parse(BaboonParser.Input(dummyPath, src))

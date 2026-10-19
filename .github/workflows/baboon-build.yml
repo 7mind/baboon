@@ -141,6 +141,10 @@ jobs:
           disk-cache: false
       - name: Set up Dart SDK
         uses: dart-lang/setup-dart@v1
+      - name: Set up Deno (runs worker.js in a module Worker, test-js-npm)
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.5.x
       - name: Install mudyla
         run: pip install git+https://github.com/7mind/mudyla.git
       - name: Build (macOS)
@@ -290,6 +294,10 @@ jobs:
           exit 1
       - name: Set up Dart SDK
         uses: dart-lang/setup-dart@v1
+      - name: Set up Deno (runs worker.js in a module Worker, test-js-npm)
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.5.x
       - name: Install mudyla
         shell: bash
         run: pip install git+https://github.com/7mind/mudyla.git

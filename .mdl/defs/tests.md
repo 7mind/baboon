@@ -3700,24 +3700,29 @@ ret success:bool=true
 
 # action: test-js-npm
 
-CLI -> ZIP -> JS acceptance for the npm package: `:scheme --zip-output`,
+CLI -> schema archive (`.bsm`) -> JS acceptance for the npm package: `:scheme --zip-output`,
 `BaboonCompiler.loadMany` and the envelope conversions (`encodedEnvelopeLoaded`,
-`decodeEnvelopeLoaded`). Builds the Scala.js bundle (fastLinkJS) and assembles the
-package from `npm-template` the way `publish-npm` does, then:
+`decodeEnvelopeLoaded`), in-thread and through a Web Worker. Builds the Scala.js bundle
+(fastLinkJS, a single `main.js`) and assembles the package from `npm-template` the way
+`publish-npm` does, then:
 
 1. writes a schema archive with the native binary (twice, and once more under a
    different time zone) and requires identical bytes; checks it with Python's
    `zipfile` as an independent reader; rewrites it with `zipfile` as stored
-   (directory entries, extra fields) and deflated (an unsupported method) copies,
-   and writes archives whose schema includes a `*.bmo` entry;
+   (directory entries, extra fields) and deflated copies, and writes archives whose
+   schema includes a `*.bmo` entry (by a root-relative path, by a path relative to the
+   including entry, and by one leaving the archive);
 2. requires a failing selection to publish nothing, mixed or incomplete
-   `:scheme` flags to fail, and single-schema stdout to be exactly the
-   `--target` file's content (pure DSL);
+   `:scheme` flags to fail, single-schema stdout to be exactly the
+   `--target` file's content (pure DSL), and a missing `--model-dir` to be a
+   one-line error (exit 2) in every mode instead of a stack trace;
 3. runs the published `test.js`, the type-level `types-check.ts` (`tsc
    --noEmit`, TypeScript pinned to the ts-stub's version),
-   `archive-acceptance.mjs` against those archives, and
+   `archive-acceptance.mjs` against those archives,
    `declarations-acceptance.mjs` (index.d.ts declares exactly the exports; needs
-   the unminified fastLinkJS bundle).
+   the unminified fastLinkJS bundle), `worker-acceptance.mjs` (the worker client
+   and server over `node:worker_threads`), and `browser-worker-acceptance.mjs`
+   under Deno, whose module `Worker` runs the browser entry `worker.js`.
 
 Runs after `test-sbt-basic`: both use the root sbt build.
 
@@ -3751,17 +3756,17 @@ MODELS=(
   --model-dir "${RESOURCES}/baboon/fwd-e2e-chain-ok"
 )
 
-"$BABOON_BIN" "${MODELS[@]}" :scheme --domains="*@*" --zip-output="${ARCHIVES}/schemas.zip"
-"$BABOON_BIN" "${MODELS[@]}" :scheme --domains=" *@* " --zip-output="${ARCHIVES}/again.zip"
-TZ=Pacific/Kiritimati "$BABOON_BIN" "${MODELS[@]}" :scheme --domains="zipdemo.revert@*,*@*" --zip-output="${ARCHIVES}/elsewhere.zip"
+"$BABOON_BIN" "${MODELS[@]}" :scheme --domains="*@*" --zip-output="${ARCHIVES}/schemas.bsm"
+"$BABOON_BIN" "${MODELS[@]}" :scheme --domains=" *@* " --zip-output="${ARCHIVES}/again.bsm"
+TZ=Pacific/Kiritimati "$BABOON_BIN" "${MODELS[@]}" :scheme --domains="zipdemo.revert@*,*@*" --zip-output="${ARCHIVES}/elsewhere.bsm"
 for other in again elsewhere; do
-  if ! cmp "${ARCHIVES}/schemas.zip" "${ARCHIVES}/${other}.zip"; then
-    echo "FAIL: identical selections produced different archive bytes (${other}.zip)" >&2
+  if ! cmp "${ARCHIVES}/schemas.bsm" "${ARCHIVES}/${other}.bsm"; then
+    echo "FAIL: identical selections produced different archive bytes (${other}.bsm)" >&2
     exit 1
   fi
 done
-python3 -m zipfile -t "${ARCHIVES}/schemas.zip"
-python3 - "${ARCHIVES}/schemas.zip" <<'PY'
+python3 -m zipfile -t "${ARCHIVES}/schemas.bsm"
+python3 - "${ARCHIVES}/schemas.bsm" <<'PY'
 import sys, zipfile
 names = zipfile.ZipFile(sys.argv[1]).namelist()
 expected = sorted(f"schemas/{d}/{v}.baboon" for d, vs in {
@@ -3776,8 +3781,8 @@ if names != expected:
 PY
 
 # the same schemas from another writer: directory entries and an extended-timestamp extra
-# field (stored), and the deflate method `loadMany` does not support
-python3 - "${ARCHIVES}/schemas.zip" "${ARCHIVES}/other-stored.zip" "${ARCHIVES}/other-deflated.zip" <<'PY'
+# field, stored and deflated
+python3 - "${ARCHIVES}/schemas.bsm" "${ARCHIVES}/other-stored.bsm" "${ARCHIVES}/other-deflated.bsm" <<'PY'
 import struct, sys, zipfile
 source = zipfile.ZipFile(sys.argv[1])
 for target, method in ((sys.argv[2], zipfile.ZIP_STORED), (sys.argv[3], zipfile.ZIP_DEFLATED)):
@@ -3792,25 +3797,29 @@ for target, method in ((sys.argv[2], zipfile.ZIP_STORED), (sys.argv[3], zipfile.
             out.writestr(info, source.read(name))
 PY
 
-# an archive whose schema includes a *.bmo entry (resolved against the archive root), and one
-# whose include path leaves the archive
-python3 - "${ARCHIVES}/with-include.zip" "${ARCHIVES}/escaping-include.zip" <<'PY'
+# archives whose schema includes a *.bmo entry: by a root-relative path, by a path relative to
+# the including entry (deflated, as zip tools write it), and by a path leaving the archive
+python3 - "${ARCHIVES}/with-include.bsm" "${ARCHIVES}/relative-include.bsm" "${ARCHIVES}/escaping-include.bsm" <<'PY'
 import sys, zipfile
 included = b"root data Included {\n  x: i32\n}\n"
-for target, include in ((sys.argv[1], "shared/defs.bmo"), (sys.argv[2], "../shared/defs.bmo")):
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_STORED) as out:
+for target, include, defs, method in (
+    (sys.argv[1], "shared/defs.bmo", "shared/defs.bmo", zipfile.ZIP_STORED),
+    (sys.argv[2], "../shared/defs.bmo", "models/shared/defs.bmo", zipfile.ZIP_DEFLATED),
+    (sys.argv[3], "../../../shared/defs.bmo", "shared/defs.bmo", zipfile.ZIP_STORED),
+):
+    with zipfile.ZipFile(target, "w", method) as out:
         out.writestr("models/inc/1.0.0.baboon", f'model zipdemo.inc\n\nversion "1.0.0"\n\ninclude "{include}"\n')
-        out.writestr("shared/defs.bmo", included)
+        out.writestr(defs, included)
 PY
 
 # a failing selection publishes nothing
 for selection in "no.such@*" "zipdemo.evo@1.0.0,zipdemo.evo@3.0.0"; do
-  if "$BABOON_BIN" "${MODELS[@]}" :scheme --domains="$selection" --zip-output="${ARCHIVES}/failed.zip"; then
+  if "$BABOON_BIN" "${MODELS[@]}" :scheme --domains="$selection" --zip-output="${ARCHIVES}/failed.bsm"; then
     echo "FAIL: :scheme accepted the selection '$selection'" >&2
     exit 1
   fi
-  if [[ -e "${ARCHIVES}/failed.zip" ]]; then
-    echo "FAIL: a failed :scheme run left ${ARCHIVES}/failed.zip behind" >&2
+  if [[ -e "${ARCHIVES}/failed.bsm" ]]; then
+    echo "FAIL: a failed :scheme run left ${ARCHIVES}/failed.bsm behind" >&2
     exit 1
   fi
 done
@@ -3821,12 +3830,12 @@ fi
 
 # the two modes do not mix, and each needs both of its flags (no globbing of the selectors)
 set -f
-for flags in "--domain=zipdemo.evo --version=1.0.0 --zip-output=${ARCHIVES}/mixed.zip" \
+for flags in "--domain=zipdemo.evo --version=1.0.0 --zip-output=${ARCHIVES}/mixed.bsm" \
              "--domains=*@* --target=${ARCHIVES}/mixed.baboon" \
              "--domains=*@*" \
-             "--zip-output=${ARCHIVES}/mixed.zip" \
+             "--zip-output=${ARCHIVES}/mixed.bsm" \
              "--domain=zipdemo.evo" \
-             "--domains=zipdemo.*@1.0.0 --zip-output=${ARCHIVES}/mixed.zip"; do
+             "--domains=zipdemo.*@1.0.0 --zip-output=${ARCHIVES}/mixed.bsm"; do
   # shellcheck disable=SC2086
   if "$BABOON_BIN" "${MODELS[@]}" :scheme $flags >/dev/null 2>&1; then
     echo "FAIL: :scheme accepted '$flags'" >&2
@@ -3845,6 +3854,34 @@ if stdout not in (schema + b"\n", schema + b"\r\n"):
     sys.exit(f"FAIL: :scheme stdout is not exactly the rendered schema:\n{stdout[:400]!r}\n...expected...\n{schema[:400]!r}")
 PY
 
+# a missing --model-dir is a one-line error in every mode, never a stack trace
+MISSING_DIR="${WORK}/no-such-models"
+for mode in ":scheme --domains=*@* --zip-output=${ARCHIVES}/missing.bsm" \
+            ":scheme --domain=zipdemo.evo --version=1.0.0" \
+            ":diff --domain=zipdemo.evo --from=1.0.0 --to=2.0.0" \
+            ":bincompat --domain=zipdemo.evo --from=1.0.0 --to=2.0.0" \
+            ":cs --output ${WORK}/missing-cs"; do
+  set -f
+  # shellcheck disable=SC2086
+  if "$BABOON_BIN" --model-dir="$MISSING_DIR" $mode > "${WORK}/missing.out" 2> "${WORK}/missing.err"; then
+    echo "FAIL: '$mode' accepted a missing --model-dir" >&2
+    exit 1
+  else
+    status=$?
+  fi
+  set +f
+  if [[ $status -ne 2 ]] || ! grep -q -- "^--model-dir does not exist: .*no-such-models" "${WORK}/missing.err" || grep -q 'Exception\|\bat ' "${WORK}/missing.err"; then
+    echo "FAIL: '$mode' with a missing --model-dir exited $status with:" >&2
+    cat "${WORK}/missing.err" >&2
+    exit 1
+  fi
+done
+
+if [[ ! -f "${JS_DIST_DIR}/main.js" ]] || [[ "$(find "$JS_DIST_DIR" -name '*.js' | wc -l)" -ne 1 ]]; then
+  echo "FAIL: the Scala.js bundle is not a single main.js: $(ls "$JS_DIST_DIR")" >&2
+  exit 1
+fi
+
 cp "${JS_DIST_DIR}/"* "$PACKAGE"/
 cp "${PROJECT_ROOT}/baboon-compiler/npm-template/"* "$PACKAGE"/
 cp "${PROJECT_ROOT}/LICENSE" "$PACKAGE"/
@@ -3859,12 +3896,20 @@ cd "$PACKAGE"
 npm install
 npm test
 npx --yes --package "typescript@${TYPESCRIPT_VERSION}" tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 types-check.ts
-BABOON_SCHEMA_ZIP="${ARCHIVES}/schemas.zip" \
-BABOON_OTHER_STORED_ZIP="${ARCHIVES}/other-stored.zip" \
-BABOON_OTHER_DEFLATED_ZIP="${ARCHIVES}/other-deflated.zip" \
-BABOON_INCLUDE_ZIP="${ARCHIVES}/with-include.zip" \
-BABOON_ESCAPING_INCLUDE_ZIP="${ARCHIVES}/escaping-include.zip" \
-  npx ava archive-acceptance.mjs declarations-acceptance.mjs
+BABOON_SCHEMA_ZIP="${ARCHIVES}/schemas.bsm" \
+BABOON_OTHER_STORED_ZIP="${ARCHIVES}/other-stored.bsm" \
+BABOON_OTHER_DEFLATED_ZIP="${ARCHIVES}/other-deflated.bsm" \
+BABOON_INCLUDE_ZIP="${ARCHIVES}/with-include.bsm" \
+BABOON_RELATIVE_INCLUDE_ZIP="${ARCHIVES}/relative-include.bsm" \
+BABOON_ESCAPING_INCLUDE_ZIP="${ARCHIVES}/escaping-include.bsm" \
+  npx ava archive-acceptance.mjs declarations-acceptance.mjs worker-acceptance.mjs
+
+if ! command -v deno >/dev/null; then
+  echo "FAIL: deno is required to run worker.js in a module Worker (nix devShell; denoland/setup-deno in CI)" >&2
+  exit 1
+fi
+BABOON_SCHEMA_ZIP="${ARCHIVES}/schemas.bsm" DENO_NO_UPDATE_CHECK=1 DENO_DIR="${WORK}/deno" \
+  deno test --no-check --allow-read --allow-env browser-worker-acceptance.mjs
 
 ret success:bool=true
 ```

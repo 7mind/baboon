@@ -1,6 +1,8 @@
 # Scheme ZIP export, JS `loadMany`, envelope-aware JSON↔UEBA conversion
 
-Status: implemented (2026-10-06); the plan below is annotated with what the evidence showed. No `AGENTS.md` exists in this repository;
+Status: implemented (2026-10-06); the plan below is annotated with what the evidence showed.
+Amended 2026-10-19 (`20261019-2320-headless-sjs.md`): `loadMany` also reads deflated
+entries, includes resolve next to the including entry first, and archives are named `*.bsm`. No `AGENTS.md` exists in this repository;
 `CLAUDE.md` is the governing guide.
 
 ## 1. CLI: `:scheme` modes

@@ -8,6 +8,7 @@ import io.septimalmind.baboon.lsp.protocol._
 import io.septimalmind.baboon.lsp.state._
 import io.septimalmind.baboon.lsp.util.{JvmPathOps, PositionConverter}
 import io.septimalmind.baboon.parser.BaboonParser
+import io.septimalmind.baboon.parser.model.{InputPointer, RawInclude, RawNodeMeta}
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, ParserIssue}
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.BLogger
@@ -56,7 +57,7 @@ class LspServerIntegrationTest extends AnyWordSpec with Matchers {
       inputs: Seq[BaboonParser.Input],
       previous: Option[BaboonFamily],
     ): Either[NEList[BaboonIssue], BaboonFamily] =
-      Left(NEList(BaboonIssue.Parser(ParserIssue.IncludeNotFound("noop"))))
+      Left(NEList(BaboonIssue.Parser(ParserIssue.IncludeNotFound(RawInclude(RawNodeMeta(InputPointer.Undefined), "noop"), List.empty))))
   }
 
   // ---------------------------------------------------------------------------

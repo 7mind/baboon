@@ -2,7 +2,7 @@ package io.septimalmind.baboon.lsp.state
 
 import io.septimalmind.baboon.lsp.LspLogging
 import io.septimalmind.baboon.lsp.util.PathOps
-import io.septimalmind.baboon.parser.model.{FSPath, InputPointer}
+import io.septimalmind.baboon.parser.model.InputPointer
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.BLogger
@@ -82,8 +82,10 @@ class WorkspaceState(
         pi match {
           case io.septimalmind.baboon.parser.model.issues.ParserIssue.ParserFailed(_, path) =>
             Some(InputPointer.JustFile(path))
-          case io.septimalmind.baboon.parser.model.issues.ParserIssue.IncludeNotFound(path) =>
-            Some(InputPointer.JustFile(FSPath.parse(izumi.fundamentals.collections.nonempty.NEString.unsafeFrom(path))))
+          case io.septimalmind.baboon.parser.model.issues.ParserIssue.IncludeNotFound(include, _) =>
+            Some(include.meta.pos)
+          case io.septimalmind.baboon.parser.model.issues.ParserIssue.IncludeAmbiguous(include, _) =>
+            Some(include.meta.pos)
           case io.septimalmind.baboon.parser.model.issues.ParserIssue.StackedDocComments(pos) =>
             Some(pos)
         }
@@ -215,8 +217,10 @@ class WorkspaceState(
     val (location, message) = issue match {
       case BaboonIssue.Parser(ParserFailed(error, path)) =>
         (Some(path.asString), s"Parse error: ${error.msg}")
-      case BaboonIssue.Parser(IncludeNotFound(path)) =>
-        (None, s"Include not found: $path")
+      case BaboonIssue.Parser(IncludeNotFound(include, _)) =>
+        (extractLocation(include.meta.pos), s"Include not found: ${include.value}")
+      case BaboonIssue.Parser(IncludeAmbiguous(include, candidates)) =>
+        (extractLocation(include.meta.pos), s"Ambiguous include: ${include.value} (${candidates.mkString(", ")})")
       case BaboonIssue.Parser(StackedDocComments(pos)) =>
         (extractLocation(pos), "Stacked prefix doc comments — merge into a single `/** … */` block per declaration.")
 

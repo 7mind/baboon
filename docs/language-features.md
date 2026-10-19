@@ -527,6 +527,8 @@ foreign ObscureInt : derived[json], derived[ueba] {
 - `rt = <baboon type>` declares the foreign's **runtime/wire mapping** — the Baboon type the value is represented as on the wire. Schema-only backends (GraphQL, OpenAPI, MCP input schemas) render the foreign as that type, and codec machinery delegates through the mapped type's codec where the backend supports it.
 - `<lang> = <BaboonTypeRef>` (an unquoted type reference instead of a string) makes that language use the referenced generated Baboon type directly — including its codecs — instead of a hand-wired native type.
 
+Across versions, a foreign type may gain, drop or change its `rt` mapping and gain or lose language bindings: conversions copy foreign values as they are, which stays sound while every language bound in both versions keeps its native type. Changing a language's binding in place (`cs = "System.Int64"` → `cs = "System.Decimal"`) is rejected with `ForeignBindingChanged` — declare a new foreign type instead. Changing a type's kind between versions (`data` → `enum`, ...) is likewise rejected with `TypeKindChanged`.
+
 ## Type aliases
 
 Type aliases give alternative names to existing types. They are resolved transparently during compilation and are not emitted into target languages — at usage sites, the alias is replaced by its target type.
@@ -1080,7 +1082,7 @@ include "shared-addresses.bmo"
 root data Order { shipping: ShippingAddress }
 ```
 
-- Paths are resolved relative to provided model directories (`--model-dir`); includes are resolved recursively.
+- A path is resolved relative to the directory of the file that includes it first; when no such file exists, against the model directories (`--model-dir`), exactly one of which must hold it — a path found under several is an `IncludeAmbiguous` error rather than an arbitrary pick. Includes are resolved recursively, each relative to its own including file. The same rules apply to the in-memory inputs of the JavaScript API and to schema archives (`loadMany`), whose root plays the model directory.
 - Because the header comes from the current file, the included content inherits the same `model` and `version`.
 - Give include files an extension other than `.baboon` (conventionally `.bmo`): `--model-dir` picks up every `*.baboon` file as a standalone model, and an include fragment has no `model`/`version` header, so it would fail to parse on its own.
 

@@ -1,9 +1,10 @@
-// CLI -> ZIP -> JS acceptance (mdl action `test-js-npm`). Not part of the published package:
-// it needs the archive written by the native `baboon :scheme --zip-output` (BABOON_SCHEMA_ZIP)
-// and copies of it rewritten by Python's zipfile, stored with directory entries and extra fields
-// (BABOON_OTHER_STORED_ZIP) and deflated (BABOON_OTHER_DEFLATED_ZIP), plus archives whose schema
-// includes a *.bmo entry by a root-relative path (BABOON_INCLUDE_ZIP) or one leaving the archive
-// (BABOON_ESCAPING_INCLUDE_ZIP).
+// CLI -> schema archive -> JS acceptance (mdl action `test-js-npm`). Not part of the published
+// package: it needs the archive written by the native `baboon :scheme --zip-output`
+// (BABOON_SCHEMA_ZIP) and copies of it rewritten by Python's zipfile, with directory entries and
+// extra fields, stored (BABOON_OTHER_STORED_ZIP) and deflated (BABOON_OTHER_DEFLATED_ZIP), plus
+// archives whose schema includes a *.bmo entry by a root-relative path (BABOON_INCLUDE_ZIP), by a
+// path relative to the including entry (BABOON_RELATIVE_INCLUDE_ZIP, deflated) or by one leaving
+// the archive (BABOON_ESCAPING_INCLUDE_ZIP).
 // The binary vectors are the cross-language goldens of docs/spec/codec-envelope.md § 2.1.4.
 import test from "ava";
 import { readFileSync } from "fs";
@@ -22,6 +23,7 @@ const cliZip = requiredFile("BABOON_SCHEMA_ZIP");
 const otherStored = requiredFile("BABOON_OTHER_STORED_ZIP");
 const otherDeflated = requiredFile("BABOON_OTHER_DEFLATED_ZIP");
 const withInclude = requiredFile("BABOON_INCLUDE_ZIP");
+const relativeInclude = requiredFile("BABOON_RELATIVE_INCLUDE_ZIP");
 const escapingInclude = requiredFile("BABOON_ESCAPING_INCLUDE_ZIP");
 
 const hex = bytes => Array.from(bytes, b => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
@@ -167,18 +169,21 @@ test("envelope failures are explicit", async t => {
   }
 });
 
-test("archives from another writer load when stored, with directories and extra fields", async t => {
-  const model = await BaboonCompiler.loadMany({ bytes: otherStored });
-  t.is(hex(await encodeOk(t, model, STABLE, V1C)), GOLDEN[3][2]);
-  await t.throwsAsync(BaboonCompiler.loadMany({ bytes: otherDeflated }), { message: /^Loading failed: .*compression method 8/ });
+test("archives from another writer load, stored or deflated, with directories and extra fields", async t => {
+  for (const bytes of [otherStored, otherDeflated]) {
+    const model = await BaboonCompiler.loadMany({ bytes });
+    t.is(hex(await encodeOk(t, model, STABLE, V1C)), GOLDEN[3][2]);
+  }
 });
 
-test("*.bmo entries serve includes resolved against the archive root", async t => {
-  const model = await BaboonCompiler.loadMany({ bytes: withInclude });
-  t.deepEqual(
-    BaboonCompiler.listTypes(model).map(ty => `${ty.pkg}@${ty.version}:${ty.id}`),
-    ["zipdemo.inc@1.0.0:zipdemo.inc/:#Included"]
-  );
+test("*.bmo entries serve includes, relative to the including entry or to the archive root", async t => {
+  for (const bytes of [withInclude, relativeInclude]) {
+    const model = await BaboonCompiler.loadMany({ bytes });
+    t.deepEqual(
+      BaboonCompiler.listTypes(model).map(ty => `${ty.pkg}@${ty.version}:${ty.id}`),
+      ["zipdemo.inc@1.0.0:zipdemo.inc/:#Included"]
+    );
+  }
   const error = await t.throwsAsync(BaboonCompiler.loadMany({ bytes: escapingInclude }));
   t.regex(error.message, /^Loading failed: /);
   t.regex(error.message, /\.\.\/shared\/defs\.bmo/);

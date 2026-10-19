@@ -10,7 +10,11 @@ object ParserIssue {
 
   case class ParserFailed(error: Parsed.Failure, path: FSPath) extends ParserIssue
 
-  case class IncludeNotFound(path: String) extends ParserIssue
+  /** `tried` lists the locations looked at: next to the including file first, then the model roots. */
+  case class IncludeNotFound(include: RawInclude, tried: List[String]) extends ParserIssue
+
+  /** No file next to the including one, and several model roots hold the path. */
+  case class IncludeAmbiguous(include: RawInclude, candidates: List[String]) extends ParserIssue
 
   // Two prefix doc blocks appear back-to-back with no intervening
   // declaration. Per `docs/spec/docstrings.md` §4 (Q3 lock) stacked
@@ -27,8 +31,21 @@ object ParserIssue {
 
   implicit val includeNotFoundPrinter: IssuePrinter[IncludeNotFound] =
     (issue: IncludeNotFound) => {
-      s"Failed to find inclusion `${issue.path}``".stripMargin
+      val tried = issue.tried.map(location => s"\n - $location").mkString
+      s"Failed to find inclusion `${issue.include.value}` (${describe(issue.include.meta.pos)}); looked for:$tried"
     }
+
+  implicit val includeAmbiguousPrinter: IssuePrinter[IncludeAmbiguous] =
+    (issue: IncludeAmbiguous) => {
+      val candidates = issue.candidates.map(location => s"\n - $location").mkString
+      s"Inclusion `${issue.include.value}` (${describe(issue.include.meta.pos)}) is ambiguous: no such file next to the including one, and several model directories hold it:$candidates"
+    }
+
+  private def describe(pos: InputPointer): String = pos match {
+    case s: InputPointer.StartOffsetKnown => s"${s.file.asString} @ ${s.start.line}:${s.start.column}"
+    case f: InputPointer.JustFile         => f.file.asString
+    case InputPointer.Undefined           => "<unknown>"
+  }
 
   implicit val stackedDocCommentsPrinter: IssuePrinter[StackedDocComments] =
     (issue: StackedDocComments) => {

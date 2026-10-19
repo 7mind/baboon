@@ -1,6 +1,7 @@
 // Type-level checks of index.d.ts, run by the mdl action `test-js-npm` with `tsc --noEmit`
 // (not published). Each @ts-expect-error line must stay a type error.
-import { BaboonCompiler, BaboonArchiveInput, BaboonLoadedModel } from "./index.js";
+import { BaboonCompiler, BaboonArchiveInput, BaboonLoadedModel, BaboonTypeInfo } from "./index.js";
+import { BaboonWorkerAPI, BaboonWorkerModel, connectBaboonWorker } from "./worker-client.js";
 
 declare const bytes: Uint8Array;
 declare const model: BaboonLoadedModel;
@@ -23,4 +24,19 @@ export async function envelopes(): Promise<void> {
   await BaboonCompiler.encodedEnvelopeLoaded(model, "{}", { envelopeVersion: 3, indexed: false });
   // @ts-expect-error the index mode is required
   await BaboonCompiler.encodedEnvelopeLoaded(model, "{}", { envelopeVersion: 1 });
+}
+
+declare const worker: Worker;
+
+export async function viaWorker(): Promise<void> {
+  const api: BaboonWorkerAPI = connectBaboonWorker(worker);
+  const remote: BaboonWorkerModel = await api.loadMany({ bytes });
+  const types: BaboonTypeInfo[] = await api.listTypes(remote);
+  void types;
+  const decoded = await api.decodeEnvelopeLoaded(remote, bytes);
+  const json: string | undefined = decoded.json;
+  void json;
+  // @ts-expect-error a model loaded in this thread is not a worker's model
+  await api.listTypes(model);
+  await api.release(remote);
 }

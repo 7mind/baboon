@@ -3,9 +3,12 @@ package io.septimalmind.baboon.parser
 import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.parser.model.RawInclude
 import io.septimalmind.baboon.parser.model.FSPath
+import io.septimalmind.baboon.parser.model.issues.ParserIssue
 import izumi.functional.bio.Error2
 import izumi.fundamentals.collections.nonempty.NEString
 import izumi.fundamentals.platform.files.IzFiles
+
+import java.nio.file.{Path, Paths}
 
 class BaboonInclusionResolverImpl[F[+_, +_]](
   options: CompilerOptions
@@ -13,16 +16,14 @@ class BaboonInclusionResolverImpl[F[+_, +_]](
 ) extends BaboonInclusionResolver[F] {
   import io.septimalmind.baboon.PathTools.*
 
-  def resolveInclude(inc: RawInclude): Option[(FSPath, String)] = {
-    options.directoryInputs.iterator
-      .map(_.resolve(inc.value))
-      .map(_.toAbsolutePath.normalize())
-      .map(p => p.toFile)
-      .find(f => f.exists() && f.isFile)
-      .map {
-        file =>
-          val path = FSPath.parse(NEString.unsafeFrom(file.getAbsolutePath))
-          path -> IzFiles.readString(file)
-      }
+  def resolveInclude(inc: RawInclude, includedFrom: FSPath): Either[ParserIssue, (FSPath, String)] = {
+    val directory = Option(includedFrom.toPath.toAbsolutePath.getParent).getOrElse(Paths.get("").toAbsolutePath)
+    val roots     = options.directoryInputs.toList.map(_.resolve(inc.value).toAbsolutePath.normalize()).sortBy(_.toString)
+    BaboonInclusionResolver.resolve(inc, Some(directory.resolve(inc.value).normalize()), roots)(read, _.toString)
+  }
+
+  private def read(path: Path): Option[(FSPath, String)] = {
+    val file = path.toFile
+    Option.when(file.isFile)(FSPath.parse(NEString.unsafeFrom(file.getAbsolutePath)) -> IzFiles.readString(file))
   }
 }

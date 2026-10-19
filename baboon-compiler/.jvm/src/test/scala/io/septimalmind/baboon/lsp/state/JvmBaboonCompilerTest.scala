@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.lsp.state
 
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.model.FSPath
+import io.septimalmind.baboon.parser.model.{FSPath, InputPointer, RawInclude, RawNodeMeta}
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, ParserIssue}
 import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model._
@@ -95,7 +95,9 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
       definitions: List[BaboonParser.Input]
     ): F[NEList[BaboonIssue], BaboonFamily] = {
       val F = implicitly[Error2[F]]
-      F.fail(NEList(BaboonIssue.Parser(ParserIssue.IncludeNotFound(s"unexpected load: ${definitions.size}"))))
+      F.fail(
+        NEList(BaboonIssue.Parser(ParserIssue.IncludeNotFound(RawInclude(RawNodeMeta(InputPointer.Undefined), s"unexpected load: ${definitions.size}"), List.empty)))
+      )
     }
 
     override def reload(
@@ -105,7 +107,7 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
       last = definitions
       prev = previous
       val F = implicitly[Error2[F]]
-      F.fail(NEList(BaboonIssue.Parser(ParserIssue.IncludeNotFound("expected failure"))))
+      F.fail(NEList(BaboonIssue.Parser(ParserIssue.IncludeNotFound(RawInclude(RawNodeMeta(InputPointer.Undefined), "expected failure"), List.empty))))
     }
   }
 

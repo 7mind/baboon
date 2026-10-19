@@ -1,14 +1,15 @@
 package io.septimalmind.baboon.parser
 
 import io.septimalmind.baboon.parser.model.{FSPath, RawInclude}
-import io.septimalmind.baboon.util.{StoredZipReader, Utf8, ZipArchiveEntry}
+import io.septimalmind.baboon.parser.model.issues.ParserIssue
+import io.septimalmind.baboon.util.{Utf8, ZipArchiveEntry, ZipReader}
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 
 /** The parser inputs of a schema archive (the `loadMany` contract, docs/cli-reference.md `:scheme`):
   * every `*.baboon` entry is a model; `*.bmo` entries exist only to be included; directory entries
   * are ignored; any other entry is an error. Entry paths are kept verbatim, so diagnostics name the
-  * archive path, and `include` paths resolve against the archive root — the role a `--model-dir`
-  * plays on the command line.
+  * archive path, and `include` paths resolve relative to the including entry, then against the
+  * archive root — the role a `--model-dir` plays on the command line.
   */
 final case class BaboonArchiveInputs(models: NEList[BaboonParser.Input], includables: List[BaboonParser.Input]) {
   def all: List[BaboonParser.Input] = models.toList ++ includables
@@ -21,7 +22,7 @@ object BaboonArchiveInputs {
   private val DrivePrefix      = "^[A-Za-z]:".r
 
   def fromZip(bytes: Array[Byte]): Either[NEList[String], BaboonArchiveInputs] = {
-    StoredZipReader.read(bytes).left.map(NEList(_)).flatMap(fromEntries)
+    ZipReader.read(bytes).left.map(NEList(_)).flatMap(fromEntries)
   }
 
   def fromEntries(entries: List[ZipArchiveEntry]): Either[NEList[String], BaboonArchiveInputs] = {
@@ -71,28 +72,19 @@ object BaboonArchiveInputs {
     else None
   }
 
-  /** Resolves `include` paths against the archive root, as `--model-dir` does for directories. */
+  /** Resolves `include` paths relative to the including entry, then against the archive root (the
+    * role a `--model-dir` plays for directories); a path leaving the archive names nothing in it.
+    */
   final class ArchiveInclusionResolver[F[+_, +_]](inputs: Seq[BaboonParser.Input]) extends BaboonInclusionResolver[F] {
     private val byPath: Map[String, BaboonParser.Input] = inputs.map(input => input.path.asString -> input).toMap
 
-    override def resolveInclude(inc: RawInclude): Option[(FSPath, String)] = {
-      normalize(inc.value).flatMap(byPath.get).map(input => input.path -> input.content)
-    }
-
-    // a path leaving the archive root names nothing in it
-    private def normalize(path: String): Option[String] = {
-      if (path.startsWith(Separator)) {
-        None
+    override def resolveInclude(inc: RawInclude, includedFrom: FSPath): Either[ParserIssue, (FSPath, String)] = {
+      if (inc.value.startsWith(Separator)) {
+        Left(ParserIssue.IncludeNotFound(inc, List.empty))
       } else {
-        path
-          .split(Separator).toList.filterNot(segment => segment.isEmpty || segment == ".")
-          .foldLeft(Option(List.empty[String])) {
-            case (Some(_ :: parent), "..") => Some(parent)
-            case (Some(Nil), "..")         => None
-            case (Some(stack), segment)    => Some(segment :: stack)
-            case (None, _)                 => None
-          }
-          .map(_.reverse.mkString(Separator))
+        val relative = BaboonInclusionResolver.against(BaboonInclusionResolver.directoryOf(includedFrom), inc.value)
+        val root     = BaboonInclusionResolver.against("", inc.value)
+        BaboonInclusionResolver.resolve(inc, relative, root.toList)(path => byPath.get(path).map(input => input.path -> input.content), identity)
       }
     }
   }

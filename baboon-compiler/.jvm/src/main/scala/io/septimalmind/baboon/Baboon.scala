@@ -287,6 +287,10 @@ object Baboon {
 
     new MultiModalArgsParserImpl().parse(args).merge match {
       case MultiModalArgs(generalArgs, modalities) =>
+        CaseApp.parse[CLIOptions](generalArgs).foreach {
+          case (generalOptions, _) => requireModelDirsExist(generalOptions.modelDir)
+        }
+
         val isExploreMode  = modalities.exists { case ModalityArgs(id, _) => id == "explore" }
         val isSchemeMode   = modalities.exists { case ModalityArgs(id, _) => id == "scheme" }
         val isDiffMode     = modalities.exists { case ModalityArgs(id, _) => id == "diff" }
@@ -753,6 +757,24 @@ object Baboon {
     }
   }
 
+  /** Every mode walks its `--model-dir`s, and walking a missing path throws (D42/T184), so they are
+    * checked once, before any mode runs. Only a NONEXISTENT path is rejected, not a non-directory:
+    * `--model-dir` also accepts a single `.baboon` FILE (IzFiles.walk on a file yields that file),
+    * which many service/wiring lanes rely on (e.g. `--model-dir ./test/services/petstore.baboon`).
+    */
+  private def requireModelDirsExist(modelDirs: List[String]): Unit = {
+    val missing = modelDirs.map(new java.io.File(_)).filterNot(_.exists())
+    if (missing.nonEmpty) {
+      missing.foreach {
+        dir =>
+          // zsh and bash leave `~` unexpanded after `=`, as in `--model-dir=~/models`
+          val tildeHint = if (dir.getPath.startsWith("~")) " (`~` was not expanded by the shell; use $HOME or `--model-dir ~/...`)" else ""
+          System.err.println(s"--model-dir does not exist: ${dir.getAbsolutePath}$tildeHint")
+      }
+      sys.exit(2)
+    }
+  }
+
   case class SharedOpts(outOpts: OutputOptions, genericOpts: GenericOptions)
 
   private def mkGenericOpts(opts: SharedCLIOptions): SharedOpts = {
@@ -889,21 +911,6 @@ object Baboon {
         .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
           (loader: BaboonLoader[F], logger: BLogger, loc: Locator) =>
             for {
-              _ <- F.maybeSuspend {
-                options.directoryInputs.foreach {
-                  dir =>
-                    val f = dir.toFile
-                    // Guard only against a NONEXISTENT path (the D42/T184 concern: IzFiles.walk on a
-                    // missing path throws an uncaught exception). Do NOT require a directory —
-                    // `--model-dir` historically also accepts a single `.baboon` FILE (IzFiles.walk
-                    // on a file yields that file), which many service/wiring lanes rely on
-                    // (e.g. `--model-dir ./test/services/petstore.baboon`).
-                    if (!f.exists()) {
-                      System.err.println(s"--model-dir does not exist: ${f.getAbsolutePath}")
-                      sys.exit(2)
-                    }
-                }
-              }
               inputModels <- F.maybeSuspend(options.individualInputs.map(_.toPath) ++ options.directoryInputs.flatMap {
                 dir =>
                   IzFiles
