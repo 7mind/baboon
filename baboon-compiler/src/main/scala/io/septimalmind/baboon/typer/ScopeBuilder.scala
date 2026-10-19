@@ -37,10 +37,9 @@ class ScopeBuilder[F[+_, +_]: Error2] {
       }
     } yield {
       val out     = RootScope(gen.next(), pkg, asMap)
-      val parents = out.identifyParents
-      val index   = out.index
+      val context = ScopeContext(out.identifyParents, out.index)
 
-      out.map(defn => ExtendedRawDefn(defn, ScopeContext(parents, index)))
+      out.map(defn => ExtendedRawDefn(defn, context))
     }
 
   }

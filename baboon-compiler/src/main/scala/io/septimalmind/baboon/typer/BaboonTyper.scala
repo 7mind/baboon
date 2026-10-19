@@ -272,95 +272,133 @@ object BaboonTyper {
       }
     }
 
-    private def deepSchemaRepr(id: TypeId, defs: Map[TypeId, DomainMember], seen: List[TypeId]): List[String] = {
-      val self = enquiries.wrap(id)
+    /** Deep reprs of one domain. A type that reaches no cycle has the same repr on every path (no
+      * `[recursive:...]` marker can occur in it), so it is expanded once and its hosts embed its
+      * digest instead of re-expanding it: a full expansion grows with the number of paths through
+      * the dependency DAG. Reprs that reach a cycle depend on the path and are expanded per path.
+      * Two versions of a type still get equal deep ids exactly when their full expansions are equal.
+      */
+    private final class DeepSchemaReprs(defs: Map[TypeId, DomainMember]) {
+      private val acyclicDigests = mutable.HashMap.empty[TypeId, String]
 
-      val nseen = seen :+ id
-      if (seen.contains(id)) {
-        List(s"[recursive:$self]")
-      } else {
-        val maybedef = defs.get(id)
-        assert(maybedef.nonEmpty, s"BUG: $id not found")
-        // Deep reprs must be order- and structure-sensitive wherever the wire is:
-        // UEBA is positional (field order, enum member order, ADT branch order) and
-        // type-constructor argument order (map[K,V]) changes byte layout. The
-        // pre-fix code sorted the FLATTENED dependency repr lines per field (for
-        // determinism, since `explode` returns a Set), which erased order inside
-        // dependencies and merged multi-dep boundaries — `unmodified`/sameIn then
-        // overclaimed byte-identity for hosts of reordered deps. Determinism is
-        // now provided by sorting the dependency IDS, keeping each dependency's
-        // repr contiguous and internally ordered; each field line additionally
-        // carries the full type-ref rendering so argument-order changes inside
-        // dependencies surface in every transitive host.
-        def fieldRepr(m: Field): List[String] = {
-          val exploded = enquiries
-            .explode(m.tpe)
-            .toList
-            .sortBy(_.toString)
-            .flatMap(id => deepSchemaRepr(id, defs, nseen))
-          List(s"{", s"${m.name.name}:${m.tpe.toString}") ++ exploded ++ List("}")
-        }
+      def of(id: TypeId): List[String] = expand(id, List.empty).lines
 
-        maybedef.get match {
-          case _: DomainMember.Builtin =>
-            List(s"[builtin:$self]")
-          case u: DomainMember.User =>
-            u.defn match {
-              case d: Typedef.Dto =>
-                val content = d.fields.flatMap(fieldRepr)
-                List(s"[dto:$self]") ++ content ++ List(s"/[dto:$self]")
-              case d: Typedef.Contract =>
-                val content = d.fields.flatMap(fieldRepr)
-                List(s"[contract:$self]") ++ content ++ List(s"/[contract:$self]")
-              case s: Typedef.Service =>
-                val content = s.methods.flatMap {
-                  m =>
-                    val tpes    = List(m.sig) ++ m.err.toList ++ m.out.toList
-                    val refRepr = tpes.map(_.toString).mkString(":")
-
-                    val exploded = tpes
-                      .flatMap(enquiries.explode)
-                      .distinct
-                      .sortBy(_.toString)
-                      .flatMap(id => deepSchemaRepr(id, defs, nseen))
-                    List(s"{", s"${m.name.name}:$refRepr") ++ exploded ++ List("}")
-
-                }
-
-                List(s"[service:$self]") ++ content ++ List(s"/[service:$self]")
-
-              case d: Typedef.Adt =>
-                val content = d.fields.flatMap(fieldRepr)
-                // branch order is the UEBA discriminant order: preserve it
-                val branches = List("{", "branches") ++ d.members.toList
-                  .flatMap(id => deepSchemaRepr(id, defs, nseen)) ++
-                  List("}", "{", "contracts") ++
-                  d.contracts
-                    .map(id => deepSchemaRepr(id, defs, nseen))
-                    .sortBy(_.mkString(" "))
-                    .flatten ++ List("}")
-
-                List(s"[adt:$self]") ++ content ++ branches ++ List(
-                  s"/[adt:$self]"
-                )
-
-              case d: Typedef.Enum =>
-                List(s"[enum:$self]") ++ d.members.map(m => s"${m.name}/${m.const.map(_.toString).getOrElse("NoVal")}") ++ List(s"/[enum:$self]")
-              case d: Typedef.Foreign =>
-                List(
-                  s"[foreign:$self:${d.bindings.map { case (k, v) => s"$k->$v" }.mkString(",")}]"
-                )
-
-            }
+      private def expand(id: TypeId, seen: List[TypeId]): DeepSchemaExpansion = {
+        if (seen.contains(id)) {
+          DeepSchemaExpansion(List(s"[recursive:${enquiries.wrap(id)}]"), reachesCycle = true)
+        } else {
+          acyclicDigests.get(id) match {
+            case Some(digest) =>
+              DeepSchemaExpansion(List(s"[deep:$digest]"), reachesCycle = false)
+            case None =>
+              val nseen        = seen :+ id
+              var reachesCycle = false
+              val lines = deepSchemaRepr(id, defs) {
+                dependency =>
+                  val expansion = expand(dependency, nseen)
+                  reachesCycle ||= expansion.reachesCycle
+                  expansion.lines
+              }
+              if (reachesCycle) {
+                DeepSchemaExpansion(lines, reachesCycle = true)
+              } else {
+                val digest = IzSha256HashFunction.hash(lines.mkString(","))
+                acyclicDigests.put(id, digest)
+                DeepSchemaExpansion(List(s"[deep:$digest]"), reachesCycle = false)
+              }
+          }
         }
       }
     }
+
+    private final case class DeepSchemaExpansion(lines: List[String], reachesCycle: Boolean)
+
+    /** The repr of `id` itself, with `dependency` rendering every type it refers to. */
+    private def deepSchemaRepr(id: TypeId, defs: Map[TypeId, DomainMember])(dependency: TypeId => List[String]): List[String] = {
+      val self = enquiries.wrap(id)
+
+      val maybedef = defs.get(id)
+      assert(maybedef.nonEmpty, s"BUG: $id not found")
+      // Deep reprs must be order- and structure-sensitive wherever the wire is:
+      // UEBA is positional (field order, enum member order, ADT branch order) and
+      // type-constructor argument order (map[K,V]) changes byte layout. The
+      // pre-fix code sorted the FLATTENED dependency repr lines per field (for
+      // determinism, since `explode` returns a Set), which erased order inside
+      // dependencies and merged multi-dep boundaries — `unmodified`/sameIn then
+      // overclaimed byte-identity for hosts of reordered deps. Determinism is
+      // now provided by sorting the dependency IDS, keeping each dependency's
+      // repr contiguous and internally ordered; each field line additionally
+      // carries the full type-ref rendering so argument-order changes inside
+      // dependencies surface in every transitive host.
+      def fieldRepr(m: Field): List[String] = {
+        val exploded = enquiries
+          .explode(m.tpe)
+          .toList
+          .sortBy(_.toString)
+          .flatMap(dependency)
+        List(s"{", s"${m.name.name}:${m.tpe.toString}") ++ exploded ++ List("}")
+      }
+
+      maybedef.get match {
+        case _: DomainMember.Builtin =>
+          List(s"[builtin:$self]")
+        case u: DomainMember.User =>
+          u.defn match {
+            case d: Typedef.Dto =>
+              val content = d.fields.flatMap(fieldRepr)
+              List(s"[dto:$self]") ++ content ++ List(s"/[dto:$self]")
+            case d: Typedef.Contract =>
+              val content = d.fields.flatMap(fieldRepr)
+              List(s"[contract:$self]") ++ content ++ List(s"/[contract:$self]")
+            case s: Typedef.Service =>
+              val content = s.methods.flatMap {
+                m =>
+                  val tpes    = List(m.sig) ++ m.err.toList ++ m.out.toList
+                  val refRepr = tpes.map(_.toString).mkString(":")
+
+                  val exploded = tpes
+                    .flatMap(enquiries.explode)
+                    .distinct
+                    .sortBy(_.toString)
+                    .flatMap(dependency)
+                  List(s"{", s"${m.name.name}:$refRepr") ++ exploded ++ List("}")
+
+              }
+
+              List(s"[service:$self]") ++ content ++ List(s"/[service:$self]")
+
+            case d: Typedef.Adt =>
+              val content = d.fields.flatMap(fieldRepr)
+              // branch order is the UEBA discriminant order: preserve it
+              val branches = List("{", "branches") ++ d.members.toList
+                .flatMap(dependency) ++
+                List("}", "{", "contracts") ++
+                d.contracts
+                  .map(dependency)
+                  .sortBy(_.mkString(" "))
+                  .flatten ++ List("}")
+
+              List(s"[adt:$self]") ++ content ++ branches ++ List(
+                s"/[adt:$self]"
+              )
+
+            case d: Typedef.Enum =>
+              List(s"[enum:$self]") ++ d.members.map(m => s"${m.name}/${m.const.map(_.toString).getOrElse("NoVal")}") ++ List(s"/[enum:$self]")
+            case d: Typedef.Foreign =>
+              List(
+                s"[foreign:$self:${d.bindings.map { case (k, v) => s"$k->$v" }.mkString(",")}]"
+              )
+
+          }
+      }
+    }
+
     private def deepSchemaOf(
       id: TypeId,
-      defs: Map[TypeId, DomainMember],
+      reprs: DeepSchemaReprs,
     ): F[NEList[BaboonIssue], DeepSchemaId] = {
       for {
-        repr <- F.pure(deepSchemaRepr(id, defs, List.empty))
+        repr <- F.pure(reprs.of(id))
         fullRepr = s"[${enquiries.wrap(id)};${repr
             .mkString(",")}]"
       } yield {
@@ -371,11 +409,12 @@ object BaboonTyper {
     private def computeDeepSchema(
       graph: DG[TypeId, DomainMember]
     ): F[NEList[BaboonIssue], Map[TypeId, DeepSchemaId]] = {
+      val reprs = new DeepSchemaReprs(graph.meta.nodes)
 
       for {
         out <- F.sequenceAccumErrors(graph.meta.nodes.map {
           case (id, _) =>
-            deepSchemaOf(id, graph.meta.nodes).map(s => (id, s))
+            deepSchemaOf(id, reprs).map(s => (id, s))
         })
       } yield {
         out.toMap

@@ -35,9 +35,12 @@ object Locks {
     *       sorted per field);
     *   2 — order- and structure-sensitive deep hashing (dependency reprs kept
     *       contiguous and ordered, field type-refs included, ADT branch order
-    *       preserved).
+    *       preserved);
+    *   3 — as 2, with every dependency that reaches no cycle represented by the
+    *       digest of its own repr instead of its full expansion (same equalities,
+    *       linear in the model instead of in the paths through it).
     */
-  final val CurrentScheme: Int = 2
+  final val CurrentScheme: Int = 3
 }
 
 object LockCodecs {

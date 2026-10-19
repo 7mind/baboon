@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.typer.model
 
 import io.septimalmind.baboon.parser.model.*
-import io.septimalmind.baboon.typer.model.Scope.{NestedScope, ScopeUID}
+import io.septimalmind.baboon.typer.model.Scope.{NestedScope, RootScope, ScopeUID}
 
 case class FullRawDefn(defn: RawDefn, gcRoot: Boolean)
 
@@ -28,14 +28,21 @@ object FullRawDefn {
   }
 }
 
-case class ScopeContext(parents: Map[ScopeUID, ScopeUID], index: Map[ScopeUID, Scope[FullRawDefn]])
+case class ScopeContext(parents: Map[ScopeUID, ScopeUID], index: Map[ScopeUID, Scope[FullRawDefn]]) {
+  /** `index` as seen through [[ExtendedRawDefn]]. `Scope.map` rebuilds a whole subtree, so the tree is
+    * mapped once, from its root, instead of on every parent lookup.
+    */
+  lazy val extendedIndex: Map[ScopeUID, Scope[ExtendedRawDefn]] = {
+    val roots = index.values.collect { case root: RootScope[FullRawDefn] => root }.toList
+    assert(roots.size == 1, s"BUG: a scope index holds ${roots.size} roots")
+    roots.head.map(defn => ExtendedRawDefn(defn, this)).index
+  }
+}
 
 case class ExtendedRawDefn(origin: FullRawDefn, context: ScopeContext) {
   def defn: RawDefn   = origin.defn
   def gcRoot: Boolean = origin.gcRoot
 
   def parentOf(s: NestedScope[ExtendedRawDefn]): Scope[ExtendedRawDefn] =
-    s.defn.context
-      .index(s.defn.context.parents(s.id))
-      .map(d => ExtendedRawDefn(d, s.defn.context))
+    s.defn.context.extendedIndex(s.defn.context.parents(s.id))
 }

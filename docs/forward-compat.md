@@ -492,9 +492,14 @@ branch order — the UEBA discriminant order — is preserved. Regression covera
 Two consequences of scheme 2:
 
 - **Lockfiles** persist deepId-derived signatures. The lockfile format carries a
-  `scheme` marker; a lockfile written by an older compiler (scheme 1, or no
+  `scheme` marker; a lockfile written by an older compiler (an older scheme, or no
   marker) is treated as incomparable — drift enforcement is skipped for that one
   run and the file is re-signed in place, even under `create-only`.
+
+Scheme 3 keeps scheme 2's equalities but embeds, for every dependency that reaches
+no cycle, the digest of its repr instead of its full expansion: the full expansion
+grows with the number of paths through the dependency DAG, which made typing large
+models slow. Lockfiles signed under scheme 2 migrate as described above.
 - **The M20 manual→sugared ADT rewrite is honestly classified**: the sugared
   expansion reorders branches (local members first), which shifts positional
   UEBA discriminants, so such a step is `deepModified` (forward tier
