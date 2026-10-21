@@ -1,14 +1,15 @@
 package io.septimalmind.baboon.tests
 
 import io.septimalmind.baboon.BaboonLoader
+import io.septimalmind.baboon.explore.RandomJsonGenerator
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
-import io.septimalmind.baboon.typer.BaboonFamilyManager
+import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonFamilyManager, BaboonRuntimeCodec}
 import io.septimalmind.baboon.typer.model.*
-import izumi.functional.bio.Error2
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzResources
@@ -36,6 +37,86 @@ abstract class SchemeRoundtripTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
           _      <- checkRoundtrip(renderer, manager, family, Pkg(NEList("rename", "ns")), Version.parse("1.0.0"))
           _      <- checkRoundtrip(renderer, manager, family, Pkg(NEList("rename", "ns")), Version.parse("2.0.0"))
         } yield ()
+    }
+
+    // https://github.com/7mind/baboon/issues/99: a contract's fields sit where its `is` is declared,
+    // so rendering every `is` ahead of the fields moved them to the front on reload
+    "keep the field order, and so the UEBA layout, of DTOs whose `is` is not their first member" in {
+      (manager: BaboonFamilyManager[F], renderer: BaboonSchemeRenderer, codec: BaboonRuntimeCodec[F]) =>
+        val pkg     = Pkg(NEList("scheme", "isorder"))
+        val version = Version.parse("1.0.0")
+        val source =
+          """model scheme.isorder
+            |
+            |version "1.0.0"
+            |
+            |contract Counted {
+            |  count: i32
+            |}
+            |
+            |contract Extra {
+            |  is Counted
+            |  note: str
+            |}
+            |
+            |contract Keyed {
+            |  key: i64
+            |}
+            |
+            |root data After {
+            |  a: i32
+            |  is Counted
+            |}
+            |
+            |root data Between {
+            |  a: i32
+            |  is Counted
+            |  b: str
+            |  is Keyed
+            |  c: bit
+            |}
+            |
+            |root data Extended {
+            |  x: u08
+            |  is Extra
+            |  y: u16
+            |}
+            |
+            |root adt Shape {
+            |  is Keyed
+            |  data Circle {
+            |    r: f64
+            |    is Counted
+            |    n: str
+            |  }
+            |  data Square {
+            |    side: i32
+            |  }
+            |}
+            |""".stripMargin
+        for {
+          family <- manager.load(List(BaboonParser.Input(FSPath.parse(NEString.unsafeFrom("isorder.baboon")), source)))
+          reloaded <- checkRoundtrip(renderer, manager, family, pkg, version)
+          samples = {
+            val domain    = family.domains.toMap(pkg).versions.toMap(version)
+            val generator = new RandomJsonGenerator(domain, new BaboonEnquiries.BaboonEnquiriesImpl)
+            domain.defs.meta.nodes.values.collect {
+              case member @ DomainMember.User(_, _: Typedef.Dto | _: Typedef.Adt, _, _) =>
+                member.id.toString -> generator.generate(member).fold(e => throw new AssertionError(e), identity)
+            }.toList
+          }
+          encodings <- F.traverse(samples) {
+            case (id, json) =>
+              for {
+                fromSource   <- F.leftMap(codec.encode(family, pkg, version, id, json, indexed = false))(NEList(_))
+                fromReloaded <- F.leftMap(codec.encode(reloaded, pkg, version, id, json, indexed = false))(NEList(_))
+              } yield (id, json, fromSource, fromReloaded)
+          }
+        } yield {
+          assert(samples.size == 6, samples.map(_._1).toString)
+          val differing = encodings.collect { case (id, json, a, b) if a != b => s"$id: ${json.noSpaces}" }
+          assert(differing.isEmpty, s"encoded differently after a render/reload cycle:\n${differing.mkString("\n")}")
+        }
     }
 
     "preserve a declared type rename through a render/reload cycle" in {
@@ -67,7 +148,7 @@ abstract class SchemeRoundtripTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
     family: BaboonFamily,
     pkg: Pkg,
     version: Version,
-  ): F[NEList[BaboonIssue], Unit] = {
+  ): F[NEList[BaboonIssue], BaboonFamily] = {
     val rendered1 = renderer
       .render(family, pkg, version).fold(
         e => throw new AssertionError(s"First render failed for $pkg@$version: $e"),
@@ -85,7 +166,21 @@ abstract class SchemeRoundtripTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
           e => throw new AssertionError(s"Second render failed for $pkg@$version: $e"),
           identity,
         )
+      val before  = wireShapes(family.domains.toMap(pkg).versions.toMap(version))
+      val after   = wireShapes(family2.domains.toMap(pkg).versions.toMap(version))
+      val changed = before.collect { case (id, shape) if !after.get(id).contains(shape) => s"$id: $shape -> ${after.get(id)}" }
+      assert(changed.isEmpty, s"Wire shapes changed by a render/reload cycle for $pkg@$version:\n${changed.mkString("\n")}\n---RENDERED---\n$rendered1")
       assert(rendered1 == rendered2, s"Roundtrip mismatch for $pkg@$version:\n---FIRST---\n$rendered1\n---SECOND---\n$rendered2")
+      family2
+    }
+  }
+
+  /** What the wire depends on, per user type: field, branch and member order. */
+  private def wireShapes(domain: Domain): Map[TypeId, List[String]] = {
+    domain.defs.meta.nodes.collect {
+      case (id, DomainMember.User(_, d: Typedef.Dto, _, _))  => id -> d.fields.map(f => s"${f.name.name}: ${f.tpe}")
+      case (id, DomainMember.User(_, a: Typedef.Adt, _, _))  => id -> a.members.toList.map(_.toString)
+      case (id, DomainMember.User(_, e: Typedef.Enum, _, _)) => id -> e.members.toList.map(m => s"${m.name}=${m.const}")
     }
   }
 

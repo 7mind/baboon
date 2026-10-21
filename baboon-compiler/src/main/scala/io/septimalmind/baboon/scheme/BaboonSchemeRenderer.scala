@@ -299,14 +299,17 @@ object BaboonSchemeRenderer {
     ): Unit = {
       val derivations = renderClauses(member, domain)
       sb.append(s"$indent${rootPrefix}data ${dto.id.name.name}$derivations {\n")
-      dto.contracts.foreach {
-        contractId =>
-          sb.append(s"$indent  is ${contractId.name.name}\n")
-      }
       dto.fields.foreach {
         field =>
           val wasClause = field.prevName.map(pn => s" was ${pn.name}").getOrElse("")
           sb.append(s"$indent  ${field.name.name}: ${renderTypeRef(field.tpe)}$wasClause\n")
+      }
+      // `dto.fields` already holds each contract's fields where its `is` was declared, and a
+      // reload inlines a contract's fields at its `is` and keeps the first copy: written after the
+      // fields, the `is` lines leave the field order -- and so the UEBA layout -- unchanged
+      dto.contracts.foreach {
+        contractId =>
+          sb.append(s"$indent  is ${contractId.name.name}\n")
       }
       sb.append(s"$indent}\n")
     }
