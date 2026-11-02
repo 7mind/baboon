@@ -237,7 +237,7 @@ let package = Package(
         // ExtractedContractsTests imports MyOkExtractedContracts (T45).
         .testTarget(
             name: "RuntimeTests",
-            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0", "RecursiveTree", "MyOkExtractedContracts", "Fwde2eFwd", "Fwde2eChain"],
+            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0", "TestpkgPkg0_v1_0_0", "RecursiveTree", "MyOkExtractedContracts", "Fwde2eFwd", "Fwde2eChain"],
             path: "Tests/RuntimeTests"
         ),
 
