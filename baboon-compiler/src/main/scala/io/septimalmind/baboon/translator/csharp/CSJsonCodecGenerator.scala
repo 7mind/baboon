@@ -286,8 +286,10 @@ class CSJsonCodecGenerator(
         // diverging from the canonical lowercase wire form emitted by the other 9
         // backends (Scala/Rust/Java/Kotlin/KMP/TS/Dart/Swift/Python). Force lowercase
         // for cross-language byte-identity. Closes the bit-key arm of PR-G-D01.
-        case TypeId.Builtins.bit => q"$ref.ToString().ToLowerInvariant()"
-        case _: TypeId.Builtin   => q"$ref.ToString()"
+        case TypeId.Builtins.bit   => q"$ref.ToString().ToLowerInvariant()"
+        // `ByteString.ToString()` decodes the bytes as UTF-8 text; keys are hex like values (#104).
+        case TypeId.Builtins.bytes => q"$ref.Encode()"
+        case _: TypeId.Builtin     => q"$ref.ToString()"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>

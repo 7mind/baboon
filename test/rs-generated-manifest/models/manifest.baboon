@@ -1,0 +1,11 @@
+model rsmanifest
+version "1.0.0"
+
+root data Probe : derived[json] {
+  s: str
+  b: bytes
+  m: map[bytes, i64]
+  t: tsu
+  u: uid
+  d: f128
+}

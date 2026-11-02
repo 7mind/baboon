@@ -369,6 +369,10 @@ pub trait AbstractBaboonConversions {
 // --- Hex encoding for bytes ---
 
 pub mod hex_bytes {
+    pub fn hex_encode(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{:02X}", b)).collect()
+    }
+
     /// Accepts ASCII hex digits of either case; ASCII whitespace, ':' and '-' are separators.
     pub fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
         let mut out = Vec::with_capacity(s.len() / 2);
@@ -829,7 +833,7 @@ pub mod json_tools {
 
     // Bytes travel as upper-case hex, matching the `hex_bytes` adapter the derive used.
     pub fn bytes_to_json(bytes: &[u8]) -> Value {
-        Value::String(bytes.iter().map(|b| format!("{:02X}", b)).collect::<String>())
+        Value::String(super::hex_bytes::hex_encode(bytes))
     }
 
     pub fn bytes_from_json(wire: &Value, what: &str) -> Result<Vec<u8>, BaboonCodecError> {

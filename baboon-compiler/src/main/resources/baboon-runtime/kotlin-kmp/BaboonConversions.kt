@@ -32,14 +32,14 @@ abstract class AbstractConversion<From : Any, To : Any>(
                         val conversionTypeIsAdtType = expectedTypeId() == obj.baboonAdtTypeIdentifier
                         if (!conversionTypeIsAdtType && !conversionTypeIsExactType) {
                             throw IllegalArgumentException(
-                                "Provided instance is adt=$${obj.baboonAdtTypeIdentifier} exact=$${obj.baboonTypeIdentifier}, one of which must be $${expectedTypeId()}"
+                                "Provided instance is adt=${obj.baboonAdtTypeIdentifier} exact=${obj.baboonTypeIdentifier}, one of which must be ${expectedTypeId()}"
                             )
                         }
                     }
                     else -> {
                         if (!conversionTypeIsExactType) {
                             throw IllegalArgumentException(
-                                "Provided instance is $${obj.baboonTypeIdentifier} but must be $${expectedTypeId()}"
+                                "Provided instance is ${obj.baboonTypeIdentifier} but must be ${expectedTypeId()}"
                             )
                         }
                     }
@@ -87,7 +87,7 @@ abstract class AbstractBaboonConversions {
 
     fun <C> convertWithContext(ctx: C?, from: BaboonGenerated, fromClass: KClass<*>, toClass: KClass<*>): BaboonGenerated {
         val key = ConversionKey(fromClass, toClass)
-        val conv = conversions[key] ?: throw NoSuchElementException("No conversion from $$fromClass to $$toClass")
+        val conv = conversions[key] ?: throw NoSuchElementException("No conversion from $fromClass to $toClass")
         @Suppress("UNCHECKED_CAST")
         return (conv as BaboonGeneratedConversion).convert(ctx, this, from)
     }

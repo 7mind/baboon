@@ -112,6 +112,7 @@ root data T1_D1 : derived[json] {
  f3: str
  f4: bytes
  f5: opt[bytes]
+ f6: map[bytes, str]
 }
 
 //

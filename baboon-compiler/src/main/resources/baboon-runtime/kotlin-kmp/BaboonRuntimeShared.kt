@@ -78,13 +78,13 @@ data class Version(val major: Int, val minor: Int, val patch: Int) : Comparable<
     companion object {
         fun from(version: String): Version {
             val chunks = version.split(".")
-            require(chunks.isNotEmpty()) { "Expected to have version in format x.[y].[z], got $$version" }
+            require(chunks.isNotEmpty()) { "Expected to have version in format x.[y].[z], got $version" }
             val major = chunks[0].trim().toIntOrNull()
-                ?: throw Exception("Expected to have version in format x.[y].[z], got $$version. Invalid major value.")
+                ?: throw Exception("Expected to have version in format x.[y].[z], got $version. Invalid major value.")
             val minor = chunks.getOrNull(1)?.trim()?.toIntOrNull()
-                ?: throw Exception("Expected to have version in format x.[y].[z], got $$version. Invalid minor value.")
+                ?: throw Exception("Expected to have version in format x.[y].[z], got $version. Invalid minor value.")
             val patch = chunks.getOrNull(2)?.trim()?.toIntOrNull()
-                ?: throw Exception("Expected to have version in format x.[y].[z], got $$version. Invalid patch value.")
+                ?: throw Exception("Expected to have version in format x.[y].[z], got $version. Invalid patch value.")
             return Version(major, minor, patch)
         }
     }

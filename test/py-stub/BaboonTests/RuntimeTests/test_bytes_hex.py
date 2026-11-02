@@ -2,7 +2,7 @@
 # \f, \r, ':' and '-' ignored anywhere; anything else, or an odd digit count, is a decode
 # failure. Every backend runs the same vectors.
 #
-# The codec-level cases use testpkg.pkg0 T1_D1 (f4: bytes, f5: opt[bytes]); generated symbols
+# The codec-level cases use testpkg.pkg0 T1_D1 (f4: bytes, f5: opt[bytes], f6: map[bytes, str]); generated symbols
 # are produced by mdl :test-gen-regular-adt.
 
 import json
@@ -36,7 +36,7 @@ INVALID = [
 
 
 def t1_d1_wire(f4, f5=None):
-    return json.dumps({"f0": {"f": "x", "f1": None}, "f1": 1, "f3": "s", "f4": f4, "f5": f5})
+    return json.dumps({"f0": {"f": "x", "f1": None}, "f1": 1, "f3": "s", "f4": f4, "f5": f5, "f6": {"ab:CD": "v"}})
 
 
 class BytesHexTest(unittest.TestCase):
@@ -58,6 +58,7 @@ class BytesHexTest(unittest.TestCase):
                 decoded = T1_D1_JsonCodec.instance().decode(self.ctx, t1_d1_wire(text, text))
                 self.assertEqual(expected, decoded.f4)
                 self.assertEqual(expected, decoded.f5)
+                self.assertEqual({b"\xab\xcd": "v"}, decoded.f6)
 
     def test_json_codec_rejects_invalid_hex(self):
         for text in INVALID:

@@ -736,12 +736,19 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     if (hasTimestamps) defaultFeatures += """"timestamps""""
     if (hasUuids) defaultFeatures += """"uuids""""
 
+    // Cargo rejects a `rust-version` older than the first toolchain supporting the edition.
+    val rustVersion = if (target.language.edition == RsBaboonTranslator.Edition2024) RsBaboonTranslator.Edition2024MinRust else RsBaboonTranslator.DefaultMinRust
+
     val content =
       s"""[package]
          |name = "baboon-generated"
          |version = "0.1.0"
          |edition = "${target.language.edition}"
-         |rust-version = "1.75"
+         |rust-version = "$rustVersion"
+         |
+         |# `lib.rs` is emitted at the output root, next to this manifest, not under `src/`.
+         |[lib]
+         |path = "lib.rs"
          |
          |[dependencies]
          |${deps.mkString("\n")}
@@ -801,4 +808,10 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       }
     }
   }
+}
+
+object RsBaboonTranslator {
+  val Edition2024: String        = "2024"
+  val Edition2024MinRust: String = "1.85"
+  val DefaultMinRust: String     = "1.75"
 }

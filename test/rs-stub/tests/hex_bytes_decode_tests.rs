@@ -2,7 +2,7 @@
 // ASCII whitespace / ':' / '-' as separators, everything else a decode failure — never a panic,
 // never wrong bytes.
 //
-// The JSON-codec cases use testpkg.pkg0 v3 `T1_D1 { f0: T1_D2, f1: i08, f3: str, f4: bytes, f5: opt[bytes] }`.
+// The JSON-codec cases use testpkg.pkg0 v3 `T1_D1 { f0: T1_D2, f1: i08, f3: str, f4: bytes, f5: opt[bytes], f6: map[bytes, str] }`.
 // Generated symbols are produced by mdl :test-gen-regular-adt under target/test-regular/rs-stub/.
 
 use baboon_rs_stub::any_opaque::BaboonCodecError;
@@ -80,7 +80,7 @@ fn bytes_from_json_reports_decoder_failure() {
 }
 
 fn t1_d1_json(f4: &str, f5: &str) -> String {
-    serde_json::json!({ "f0": { "f": "x" }, "f1": 1, "f3": "s", "f4": f4, "f5": f5 }).to_string()
+    serde_json::json!({ "f0": { "f": "x" }, "f1": 1, "f3": "s", "f4": f4, "f5": f5, "f6": { "ab:CD": "v" } }).to_string()
 }
 
 #[test]
@@ -88,6 +88,7 @@ fn t1_d1_json_decode_accepts_separated_hex() {
     let decoded = T1_D1::from_json(&t1_d1_json("ab:cd", "00 FF-7f")).expect("valid hex should decode");
     assert_eq!(decoded.f4, vec![0xAB, 0xCD]);
     assert_eq!(decoded.f5, Some(vec![0x00, 0xFF, 0x7F]));
+    assert_eq!(decoded.f6.get(&vec![0xAB, 0xCD]).map(String::as_str), Some("v"));
 }
 
 #[test]

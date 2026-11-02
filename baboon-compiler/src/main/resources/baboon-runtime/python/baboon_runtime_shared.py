@@ -16,7 +16,7 @@ from functools import wraps
 from typing import Annotated, TypeVar, Generic, Callable, Optional, Any, ClassVar
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer
+from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, TypeAdapter
 
 from .baboon_exceptions import BaboonCodecException
 
@@ -29,6 +29,13 @@ T = TypeVar("T")
 # validator already accepts a decimal string, which is what keeps older numeric payloads readable.
 BaboonI64 = Annotated[int, PlainSerializer(str, return_type=str, when_used="json")]
 BaboonU64 = Annotated[int, PlainSerializer(str, return_type=str, when_used="json")]
+
+_BABOON_INT64 = TypeAdapter(BaboonI64)
+
+
+def int64_from_json(value: Any) -> int:
+    """Decodes an `i64`/`u64` outside a model with the same lax validator a model field uses."""
+    return _BABOON_INT64.validate_python(value)
 
 # space, TAB, LF, VT, FF, CR, ':' and '-'
 _HEX_SEPARATORS = frozenset(chr(c) for c in (0x20, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x3A, 0x2D))

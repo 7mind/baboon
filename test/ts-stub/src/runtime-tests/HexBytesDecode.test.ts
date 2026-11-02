@@ -2,7 +2,7 @@
 // ASCII whitespace / ':' / '-' as separators, everything else throws BaboonDecoderFailure —
 // never wrong bytes.
 //
-// The JSON-codec cases use testpkg.pkg0 v3 `T1_D1 { f0: T1_D2, f1: i08, f3: str, f4: bytes, f5: opt[bytes] }`.
+// The JSON-codec cases use testpkg.pkg0 v3 `T1_D1 { f0: T1_D2, f1: i08, f3: str, f4: bytes, f5: opt[bytes], f6: map[bytes, str] }`.
 // Generated symbols are produced by mdl :test-gen-regular-adt under target/test-regular/ts-stub/.
 
 import { describe, expect, test } from "vitest";
@@ -40,7 +40,7 @@ const INVALID: string[] = [
     "AB CD",
 ];
 
-const t1d1Json = (f4: string, f5: string) => ({ f0: { f: "x" }, f1: 1, f3: "s", f4, f5 });
+const t1d1Json = (f4: string, f5: string) => ({ f0: { f: "x" }, f1: 1, f3: "s", f4, f5, f6: { "ab:CD": "v" } });
 
 describe("BinTools.hexDecode", () => {
     test.each(VALID)("decodes %j", (input, expected) => {
@@ -63,6 +63,7 @@ describe("T1_D1 JSON decode of bytes fields", () => {
         const decoded = T1_D1_JsonCodec.instance.decode(ctx, t1d1Json("ab:cd", "00 FF-7f"));
         expect(Array.from(decoded.f4)).toEqual([0xAB, 0xCD]);
         expect(Array.from(decoded.f5!)).toEqual([0x00, 0xFF, 0x7F]);
+        expect(Array.from(decoded.f6.entries()).map(([k, v]) => [Array.from(k), v])).toEqual([[[0xAB, 0xCD], "v"]]);
     });
 
     test.each(INVALID)("throws BaboonDecoderFailure for malformed hex %j", (input) => {

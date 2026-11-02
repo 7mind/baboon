@@ -282,6 +282,8 @@ class RsJsonCodecGenerator(
             q"""crate::baboon_runtime::time_formats::parse_tsu($ref).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("malformed key: {}", e)))?"""
           case TypeRef.Scalar(TypeId.Builtins.tso) =>
             q"""crate::baboon_runtime::time_formats::parse_tso($ref).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("malformed key: {}", e)))?"""
+          case TypeRef.Scalar(TypeId.Builtins.bytes) =>
+            q"""crate::baboon_runtime::hex_bytes::hex_decode($ref).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("malformed key: {}", e)))?"""
           case _ =>
             val rsT = trans.asRsRef(tpe, domain, evo)
             q"""($ref).parse::<$rsT>().map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!("malformed key: {}", e)))?"""
@@ -420,7 +422,9 @@ class RsJsonCodecGenerator(
           // the same shape and is what the value position already uses.
           case TypeRef.Scalar(TypeId.Builtins.tsu) => q"crate::baboon_runtime::time_formats::format_tsu(&$ref)"
           case TypeRef.Scalar(TypeId.Builtins.tso) => q"crate::baboon_runtime::time_formats::format_tso(&$ref)"
-          case _                                   => q"($ref).to_string()"
+          // `Vec<u8>` has no `Display`; keys are hex like values (#105).
+          case TypeRef.Scalar(TypeId.Builtins.bytes) => q"crate::baboon_runtime::hex_bytes::hex_encode(&$ref)"
+          case _                                     => q"($ref).to_string()"
         }
     }
   }

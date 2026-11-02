@@ -73,7 +73,7 @@ Map keys are unaffected: JSON object keys are strings in all cases (see "Map key
 
 Map keys are always strings in JSON. The string form depends on the key type:
 
-- Builtins → `ToString`/`parse` of the scalar (timestamps use formatted strings; booleans/numbers use culture‑invariant formats).
+- Builtins → `ToString`/`parse` of the scalar (timestamps use formatted strings; booleans/numbers use culture‑invariant formats; `bytes` uses the hex form of [bytes](#bytes), never the bytes decoded as text).
 - Enums → `toString` of the enum case (Pascal-cased canonical name; see the enum wire-format spec).
 - `id` types → the canonical identifier repr `<Name>:<ver>#field:value:...:{nested}` documented in [`docs/spec/identifier-repr.md`](spec/identifier-repr.md). Multi-field identifiers are permitted as keys.
 - Single-primitive-field wrapper DTOs (`data Foo { v: str }` etc.) → the inner field is peeled and serialized as the bare primitive, so keys appear in their inner-key form (e.g. plain strings for a `v: str` wrapper, decimal numbers for `v: i32`).

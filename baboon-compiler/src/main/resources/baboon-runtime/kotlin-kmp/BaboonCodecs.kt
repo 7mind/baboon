@@ -80,7 +80,7 @@ interface BaboonJsonCodec<T> : BaboonCodec<T> {
     fun decode(ctx: BaboonCodecContext, wire: JsonElement): T
 
     fun getField(jsonObject: JsonObject, name: String): JsonElement {
-        return jsonObject[name] ?: throw RuntimeException("Cannot decode $$jsonObject to $$baboonTypeIdentifier: missing field $$name")
+        return jsonObject[name] ?: throw RuntimeException("Cannot decode $jsonObject to $baboonTypeIdentifier: missing field $name")
     }
 
     interface Base<T> : BaboonJsonCodec<T>
@@ -155,7 +155,7 @@ interface BaboonBinCodecIndexed {
                 val len = wire.readInt()
 
                 require(len > 0) { "Length must be positive" }
-                require(offset >= prevOffset + prevLen) { "Offset violation: $$offset not >= $${prevOffset + prevLen}" }
+                require(offset >= prevOffset + prevLen) { "Offset violation: $offset not >= ${prevOffset + prevLen}" }
 
                 result.add(BaboonIndexEntry(offset.toLong(), len.toLong()))
                 left -= 1
@@ -175,7 +175,7 @@ open class AbstractBaboonCodecs {
     }
 
     fun find(id: String): Lazy<out BaboonCodecData> {
-        return registry[id] ?: throw NoSuchElementException("Codec not found: $$id")
+        return registry[id] ?: throw NoSuchElementException("Codec not found: $id")
     }
 
     fun tryFind(id: String): Lazy<out BaboonCodecData>? {

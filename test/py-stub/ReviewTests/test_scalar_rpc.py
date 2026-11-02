@@ -28,6 +28,8 @@ class ScalarProbe:
     def amount(self, value): return self._invoke("amount", value)
     def timestamp(self, value): return self._invoke("timestamp", value)
     def offset(self, value): return self._invoke("offset", value)
+    def big(self, value): return self._invoke("big", value)
+    def ubig(self, value): return self._invoke("ubig", value)
 
 
 class ScalarRpcTest(unittest.TestCase):
@@ -36,6 +38,7 @@ class ScalarRpcTest(unittest.TestCase):
             blob=b"\x00\xff\x80", identifier=UUID("00112233-4455-6677-8899-aabbccddeeff"),
             amount=Decimal("123.456789"), timestamp=datetime(2026, 9, 16, 12, 30, tzinfo=timezone.utc),
             offset=datetime(2026, 9, 16, 12, 30, tzinfo=timezone(timedelta(hours=2))),
+            big=2**62 + 1, ubig=2**64 - 1,
         )
         self.fields = json.loads(self.values.codec_json().encode(BaboonCodecContext.Default, self.values))
 
@@ -55,7 +58,7 @@ class ScalarRpcTest(unittest.TestCase):
 
     def test_ueba_preserves_existing_scalar_encoding(self):
         probe = ScalarProbe(self.values, True)
-        methods = {"blob": "write_bytes", "identifier": "write_uuid", "amount": "write_f128", "timestamp": "write_datetime", "offset": "write_datetime"}
+        methods = {"blob": "write_bytes", "identifier": "write_uuid", "amount": "write_f128", "timestamp": "write_datetime", "offset": "write_datetime", "big": "write_i64", "ubig": "write_u64"}
         for name, method in methods.items():
             with self.subTest(name=name):
                 stream = BytesIO()

@@ -55,8 +55,8 @@ class ByteString private constructor(private val bytes: ByteArray) : Comparable<
     }
 
     fun substring(startIndex: Int, length: Int): ByteString {
-        require(startIndex >= 0 && startIndex < bytes.size) { "Start index: $$startIndex" }
-        require(length >= 0 && startIndex + length <= bytes.size) { "Length: $$length" }
+        require(startIndex >= 0 && startIndex < bytes.size) { "Start index: $startIndex" }
+        require(length >= 0 && startIndex + length <= bytes.size) { "Length: $length" }
         val result = ByteArray(length)
         bytes.copyInto(result, 0, startIndex, startIndex + length)
         return ByteString(result)

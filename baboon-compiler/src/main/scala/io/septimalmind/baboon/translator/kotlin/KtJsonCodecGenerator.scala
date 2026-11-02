@@ -202,8 +202,10 @@ class KtJsonCodecGenerator(
         // Note: u64 → kotlin.ULong (per KtTypeTranslator). ULong.toString() is unsigned natively;
         // no special arm needed (PR-28.1-D02 audit confirmed).
         // BAB-K05: str is already a Kotlin String; no .toString() needed (avoids -Werror redundant-call warning).
-        case TypeId.Builtins.str => q"$ref"
-        case _: TypeId.Builtin   => q"$ref.toString()"
+        case TypeId.Builtins.str   => q"$ref"
+        // `ByteString.toString()` decodes the bytes as UTF-8 text; keys are hex like values (#104).
+        case TypeId.Builtins.bytes => q"$ref.toHexString()"
+        case _: TypeId.Builtin     => q"$ref.toString()"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
