@@ -1160,16 +1160,23 @@ class BaboonRight<L, R> extends BaboonEither<L, R> {
 
 bool baboonDeepEquals(dynamic a, dynamic b) {
   if (identical(a, b)) return true;
+  // `bytes` is a `Uint8List`, whose `==` is identity, so a key or set element without a
+  // `==` match is looked up by content.
   if (a is Map && b is Map) {
     if (a.length != b.length) return false;
-    for (final key in a.keys) {
-      if (!b.containsKey(key) || !baboonDeepEquals(a[key], b[key])) return false;
+    for (final entry in a.entries) {
+      if (b.containsKey(entry.key)) {
+        if (!baboonDeepEquals(entry.value, b[entry.key])) return false;
+      } else {
+        final matches = b.entries.where((e) => baboonDeepEquals(entry.key, e.key));
+        if (matches.isEmpty || !baboonDeepEquals(entry.value, matches.first.value)) return false;
+      }
     }
     return true;
   }
   if (a is Set && b is Set) {
     if (a.length != b.length) return false;
-    return a.containsAll(b);
+    return a.every((x) => b.contains(x) || b.any((y) => baboonDeepEquals(x, y)));
   }
   if (a is List && b is List) {
     if (a.length != b.length) return false;

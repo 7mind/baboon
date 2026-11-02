@@ -12,10 +12,19 @@ private[python] object PyScalarCodecOps {
   // outside a pydantic model are hex-encoded explicitly.
   def jsonBytesValue(value: TextTree[PyValue]): TextTree[PyValue] = q"$value.hex()"
 
+  // Same for the `BaboonI64`/`BaboonU64` annotation: a bare 64-bit int must still be a decimal
+  // string on the wire (#107).
+  def jsonScalarValue(id: TypeId.BuiltinScalar, value: TextTree[PyValue]): TextTree[PyValue] = id match {
+    case TypeId.Builtins.bytes                     => jsonBytesValue(value)
+    case TypeId.Builtins.i64 | TypeId.Builtins.u64 => q"str($value)"
+    case _                                         => jsonFieldValue(value)
+  }
+
   def jsonServiceDecode(id: TypeId.BuiltinScalar, data: TextTree[PyValue]): TextTree[PyValue] = {
     val value = q"$pyJsonLoads($data)"
     id match {
       case TypeId.Builtins.bytes                     => q"$pyBytesFromHex($value)"
+      case TypeId.Builtins.i64 | TypeId.Builtins.u64 => q"$pyInt64FromJson($value)"
       case TypeId.Builtins.uid                       => q"$pyUuid($value)"
       case TypeId.Builtins.f128                      => q"$pyDecimal(str($value))"
       case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$pyDateTime.fromisoformat($value)"
@@ -24,12 +33,7 @@ private[python] object PyScalarCodecOps {
   }
 
   def jsonServiceEncode(id: TypeId.BuiltinScalar, value: TextTree[PyValue]): TextTree[PyValue] = {
-    val encoded = id match {
-      case TypeId.Builtins.bytes                                                                  => jsonBytesValue(value)
-      case TypeId.Builtins.uid | TypeId.Builtins.f128 | TypeId.Builtins.tsu | TypeId.Builtins.tso => jsonFieldValue(value)
-      case _                                                                                      => value
-    }
-    q"$pyJsonDumps($encoded)"
+    q"$pyJsonDumps(${jsonScalarValue(id, value)})"
   }
 
   private final case class BinaryMethods(read: String, write: String)

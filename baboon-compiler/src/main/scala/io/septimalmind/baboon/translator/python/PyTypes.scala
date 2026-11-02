@@ -119,6 +119,7 @@ object PyTypes {
   // `Annotated[bytes, ...]` — hex string on the JSON wire, see baboon_runtime_shared.py.
   val pyBaboonBytes  = PyType(pyBaboonSharedRuntimeModule, "BaboonBytes")
   val pyBytesFromHex = PyType(pyBaboonSharedRuntimeModule, "bytes_from_hex")
+  val pyInt64FromJson = PyType(pyBaboonSharedRuntimeModule, "int64_from_json")
   val pyFloat        = PyType(pyBuiltins, "float")
   val pyDecimal      = PyType(pyDecimalModule, "Decimal")
   val pyBool         = PyType(pyBuiltins, "bool")

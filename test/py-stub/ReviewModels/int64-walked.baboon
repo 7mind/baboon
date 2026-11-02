@@ -1,0 +1,15 @@
+model review.python.int64walked
+version "1.0.0"
+
+root id IntKey {
+  v: str
+}
+
+// `map[IntKey, _]` fields are encoded by the explicit JSON walker, not by pydantic (#107).
+root data WalkedInts {
+  n: i64
+  ki: map[IntKey, i64]
+  ku: map[IntKey, u64]
+  kl: map[IntKey, lst[i64]]
+  ko: map[IntKey, opt[u64]]
+}

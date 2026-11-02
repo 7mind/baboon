@@ -281,6 +281,16 @@ bash ./test/rs-conversion-regression/test.sh "$BABOON_BIN"
 ret success:bool=true
 ```
 
+# action: test-rust-generated-manifest
+
+Build generated Rust crates with the compiler-emitted Cargo.toml for each supported edition.
+
+```bash
+BABOON_BIN="$(realpath "${action.build.binary}")"
+bash ./test/rs-generated-manifest/test.sh "$BABOON_BIN"
+ret success:bool=true
+```
+
 # action: test-typescript-regular
 
 Run TypeScript tests with regular ADT codecs.
@@ -3569,6 +3579,7 @@ dep action.test-scala-regular
 dep action.test-python-regular
 dep action.test-rust-regular
 dep action.test-rust-conversion-regression
+dep action.test-rust-generated-manifest
 dep action.test-typescript-regular
 dep action.test-kotlin-regular
 dep action.test-kotlin-kmp-regular

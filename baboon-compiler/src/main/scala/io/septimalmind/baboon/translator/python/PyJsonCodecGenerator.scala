@@ -234,14 +234,11 @@ final class PyJsonCodecGenerator(
           // for that scalar.
           PyScalarCodecOps.jsonFieldValue(ref)
       }
-    case TypeRef.Scalar(TypeId.Builtins.bytes) =>
-      PyScalarCodecOps.jsonBytesValue(ref)
-    case _: TypeRef.Scalar =>
+    case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
       // PR-60-D02: a scalar may legitimately appear inside a walked subtree (e.g. the value side
-      // of `map[user-key, V]` where V is itself a non-any-bearing scalar). Defer JSON conversion
-      // to Pydantic's `to_jsonable_python` — equivalent to what `model_dump(mode='json')` would
-      // have produced for that scalar.
-      PyScalarCodecOps.jsonFieldValue(ref)
+      // of `map[user-key, V]` where V is itself a non-any-bearing scalar). It must come out as
+      // `model_dump(mode='json')` would have written it.
+      PyScalarCodecOps.jsonScalarValue(b, ref)
   }
 
   // M19/PR-60: produces a JSON-serializable key (Python str/int/etc.) from a typed key. For

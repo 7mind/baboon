@@ -37,7 +37,7 @@ open class BaboonCodecsFacade {
     fun latest(domain: String): Version {
         val versions = domainVersions[domain]
         if (versions == null || versions.isEmpty()) {
-            throw Exception("No registered version for $$domain domain found.")
+            throw Exception("No registered version for $domain domain found.")
         }
         return versions.last().version
     }
@@ -252,7 +252,7 @@ open class BaboonCodecsFacade {
             is BaboonCodecVersionSelection.UnsupportedForward ->
                 throw BaboonCodecException.CodecNotFound("Unsupported domain version '${selection.version}'.")
             is BaboonCodecVersionSelection.Unsupported ->
-                throw BaboonCodecException.CodecNotFound("Unsupported domain version '$${selection.version}'.")
+                throw BaboonCodecException.CodecNotFound("Unsupported domain version '${selection.version}'.")
         }
     }
 
@@ -262,9 +262,9 @@ open class BaboonCodecsFacade {
         typeIdentifier: String,
     ): BaboonCodecData {
         val lazyVersionCodecs = versionsCodecs[domainVersion]
-            ?: throw BaboonCodecException.CodecNotFound("No codecs registered for domain version '$$domainVersion'.")
+            ?: throw BaboonCodecException.CodecNotFound("No codecs registered for domain version '$domainVersion'.")
         return lazyVersionCodecs.value.tryFind(typeIdentifier)?.value
-            ?: throw BaboonCodecException.CodecNotFound("No codec found for type [$${domainVersion.domainVersion}.$$typeIdentifier] of version '$${domainVersion.version}'.")
+            ?: throw BaboonCodecException.CodecNotFound("No codec found for type [${domainVersion.domainVersion}.$typeIdentifier] of version '${domainVersion.version}'.")
     }
 
     private fun <TCodecs : AbstractBaboonCodecs> getCodecMaxCompat(
@@ -274,13 +274,13 @@ open class BaboonCodecsFacade {
         typeIdentifier: String,
     ): BaboonCodecData {
         val lazyDomainMeta = versionsMeta[modelVersion]
-            ?: throw BaboonCodecException.CodecNotFound("Unknown domain version '$$modelVersion'.")
+            ?: throw BaboonCodecException.CodecNotFound("Unknown domain version '$modelVersion'.")
 
         val sameVersions = lazyDomainMeta.value.sameInVersions(typeIdentifier)
         val sameVersion = sameVersions.lastOrNull { sv ->
             sv == maxVersion.domainVersion || Version.from(sv) <= maxVersion.version
         } ?: throw BaboonCodecException.CodecNotFound(
-            "No max compat codec found for type [$${modelVersion.domainIdentifier}.$$typeIdentifier] of version '$${modelVersion.version}'."
+            "No max compat codec found for type [${modelVersion.domainIdentifier}.$typeIdentifier] of version '${modelVersion.version}'."
         )
 
         val maxCompatVersion = BaboonDomainVersion(modelVersion.domainIdentifier, sameVersion)

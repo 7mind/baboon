@@ -2,7 +2,7 @@
 // \f, \r, ':' and '-' ignored anywhere; anything else, or an odd digit count, is a decode
 // failure. Every backend runs the same vectors.
 //
-// The codec-level case uses testpkg.pkg0 T1_D1 (f4: bytes, f5: opt[bytes]); generated symbols
+// The codec-level case uses testpkg.pkg0 T1_D1 (f4: bytes, f5: opt[bytes], f6: map[bytes, str]); generated symbols
 // are produced by mdl :test-gen-regular-adt under target/test-regular/cs-stub/.
 #nullable enable
 
@@ -61,10 +61,11 @@ namespace ConversionsTest
         [Test]
         public void JsonCodecAcceptsSeparatedHex()
         {
-            var wire = JToken.Parse("{\"f0\":{\"f\":\"x\",\"f1\":null},\"f1\":1,\"f3\":\"s\",\"f4\":\"AB:CD\",\"f5\":\"\\tab-cd \"}");
+            var wire = JToken.Parse("{\"f0\":{\"f\":\"x\",\"f1\":null},\"f1\":1,\"f3\":\"s\",\"f4\":\"AB:CD\",\"f5\":\"\\tab-cd \",\"f6\":{\"ab:CD\":\"v\"}}");
             var decoded = Testpkg.Pkg0.T1_D1_JsonCodec.Instance.Decode(_ctx, wire);
             Assert.That(decoded.F4.ToArray(), Is.EqualTo(new byte[] {0xAB, 0xCD}));
             Assert.That(decoded.F5!.ToArray(), Is.EqualTo(new byte[] {0xAB, 0xCD}));
+            Assert.That(decoded.F6[new ByteString(new byte[] {0xAB, 0xCD})], Is.EqualTo("v"));
         }
 
         [TestCase("AB\t1CD")]
@@ -76,7 +77,8 @@ namespace ConversionsTest
                 new JProperty("f1", 1),
                 new JProperty("f3", "s"),
                 new JProperty("f4", f4),
-                new JProperty("f5", JValue.CreateNull()));
+                new JProperty("f5", JValue.CreateNull()),
+                new JProperty("f6", new JObject()));
             Assert.Throws<FormatException>(() => Testpkg.Pkg0.T1_D1_JsonCodec.Instance.Decode(_ctx, wire));
         }
     }

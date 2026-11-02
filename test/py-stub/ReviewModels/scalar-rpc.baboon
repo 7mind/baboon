@@ -7,6 +7,8 @@ root data ScalarValues {
   amount: f128
   timestamp: tsu
   offset: tso
+  big: i64
+  ubig: u64
 }
 
 root service ScalarService {
@@ -15,4 +17,6 @@ root service ScalarService {
   def amount(f128): f128
   def timestamp(tsu): tsu
   def offset(tso): tso
+  def big(i64): i64
+  def ubig(u64): u64
 }
