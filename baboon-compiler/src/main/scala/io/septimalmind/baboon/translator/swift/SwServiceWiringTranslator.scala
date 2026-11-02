@@ -139,9 +139,10 @@ object SwServiceWiringTranslator {
 
     // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
     // Swift wiring JSON: wire is Any (from JSONSerialization.jsonObject), encode returns Any.
-    private def jsonDecodeExpr(id: TypeId, wire: TextTree[SwValue]): TextTree[SwValue] = id match {
+    // `what` names the decoded value in decode-failure messages (e.g. `Service.method input`).
+    private def jsonDecodeExpr(id: TypeId, wire: TextTree[SwValue], what: String): TextTree[SwValue] = id match {
       case u: TypeId.User          => q"try ${jsonCodecName(u)}.instance.decode($codecCtxRef, $wire)"
-      case b: TypeId.BuiltinScalar => SwScalarCodecs.jsonDecode(b, wire).withTry
+      case b: TypeId.BuiltinScalar => SwScalarCodecs.jsonDecode(b, wire, what).withTry
       case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
     }
 
@@ -284,7 +285,7 @@ object SwServiceWiringTranslator {
                 val encodeIn = jsonEncodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"arg")
                 val decodeOut = m.out match {
                   case Some(outRef) =>
-                    val decodeExpr = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"wire")
+                    val decodeExpr = jsonDecodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"wire", s"$svcName.${m.name.name} output")
                     q"""let wire = try JSONSerialization.jsonObject(with: resp.data(using: .utf8)!, options: [.fragmentsAllowed])
                        |return $decodeExpr""".stripMargin
                   case None =>
@@ -400,7 +401,7 @@ object SwServiceWiringTranslator {
       val genericDecl = implGenericDecl(service)
       val cases = service.methods.map {
         m =>
-          val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
+          val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire", s"${service.id.name.name}.${m.name.name} input")
 
           val encodeOutput = m.out match {
             case Some(outRef) =>
@@ -554,7 +555,7 @@ object SwServiceWiringTranslator {
       val cases = service.methods.map {
         m =>
           val inRef    = domainTypes.asSwRef(m.sig)
-          val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
+          val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire", s"${service.id.name.name}.${m.name.name} input")
           if (isAsync) generateErrorsJsonCaseAsync(m, inRef, decodeIn)
           else generateErrorsJsonCaseSync(m, inRef, decodeIn)
       }.join("\n")

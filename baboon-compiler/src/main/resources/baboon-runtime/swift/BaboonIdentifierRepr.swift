@@ -87,13 +87,14 @@ public enum BaboonIdentifierRepr {
         if !s.hasSuffix("Z") {
             return .left("tsu repr must end with 'Z', got: \(s)")
         }
-        // BaboonTimeFormats.parseUtc has assertion-based validation for
-        // malformed inputs; pre-validate the 24-char fixed structure here so
-        // we surface a clean Left<String> instead of crashing on the assert.
+        // BaboonTimeFormats.parseUtc accepts the wider ISO-8601 wire forms;
+        // pre-validate the 24-char fixed repr structure here.
         if !isValidTsuShape(s) {
             return .left("could not parse tsu: \(s)")
         }
-        let parsed = BaboonTimeFormats.parseUtc(s)
+        guard let parsed = try? BaboonTimeFormats.parseUtc(s) else {
+            return .left("could not parse tsu: \(s)")
+        }
         return .right(parsed)
     }
 
@@ -104,7 +105,9 @@ public enum BaboonIdentifierRepr {
         if !isValidTsoShape(s) {
             return .left("could not parse tso: \(s)")
         }
-        let parsed = BaboonTimeFormats.parseOffset(s)
+        guard let parsed = try? BaboonTimeFormats.parseOffset(s) else {
+            return .left("could not parse tso: \(s)")
+        }
         return .right(parsed)
     }
 

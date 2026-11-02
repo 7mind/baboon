@@ -843,13 +843,13 @@ public class BaboonTimeFormats {
         return "\(base)\(sign)\(hours):\(minutes)"
     }
 
-    public static func parseUtc(_ s: String) -> Date {
-        let parsed = parseIso8601(s)
+    public static func parseUtc(_ s: String) throws -> Date {
+        let parsed = try parseIso8601(s)
         return Date(timeIntervalSince1970: Double(parsed.epochMillis) / 1000.0)
     }
 
-    public static func parseOffset(_ s: String) -> BaboonDateTimeOffset {
-        let parsed = parseIso8601(s)
+    public static func parseOffset(_ s: String) throws -> BaboonDateTimeOffset {
+        let parsed = try parseIso8601(s)
         if parsed.hasOffset {
             return BaboonDateTimeOffset(
                 epochMillis: parsed.epochMillis,
@@ -878,21 +878,26 @@ public class BaboonTimeFormats {
         let hasZulu: Bool
     }
 
-    private static func parseIso8601(_ s: String) -> ParsedIso8601 {
+    // Malformed input throws `decoderFailure` (GitHub 7mind/baboon#106): timestamps come from
+    // untrusted JSON, so a shape violation must not trap.
+    private static func parseIso8601(_ s: String) throws -> ParsedIso8601 {
+        func malformed() -> BaboonCodecException {
+            return BaboonCodecException.decoderFailure("Malformed ISO-8601 timestamp: '\(s)'", nil)
+        }
         let bytes = Array(s.utf8)
-        assert(bytes.count >= 19)
-        assert(bytes[4] == 45)  // -
-        assert(bytes[7] == 45)  // -
-        assert(bytes[10] == 84 || bytes[10] == 116) // T/t
-        assert(bytes[13] == 58) // :
-        assert(bytes[16] == 58) // :
-
-        let year = parseDecimal(bytes, 0, 4)
-        let month = parseDecimal(bytes, 5, 2)
-        let day = parseDecimal(bytes, 8, 2)
-        let hour = parseDecimal(bytes, 11, 2)
-        let minute = parseDecimal(bytes, 14, 2)
-        let second = parseDecimal(bytes, 17, 2)
+        guard bytes.count >= 19,
+              bytes[4] == 45, // -
+              bytes[7] == 45, // -
+              bytes[10] == 84 || bytes[10] == 116, // T/t
+              bytes[13] == 58, // :
+              bytes[16] == 58, // :
+              let year = parseDecimal(bytes, 0, 4),
+              let month = parseDecimal(bytes, 5, 2),
+              let day = parseDecimal(bytes, 8, 2),
+              let hour = parseDecimal(bytes, 11, 2),
+              let minute = parseDecimal(bytes, 14, 2),
+              let second = parseDecimal(bytes, 17, 2)
+        else { throw malformed() }
 
         var idx = 19
         var millis = 0
@@ -903,7 +908,7 @@ public class BaboonTimeFormats {
                 idx += 1
             }
             let fracLen = idx - fracStart
-            assert(fracLen > 0)
+            guard fracLen > 0 else { throw malformed() }
             let used = min(fracLen, 3)
             var i = 0
             while i < used {
@@ -921,15 +926,18 @@ public class BaboonTimeFormats {
         if idx < bytes.count {
             let tz = bytes[idx]
             if tz == 90 || tz == 122 { // Z/z
-                assert(idx + 1 == bytes.count)
+                guard idx + 1 == bytes.count else { throw malformed() }
                 hasZulu = true
             } else {
-                assert(tz == 43 || tz == 45) // +/-
-                assert(idx + 6 == bytes.count)
-                assert(bytes[idx + 3] == 58) // :
+                guard tz == 43 || tz == 45, // +/-
+                      idx + 6 == bytes.count,
+                      bytes[idx + 3] == 58, // :
+                      let tzH = parseDecimal(bytes, idx + 1, 2),
+                      let tzM = parseDecimal(bytes, idx + 4, 2)
+                else { throw malformed() }
                 let sign: Int64 = tz == 43 ? 1 : -1
-                let tzHours = Int64(parseDecimal(bytes, idx + 1, 2))
-                let tzMinutes = Int64(parseDecimal(bytes, idx + 4, 2))
+                let tzHours = Int64(tzH)
+                let tzMinutes = Int64(tzM)
                 offsetMillis = sign * (tzHours * 3600000 + tzMinutes * 60000)
                 hasOffset = true
             }
@@ -944,7 +952,7 @@ public class BaboonTimeFormats {
         comps.second = second
         comps.nanosecond = millis * 1_000_000
 
-        let localDate = utcCalendar.date(from: comps)!
+        guard let localDate = utcCalendar.date(from: comps) else { throw malformed() }
         let localEpochMillis = baboonEpochMillis(localDate)
         let epochMillis = localEpochMillis - offsetMillis
 
@@ -956,13 +964,13 @@ public class BaboonTimeFormats {
         )
     }
 
-    private static func parseDecimal(_ bytes: [UInt8], _ start: Int, _ count: Int) -> Int {
-        assert(start + count <= bytes.count)
+    private static func parseDecimal(_ bytes: [UInt8], _ start: Int, _ count: Int) -> Int? {
+        guard start + count <= bytes.count else { return nil }
         var value = 0
         var i = 0
         while i < count {
             let b = bytes[start + i]
-            assert(isDigit(b))
+            guard isDigit(b) else { return nil }
             value = value * 10 + Int(b - 48)
             i += 1
         }

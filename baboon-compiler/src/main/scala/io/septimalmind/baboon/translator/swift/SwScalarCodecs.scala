@@ -14,25 +14,31 @@ private[swift] object SwScalarCodecs {
     def withTry: TextTree[SwValue] = if (mayThrow) q"try $expression" else expression
   }
 
-  def jsonDecode(id: TypeId.BuiltinScalar, wire: TextTree[SwValue]): Decoded = id match {
-    case TypeId.Builtins.bit   => Decoded(q"$wire as! Bool", NonThrowing)
-    case TypeId.Builtins.i08   => Decoded(q"Int8(truncatingIfNeeded: ($wire as! NSNumber).intValue)", NonThrowing)
-    case TypeId.Builtins.i16   => Decoded(q"Int16(truncatingIfNeeded: ($wire as! NSNumber).intValue)", NonThrowing)
-    case TypeId.Builtins.i32   => Decoded(q"Int32(truncatingIfNeeded: ($wire as! NSNumber).intValue)", NonThrowing)
-    case TypeId.Builtins.i64   => Decoded(q"($wire is String ? Int64($wire as! String)! : Int64(truncatingIfNeeded: ($wire as! NSNumber).int64Value))", NonThrowing)
-    case TypeId.Builtins.u08   => Decoded(q"UInt8(truncatingIfNeeded: ($wire as! NSNumber).intValue)", NonThrowing)
-    case TypeId.Builtins.u16   => Decoded(q"UInt16(truncatingIfNeeded: ($wire as! NSNumber).intValue)", NonThrowing)
-    case TypeId.Builtins.u32   => Decoded(q"UInt32(truncatingIfNeeded: ($wire as! NSNumber).intValue)", NonThrowing)
-    case TypeId.Builtins.u64   => Decoded(q"($wire is String ? UInt64($wire as! String)! : UInt64(truncatingIfNeeded: ($wire as! NSNumber).uint64Value))", NonThrowing)
-    case TypeId.Builtins.f32   => Decoded(q"Float(($wire as! NSNumber).doubleValue)", NonThrowing)
-    case TypeId.Builtins.f64   => Decoded(q"($wire as! NSNumber).doubleValue", NonThrowing)
-    case TypeId.Builtins.f128  => Decoded(q"$baboonDecimal($wire is String ? $wire as! String : String(describing: $wire))", NonThrowing)
-    case TypeId.Builtins.str   => Decoded(q"($wire as! String)", NonThrowing)
-    case TypeId.Builtins.uid   => Decoded(q"UUID(uuidString: $wire as! String)!", NonThrowing)
-    case TypeId.Builtins.bytes => Decoded(q"$baboonByteStringTools.fromHexString($wire as! String)", Throwing)
-    case TypeId.Builtins.tsu   => Decoded(q"$baboonTimeFormats.parseUtc($wire as! String)", NonThrowing)
-    case TypeId.Builtins.tso   => Decoded(q"$baboonTimeFormats.parseOffset($wire as! String)", NonThrowing)
-    case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+  // Every JSON scalar decode reads untrusted input and throws on a wrong-typed or malformed value
+  // (GitHub 7mind/baboon#106). `what` is a Swift string literal naming the decoded location.
+  def jsonDecode(id: TypeId.BuiltinScalar, wire: TextTree[SwValue], what: String): Decoded = {
+    val w = q"""$wire, "$what""""
+    val expression = id match {
+      case TypeId.Builtins.bit   => q"$baboonJsonDecode.bool($w)"
+      case TypeId.Builtins.i08   => q"Int8(truncatingIfNeeded: $baboonJsonDecode.number($w).intValue)"
+      case TypeId.Builtins.i16   => q"Int16(truncatingIfNeeded: $baboonJsonDecode.number($w).intValue)"
+      case TypeId.Builtins.i32   => q"Int32(truncatingIfNeeded: $baboonJsonDecode.number($w).intValue)"
+      case TypeId.Builtins.i64   => q"$baboonJsonDecode.int64($w)"
+      case TypeId.Builtins.u08   => q"UInt8(truncatingIfNeeded: $baboonJsonDecode.number($w).intValue)"
+      case TypeId.Builtins.u16   => q"UInt16(truncatingIfNeeded: $baboonJsonDecode.number($w).intValue)"
+      case TypeId.Builtins.u32   => q"UInt32(truncatingIfNeeded: $baboonJsonDecode.number($w).intValue)"
+      case TypeId.Builtins.u64   => q"$baboonJsonDecode.uint64($w)"
+      case TypeId.Builtins.f32   => q"Float($baboonJsonDecode.number($w).doubleValue)"
+      case TypeId.Builtins.f64   => q"$baboonJsonDecode.number($w).doubleValue"
+      case TypeId.Builtins.f128  => q"$baboonJsonDecode.decimal($w)"
+      case TypeId.Builtins.str   => q"$baboonJsonDecode.string($w)"
+      case TypeId.Builtins.uid   => q"$baboonJsonDecode.uuid($w)"
+      case TypeId.Builtins.bytes => q"$baboonByteStringTools.fromHexString($baboonJsonDecode.string($w))"
+      case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseUtc($baboonJsonDecode.string($w))"
+      case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseOffset($baboonJsonDecode.string($w))"
+      case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+    }
+    Decoded(expression, Throwing)
   }
 
   def jsonEncode(id: TypeId.BuiltinScalar, value: TextTree[SwValue]): TextTree[SwValue] = id match {
