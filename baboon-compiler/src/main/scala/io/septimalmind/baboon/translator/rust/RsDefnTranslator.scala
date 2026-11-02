@@ -813,7 +813,7 @@ object RsDefnTranslator {
             case None =>
               leafTpe match {
                 case TypeRef.Scalar(TypeId.Builtins.bytes) =>
-                  q"crate::baboon_identifier_repr::parse_bytes_hex(&s)"
+                  q"crate::baboon_runtime::hex_bytes::hex_decode(&s)"
                 case TypeRef.Scalar(TypeId.Builtins.tsu) =>
                   q"crate::baboon_runtime::time_formats::parse_tsu(&s)"
                 case TypeRef.Scalar(TypeId.Builtins.tso) =>

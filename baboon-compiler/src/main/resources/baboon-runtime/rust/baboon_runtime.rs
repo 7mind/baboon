@@ -369,17 +369,27 @@ pub trait AbstractBaboonConversions {
 // --- Hex encoding for bytes ---
 
 pub mod hex_bytes {
+    /// Accepts ASCII hex digits of either case; ASCII whitespace, ':' and '-' are separators.
     pub fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
-        if s.len() % 2 != 0 {
-            return Err(format!("Hex string has odd length: {}", s.len()));
+        let mut out = Vec::with_capacity(s.len() / 2);
+        let mut high: Option<u8> = None;
+        for (pos, c) in s.chars().enumerate() {
+            let nibble = match c {
+                ' ' | '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ':' | '-' => continue,
+                '0'..='9' => c as u8 - b'0',
+                'a'..='f' => c as u8 - b'a' + 10,
+                'A'..='F' => c as u8 - b'A' + 10,
+                _ => return Err(format!("Invalid hex character {:?} at position {}", c, pos)),
+            };
+            match high.take() {
+                None => high = Some(nibble),
+                Some(h) => out.push((h << 4) | nibble),
+            }
         }
-        (0..s.len())
-            .step_by(2)
-            .map(|i| {
-                u8::from_str_radix(&s[i..i + 2], 16)
-                    .map_err(|e| format!("Invalid hex at position {}: {}", i, e))
-            })
-            .collect()
+        if high.is_some() {
+            return Err(format!("Hex string has an odd number of hex digits: {}", out.len() * 2 + 1));
+        }
+        Ok(out)
     }
 }
 
