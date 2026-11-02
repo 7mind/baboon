@@ -209,9 +209,8 @@ final class PyJsonCodecGenerator(
         case TypeId.Builtins.map =>
           // M19/PR-60: map-key handling. For user-DTO/`id`/foreign keys, the validator (PR-59)
           // gates eligibility; we emit explicit primitive-string projection via `mkJsonKeyEncoder`
-          // so cross-language compat sees a flat string-keyed JSON object. For builtin keys,
-          // `mkJsonKeyEncoder` is identity (Pydantic model_dump_json handles primitive keys via
-          // mode='json'). The value side recurses only if needed.
+          // so cross-language compat sees a flat string-keyed JSON object. Builtin keys take
+          // their `model_dump(mode='json')` form. The value side recurses only if needed.
           val keyExpr = mkJsonKeyEncoder(c.args.head, q"k")
           q"{$keyExpr: ${mkJsonAnyEncoder(c.args.last, q"v")} for k, v in $ref.items()}"
         case o => throw new RuntimeException(s"BUG: unexpected walked-field constructor: $o")
@@ -243,8 +242,7 @@ final class PyJsonCodecGenerator(
 
   // M19/PR-60: produces a JSON-serializable key (Python str/int/etc.) from a typed key. For
   // single-primitive wrappers, peel via attribute access and recurse. For `id` types, use
-  // `str(k)` (PR-57d emits __str__ as the canonical repr). For builtins, return the value
-  // (Pydantic model_dump_json handles primitive keys via mode='json').
+  // `str(k)` (PR-57d emits __str__ as the canonical repr). Builtins take their JSON-mode form.
   private def mkJsonKeyEncoder(tpe: TypeRef, ref: TextTree[PyValue]): TextTree[PyValue] = tpe match {
     case TypeRef.Scalar(u: TypeId.User) =>
       domain.defs.meta.nodes.get(u) match {
@@ -281,7 +279,9 @@ final class PyJsonCodecGenerator(
           q"""(_ for _ in ()).throw(Exception(f"BUG: Unexpected key usertype (validator should have rejected): {repr($ref)}"))"""
       }
     case TypeRef.Scalar(TypeId.Builtins.bytes) => PyScalarCodecOps.jsonBytesValue(ref)
-    case _                                     => ref
+    // `json.dumps` only accepts str/int/float/bool/None keys; datetime, UUID and Decimal keys
+    // take the form `model_dump(mode='json')` gives them.
+    case _ => PyScalarCodecOps.jsonFieldValue(ref)
   }
 
   // Builds an expression that consumes a JSON-friendly Python value (dict/list/scalar) and
