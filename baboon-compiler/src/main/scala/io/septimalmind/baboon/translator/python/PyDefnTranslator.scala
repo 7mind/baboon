@@ -585,14 +585,6 @@ object PyDefnTranslator {
       // is required when any field is a Python keyword, because the alias cannot be used as a
       // constructor keyword argument in generated Python code.
       val populateByName = if (hasKeywordField) Some(q"populate_by_name=True") else None
-      val serializeJsonBytesAsHex =
-        if (dtoFields.map(_.tpe.id).contains(TypeId.Builtins.bytes)) {
-          List(
-            q"ser_json_bytes='hex'",
-            q"val_json_bytes='hex'",
-          )
-        } else Nil
-
       val serializeDecimalAsJsonNumber =
         if (dtoFields.map(_.tpe.id).contains(TypeId.Builtins.f128)) {
           List(q"json_encoders={Decimal: str}")
@@ -604,7 +596,7 @@ object PyDefnTranslator {
       val arbitraryTypesAllowed =
         if (dtoFields.exists(f => PyFieldPlan.containsAny(f.tpe))) Some(q"arbitrary_types_allowed=True") else None
 
-      val configs = List(frozen, serializeByAlias, populateByName, serializeJsonBytesAsHex, serializeDecimalAsJsonNumber, arbitraryTypesAllowed).flatten
+      val configs = List(frozen, serializeByAlias, populateByName, serializeDecimalAsJsonNumber, arbitraryTypesAllowed).flatten
 
       q"""model_config = $pydanticConfigDict(
          |    ${configs.join(",\n").shift(4).trim}

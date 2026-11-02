@@ -116,6 +116,9 @@ object PyTypes {
   // baboon_runtime_shared.py and docs/json-codecs.md, "64-bit integers".
   val pyI64          = PyType(pyBaboonSharedRuntimeModule, "BaboonI64")
   val pyU64          = PyType(pyBaboonSharedRuntimeModule, "BaboonU64")
+  // `Annotated[bytes, ...]` — hex string on the JSON wire, see baboon_runtime_shared.py.
+  val pyBaboonBytes  = PyType(pyBaboonSharedRuntimeModule, "BaboonBytes")
+  val pyBytesFromHex = PyType(pyBaboonSharedRuntimeModule, "bytes_from_hex")
   val pyFloat        = PyType(pyBuiltins, "float")
   val pyDecimal      = PyType(pyDecimalModule, "Decimal")
   val pyBool         = PyType(pyBuiltins, "bool")
@@ -127,7 +130,6 @@ object PyTypes {
   val pyClassMethod  = PyType(pyBuiltins, "classmethod")
   val pyStaticMethod = PyType(pyBuiltins, "staticmethod")
   val pyProperty     = PyType(pyBuiltins, "property")
-  val pyBytes        = PyType(pyBuiltins, "bytes")
 
   // unittest
   val pyTestCase = PyType(pyUnittest, "TestCase")
