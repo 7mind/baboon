@@ -49,6 +49,7 @@ object SwTypes {
   val baboonBinReader: SwType       = SwType(baboonRuntimePkg, "BaboonBinReader")
   val baboonByteStringTools: SwType = SwType(baboonRuntimePkg, "BaboonByteStringTools")
   val baboonDecimal: SwType         = SwType(baboonRuntimePkg, "BaboonDecimal")
+  val baboonJsonDecode: SwType      = SwType(baboonRuntimePkg, "BaboonJsonDecode")
   val baboonDateTimeOffset: SwType  = SwType(baboonRuntimePkg, "BaboonDateTimeOffset")
   val baboonRandom: SwType          = SwType(baboonFixturePkg, "BaboonRandom")
   val baboonRandomFactory: SwType   = SwType(baboonFixturePkg, "BaboonRandomFactory")
