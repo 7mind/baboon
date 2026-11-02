@@ -23,9 +23,26 @@ Baboon's generated JSON codecs aim for predictable, deterministic shapes that ro
   - `u32` → JSON number (fits 53 bits).
 - `f128` → JSON number via `BigDecimal`/`decimal`.
 - `str` → JSON string (UTF‑8).
-- `bytes` → Base64 string in C# (`ByteString.Encode()`), and `.Parse` on read.
+- `bytes` → hexadecimal JSON string in every backend. See "bytes" below.
 - `uid` → JSON string (canonical GUID string).
 - `tsu`/`tso` → JSON string using `BaboonTimeFormats` (`formatTsu`/`formatTso` on Scala, `ToString` on C#).
+
+## bytes
+
+`bytes` is written as a string of hex digits, two per byte, high nibble first. It is not base64.
+Encoders differ in letter case: Scala, C#, Kotlin, Rust and TypeScript write uppercase, while Java,
+Dart, Swift and Python write lowercase.
+
+Every backend's decoder accepts the same input:
+
+1. Remove ASCII whitespace (space, `\t`, `\n`, `\v`, `\f`, `\r`), `:` and `-` from anywhere in the
+   string. No other character is a separator.
+2. What remains must be an even number of ASCII hex digits (`0-9`, `a-f`, `A-F`). An empty
+   remainder decodes to empty bytes.
+
+Any other input is a decode failure: signs, `0x` prefixes, non-ASCII digits and odd lengths are
+all rejected. The OpenAPI and MCP schemas advertise the canonical form only:
+`{"type": "string", "contentEncoding": "base16", "pattern": "^([0-9A-Fa-f]{2})*$"}`.
 
 ## 64‑bit integers
 

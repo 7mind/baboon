@@ -39,10 +39,12 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
 
   private val emitter = new McpInputSchemaEmitter(new OasTypeTranslator)
 
-  private def loadStubFamily(loader: BaboonLoader[F]): F[NEList[BaboonIssue], BaboonFamily] = {
+  private def loadStubFamily(loader: BaboonLoader[F]): F[NEList[BaboonIssue], BaboonFamily] = loadFixture(loader, "mcp-stub-ok")
+
+  private def loadFixture(loader: BaboonLoader[F], fixture: String): F[NEList[BaboonIssue], BaboonFamily] = {
     val root = IzResources
-      .getPath("mcp-stub-ok")
-      .getOrElse(throw new AssertionError("mcp-stub-ok fixture not found"))
+      .getPath(fixture)
+      .getOrElse(throw new AssertionError(s"$fixture fixture not found"))
       .asInstanceOf[IzResources.LoadablePathReference]
       .path
     val baboons =
@@ -417,6 +419,67 @@ abstract class McpInputSchemaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
             )
           )
           assertAccepts("pagePoints", schema, instance)
+        }
+    }
+  }
+
+  "MCP inputSchema emitter (mcp-docs-ok fixture, #102)" should {
+
+    "carry field and type docs as description, and advertise bytes as hex" in {
+      (loader: BaboonLoader[F]) =>
+        for {
+          family <- loadFixture(loader, "mcp-docs-ok")
+        } yield {
+          val schema = emitAllTools(stubDomain(family))("put")
+          val props  = field(schema, "properties")
+          val defs   = field(schema, "$defs").asObject.getOrElse(fail("no $defs"))
+          def defNamed(suffix: String): Json =
+            defs.toIterable.collectFirst { case (k, v) if k.endsWith(suffix) => v }.getOrElse(fail(s"no $$defs entry *$suffix: ${defs.keys}"))
+          def description(j: Json): Option[String] = j.asObject.flatMap(_("description")).flatMap(_.asString)
+
+          val bytesSchema = Json.obj(
+            "type"            -> Json.fromString("string"),
+            "contentEncoding" -> Json.fromString("base16"),
+            "description"     -> Json.fromString(OasTypeTranslator.bytesHexDescription),
+            "pattern"         -> Json.fromString(OasTypeTranslator.bytesHexPattern),
+          )
+
+          // Undocumented bytes field: the built-in hex schema, no base64 `format`.
+          assert(field(props, "raw") == bytesSchema, s"raw: ${field(props, "raw").noSpaces}")
+          assert(field(field(props, "chunks"), "items") == bytesSchema)
+          assert(description(field(props, "chunks")).isEmpty)
+
+          // Field docs on refs, enums and optionals.
+          assert(description(field(props, "blob")).contains("The blob to store."))
+          assert(field(field(props, "blob"), "$ref").asString.exists(_.startsWith("#/$defs/")))
+          assert(description(field(props, "channel")).contains("Target channel."))
+          assert(description(field(props, "digest")).contains("Optional raw digest."))
+
+          // Type docs on $defs entries; ADT docs precede the wrapper note.
+          val blob = defNamed("_Blob")
+          assert(description(blob).contains("A labelled payload."))
+          assert(description(defNamed("_Channel")).contains("Colour channel."))
+          assert(description(defNamed("_Full")).contains("A carried blob."))
+          assert(description(defNamed("_Item")).exists(d => d.startsWith("Either a blob or nothing.\n\n") && d.contains("discriminator-wrapper")))
+
+          // A documented bytes field keeps both its doc and the hex note.
+          val blobProps = field(blob, "properties")
+          assert(description(field(blobProps, "data")).contains(s"Payload.\n\n${OasTypeTranslator.bytesHexDescription}"))
+          assert(description(field(blobProps, "label")).contains("Human-readable label.\n\nnever empty"))
+
+          assertWellFormed("put", schema)
+          val instance = Json.obj(
+            "blob"    -> Json.obj("data" -> Json.fromString("ABCD"), "label" -> Json.fromString("x")),
+            "digest"  -> Json.Null,
+            "chunks"  -> Json.arr(Json.fromString("00ff"), Json.fromString("")),
+            "raw"     -> Json.fromString("abCD"),
+            "channel" -> Json.fromString("G"),
+            "item"    -> Json.obj("Empty" -> Json.obj()),
+          )
+          assertAccepts("put", schema, instance)
+          // base64 for [0xAB, 0xCD] and an odd-length string are rejected by the schema
+          assertRejects("put", schema, instance.deepMerge(Json.obj("raw" -> Json.fromString("q80="))))
+          assertRejects("put", schema, instance.deepMerge(Json.obj("raw" -> Json.fromString("ABC"))))
         }
     }
   }

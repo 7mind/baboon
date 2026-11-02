@@ -1,0 +1,44 @@
+// MCP inputSchema documentation fixture (issue #102).
+//
+// Kept outside the shared `baboon/` model-dir (like `mcp-stub-ok`) so it does
+// not add generated code to every language lane; it is only loaded by
+// `McpInputSchemaEmissionTest`.
+
+model mcp.docs
+
+version "1.0.0"
+
+/** Colour channel. */
+enum Channel { R  G  B }
+
+/** A labelled payload. */
+data Blob {
+  /** Payload. */
+  data: bytes
+  /** Human-readable label. */
+  label: str  //! never empty
+}
+
+/** Either a blob or nothing. */
+adt Item {
+  /** A carried blob. */
+  data Full { blob: Blob }
+  data Empty { }
+}
+
+root service Docs {
+  def put (
+    data in {
+      /** The blob to store. */
+      blob: Blob
+      /** Optional raw digest. */
+      digest: opt[bytes]
+      chunks: lst[bytes]
+      raw: bytes
+      /** Target channel. */
+      channel: Channel
+      item: Item
+    }
+    data out { ok: bit }
+  )
+}
