@@ -705,13 +705,37 @@ class BaboonTimeFormats {
 // --- Byte String Tools ---
 
 class BaboonByteStringTools {
+  /// Decodes the JSON `bytes` wire form: hex digits, with ASCII whitespace, `:` and `-`
+  /// accepted (and ignored) as separators. Throws [BaboonDecoderFailure] on anything else.
   static Uint8List fromHexString(String hex) {
-    final length = hex.length ~/ 2;
-    final result = Uint8List(length);
-    for (var i = 0; i < length; i++) {
-      result[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
+    final nibbles = <int>[];
+    for (final c in hex.runes) {
+      if (_isSeparator(c)) continue;
+      final v = _hexVal(c);
+      if (v < 0) {
+        final code = c.toRadixString(16).toUpperCase().padLeft(4, '0');
+        throw BaboonDecoderFailure("Invalid hex character '${String.fromCharCode(c)}' (U+$code) in bytes value");
+      }
+      nibbles.add(v);
+    }
+    if (nibbles.length.isOdd) {
+      throw BaboonDecoderFailure('Odd number of hex digits (${nibbles.length}) in bytes value');
+    }
+    final result = Uint8List(nibbles.length ~/ 2);
+    for (var i = 0; i < result.length; i++) {
+      result[i] = (nibbles[i * 2] << 4) | nibbles[i * 2 + 1];
     }
     return result;
+  }
+
+  // space, \t \n \v \f \r, ':' and '-'
+  static bool _isSeparator(int c) => c == 0x20 || (c >= 0x09 && c <= 0x0D) || c == 0x3A || c == 0x2D;
+
+  static int _hexVal(int c) {
+    if (c >= 0x30 && c <= 0x39) return c - 0x30; // 0-9
+    if (c >= 0x61 && c <= 0x66) return c - 0x57; // a-f
+    if (c >= 0x41 && c <= 0x46) return c - 0x37; // A-F
+    return -1;
   }
 }
 

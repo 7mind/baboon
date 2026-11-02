@@ -29,7 +29,7 @@ private[swift] object SwScalarCodecs {
     case TypeId.Builtins.f128  => Decoded(q"$baboonDecimal($wire is String ? $wire as! String : String(describing: $wire))", NonThrowing)
     case TypeId.Builtins.str   => Decoded(q"($wire as! String)", NonThrowing)
     case TypeId.Builtins.uid   => Decoded(q"UUID(uuidString: $wire as! String)!", NonThrowing)
-    case TypeId.Builtins.bytes => Decoded(q"$baboonByteStringTools.fromHexString($wire as! String)", NonThrowing)
+    case TypeId.Builtins.bytes => Decoded(q"$baboonByteStringTools.fromHexString($wire as! String)", Throwing)
     case TypeId.Builtins.tsu   => Decoded(q"$baboonTimeFormats.parseUtc($wire as! String)", NonThrowing)
     case TypeId.Builtins.tso   => Decoded(q"$baboonTimeFormats.parseOffset($wire as! String)", NonThrowing)
     case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
