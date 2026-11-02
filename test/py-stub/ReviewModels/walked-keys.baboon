@@ -1,0 +1,16 @@
+model review.python.walkedkeys
+version "1.0.0"
+
+adt KeyedShape {
+  data Spot { r: i32 }
+}
+
+// An ADT map value forces the explicit JSON walker, which must also stringify builtin keys.
+root data WalkedKeys {
+  kt: map[tsu, KeyedShape]
+  ko: map[tso, KeyedShape]
+  ku: map[uid, KeyedShape]
+  kd: map[f128, KeyedShape]
+  kl: map[i64, KeyedShape]
+  kb: map[bit, KeyedShape]
+}
