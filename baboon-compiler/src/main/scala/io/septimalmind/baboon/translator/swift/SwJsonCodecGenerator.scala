@@ -365,7 +365,7 @@ class SwJsonCodecGenerator(
             case TypeId.Builtins.f128  => (q"$baboonDecimal($ref)", false)
             case TypeId.Builtins.str   => (q"$ref", false)
             case TypeId.Builtins.uid   => (q"UUID(uuidString: $ref)!", false)
-            case TypeId.Builtins.bytes => (q"$baboonByteStringTools.fromHexString($ref)", false)
+            case TypeId.Builtins.bytes => (q"$baboonByteStringTools.fromHexString($ref)", true)
             case TypeId.Builtins.tsu   => (q"$baboonTimeFormats.parseUtc($ref)", false)
             case TypeId.Builtins.tso   => (q"$baboonTimeFormats.parseOffset($ref)", false)
             case u: TypeId.User =>
