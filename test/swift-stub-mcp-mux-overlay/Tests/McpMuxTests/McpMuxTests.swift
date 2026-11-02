@@ -212,8 +212,8 @@ final class McpMuxTests: XCTestCase {
         // Channel-B trigger (sw-specific): a non-object element in `items`
         // (`[123]`) reaches OrderItem_JsonCodec.decode(ctx, 123), whose top-level
         // `wire as? [String: Any]` guard THROWS BaboonCodecError.invalidInput — a
-        // catchable Swift Error. A missing-key trigger would TRAP (force-unwrap),
-        // so it is deliberately avoided. This proves per-service Channel-B works
+        // catchable Swift Error. (A missing-key trigger trapped before #106; it now
+        // throws too.) This proves per-service Channel-B works
         // through the muxer (the muxer's generic catch maps any non-wiring error to
         // isError:true content).
         let mux = makeMuxer()

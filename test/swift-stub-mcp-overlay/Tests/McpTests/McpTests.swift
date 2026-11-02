@@ -30,10 +30,10 @@
 //     test FAILS if the comparator erroneously returns true, then re-verifies
 //     the correct reference still returns true (restore).
 //
-// Channel-B trigger (§4.2 — Swift-specific): Swift `!` force-unwrap of a missing
-//   dictionary key TRAPS (non-catchable) rather than throwing, so the
-//   "missing required field" trigger used by the GC-language replicas would
-//   crash the process here. Instead we send `McpTools_submitComposite` with a
+// Channel-B trigger (§4.2 — Swift-specific): historically a missing required
+//   field TRAPPED in the Swift decoder (force-unwrap; fixed in #106, it now
+//   throws BaboonCodecException.decoderFailure), so this suite kept a
+//   different trigger: we send `McpTools_submitComposite` with a
 //   non-object `nested` value (`"nested": 123`): the generated
 //   submitcomposite.in decode reaches `Nested_JsonCodec.decode(ctx, 123)`, whose
 //   top-level `wire as? [String: Any]` guard fails and THROWS
@@ -446,8 +446,8 @@ final class McpTests: XCTestCase {
         // a non-object `nested` value (123). The submitcomposite.in decode reaches
         // Nested_JsonCodec.decode(ctx, 123), whose dict guard THROWS
         // BaboonCodecError.invalidInput (catchable) — the K4 Channel-B
-        // "object but won't decode into the DTO" case. A missing-key trigger would
-        // TRAP in Swift (force-unwrap), not throw, so it is deliberately avoided.
+        // "object but won't decode into the DTO" case. (A missing-key trigger
+        // trapped before #106; it now throws too.)
         let stub = StubMcpTools()
         let server = makeServer(stub)
         let session = McpSession()
