@@ -30,7 +30,8 @@ T = TypeVar("T")
 BaboonI64 = Annotated[int, PlainSerializer(str, return_type=str, when_used="json")]
 BaboonU64 = Annotated[int, PlainSerializer(str, return_type=str, when_used="json")]
 
-_HEX_SEPARATORS = frozenset(" \t\n\v\f\r:-")
+# space, TAB, LF, VT, FF, CR, ':' and '-'
+_HEX_SEPARATORS = frozenset(chr(c) for c in (0x20, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x3A, 0x2D))
 
 
 def _hex_nibble(c: str, position: int) -> int:
@@ -46,7 +47,7 @@ def _hex_nibble(c: str, position: int) -> int:
 
 def bytes_from_hex(text: str) -> bytes:
     """Decodes the JSON wire form of `bytes`: ASCII hex digits, ignoring the separators
-    space, \\t, \\n, \\v, \\f, \\r, ':' and '-' anywhere. Raises ValueError otherwise."""
+    ASCII whitespace, ':' and '-' anywhere. Raises ValueError otherwise."""
     if not isinstance(text, str):
         raise ValueError(f"Expected a hex string, got {type(text).__name__}")
     nibbles = [_hex_nibble(c, i) for i, c in enumerate(text) if c not in _HEX_SEPARATORS]

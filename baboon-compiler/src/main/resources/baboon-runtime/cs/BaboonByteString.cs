@@ -222,7 +222,7 @@ namespace Baboon.Runtime.Shared
         }
 
         // Static method to parse hex-encoded string into ByteString.
-        // Separators (ASCII space, \t, \n, \v, \f, \r, ':' and '-') are ignored anywhere;
+        // Separators (ASCII space, TAB, LF, VT, FF, CR, ':' and '-') are ignored anywhere;
         // everything else must be an ASCII hex digit.
         public static ByteString Parse(string hexString)
         {
@@ -239,11 +239,11 @@ namespace Baboon.Runtime.Shared
                 switch (c)
                 {
                     case ' ':
-                    case '\t':
-                    case '\n':
-                    case '\v':
-                    case '\f':
-                    case '\r':
+                    case (char) 0x09:
+                    case (char) 0x0A:
+                    case (char) 0x0B:
+                    case (char) 0x0C:
+                    case (char) 0x0D:
                     case ':':
                     case '-':
                         continue;

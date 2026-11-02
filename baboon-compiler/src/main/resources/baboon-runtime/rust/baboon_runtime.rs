@@ -374,11 +374,12 @@ pub mod hex_bytes {
         let mut out = Vec::with_capacity(s.len() / 2);
         let mut high: Option<u8> = None;
         for (pos, c) in s.chars().enumerate() {
-            let nibble = match c {
-                ' ' | '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ':' | '-' => continue,
-                '0'..='9' => c as u8 - b'0',
-                'a'..='f' => c as u8 - b'a' + 10,
-                'A'..='F' => c as u8 - b'A' + 10,
+            let nibble = match c as u32 {
+                // space, TAB, LF, VT, FF, CR, ':' and '-'
+                0x20 | 0x09..=0x0D | 0x3A | 0x2D => continue,
+                0x30..=0x39 => c as u8 - b'0',
+                0x61..=0x66 => c as u8 - b'a' + 10,
+                0x41..=0x46 => c as u8 - b'A' + 10,
                 _ => return Err(format!("Invalid hex character {:?} at position {}", c, pos)),
             };
             match high.take() {
