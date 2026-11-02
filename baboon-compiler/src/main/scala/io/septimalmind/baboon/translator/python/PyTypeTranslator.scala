@@ -62,7 +62,7 @@ final class PyTypeTranslator {
           case TypeId.Builtins.uid                       => pyUuid
           case TypeId.Builtins.tso | TypeId.Builtins.tsu => pyDateTime
           case TypeId.Builtins.bit                       => pyBool
-          case TypeId.Builtins.bytes                     => pyBytes
+          case TypeId.Builtins.bytes                     => pyBaboonBytes
 
           case other => throw new IllegalArgumentException(s"Unexpected: $other")
         }

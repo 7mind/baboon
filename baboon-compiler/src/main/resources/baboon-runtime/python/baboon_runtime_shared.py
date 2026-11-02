@@ -16,7 +16,7 @@ from functools import wraps
 from typing import Annotated, TypeVar, Generic, Callable, Optional, Any, ClassVar
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, PlainSerializer
+from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer
 
 from .baboon_exceptions import BaboonCodecException
 
@@ -29,6 +29,39 @@ T = TypeVar("T")
 # validator already accepts a decimal string, which is what keeps older numeric payloads readable.
 BaboonI64 = Annotated[int, PlainSerializer(str, return_type=str, when_used="json")]
 BaboonU64 = Annotated[int, PlainSerializer(str, return_type=str, when_used="json")]
+
+_HEX_SEPARATORS = frozenset(" \t\n\v\f\r:-")
+
+
+def _hex_nibble(c: str, position: int) -> int:
+    code = ord(c)
+    if 0x30 <= code <= 0x39:
+        return code - 0x30
+    if 0x61 <= code <= 0x66:
+        return code - 0x61 + 10
+    if 0x41 <= code <= 0x46:
+        return code - 0x41 + 10
+    raise ValueError(f"Invalid hex character {c!r} (U+{code:04X}) at position {position}")
+
+
+def bytes_from_hex(text: str) -> bytes:
+    """Decodes the JSON wire form of `bytes`: ASCII hex digits, ignoring the separators
+    space, \\t, \\n, \\v, \\f, \\r, ':' and '-' anywhere. Raises ValueError otherwise."""
+    if not isinstance(text, str):
+        raise ValueError(f"Expected a hex string, got {type(text).__name__}")
+    nibbles = [_hex_nibble(c, i) for i, c in enumerate(text) if c not in _HEX_SEPARATORS]
+    if len(nibbles) % 2 != 0:
+        raise ValueError(f"Invalid hex string: odd number of hex digits ({len(nibbles)})")
+    return bytes((nibbles[i] << 4) | nibbles[i + 1] for i in range(0, len(nibbles), 2))
+
+
+def _bytes_from_json(value: Any) -> Any:
+    return bytes_from_hex(value) if isinstance(value, str) else value
+
+
+# `bytes` is a hex string on the JSON wire in every backend, wherever it occurs (field, container
+# element, map key). Only the JSON direction is affected; `model_dump()` and UEBA see plain bytes.
+BaboonBytes = Annotated[bytes, BeforeValidator(_bytes_from_json), PlainSerializer(bytes.hex, return_type=str, when_used="json")]
 
 
 class BaboonGenerated(ABC):

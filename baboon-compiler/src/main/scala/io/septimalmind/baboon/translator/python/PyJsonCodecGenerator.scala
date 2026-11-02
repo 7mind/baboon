@@ -234,6 +234,8 @@ final class PyJsonCodecGenerator(
           // for that scalar.
           PyScalarCodecOps.jsonFieldValue(ref)
       }
+    case TypeRef.Scalar(TypeId.Builtins.bytes) =>
+      PyScalarCodecOps.jsonBytesValue(ref)
     case _: TypeRef.Scalar =>
       // PR-60-D02: a scalar may legitimately appear inside a walked subtree (e.g. the value side
       // of `map[user-key, V]` where V is itself a non-any-bearing scalar). Defer JSON conversion
@@ -281,7 +283,8 @@ final class PyJsonCodecGenerator(
           // generator is the canonical Python idiom for raising in expression position.
           q"""(_ for _ in ()).throw(Exception(f"BUG: Unexpected key usertype (validator should have rejected): {repr($ref)}"))"""
       }
-    case _ => ref
+    case TypeRef.Scalar(TypeId.Builtins.bytes) => PyScalarCodecOps.jsonBytesValue(ref)
+    case _                                     => ref
   }
 
   // Builds an expression that consumes a JSON-friendly Python value (dict/list/scalar) and
