@@ -312,7 +312,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           rt("BaboonAnyBinCodec.scala", "baboon-runtime/scala/BaboonAnyBinCodec.scala"),
           rt("BaboonAnyJsonCodec.scala", "baboon-runtime/scala/BaboonAnyJsonCodec.scala"),
           rt("BaboonAnyOpaque.scala", "baboon-runtime/scala/BaboonAnyOpaque.scala"),
-          rt("BaboonByteString.scala", "baboon-runtime/scala/BaboonByteString.scala", _.replace("""[\\s:-]""", """[\\\\s:-]""")),
+          rt("BaboonByteString.scala", "baboon-runtime/scala/BaboonByteString.scala"),
           rt("BaboonCodecs.scala", "baboon-runtime/scala/BaboonCodecs.scala"),
           rt("BaboonCodecsFacade.scala", "baboon-runtime/scala/BaboonCodecsFacade.scala"),
           rt("BaboonConversions.scala", "baboon-runtime/scala/BaboonConversions.scala"),
