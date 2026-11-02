@@ -977,14 +977,26 @@ public class BaboonTimeFormats {
 // --- Byte String Tools ---
 
 public class BaboonByteStringTools {
-    public static func fromHexString(_ hex: String) -> Data {
-        let chars = Array(hex.utf8)
-        let length = chars.count / 2
-        var result = [UInt8](repeating: 0, count: length)
-        for i in 0..<length {
-            let hi = hexVal(chars[i * 2])
-            let lo = hexVal(chars[i * 2 + 1])
-            result[i] = (hi << 4) | lo
+    /// Decodes the JSON `bytes` wire form: hex digits, with ASCII whitespace, `:` and `-`
+    /// accepted (and ignored) as separators. Throws `decoderFailure` on anything else.
+    public static func fromHexString(_ hex: String) throws -> Data {
+        var nibbles: [UInt8] = []
+        nibbles.reserveCapacity(hex.utf8.count)
+        for scalar in hex.unicodeScalars {
+            let c = scalar.value
+            if isSeparator(c) { continue }
+            guard let v = hexVal(c) else {
+                let code = String(c, radix: 16, uppercase: true)
+                throw BaboonCodecException.decoderFailure("Invalid hex character '\(scalar)' (U+\(code)) in bytes value", nil)
+            }
+            nibbles.append(v)
+        }
+        if nibbles.count % 2 != 0 {
+            throw BaboonCodecException.decoderFailure("Odd number of hex digits (\(nibbles.count)) in bytes value", nil)
+        }
+        var result = [UInt8](repeating: 0, count: nibbles.count / 2)
+        for i in 0..<result.count {
+            result[i] = (nibbles[i * 2] << 4) | nibbles[i * 2 + 1]
         }
         return Data(result)
     }
@@ -993,11 +1005,16 @@ public class BaboonByteStringTools {
         return data.map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func hexVal(_ c: UInt8) -> UInt8 {
-        if c >= 48 && c <= 57 { return c - 48 }       // 0-9
-        if c >= 97 && c <= 102 { return c - 87 }       // a-f
-        if c >= 65 && c <= 70 { return c - 55 }        // A-F
-        fatalError("Invalid hex char")
+    // space, \t \n \v \f \r, ':' and '-'
+    private static func isSeparator(_ c: UInt32) -> Bool {
+        return c == 32 || (c >= 9 && c <= 13) || c == 58 || c == 45
+    }
+
+    private static func hexVal(_ c: UInt32) -> UInt8? {
+        if c >= 48 && c <= 57 { return UInt8(c - 48) }       // 0-9
+        if c >= 97 && c <= 102 { return UInt8(c - 87) }       // a-f
+        if c >= 65 && c <= 70 { return UInt8(c - 55) }        // A-F
+        return nil
     }
 }
 

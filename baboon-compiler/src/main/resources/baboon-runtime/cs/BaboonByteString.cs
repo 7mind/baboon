@@ -1,7 +1,6 @@
 #nullable enable
 
 using System;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -53,19 +52,7 @@ namespace Baboon.Runtime.Shared
 
         public static ByteString FromHex(string hex)
         {
-            hex = hex.Replace(" ", "").Replace("-", "");
-            if (hex.Length % 2 != 0)
-            {
-                throw new ArgumentException("Hex string must have even length");
-            }
-
-            var bytes = new byte[hex.Length / 2];
-            for (var i = 0; i < bytes.Length; i++)
-            {
-                bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
-            }
-
-            return new ByteString(bytes);
+            return Parse(hex);
         }
 
         // Concatenation
@@ -234,7 +221,9 @@ namespace Baboon.Runtime.Shared
             return sb.ToString();
         }
 
-        // Static method to parse hex-encoded string into ByteString
+        // Static method to parse hex-encoded string into ByteString.
+        // Separators (ASCII space, \t, \n, \v, \f, \r, ':' and '-') are ignored anywhere;
+        // everything else must be an ASCII hex digit.
         public static ByteString Parse(string hexString)
         {
             if (hexString == null)
@@ -242,30 +231,45 @@ namespace Baboon.Runtime.Shared
                 throw new ArgumentNullException(nameof(hexString));
             }
 
-            // Remove common separators and whitespace
-            hexString = hexString.Replace(" ", "")
-                .Replace("-", "")
-                .Replace(":", "")
-                .Trim();
-
-            if (hexString.Length == 0)
+            var nibbles = new byte[hexString.Length];
+            var count = 0;
+            for (var i = 0; i < hexString.Length; i++)
             {
-                return Empty;
+                var c = hexString[i];
+                switch (c)
+                {
+                    case ' ':
+                    case '\t':
+                    case '\n':
+                    case '\v':
+                    case '\f':
+                    case '\r':
+                    case ':':
+                    case '-':
+                        continue;
+                    case >= '0' and <= '9':
+                        nibbles[count++] = (byte) (c - '0');
+                        break;
+                    case >= 'a' and <= 'f':
+                        nibbles[count++] = (byte) (c - 'a' + 10);
+                        break;
+                    case >= 'A' and <= 'F':
+                        nibbles[count++] = (byte) (c - 'A' + 10);
+                        break;
+                    default:
+                        throw new FormatException($"Invalid hex character '{c}' (U+{(int) c:X4}) at position {i}");
+                }
             }
 
-            if (hexString.Length % 2 != 0)
+            if (count % 2 != 0)
             {
-                throw new FormatException($"Invalid hex string length: {hexString.Length}. Hex string must have even length.");
+                throw new FormatException($"Invalid hex string: odd number of hex digits ({count})");
             }
 
-            var bytes = new byte[hexString.Length / 2];
+            var bytes = new byte[count / 2];
             for (var i = 0; i < bytes.Length; i++)
             {
-                var byteString = hexString.Substring(i * 2, 2);
-                if (!byte.TryParse(byteString, NumberStyles.HexNumber, null, out bytes[i]))
-                {
-                    throw new FormatException($"Invalid hex characters at position {i * 2}: '{byteString}'");
-                }
+                bytes[i] = (byte) ((nibbles[i * 2] << 4) | nibbles[i * 2 + 1]);
             }
 
             return new ByteString(bytes);

@@ -8,10 +8,14 @@ import izumi.fundamentals.platform.strings.TextTree.Quote
 private[python] object PyScalarCodecOps {
   def jsonFieldValue(value: TextTree[PyValue]): TextTree[PyValue] = q"$pyToJsonablePython($value)"
 
+  // `to_jsonable_python` cannot see the `BaboonBytes` annotation of a bare value, so bytes leaves
+  // outside a pydantic model are hex-encoded explicitly.
+  def jsonBytesValue(value: TextTree[PyValue]): TextTree[PyValue] = q"$value.hex()"
+
   def jsonServiceDecode(id: TypeId.BuiltinScalar, data: TextTree[PyValue]): TextTree[PyValue] = {
     val value = q"$pyJsonLoads($data)"
     id match {
-      case TypeId.Builtins.bytes                     => q"$pyBytes.fromhex($value)"
+      case TypeId.Builtins.bytes                     => q"$pyBytesFromHex($value)"
       case TypeId.Builtins.uid                       => q"$pyUuid($value)"
       case TypeId.Builtins.f128                      => q"$pyDecimal(str($value))"
       case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$pyDateTime.fromisoformat($value)"
@@ -21,8 +25,7 @@ private[python] object PyScalarCodecOps {
 
   def jsonServiceEncode(id: TypeId.BuiltinScalar, value: TextTree[PyValue]): TextTree[PyValue] = {
     val encoded = id match {
-      // Direct DTO bytes use hex config; walked Pydantic subtrees retain their own policy.
-      case TypeId.Builtins.bytes                                                                  => q"$value.hex()"
+      case TypeId.Builtins.bytes                                                                  => jsonBytesValue(value)
       case TypeId.Builtins.uid | TypeId.Builtins.f128 | TypeId.Builtins.tsu | TypeId.Builtins.tso => jsonFieldValue(value)
       case _                                                                                      => value
     }

@@ -188,28 +188,45 @@ package baboon.runtime.shared {
       if (hexString == null)
         throw new NullPointerException("hexString cannot be null")
 
-      // Remove common separators and whitespace
-      val cleanHex = hexString.replaceAll("[\\s:-]", "").trim
+      val nibbles = new Array[Byte](hexString.length)
+      var count   = 0
+      var i       = 0
+      while (i < hexString.length) {
+        val c = hexString.charAt(i)
+        if (!isHexSeparator(c)) {
+          val nibble = hexNibble(c)
+          if (nibble < 0)
+            throw new IllegalArgumentException(f"Invalid hex character '$c' (U+${c.toInt}%04X) at index $i")
+          nibbles(count) = nibble.toByte
+          count += 1
+        }
+        i += 1
+      }
 
-      if (cleanHex.isEmpty)
-        return empty
-
-      if (cleanHex.length % 2 != 0)
+      if (count % 2 != 0)
         throw new IllegalArgumentException(
-          s"Invalid hex string length: ${cleanHex.length}. Hex string must have even length."
+          s"Invalid hex string length: $count. Hex string must have even length."
         )
 
-      try {
-        val bytes = cleanHex
-          .grouped(2).map {
-            byteStr =>
-              Integer.parseInt(byteStr, 16).toByte
-          }.toArray
-        new ByteString(bytes)
-      } catch {
-        case e: NumberFormatException =>
-          throw new IllegalArgumentException(s"Invalid hex characters in string: ${e.getMessage}", e)
+      val bytes = new Array[Byte](count / 2)
+      var j     = 0
+      while (j < bytes.length) {
+        bytes(j) = ((nibbles(2 * j) << 4) | nibbles(2 * j + 1)).toByte
+        j += 1
       }
+      new ByteString(bytes)
+    }
+
+    // Separators: ASCII space, TAB, LF, VT, FF, CR, ':' and '-'
+    private def isHexSeparator(c: Char): Boolean = {
+      c == ' ' || c == ':' || c == '-' || (c >= 0x09 && c <= 0x0D)
+    }
+
+    private def hexNibble(c: Char): Int = {
+      if (c >= '0' && c <= '9') c - '0'
+      else if (c >= 'a' && c <= 'f') c - 'a' + 10
+      else if (c >= 'A' && c <= 'F') c - 'A' + 10
+      else -1
     }
 
     // Try version that returns Try[ByteString]

@@ -760,13 +760,33 @@ export class BinTools {
         return Array.from(bytes).map(b => b.toString(16).padStart(2, "0").toUpperCase()).join("");
     }
 
+    // Accepts ASCII hex digits of either case; ASCII whitespace, ':' and '-' are separators.
     static hexDecode(hex: string): Uint8Array {
-        if (hex.length % 2 !== 0) {
-            throw new Error("Hex string has odd length: " + hex.length);
+        if (typeof hex !== "string") {
+            throw new BaboonDecoderFailure(`Hex bytes: expected a string, got ${typeof hex}`);
         }
-        const bytes = new Uint8Array(hex.length / 2);
-        for (let i = 0; i < hex.length; i += 2) {
-            bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+        const nibbles: number[] = [];
+        for (let i = 0; i < hex.length; i++) {
+            const c = hex.charCodeAt(i);
+            if (c === 0x20 || (c >= 0x09 && c <= 0x0D) || c === 0x3A || c === 0x2D) {
+                continue;
+            }
+            if (c >= 0x30 && c <= 0x39) {
+                nibbles.push(c - 0x30);
+            } else if (c >= 0x61 && c <= 0x66) {
+                nibbles.push(c - 0x61 + 10);
+            } else if (c >= 0x41 && c <= 0x46) {
+                nibbles.push(c - 0x41 + 10);
+            } else {
+                throw new BaboonDecoderFailure(`Invalid hex character ${JSON.stringify(hex.charAt(i))} at position ${i}`);
+            }
+        }
+        if (nibbles.length % 2 !== 0) {
+            throw new BaboonDecoderFailure("Hex string has an odd number of hex digits: " + nibbles.length);
+        }
+        const bytes = new Uint8Array(nibbles.length / 2);
+        for (let i = 0; i < bytes.length; i++) {
+            bytes[i] = (nibbles[2 * i] << 4) | nibbles[2 * i + 1];
         }
         return bytes;
     }

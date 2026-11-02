@@ -29,6 +29,7 @@ object RuntimeCodecIssue {
   case class CannotDecodeType(typeId: TypeId, reason: String) extends RuntimeCodecIssue
 
   case class InvalidUuidString(value: String) extends RuntimeCodecIssue
+  case class InvalidHexString(value: String, reason: String) extends RuntimeCodecIssue
   case class InvalidTimestampString(value: String) extends RuntimeCodecIssue
 
   case class UnexpectedDomainMemberType(typeId: TypeId, reason: String) extends RuntimeCodecIssue
@@ -91,6 +92,9 @@ object RuntimeCodecIssue {
 
   implicit val invalidUuidStringPrinter: IssuePrinter[InvalidUuidString] =
     (issue: InvalidUuidString) => s"Invalid UUID string: ${issue.value}"
+
+  implicit val invalidHexStringPrinter: IssuePrinter[InvalidHexString] =
+    (issue: InvalidHexString) => s"Invalid hex string '${issue.value}': ${issue.reason}"
 
   implicit val invalidTimestampStringPrinter: IssuePrinter[InvalidTimestampString] =
     (issue: InvalidTimestampString) => s"Invalid timestamp string: ${issue.value}"

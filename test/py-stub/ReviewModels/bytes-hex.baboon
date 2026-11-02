@@ -1,0 +1,30 @@
+model review.python.byteshex
+version "1.0.0"
+
+root id BlobKey {
+  v: str
+}
+
+adt BlobShape {
+  data Dot { r: i32 }
+}
+
+// No direct `bytes` field: every bytes value sits inside a container.
+root data NestedBlobs {
+  ob: opt[bytes]
+  lb: lst[bytes]
+  sb: set[bytes]
+  mv: map[str, bytes]
+  mk: map[bytes, str]
+}
+
+// `map[BlobKey, _]` and ADT map values are encoded by the explicit walker, not by pydantic.
+root data WalkedBlobs {
+  b: bytes
+  mv: map[BlobKey, bytes]
+  ma: map[bytes, BlobShape]
+}
+
+root service BlobService {
+  def blob(bytes): bytes
+}
