@@ -137,14 +137,8 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def described(schema: Json, docs: Docs): Json = {
-    typeTranslator.renderOasDescription(docs) match {
-      // Preserve the built-in envelope description's precedence over field docs.
-      case Some(description) if !schema.hcursor.downField("description").succeeded =>
-        schema.mapObject(_.add("description", Json.fromString(description)))
-      case _ => schema
-    }
-  }
+  private def described(schema: Json, docs: Docs): Json =
+    typeTranslator.describe(schema, typeTranslator.renderOasDescription(docs))
 
   private def renderDto(dto: Typedef.Dto, docs: Docs, references: SchemaReferences): Json = {
     val base = described(Json.obj("type" -> Json.fromString("object")), docs)

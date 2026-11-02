@@ -107,7 +107,7 @@ Before writing code, decide how each Baboon builtin type maps to your target lan
 | `f32`, `f64` | IEEE 754 floats | Usually trivial |
 | `f128` | Decimal | Use language's decimal/BigDecimal. Serialize as string in JSON |
 | `str` | UTF-8 string | Usually trivial |
-| `bytes` | Byte array | Use language's byte array. Serialize as hex or base64 in JSON |
+| `bytes` | Byte array | Use language's byte array. Serialize as hex in JSON (see `docs/json-codecs.md`, "bytes") |
 | `uid` | UUID | Use native UUID type or string wrapper. C# uses mixed-endian GUID format in UEBA |
 | `tsu` | UTC timestamp | Use native datetime. If no UTC type, use struct with millis + kind byte |
 | `tso` | Offset timestamp | Use native datetime with offset. If no offset type, use struct with millis + offset millis + kind byte |
@@ -471,7 +471,7 @@ Implements `$LANGCodecTranslator` trait. Generates JSON serialization/deserializ
 | `f32`, `f64` | JSON number |
 | `f128` | **JSON string** (preserves decimal precision) |
 | `str` | JSON string |
-| `bytes` | **JSON string** (hex-encoded or base64-encoded - must match other backends; current convention is hex) |
+| `bytes` | **JSON string**, hex-encoded; the decoder must implement the shared grammar in `docs/json-codecs.md`, "bytes" |
 | `uid` | **JSON string** (UUID string format: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`) |
 | `tsu` | **JSON string** (ISO 8601 UTC: `yyyy-MM-ddTHH:mm:ss.SSSZ`) |
 | `tso` | **JSON string** (ISO 8601 with offset: `yyyy-MM-ddTHH:mm:ss.SSS+HH:MM`) |

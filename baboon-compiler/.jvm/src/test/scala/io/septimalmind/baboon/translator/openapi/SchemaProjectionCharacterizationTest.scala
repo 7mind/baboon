@@ -19,6 +19,12 @@ class SchemaProjectionCharacterizationTest extends AnyWordSpec {
       // 64-bit integers are carried as decimal strings on the wire (docs/json-codecs.md).
       assert(parse(oas.scalarSchemaJson(TypeId.Builtins.i64)) == parse("""{"type":"string","format":"int64"}"""))
       assert(parse(oas.scalarSchemaJson(TypeId.Builtins.u64)) == parse("""{"type":"string","format":"uint64"}"""))
+      // `bytes` is hex on the wire (docs/json-codecs.md); `format: byte` would advertise base64 (#102).
+      val bytes = parse(oas.scalarSchemaJson(TypeId.Builtins.bytes))
+      assert(bytes.hcursor.get[String]("format").isLeft)
+      assert(bytes.hcursor.get[String]("contentEncoding").toOption.contains("base16"))
+      assert(bytes.hcursor.get[String]("pattern").toOption.contains("^([0-9A-Fa-f]{2})*$"))
+      assert(bytes.hcursor.get[String]("description").toOption.exists(_.contains("hex")))
       val ref = TypeRef.Constructor(TypeId.Builtins.opt, NEList(TypeRef.Constructor(TypeId.Builtins.set, NEList(TypeRef.Scalar(TypeId.Builtins.str)))))
       assert(parse(oas.typeRefSchema(ref)) == parse("""{"oneOf":[{"type":"array","items":{"type":"string"},"uniqueItems":true},{"type":"null"}]}"""))
       assert(gql.fieldTypeStr(ref) == "[String!]")

@@ -21,6 +21,22 @@ class OasTypeTranslator {
     }
   }
 
+  /** Attach a doc-derived description to a schema fragment. A built-in description (the `bytes`
+    * hex note, the `any` envelope) follows the doc instead of being replaced by it.
+    */
+  def describe(schema: Json, description: Option[String]): Json = description match {
+    case None => schema
+    case Some(doc) =>
+      schema.mapObject {
+        obj =>
+          val merged = obj("description").flatMap(_.asString) match {
+            case Some(builtin) => s"$doc\n\n$builtin"
+            case None          => doc
+          }
+          obj.add("description", Json.fromString(merged))
+      }
+  }
+
   def foreignTypeResolution(domain: Domain): Map[TypeId.User, Option[TypeRef]] = {
     SchemaReferences.prepare(domain).resolutions
   }
@@ -54,7 +70,16 @@ class OasTypeTranslator {
       case TypeId.Builtins.uid   => ("string", Some("uuid"), Map.empty)
       case TypeId.Builtins.tsu   => ("string", Some("date-time"), Map.empty)
       case TypeId.Builtins.tso   => ("string", Some("date-time"), Map.empty)
-      case TypeId.Builtins.bytes => ("string", Some("byte"), Map.empty)
+      case TypeId.Builtins.bytes =>
+        (
+          "string",
+          None,
+          Map(
+            "contentEncoding" -> Json.fromString("base16"),
+            "pattern"         -> Json.fromString(OasTypeTranslator.bytesHexPattern),
+            "description"     -> Json.fromString(OasTypeTranslator.bytesHexDescription),
+          ),
+        )
       case other                 => throw new IllegalArgumentException(s"Unexpected builtin scalar in OpenAPI backend: ${other.name.name}")
     }
   }
@@ -205,4 +230,13 @@ class OasTypeTranslator {
       s"$generic Known branches: $enumerated."
     }
   }
+}
+
+object OasTypeTranslator {
+
+  /** Every backend's JSON codec carries `bytes` as hex (docs/json-codecs.md, "bytes"); decoders also
+    * skip ASCII whitespace, `:` and `-` separators, but clients should send the canonical form.
+    */
+  final val bytesHexPattern     = "^([0-9A-Fa-f]{2})*$"
+  final val bytesHexDescription = "Hexadecimal bytes: two hex digits per byte, case-insensitive (e.g. \"ABCD\" is [0xAB, 0xCD]). Not base64."
 }

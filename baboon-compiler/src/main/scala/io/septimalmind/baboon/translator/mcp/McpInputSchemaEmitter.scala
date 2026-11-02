@@ -188,11 +188,11 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
         // resolution; emit the documented opaque object.
         List(name -> foreignOpaqueSchema(name))
       case dto: Typedef.Dto =>
-        List(name -> mergeObjects(Json.obj(typeKeyword -> Json.fromString("object")), dtoBody(dto, ctx)))
+        List(name -> described(mergeObjects(Json.obj(typeKeyword -> Json.fromString("object")), dtoBody(dto, ctx)), m.docs))
       case e: Typedef.Enum =>
-        List(name -> enumSchema(e))
+        List(name -> described(enumSchema(e), m.docs))
       case adt: Typedef.Adt =>
-        List(name -> adtSchema(adt, domain))
+        List(name -> described(adtSchema(adt, domain), m.docs))
       case other =>
         throw new IllegalArgumentException(s"Unexpected typedef in MCP inputSchema emitter: ${other.id}")
     }
@@ -207,7 +207,7 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
       Json.obj()
     } else {
       val required  = dto.fields.filterNot(f => isOptional(f.tpe)).map(f => Json.fromString(f.name.name))
-      val props     = dto.fields.map(f => f.name.name -> fieldSchema(f.tpe, ctx))
+      val props     = dto.fields.map(f => f.name.name -> described(fieldSchema(f.tpe, ctx), f.docs))
       val withProps = Json.obj(propertiesKeyword -> Json.obj(props*))
       if (required.isEmpty) withProps
       else mergeObjects(withProps, Json.obj(requiredKeyword -> Json.arr(required*)))
@@ -318,6 +318,9 @@ class McpInputSchemaEmitter(typeTranslator: OasTypeTranslator) {
     }
 
   // ── helpers ───────────────────────────────────────────────────────────────
+
+  private def described(schema: Json, docs: Docs): Json =
+    typeTranslator.describe(schema, McpDocs.flatten(docs))
 
   private def localRef(id: TypeId.User): Json =
     Json.obj(refKeyword -> Json.fromString(s"#/$defsSegment/${typeTranslator.schemaName(id)}"))
