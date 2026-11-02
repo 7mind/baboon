@@ -380,6 +380,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
         List(
           rt("BaboonRuntime/baboon_runtime.swift", "baboon-runtime/swift/baboon_runtime.swift"),
           rt("BaboonRuntime/baboon_type_meta.swift", "baboon-runtime/swift/baboon_type_meta.swift"),
+          rt("BaboonRuntime/baboon_json_decode.swift", "baboon-runtime/swift/baboon_json_decode.swift"),
           rt("BaboonRuntime/baboon_service_wiring.swift", "baboon-runtime/swift/baboon_service_wiring.swift"),
           rt("BaboonRuntime/BaboonAnyOpaque.swift", "baboon-runtime/swift/BaboonAnyOpaque.swift"),
           rt("BaboonRuntime/baboon_any_field_codec.swift", "baboon-runtime/swift/baboon_any_field_codec.swift"),

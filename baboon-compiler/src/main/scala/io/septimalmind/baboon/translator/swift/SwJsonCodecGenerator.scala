@@ -172,7 +172,7 @@ class SwJsonCodecGenerator(
     val decFields = d.fields.map {
       f =>
         val escaped          = trans.escapeSwiftKeyword(f.name.name)
-        val (expr, mayThrow) = mkDecoder(f.name.name, f.tpe, q"jsonObj")
+        val (expr, mayThrow) = mkDecoder(name.name, f.name.name, f.tpe, q"jsonObj")
         if (mayThrow) q"$escaped: try $expr" else q"$escaped: $expr"
     }
 
@@ -285,7 +285,11 @@ class SwJsonCodecGenerator(
   }
 
   // Returns (expression, mayThrow) so the call site at line 175 can emit `try` only when needed.
-  private def mkDecoder(fieldName: String, tpe: TypeRef, jsonObjRef: TextTree[SwValue]): (TextTree[SwValue], Boolean) = {
+  private def mkDecoder(ownerName: String, fieldName: String, tpe: TypeRef, jsonObjRef: TextTree[SwValue]): (TextTree[SwValue], Boolean) = {
+    // Names the field in decode-failure messages; type and field names are Swift identifiers,
+    // so they are safe inside a Swift string literal.
+    val what = s"$ownerName.$fieldName"
+
     // Returns (expression, mayThrow). `mayThrow` is true when the expression contains a throwing
     // call at its top level (i.e. needs `try` at the call site). Nested `try` inside closures
     // are handled inline — only the outermost `try` requirement is surfaced here.
@@ -295,7 +299,7 @@ class SwJsonCodecGenerator(
         case TypeRef.Scalar(id) =>
           id match {
             case b: TypeId.BuiltinScalar =>
-              val decoded = SwScalarCodecs.jsonDecode(b, ref)
+              val decoded = SwScalarCodecs.jsonDecode(b, ref, what)
               (decoded.expression, decoded.mayThrow)
             case u: TypeId.User =>
               val targetTpe = codecName(domainTypes.toSwTypeRefKeepForeigns(u))
@@ -315,29 +319,27 @@ class SwJsonCodecGenerator(
             case TypeId.Builtins.lst =>
               val (elemDec, elemThrows) = decodeElement(c.args.head, q"$varName", depth + 1)
               if (elemThrows) {
-                (q"""($ref as! [Any]).map { $varName in try $elemDec }""", true)
+                (q"""$baboonJsonDecode.array($ref, "$what").map { $varName in try $elemDec }""", true)
               } else {
-                (q"""($ref as! [Any]).map { $varName in $elemDec }""", false)
+                (q"""$baboonJsonDecode.array($ref, "$what").map { $varName in $elemDec }""", true)
               }
             case TypeId.Builtins.set =>
               val (elemDec, elemThrows) = decodeElement(c.args.head, q"$varName", depth + 1)
               if (elemThrows) {
-                (q"""Set(($ref as! [Any]).map { $varName in try $elemDec })""", true)
+                (q"""Set($baboonJsonDecode.array($ref, "$what").map { $varName in try $elemDec })""", true)
               } else {
-                (q"""Set(($ref as! [Any]).map { $varName in $elemDec })""", false)
+                (q"""Set($baboonJsonDecode.array($ref, "$what").map { $varName in $elemDec })""", true)
               }
             case TypeId.Builtins.map =>
               val (keyDec, keyThr)   = decodeKey(c.args.head, q"$varName.key")
               val (valueDec, valThr) = decodeElement(c.args.last, q"$varName.value", depth + 1)
-              val anyThr             = keyThr || valThr
-              // `Dictionary(uniqueKeysWithValues:)` is `rethrows`: it re-throws whatever the
-              // mapping closure throws. If either the key or value decode uses `try`, the outer
-              // `Dictionary(...)` call must itself be marked with `try`.
-              // Emit `try` independently for key and value — four cases: both/key-only/val-only/neither.
+              // `BaboonJsonDecode.object`/`.dictionary` always throw (wrong JSON type, duplicate
+              // decoded key), so the map expression always needs an outer `try`. Inside the
+              // mapping closure, emit `try` independently for key and value.
               val keyTok  = if (keyThr) q"try $keyDec" else q"$keyDec"
               val valTok  = if (valThr) q"try $valueDec" else q"$valueDec"
-              val mapExpr = q"""Dictionary(uniqueKeysWithValues: ($ref as! [String: Any]).map { $varName in ($keyTok, $valTok) })"""
-              (mapExpr, anyThr)
+              val mapExpr = q"""$baboonJsonDecode.dictionary($baboonJsonDecode.object($ref, "$what").map { $varName in ($keyTok, $valTok) }, "$what")"""
+              (mapExpr, true)
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
         case a: TypeRef.Any => (mkAnyDecoder(a, ref), true)
@@ -347,27 +349,30 @@ class SwJsonCodecGenerator(
     // Returns (expression, mayThrow). `mayThrow` is true when the expression embeds `try` (i.e.
     // the key decoder itself can throw — Foreign-Custom keys delegate to `instance.decode` which
     // is `throws`; single-field wrappers over a throwing key type propagate the flag).
+    def parseKey(ref: TextTree[SwValue], swiftType: String): TextTree[SwValue] =
+      q"""$baboonJsonDecode.parse($ref, "$what", $swiftType.self)"""
+
     def decodeKey(tpe: TypeRef, ref: TextTree[SwValue]): (TextTree[SwValue], Boolean) = {
       tpe match {
         case TypeRef.Scalar(id) =>
           id match {
-            case TypeId.Builtins.bit   => (q"$ref == \"true\"", false)
-            case TypeId.Builtins.i08   => (q"Int8($ref)!", false)
-            case TypeId.Builtins.i16   => (q"Int16($ref)!", false)
-            case TypeId.Builtins.i32   => (q"Int32($ref)!", false)
-            case TypeId.Builtins.i64   => (q"Int64($ref)!", false)
-            case TypeId.Builtins.u08   => (q"UInt8($ref)!", false)
-            case TypeId.Builtins.u16   => (q"UInt16($ref)!", false)
-            case TypeId.Builtins.u32   => (q"UInt32($ref)!", false)
-            case TypeId.Builtins.u64   => (q"UInt64($ref)!", false)
-            case TypeId.Builtins.f32   => (q"Float($ref)!", false)
-            case TypeId.Builtins.f64   => (q"Double($ref)!", false)
+            case TypeId.Builtins.bit   => (parseKey(ref, "Bool"), true)
+            case TypeId.Builtins.i08   => (parseKey(ref, "Int8"), true)
+            case TypeId.Builtins.i16   => (parseKey(ref, "Int16"), true)
+            case TypeId.Builtins.i32   => (parseKey(ref, "Int32"), true)
+            case TypeId.Builtins.i64   => (parseKey(ref, "Int64"), true)
+            case TypeId.Builtins.u08   => (parseKey(ref, "UInt8"), true)
+            case TypeId.Builtins.u16   => (parseKey(ref, "UInt16"), true)
+            case TypeId.Builtins.u32   => (parseKey(ref, "UInt32"), true)
+            case TypeId.Builtins.u64   => (parseKey(ref, "UInt64"), true)
+            case TypeId.Builtins.f32   => (parseKey(ref, "Float"), true)
+            case TypeId.Builtins.f64   => (parseKey(ref, "Double"), true)
             case TypeId.Builtins.f128  => (q"$baboonDecimal($ref)", false)
             case TypeId.Builtins.str   => (q"$ref", false)
-            case TypeId.Builtins.uid   => (q"UUID(uuidString: $ref)!", false)
+            case TypeId.Builtins.uid   => (q"""$baboonJsonDecode.uuid($ref, "$what")""", true)
             case TypeId.Builtins.bytes => (q"$baboonByteStringTools.fromHexString($ref)", true)
-            case TypeId.Builtins.tsu   => (q"$baboonTimeFormats.parseUtc($ref)", false)
-            case TypeId.Builtins.tso   => (q"$baboonTimeFormats.parseOffset($ref)", false)
+            case TypeId.Builtins.tsu   => (q"$baboonTimeFormats.parseUtc($ref)", true)
+            case TypeId.Builtins.tso   => (q"$baboonTimeFormats.parseOffset($ref)", true)
             case u: TypeId.User =>
               domain.defs.meta.nodes(u) match {
                 case ud: DomainMember.User =>
@@ -436,8 +441,9 @@ class SwJsonCodecGenerator(
         val closureExpr              = q"""{ let v = $jsonObjRef["$fieldName"]; return v is NSNull || v == nil ? nil : $innerWithTry }()"""
         (closureExpr, innerThrows)
       case _ =>
-        val (expr, throws) = decodeElement(tpe, q"""$jsonObjRef["$fieldName"]!""", 0)
-        (expr, throws)
+        // `BaboonJsonDecode.field` throws on a missing field, so the expression always needs `try`.
+        val (expr, _) = decodeElement(tpe, q"""$baboonJsonDecode.field($jsonObjRef, "$fieldName", "$ownerName")""", 0)
+        (expr, true)
     }
   }
 
