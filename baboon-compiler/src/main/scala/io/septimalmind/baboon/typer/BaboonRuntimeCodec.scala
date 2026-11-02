@@ -419,8 +419,7 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.bytes =>
           json.asString match {
             case Some(value) =>
-              BaboonBinTools.writeByteString(writer, ByteString.parseHex(value))
-              F.unit
+              parseHex(value).map(BaboonBinTools.writeByteString(writer, _))
             case None => F.fail(RuntimeCodecIssue.ExpectedJsonString("bytes", json))
           }
 
@@ -452,6 +451,9 @@ object BaboonRuntimeCodec {
     }
 
     private def parseInteger(text: String): Option[BigInt] = Try(BigInt(text)).toOption
+
+    private def parseHex(text: String): F[BaboonIssue, ByteString] =
+      F.fromEither(ByteString.tryParse(text).toEither.left.map(e => RuntimeCodecIssue.InvalidHexString(text, e.getMessage): BaboonIssue))
 
     /** UEBA stores every integer as its two's-complement low `width` bytes, so unsigned values above the signed range narrow as such. */
     private def writeInteger(kind: IntegerKind, value: BigInt, writer: LEDataOutputStream): Unit = {
@@ -587,8 +589,7 @@ object BaboonRuntimeCodec {
               BaboonBinTools.writeString(writer, key)
               F.unit
             case TypeId.Builtins.bytes =>
-              BaboonBinTools.writeByteString(writer, ByteString.parseHex(key))
-              F.unit
+              parseHex(key).map(BaboonBinTools.writeByteString(writer, _))
             case TypeId.Builtins.bit =>
               writer.writeBoolean(key.toBoolean)
               F.unit

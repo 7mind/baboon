@@ -82,15 +82,33 @@ class ByteString private constructor(private val bytes: ByteArray) : Comparable<
         fun fromHexString(hexString: String): ByteString = parseHex(hexString)
 
         fun parseHex(hexString: String): ByteString {
-            val cleanHex = hexString.filter { !it.isWhitespace() && it != ':' && it != '-' }
-            if (cleanHex.isEmpty()) return empty
-
-            require(cleanHex.length % 2 == 0) {
-                "Invalid hex string length: $${cleanHex.length}. Hex string must have even length."
+            val nibbles = ByteArray(hexString.length)
+            var count = 0
+            for ((i, c) in hexString.withIndex()) {
+                if (isHexSeparator(c)) continue
+                val nibble = hexNibble(c)
+                require(nibble >= 0) {
+                    "Invalid hex character '${c}' (U+${c.code.toString(16).uppercase().padStart(4, '0')}) at index ${i}"
+                }
+                nibbles[count++] = nibble.toByte()
             }
 
-            val bytes = cleanHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            require(count % 2 == 0) {
+                "Invalid hex string length: ${count}. Hex string must have even length."
+            }
+
+            val bytes = ByteArray(count / 2) { ((nibbles[2 * it].toInt() shl 4) or nibbles[2 * it + 1].toInt()).toByte() }
             return ByteString(bytes)
+        }
+
+        // Separators: ASCII space, TAB, LF, VT, FF, CR, ':' and '-'
+        private fun isHexSeparator(c: Char): Boolean = c == ' ' || c == ':' || c == '-' || c.code in 0x09..0x0D
+
+        private fun hexNibble(c: Char): Int = when (c) {
+            in '0'..'9' -> c - '0'
+            in 'a'..'f' -> c - 'a' + 10
+            in 'A'..'F' -> c - 'A' + 10
+            else -> -1
         }
 
         fun tryParse(hexString: String): Result<ByteString> = runCatching { parseHex(hexString) }
