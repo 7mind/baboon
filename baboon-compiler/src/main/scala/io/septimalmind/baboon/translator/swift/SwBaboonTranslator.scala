@@ -253,7 +253,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     val metadataClassName = s"BaboonMetadata_$domainSuffix$versionSuffix"
 
     val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
-    val entries = metadata.sameIn.map {
+    val entries  = metadata.sameIn.map {
       case EvolutionMetadataPlan.SameIn(tid, versions) =>
         q""""${tid.toString}": [${versions.map(s => q""""$s"""").join(", ")}],"""
     }

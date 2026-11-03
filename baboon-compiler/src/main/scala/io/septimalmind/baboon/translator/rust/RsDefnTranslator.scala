@@ -597,7 +597,7 @@ object RsDefnTranslator {
     private def makeDtoRepr(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
       val fields = dto.fields.map {
         f =>
-          val t       = representation.field(f.tpe).stored
+          val t          = representation.field(f.tpe).stored
           val fieldEx = q"""pub ${toSnakeCase(f.name.name)}: $t,"""
           prependDocs(f.docs, fieldEx)
       }

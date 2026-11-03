@@ -212,8 +212,8 @@ class RsJsonCodecGenerator(
       case TypeRef.Scalar(TypeId.Builtins.tso)   => q"""crate::baboon_runtime::json_tools::tso_from_json($ref, "$what")?"""
       // Lenient like the `lenient_numeric` attribute the derive carried: 64-bit values may
       // legitimately arrive as decimal strings from producers that cannot hold them in a number.
-      case TypeRef.Scalar(TypeId.Builtins.i64) => q"""crate::baboon_runtime::json_tools::read_i64($ref, "$what")?"""
-      case TypeRef.Scalar(TypeId.Builtins.u64) => q"""crate::baboon_runtime::json_tools::read_u64($ref, "$what")?"""
+      case TypeRef.Scalar(TypeId.Builtins.i64)   => q"""crate::baboon_runtime::json_tools::read_i64($ref, "$what")?"""
+      case TypeRef.Scalar(TypeId.Builtins.u64)   => q"""crate::baboon_runtime::json_tools::read_u64($ref, "$what")?"""
 
       case TypeRef.Scalar(_: TypeId.BuiltinScalar) =>
         val rsT = trans.asRsRef(tpe, domain, evo)

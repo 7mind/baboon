@@ -111,26 +111,26 @@ object PyTypes {
   // python
 
   // builtins
-  val pyInt = PyType(pyBuiltins, "int")
+  val pyInt          = PyType(pyBuiltins, "int")
   // `Annotated[int, PlainSerializer(str, ..., when_used="json")]` — see the aliases in
   // baboon_runtime_shared.py and docs/json-codecs.md, "64-bit integers".
-  val pyI64 = PyType(pyBaboonSharedRuntimeModule, "BaboonI64")
-  val pyU64 = PyType(pyBaboonSharedRuntimeModule, "BaboonU64")
+  val pyI64          = PyType(pyBaboonSharedRuntimeModule, "BaboonI64")
+  val pyU64          = PyType(pyBaboonSharedRuntimeModule, "BaboonU64")
   // `Annotated[bytes, ...]` — hex string on the JSON wire, see baboon_runtime_shared.py.
-  val pyBaboonBytes   = PyType(pyBaboonSharedRuntimeModule, "BaboonBytes")
-  val pyBytesFromHex  = PyType(pyBaboonSharedRuntimeModule, "bytes_from_hex")
+  val pyBaboonBytes  = PyType(pyBaboonSharedRuntimeModule, "BaboonBytes")
+  val pyBytesFromHex = PyType(pyBaboonSharedRuntimeModule, "bytes_from_hex")
   val pyInt64FromJson = PyType(pyBaboonSharedRuntimeModule, "int64_from_json")
-  val pyFloat         = PyType(pyBuiltins, "float")
-  val pyDecimal       = PyType(pyDecimalModule, "Decimal")
-  val pyBool          = PyType(pyBuiltins, "bool")
-  val pyStr           = PyType(pyBuiltins, "str")
-  val pyType          = PyType(pyBuiltins, "type")
-  val pyDict          = PyType(pyBuiltins, "dict")
-  val pySet           = PyType(pyBuiltins, "set")
-  val pyList          = PyType(pyBuiltins, "list")
-  val pyClassMethod   = PyType(pyBuiltins, "classmethod")
-  val pyStaticMethod  = PyType(pyBuiltins, "staticmethod")
-  val pyProperty      = PyType(pyBuiltins, "property")
+  val pyFloat        = PyType(pyBuiltins, "float")
+  val pyDecimal      = PyType(pyDecimalModule, "Decimal")
+  val pyBool         = PyType(pyBuiltins, "bool")
+  val pyStr          = PyType(pyBuiltins, "str")
+  val pyType         = PyType(pyBuiltins, "type")
+  val pyDict         = PyType(pyBuiltins, "dict")
+  val pySet          = PyType(pyBuiltins, "set")
+  val pyList         = PyType(pyBuiltins, "list")
+  val pyClassMethod  = PyType(pyBuiltins, "classmethod")
+  val pyStaticMethod = PyType(pyBuiltins, "staticmethod")
+  val pyProperty     = PyType(pyBuiltins, "property")
 
   // unittest
   val pyTestCase = PyType(pyUnittest, "TestCase")
@@ -149,10 +149,10 @@ object PyTypes {
   val pydanticModelValidator  = PyType(pydantic, "model_validator")
 
   // typing
-  val pyOpt       = PyType(pyTypingModule, "Optional")
-  val pyOverride  = PyType(pyTypingModule, "override")
-  val pyClassVar  = PyType(pyTypingModule, "ClassVar")
-  val pyAny       = PyType(pyTypingModule, "Any")
+  val pyOpt      = PyType(pyTypingModule, "Optional")
+  val pyOverride = PyType(pyTypingModule, "override")
+  val pyClassVar = PyType(pyTypingModule, "ClassVar")
+  val pyAny      = PyType(pyTypingModule, "Any")
   val pyProtocol  = PyType(pyTypingModule, "Protocol")
   val pyCallable  = PyType(pyTypingModule, "Callable")
   val pyAwaitable = PyType(pyTypingModule, "Awaitable")
@@ -201,8 +201,8 @@ object PyTypes {
   val baboonJsonMuxer: PyType                 = PyType(pyBaboonServiceWiringModule, "JsonMuxer")
   val baboonUebaMuxer: PyType                 = PyType(pyBaboonServiceWiringModule, "UebaMuxer")
   // Context-carrying variants (abstract/concrete service-context modes only).
-  val ibaboonJsonServiceCtx: PyType = PyType(pyBaboonServiceWiringModule, "IBaboonJsonServiceCtx")
-  val ibaboonUebaServiceCtx: PyType = PyType(pyBaboonServiceWiringModule, "IBaboonUebaServiceCtx")
-  val baboonJsonMuxerCtx: PyType    = PyType(pyBaboonServiceWiringModule, "JsonMuxerCtx")
-  val baboonUebaMuxerCtx: PyType    = PyType(pyBaboonServiceWiringModule, "UebaMuxerCtx")
+  val ibaboonJsonServiceCtx: PyType           = PyType(pyBaboonServiceWiringModule, "IBaboonJsonServiceCtx")
+  val ibaboonUebaServiceCtx: PyType           = PyType(pyBaboonServiceWiringModule, "IBaboonUebaServiceCtx")
+  val baboonJsonMuxerCtx: PyType              = PyType(pyBaboonServiceWiringModule, "JsonMuxerCtx")
+  val baboonUebaMuxerCtx: PyType              = PyType(pyBaboonServiceWiringModule, "UebaMuxerCtx")
 }
