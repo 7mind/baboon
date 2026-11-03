@@ -160,14 +160,14 @@ public enum BaboonAnyUebaFieldCodec {
     }
 
     public static func decodeAnyField(_ wire: BaboonBinReader, _ expectedKind: UInt8) throws -> AnyOpaque {
-        let anyTotalLength = wire.readI32()
+        let anyTotalLength = try wire.readI32()
         if anyTotalLength < 0 {
             throw BaboonCodecException.decoderFailure(
                 "any: negative total-length \(anyTotalLength)",
                 nil
             )
         }
-        let anyMetaLength = wire.readI32()
+        let anyMetaLength = try wire.readI32()
         if anyMetaLength < 0 {
             throw BaboonCodecException.decoderFailure(
                 "any: negative meta-length \(anyMetaLength)",
@@ -189,7 +189,7 @@ public enum BaboonAnyUebaFieldCodec {
         }
         if anyBytesRead < Int(anyMetaLength) {
             // Forward-compat: skip future meta-extension bytes within the meta-length window.
-            wire.skipBytes(Int(anyMetaLength) - anyBytesRead)
+            try wire.skipBytes(Int(anyMetaLength) - anyBytesRead)
         }
         if anyMeta.kind != expectedKind {
             throw BaboonCodecException.decoderFailure(
@@ -199,7 +199,7 @@ public enum BaboonAnyUebaFieldCodec {
             )
         }
         let anyBlobLen = Int(anyTotalLength) - 4 - Int(anyMetaLength)
-        let anyBlob = wire.readNBytes(anyBlobLen)
+        let anyBlob = try wire.readNBytes(anyBlobLen)
         return .ueba(meta: anyMeta, bytes: anyBlob)
     }
 }

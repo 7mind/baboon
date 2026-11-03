@@ -6,12 +6,10 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 private[swift] object SwScalarCodecs {
-  sealed trait ThrowingEffect
-  case object NonThrowing extends ThrowingEffect
-  case object Throwing extends ThrowingEffect
-  final case class Decoded(expression: TextTree[SwValue], effect: ThrowingEffect) {
-    def mayThrow: Boolean          = effect == Throwing
-    def withTry: TextTree[SwValue] = if (mayThrow) q"try $expression" else expression
+  // Every scalar decode reads untrusted input and throws on truncated, wrong-typed or malformed
+  // data, so the expression always needs `try` at its use site.
+  final case class Decoded(expression: TextTree[SwValue]) {
+    def withTry: TextTree[SwValue] = q"try $expression"
   }
 
   // Every JSON scalar decode reads untrusted input and throws on a wrong-typed or malformed value
@@ -38,7 +36,7 @@ private[swift] object SwScalarCodecs {
       case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseOffset($baboonJsonDecode.string($w))"
       case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
     }
-    Decoded(expression, Throwing)
+    Decoded(expression)
   }
 
   def jsonEncode(id: TypeId.BuiltinScalar, value: TextTree[SwValue]): TextTree[SwValue] = id match {
@@ -59,23 +57,23 @@ private[swift] object SwScalarCodecs {
   }
 
   def uebaDecode(id: TypeId.BuiltinScalar, reader: TextTree[SwValue]): Decoded = id match {
-    case TypeId.Builtins.bit   => Decoded(q"$reader.readBool()", NonThrowing)
-    case TypeId.Builtins.i08   => Decoded(q"$reader.readI8()", NonThrowing)
-    case TypeId.Builtins.i16   => Decoded(q"$reader.readI16()", NonThrowing)
-    case TypeId.Builtins.i32   => Decoded(q"$reader.readI32()", NonThrowing)
-    case TypeId.Builtins.i64   => Decoded(q"$reader.readI64()", NonThrowing)
-    case TypeId.Builtins.u08   => Decoded(q"$reader.readU8()", NonThrowing)
-    case TypeId.Builtins.u16   => Decoded(q"$reader.readU16()", NonThrowing)
-    case TypeId.Builtins.u32   => Decoded(q"$reader.readU32()", NonThrowing)
-    case TypeId.Builtins.u64   => Decoded(q"$reader.readU64()", NonThrowing)
-    case TypeId.Builtins.f32   => Decoded(q"$reader.readF32()", NonThrowing)
-    case TypeId.Builtins.f64   => Decoded(q"$reader.readF64()", NonThrowing)
-    case TypeId.Builtins.f128  => Decoded(q"$reader.readDecimal()", NonThrowing)
-    case TypeId.Builtins.str   => Decoded(q"$reader.readString()", Throwing)
-    case TypeId.Builtins.bytes => Decoded(q"$reader.readBytes()", Throwing)
-    case TypeId.Builtins.uid   => Decoded(q"$reader.readUuid()", Throwing)
-    case TypeId.Builtins.tsu   => Decoded(q"$reader.readTsu()", NonThrowing)
-    case TypeId.Builtins.tso   => Decoded(q"$reader.readTso()", NonThrowing)
+    case TypeId.Builtins.bit   => Decoded(q"$reader.readBool()")
+    case TypeId.Builtins.i08   => Decoded(q"$reader.readI8()")
+    case TypeId.Builtins.i16   => Decoded(q"$reader.readI16()")
+    case TypeId.Builtins.i32   => Decoded(q"$reader.readI32()")
+    case TypeId.Builtins.i64   => Decoded(q"$reader.readI64()")
+    case TypeId.Builtins.u08   => Decoded(q"$reader.readU8()")
+    case TypeId.Builtins.u16   => Decoded(q"$reader.readU16()")
+    case TypeId.Builtins.u32   => Decoded(q"$reader.readU32()")
+    case TypeId.Builtins.u64   => Decoded(q"$reader.readU64()")
+    case TypeId.Builtins.f32   => Decoded(q"$reader.readF32()")
+    case TypeId.Builtins.f64   => Decoded(q"$reader.readF64()")
+    case TypeId.Builtins.f128  => Decoded(q"$reader.readDecimal()")
+    case TypeId.Builtins.str   => Decoded(q"$reader.readString()")
+    case TypeId.Builtins.bytes => Decoded(q"$reader.readBytes()")
+    case TypeId.Builtins.uid   => Decoded(q"$reader.readUuid()")
+    case TypeId.Builtins.tsu   => Decoded(q"$reader.readTsu()")
+    case TypeId.Builtins.tso   => Decoded(q"$reader.readTso()")
     case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
   }
 

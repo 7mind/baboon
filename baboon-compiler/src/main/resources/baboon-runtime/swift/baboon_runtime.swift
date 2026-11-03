@@ -296,15 +296,15 @@ extension BaboonBinCodecIndexed {
 
     private func readIndexEntries(_ reader: BaboonBinReader, _ consume: (Int32, Int32) -> Void) throws -> Int {
         guard reader.remaining >= 1 else { throw BaboonCodecError.truncated("Missing UEBA index header") }
-        let header = reader.readU8()
+        let header = try reader.readU8()
         if header & 1 == 0 { return 0 }
         let count = indexElementsCount
         let indexEntryBytes = 2 * MemoryLayout<Int32>.size
         var previousEnd: Int64 = 0
         for _ in 0..<count {
             guard reader.remaining >= indexEntryBytes else { throw BaboonCodecError.truncated("Truncated UEBA index entry") }
-            let offset = reader.readI32()
-            let length = reader.readI32()
+            let offset = try reader.readI32()
+            let length = try reader.readI32()
             guard length > 0 else { throw BaboonCodecError.invalidInput("Invalid UEBA index length: \(length)") }
             guard Int64(offset) >= previousEnd else { throw BaboonCodecError.invalidInput("Invalid UEBA index offset: \(offset)") }
             previousEnd = Int64(offset) + Int64(length)
@@ -533,6 +533,9 @@ public class BaboonBinWriter {
 // --- Binary Reader ---
 
 public class BaboonBinReader {
+    // .NET `BinaryReader.Read7BitEncodedInt` reads at most 5 bytes (35 bits).
+    private static let maxVlqShift = 35
+
     private let data: Data
     private var pos: Int = 0
     fileprivate var remaining: Int { data.count - pos }
@@ -544,19 +547,30 @@ public class BaboonBinReader {
     /// PR 9.1: expose the read cursor for `AnyMetaCodec.readBinWithLength` (PR-05-D01).
     public var position: Int { return pos }
 
-    public func readU8() -> UInt8 {
+    // Every read checks the remaining input first, so truncated or malformed UEBA throws
+    // `BaboonCodecError` instead of trapping on an out-of-bounds `Data` subscript.
+    private func ensure(_ count: Int, _ what: String) throws {
+        guard count >= 0 && count <= remaining else {
+            throw BaboonCodecError.truncated("\(what): need \(count) bytes at pos \(pos), only \(remaining) available")
+        }
+    }
+
+    public func readU8() throws -> UInt8 {
+        try ensure(1, "readU8")
         let v = data[data.startIndex + pos]
         pos += 1
         return v
     }
 
-    public func readI8() -> Int8 {
+    public func readI8() throws -> Int8 {
+        try ensure(1, "readI8")
         let v = Int8(bitPattern: data[data.startIndex + pos])
         pos += 1
         return v
     }
 
-    public func readU16() -> UInt16 {
+    public func readU16() throws -> UInt16 {
+        try ensure(2, "readU16")
         var v: UInt16 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 2))
@@ -565,7 +579,8 @@ public class BaboonBinReader {
         return UInt16(littleEndian: v)
     }
 
-    public func readI16() -> Int16 {
+    public func readI16() throws -> Int16 {
+        try ensure(2, "readI16")
         var v: Int16 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 2))
@@ -574,7 +589,8 @@ public class BaboonBinReader {
         return Int16(littleEndian: v)
     }
 
-    public func readU32() -> UInt32 {
+    public func readU32() throws -> UInt32 {
+        try ensure(4, "readU32")
         var v: UInt32 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 4))
@@ -583,7 +599,8 @@ public class BaboonBinReader {
         return UInt32(littleEndian: v)
     }
 
-    public func readI32() -> Int32 {
+    public func readI32() throws -> Int32 {
+        try ensure(4, "readI32")
         var v: Int32 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 4))
@@ -592,7 +609,8 @@ public class BaboonBinReader {
         return Int32(littleEndian: v)
     }
 
-    public func readU64() -> UInt64 {
+    public func readU64() throws -> UInt64 {
+        try ensure(8, "readU64")
         var v: UInt64 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 8))
@@ -601,7 +619,8 @@ public class BaboonBinReader {
         return UInt64(littleEndian: v)
     }
 
-    public func readI64() -> Int64 {
+    public func readI64() throws -> Int64 {
+        try ensure(8, "readI64")
         var v: Int64 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 8))
@@ -610,18 +629,49 @@ public class BaboonBinReader {
         return Int64(littleEndian: v)
     }
 
-    public func readF32() -> Float {
-        let bits = readU32()
+    public func readF32() throws -> Float {
+        let bits = try readU32()
         return Float(bitPattern: bits)
     }
 
-    public func readF64() -> Double {
-        let bits = readU64()
+    public func readF64() throws -> Double {
+        let bits = try readU64()
         return Double(bitPattern: bits)
     }
 
-    public func readBool() -> Bool {
-        return readU8() != 0
+    public func readBool() throws -> Bool {
+        return try readU8() != 0
+    }
+
+    /// Reads the i32 element count that prefixes a UEBA list, set or map.
+    public func readCount() throws -> Int {
+        let count = try Int(readI32())
+        guard count >= 0 else {
+            throw BaboonCodecError.invalidInput("Negative UEBA collection count \(count) at pos \(pos - 4)")
+        }
+        return count
+    }
+
+    public func readList<T>(_ element: () throws -> T) throws -> [T] {
+        let count = try readCount()
+        var result: [T] = []
+        for _ in 0..<count {
+            result.append(try element())
+        }
+        return result
+    }
+
+    // `Dictionary(uniqueKeysWithValues:)` traps on a repeated key; malformed input must throw instead.
+    public func readDictionary<K: Hashable, V>(_ entry: () throws -> (K, V)) throws -> [K: V] {
+        let count = try readCount()
+        var result: [K: V] = [:]
+        for _ in 0..<count {
+            let (key, value) = try entry()
+            guard result.updateValue(value, forKey: key) == nil else {
+                throw BaboonCodecError.invalidInput("Duplicate UEBA map key \(key) before pos \(pos)")
+            }
+        }
+        return result
     }
 
     public func readString() throws -> String {
@@ -629,14 +679,15 @@ public class BaboonBinReader {
         var length = 0
         var shift = 0
         while true {
-            let byteRead = Int(readU8())
+            guard shift < BaboonBinReader.maxVlqShift else {
+                throw BaboonCodecError.invalidInput("readString: length prefix at pos \(pos) exceeds 5 bytes")
+            }
+            let byteRead = try Int(readU8())
             length |= (byteRead & 0x7F) << shift
             shift += 7
             if (byteRead & 0x80) == 0 { break }
         }
-        guard pos + length <= data.count else {
-            throw BaboonCodecError.truncated("readString: need \(length) bytes at pos \(pos), only \(data.count - pos) available")
-        }
+        try ensure(length, "readString")
         let bytes = data.subdata(in: (data.startIndex + pos)..<(data.startIndex + pos + length))
         pos += length
         guard let str = String(data: bytes, encoding: .utf8) else {
@@ -646,10 +697,8 @@ public class BaboonBinReader {
     }
 
     public func readBytes() throws -> Data {
-        let length = Int(readI32())
-        guard length >= 0 && pos + length <= data.count else {
-            throw BaboonCodecError.truncated("readBytes: need \(length) bytes at pos \(pos), only \(data.count - pos) available")
-        }
+        let length = try Int(readI32())
+        try ensure(length, "readBytes")
         let bytes = data.subdata(in: (data.startIndex + pos)..<(data.startIndex + pos + length))
         pos += length
         return bytes
@@ -658,7 +707,8 @@ public class BaboonBinReader {
     /// PR 9.2: read raw `count` bytes (no length prefix). Used by the `any`-field decoder for the
     /// blob payload — the wire `total-length` already gates the count, so we can copy in a single
     /// `subdata` call instead of looping `readU8()`. Mirrors Dart's PR 8.2 `readNBytes`.
-    public func readNBytes(_ count: Int) -> Data {
+    public func readNBytes(_ count: Int) throws -> Data {
+        try ensure(count, "readNBytes")
         let bytes = data.subdata(in: (data.startIndex + pos)..<(data.startIndex + pos + count))
         pos += count
         return bytes
@@ -666,16 +716,17 @@ public class BaboonBinReader {
 
     /// PR 9.2: advance the read cursor past `count` bytes without returning them. Used by the
     /// `any`-field forward-compat skip-trailer (PR-05-D01). Mirrors Dart's PR 8.2 `skipBytes`.
-    public func skipBytes(_ count: Int) {
+    public func skipBytes(_ count: Int) throws {
+        try ensure(count, "skipBytes")
         pos += count
     }
 
-    public func readDecimal() -> BaboonDecimal {
+    public func readDecimal() throws -> BaboonDecimal {
         // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32) = 16 bytes
-        let lo = UInt64(readRawU32())
-        let mid = UInt64(readRawU32())
-        let hi = UInt64(readRawU32())
-        let flags = readRawU32()
+        let lo = try UInt64(readU32())
+        let mid = try UInt64(readU32())
+        let hi = try UInt64(readU32())
+        let flags = try readU32()
 
         let scale = Int((flags >> 16) & 0xFF)
         let isNeg = (flags & 0x80000000) != 0
@@ -722,19 +773,9 @@ public class BaboonBinReader {
         return BaboonDecimal(result)
     }
 
-    private func readRawU32() -> UInt32 {
-        var v: UInt32 = 0
-        _ = withUnsafeMutableBytes(of: &v) { ptr in
-            data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 4))
-        }
-        pos += 4
-        return UInt32(littleEndian: v)
-    }
 
     public func readUuid() throws -> UUID {
-        guard pos + 16 <= data.count else {
-            throw BaboonCodecError.truncated("readUuid: need 16 bytes at pos \(pos), only \(data.count - pos) available")
-        }
+        try ensure(16, "readUuid")
         let start = data.startIndex + pos
         pos += 16
         // .NET mixed-endian GUID format to standard UUID
@@ -746,21 +787,27 @@ public class BaboonBinReader {
         ))
     }
 
-    public func readTsu() -> Date {
-        let dotnetLocalMs = readI64()
-        let offsetMs = readI64()
-        let kind = readU8()
-        assert(kind >= 0 && kind <= 2)
+    public func readTsu() throws -> Date {
+        let dotnetLocalMs = try readI64()
+        let offsetMs = try readI64()
+        let kind = try readTimestampKind()
         let dotnetUtcMs = dotnetLocalMs - offsetMs
         let epochMs = dotnetUtcMs - BaboonBinWriter.dotnetEpochOffsetMs
         return Date(timeIntervalSince1970: Double(epochMs) / 1000.0)
     }
 
-    public func readTso() -> BaboonDateTimeOffset {
-        let dotnetLocalMs = readI64()
-        let offsetMs = readI64()
-        let kind = readU8()
-        assert(kind >= 0 && kind <= 2)
+    private func readTimestampKind() throws -> UInt8 {
+        let kind = try readU8()
+        guard kind <= 2 else {
+            throw BaboonCodecError.invalidInput("Unexpected UEBA timestamp kind: \(kind)")
+        }
+        return kind
+    }
+
+    public func readTso() throws -> BaboonDateTimeOffset {
+        let dotnetLocalMs = try readI64()
+        let offsetMs = try readI64()
+        let kind = try readTimestampKind()
         let dotnetUtcMs = dotnetLocalMs - offsetMs
         let epochMs = dotnetUtcMs - BaboonBinWriter.dotnetEpochOffsetMs
         let normalizedKind: String

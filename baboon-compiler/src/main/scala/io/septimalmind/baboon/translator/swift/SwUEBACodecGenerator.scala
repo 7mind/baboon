@@ -181,7 +181,7 @@ class SwUEBACodecGenerator(
       q"""switch value {
          |${branches.map(_._1).joinN().shift(0).trim}
          |}""".stripMargin,
-      q"""let asByte = reader.readU8()
+      q"""let asByte = try reader.readU8()
          |
          |switch asByte {
          |${branches.map(_._2).joinN().shift(0).trim}
@@ -210,7 +210,7 @@ class SwUEBACodecGenerator(
       q"""switch value {
          |${encBranches.joinN().shift(0).trim}
          |}""".stripMargin,
-      q"""let asByte = reader.readU8()
+      q"""let asByte = try reader.readU8()
          |
          |switch asByte {
          |${decBranches.joinN().shift(0).trim}
@@ -268,7 +268,7 @@ class SwUEBACodecGenerator(
     val dec = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
         val idx = layout.adtBranchIndex(id, dto.id)
-        q"""let marker = reader.readU8()
+        q"""let marker = try reader.readU8()
            |guard marker == ${idx.toString} else { throw BaboonCodecError.invalidInput("Unexpected UEBA ADT branch marker: " + String(marker)) }
            |return try decodeBranch(ctx, reader)""".stripMargin
       case _ => fdec
@@ -293,12 +293,11 @@ class SwUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[SwValue], TextTree[SwValue], TextTree[SwValue])] = {
     layout.fields(dto).map {
       case UebaLayoutPlan.FieldLayout(field, length) =>
-        val escaped             = trans.escapeSwiftKeyword(field.name.name)
-        val fieldRef            = q"value.$escaped"
-        val enc                 = mkEncoder(field.tpe, fieldRef, q"writer")
-        val bufferEnc           = mkEncoder(field.tpe, fieldRef, q"buffer")
-        val (decoder, mayThrow) = mkDecoder(field.tpe)
-        val decodeTree          = if (mayThrow) q"$escaped: try $decoder" else q"$escaped: $decoder"
+        val escaped    = trans.escapeSwiftKeyword(field.name.name)
+        val fieldRef   = q"value.$escaped"
+        val enc        = mkEncoder(field.tpe, fieldRef, q"writer")
+        val bufferEnc  = mkEncoder(field.tpe, fieldRef, q"buffer")
+        val decodeTree = q"$escaped: try ${mkDecoder(field.tpe)}"
 
         val w = length match {
           case BinReprLen.Fixed(bytes) =>
@@ -339,45 +338,33 @@ class SwUEBACodecGenerator(
       enforce = condition => q"""guard $condition else { fatalError("Invalid UEBA field length: " + String(length)) }""",
     )
 
-  // Returns (expression, mayThrow). `mayThrow` is true when the expression contains a top-level
-  // throwing call that needs `try` at the parent site (e.g. inside a closure body or ternary).
-  private def mkDecoder(tpe: TypeRef): (TextTree[SwValue], Boolean) = {
+  // Every UEBA read may throw on truncated or malformed input, so the returned expression needs
+  // `try` at its use site. That outermost `try` also covers the throwing calls nested inside a
+  // ternary branch; closure bodies are separate throwing contexts and carry their own `try`.
+  private def mkDecoder(tpe: TypeRef): TextTree[SwValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
-            val decoded = SwScalarCodecs.uebaDecode(s, q"reader")
-            (decoded.expression, decoded.mayThrow)
+            SwScalarCodecs.uebaDecode(s, q"reader").expression
           case u: TypeId.User =>
             val targetTpe = codecName(domainTypes.toSwTypeRefKeepForeigns(u))
-            (q"$targetTpe.instance.decode(ctx, reader)", true)
+            q"$targetTpe.instance.decode(ctx, reader)"
         }
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            val (innerDecoder, innerThrows) = mkDecoder(c.args.head)
-            // Do NOT add inner `try` — if innerThrows is true, the parent adds `try` at the call
-            // site which covers throwing calls inside the ternary branch (Swift allows outermost
-            // `try` to cover nested throwing calls: `try (cond ? f() : nil)` is valid).
-            (q"""(reader.readBool() ? $innerDecoder : nil)""", innerThrows)
+            q"""(reader.readBool() ? ${mkDecoder(c.args.head)} : nil)"""
           case TypeId.Builtins.map =>
-            val (keyDecoder, keyThrows)     = mkDecoder(c.args.head)
-            val (valueDecoder, valueThrows) = mkDecoder(c.args.last)
-            val keyExpr                     = if (keyThrows) q"try $keyDecoder" else keyDecoder
-            val valueExpr                   = if (valueThrows) q"try $valueDecoder" else valueDecoder
-            (q"""Dictionary(uniqueKeysWithValues: (0..<Int(reader.readI32())).map { _ in ($keyExpr, $valueExpr) })""", keyThrows || valueThrows)
+            q"""reader.readDictionary { try (${mkDecoder(c.args.head)}, ${mkDecoder(c.args.last)}) }"""
           case TypeId.Builtins.lst =>
-            val (elemDecoder, elemThrows) = mkDecoder(c.args.head)
-            val elemExpr                  = if (elemThrows) q"try $elemDecoder" else elemDecoder
-            (q"""(0..<Int(reader.readI32())).map { _ in $elemExpr }""", elemThrows)
+            q"""reader.readList { try ${mkDecoder(c.args.head)} }"""
           case TypeId.Builtins.set =>
-            val (elemDecoder, elemThrows) = mkDecoder(c.args.head)
-            val elemExpr                  = if (elemThrows) q"try $elemDecoder" else elemDecoder
-            (q"""Set((0..<Int(reader.readI32())).map { _ in $elemExpr })""", elemThrows)
+            q"""Set(reader.readList { try ${mkDecoder(c.args.head)} })"""
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case a: TypeRef.Any => (mkAnyDecoder(a), true)
+      case a: TypeRef.Any => mkAnyDecoder(a)
     }
   }
 

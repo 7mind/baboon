@@ -38,8 +38,8 @@ final class RuntimePrimitiveCharacterizationTests: XCTestCase {
                 let consumed = BaboonBinReader(writer.toData())
                 XCTAssertEqual(try Indexed().consumeIndex(context, consumed), entries.count)
                 XCTAssertEqual(consumed.position, reader.position)
-                XCTAssertEqual(consumed.readU8(), 99)
-                XCTAssertEqual(reader.readU8(), 99)
+                XCTAssertEqual(try consumed.readU8(), 99)
+                XCTAssertEqual(try reader.readU8(), 99)
             }
         }
     }

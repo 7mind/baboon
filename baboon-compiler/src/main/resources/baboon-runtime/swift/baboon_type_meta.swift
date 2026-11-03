@@ -282,7 +282,7 @@ public enum BaboonTypeMetaCodec {
     }
 
     public static func readMeta(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
-        let v = Int(reader.readU8())
+        let v = try Int(reader.readU8())
         if v == metaVersion { return try readMetaV1(reader) }
         if v == metaVersion2 { return try readMetaV2(reader) }
         return nil
@@ -291,7 +291,7 @@ public enum BaboonTypeMetaCodec {
     private static func readMetaV2(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
         let d = try reader.readString()
         let dv = try reader.readString()
-        let flags = reader.readU8()
+        let flags = try reader.readU8()
         // unknown flag bits are illegal; a lenient reader would misparse the strings that follow
         if (flags & ~v2FlagsMask) != 0 { return nil }
         let mc = (flags & v2FlagMinCompat) != 0 ? try reader.readString() : dv
@@ -303,7 +303,7 @@ public enum BaboonTypeMetaCodec {
     private static func readMetaV1(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
         let d = try reader.readString()
         let dv = try reader.readString()
-        let hasMinCompat = reader.readU8()
+        let hasMinCompat = try reader.readU8()
         // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
         if hasMinCompat != 0 && hasMinCompat != 1 { return nil }
         let mc = hasMinCompat == 1 ? try reader.readString() : dv
