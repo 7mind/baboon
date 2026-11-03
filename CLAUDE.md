@@ -56,6 +56,8 @@ mdl :test-service-acceptance # service-flavour RPC wiring round-trips
 
 **Resource files:** After modifying any file under `baboon-compiler/src/main/resources/baboon-runtime/`, run `sbt clean` before `sbt compile`. The `PortableResource.embedSources` macro caches resource contents per build, so incremental compile won't pick up resource changes.
 
+**Backslashes in runtime resources:** the C#, Scala, Java and Kotlin (JVM and KMP) runtimes, the Rust runtime (except `baboon_identifier_repr.rs`) and the Python `baboon_runtime_shared.py` / `cross_language_fixture_path.py` are emitted through `TextTree.text`, which runs `StringContext.processEscapes` over the whole file, comments included. `'\n'` in such a file is emitted as a raw newline, and an escape Scala does not know (`\v`) makes generation throw. Write those characters by code point (`(char) 0x0B`, `chr(0x0B)`) or emit the file through `TextTree.verbatim`, as the TypeScript, Swift and Dart runtimes are. `$` is not special in either path, so write `$`, never `$$`.
+
 ### Build Commands
 ```bash
 # Format code
