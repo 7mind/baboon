@@ -146,9 +146,10 @@ jobs:
         with:
           deno-version: v2.5.x
       - name: Install mudyla
-        # pinned: mudyla 0.6.1 (085eeed4) aborts planning `:build :test` with "Overall layout budget
-        # expired during score_native_layout"; 3dc69245 is 0.5.3, the last version green here
-        run: pip install git+https://github.com/7mind/mudyla.git@3dc69245654fef3e85f89de9b0e8563976f589ed
+        # pinned to the revision flake.lock uses, so every lane runs the same mudyla. 0.6.2 (7ed37944):
+        # 0.6.1 aborted planning `:build :test` ("Overall layout budget expired"), and 0.5.3's
+        # runtime.sh broke on macOS bash 3.2 (actions without `ret` failed, exit codes became 1)
+        run: pip install git+https://github.com/7mind/mudyla.git@7ed37944eeaa90cc0869e3c1702357e8ba98365f
       - name: Build (macOS)
         run: mdl --github-actions --without-nix :build :test
       - name: Validate binary portability
@@ -302,8 +303,8 @@ jobs:
           deno-version: v2.5.x
       - name: Install mudyla
         shell: bash
-        # pinned like the macOS lane (mudyla 0.6.1 cannot plan `:build :test`)
-        run: pip install git+https://github.com/7mind/mudyla.git@3dc69245654fef3e85f89de9b0e8563976f589ed
+        # pinned like the macOS lane (same revision as flake.lock)
+        run: pip install git+https://github.com/7mind/mudyla.git@7ed37944eeaa90cc0869e3c1702357e8ba98365f
       # Git Bash's C:\Program Files\Git\usr\bin holds a GNU coreutils `link.exe` that
       # shadows the MSVC linker, so the Rust `...-pc-windows-msvc` cargo lanes
       # (test-gen-compat-rust) link with the wrong `link.exe` and fail. msvc-dev-cmd puts
