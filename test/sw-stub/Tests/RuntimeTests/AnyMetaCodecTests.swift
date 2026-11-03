@@ -573,7 +573,7 @@ final class AnyMetaCodecTests: XCTestCase {
 
         final class StubBinCodec: BaboonBinCodecBase<StubLatestValue> {
             override func decode(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> StubLatestValue {
-                _ = reader.readU8()
+                _ = try reader.readU8()
                 return StubLatestValue()
             }
             override func encode(_ ctx: BaboonCodecContext, _ writer: BaboonBinWriter, _ value: StubLatestValue) {

@@ -300,7 +300,7 @@ class SwJsonCodecGenerator(
           id match {
             case b: TypeId.BuiltinScalar =>
               val decoded = SwScalarCodecs.jsonDecode(b, ref, what)
-              (decoded.expression, decoded.mayThrow)
+              (decoded.expression, true)
             case u: TypeId.User =>
               val targetTpe = codecName(domainTypes.toSwTypeRefKeepForeigns(u))
               (q"$targetTpe.instance.decode(ctx, $ref)", true)
