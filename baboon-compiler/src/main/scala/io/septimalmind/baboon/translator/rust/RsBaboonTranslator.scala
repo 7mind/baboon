@@ -714,8 +714,8 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       case TypeId.Builtins.tsu | TypeId.Builtins.tso => true
       case _                                         => false
     }
-    val hasUuids      = allTypes.contains(TypeId.Builtins.uid)
-    val hasDecimals   = allTypes.contains(TypeId.Builtins.f128)
+    val hasUuids    = allTypes.contains(TypeId.Builtins.uid)
+    val hasDecimals = allTypes.contains(TypeId.Builtins.f128)
 
     val deps = scala.collection.mutable.ListBuffer.empty[String]
     deps += """serde = { version = "1", features = ["derive"] }"""

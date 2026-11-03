@@ -16,7 +16,7 @@ object SwTypes {
   val baboonMeta: SwType             = SwType(baboonRuntimePkg, "BaboonMeta")
   // Recursive value-type indirection property wrapper (T23 / D8): boxes a recursive
   // struct field behind a reference so the enclosing value-type struct stays finite-size.
-  val baboonIndirect: SwType         = SwType(baboonRuntimePkg, "BaboonIndirect")
+  val baboonIndirect: SwType = SwType(baboonRuntimePkg, "BaboonIndirect")
 
   // baboon JSON codecs types
   val baboonJsonCodec: SwType                      = SwType(baboonRuntimePkg, "BaboonJsonCodec")

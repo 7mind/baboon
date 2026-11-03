@@ -164,7 +164,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     val pkg      = trans.toScPkg(domain.id, domain.version, lineage.evolution)
 
     val metadata = EvolutionMetadataPlan(lineage.evolution, domain.version)
-    val entries  = metadata.sameIn.map {
+    val entries = metadata.sameIn.map {
       case EvolutionMetadataPlan.SameIn(tid, versions) =>
         q"""unmodified.put("${tid.toString}", $scList(${versions.map(s => q"\"$s\"").join(", ")}))"""
     }
