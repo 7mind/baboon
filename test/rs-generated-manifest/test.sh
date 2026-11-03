@@ -9,6 +9,7 @@ printf 'Rust generated-manifest test output: %s\n' "$test_dir"
 for edition in default 2021 2024; do
   out="$test_dir/$edition"
   if [ "$edition" = default ]; then edition_args=(); else edition_args=(--rs-edition "$edition"); fi
-  "$@" --model-dir "$fixture_dir/models" :rust --output "$out" "${edition_args[@]}"
+  # bash 3.2 (macOS) treats "${empty[@]}" as unbound under `set -u`.
+  "$@" --model-dir "$fixture_dir/models" :rust --output "$out" ${edition_args[@]+"${edition_args[@]}"}
   RUSTFLAGS="-D warnings" cargo build --manifest-path "$out/Cargo.toml"
 done
