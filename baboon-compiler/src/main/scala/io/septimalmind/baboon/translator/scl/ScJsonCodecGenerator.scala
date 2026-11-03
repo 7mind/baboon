@@ -249,7 +249,7 @@ class ScJsonCodecGenerator(
         // `Long.toString(-1L)` yields "-1" (two's-complement signed); the canonical
         // u64 max representation is "18446744073709551615". Symmetric with the
         // value-side `Json.fromBigInt(BaboonBinTools.toUnsignedBigInt(_))`.
-        case TypeId.Builtins.u64   => q"_root_.java.lang.Long.toUnsignedString($ref)"
+        case TypeId.Builtins.u64 => q"_root_.java.lang.Long.toUnsignedString($ref)"
         // `ByteString.toString` decodes the bytes as UTF-8 text; keys are hex like values (#104).
         case TypeId.Builtins.bytes => q"$ref.toHexString"
         case _: TypeId.Builtin     => q"$ref.toString"

@@ -1245,7 +1245,6 @@ package baboon.runtime.shared {
     }
   }
 
-
   /** Compile-side mirror of the runtime's top-level envelope (docs/spec/codec-envelope.md), used by the
     * interpreted envelope conversions (`BaboonRuntimeEnvelopeCodec`). Only the field set is mirrored;
     * `object BaboonTypeMetaCodec` below MUST stay byte-equal to the one in
@@ -1381,21 +1380,23 @@ package baboon.runtime.shared {
       // MFACADE-PR-3: accept $mv as either a JSON number or a string (back-compat with
       // M28-vintage fixtures); both must equal META_VERSION_1. Absent $mv falls through.
       val mvField = json.hcursor.downField(META_VERSION_KEY)
-      val mvByte: Option[Option[Byte]] = mvField.focus.map { value =>
-        value.asNumber.flatMap(_.toByte)
-          .orElse(value.asString.flatMap(s => scala.util.Try(s.toByte).toOption))
+      val mvByte: Option[Option[Byte]] = mvField.focus.map {
+        value =>
+          value.asNumber
+            .flatMap(_.toByte)
+            .orElse(value.asString.flatMap(s => scala.util.Try(s.toByte).toOption))
       }
       mvByte match {
         case Some(Some(b)) if b == META_VERSION_1 => readMetaV1(json)
-        case Some(_)                              => None  // $mv present but malformed or wrong version
-        case None                                 => readMetaV1(json)  // $mv absent
+        case Some(_)                              => None // $mv present but malformed or wrong version
+        case None                                 => readMetaV1(json) // $mv absent
       }
     }
 
     private def readMetaV1(reader: LEDataInputStream): Option[BaboonTypeMeta] = {
-      val domainIdentifier       = BaboonBinTools.readString(reader)
-      val domainVersion          = BaboonBinTools.readString(reader)
-      val hasMinCompat = reader.readByte()
+      val domainIdentifier = BaboonBinTools.readString(reader)
+      val domainVersion    = BaboonBinTools.readString(reader)
+      val hasMinCompat     = reader.readByte()
       // codec-envelope.md §2.1: only 0x00 (elided) and 0x01 (present) are legal; anything else is rejected
       if (hasMinCompat != 0 && hasMinCompat != 1) return None
       val domainVersionMinCompat = if (hasMinCompat == 1) BaboonBinTools.readString(reader) else domainVersion

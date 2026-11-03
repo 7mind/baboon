@@ -150,7 +150,8 @@ object PyDefnTranslator {
       val wiringOutput = wiringTranslator
         .translate(defn).map {
           wiringTree =>
-            val wiringModule = domainTypes.toPyModule(defn.id, fileTools.definitionsBasePkg)
+            val wiringModule = domainTypes
+              .toPyModule(defn.id, fileTools.definitionsBasePkg)
               .withModuleName(s"${defn.id.name.name}_Wiring")
             Output(
               getOutputPath(defn, suffix = Some("_Wiring")),
@@ -163,7 +164,8 @@ object PyDefnTranslator {
       val clientOutput = wiringTranslator
         .translateClient(defn).map {
           clientTree =>
-            val clientModule = domainTypes.toPyModule(defn.id, fileTools.definitionsBasePkg)
+            val clientModule = domainTypes
+              .toPyModule(defn.id, fileTools.definitionsBasePkg)
               .withModuleName(s"${defn.id.name.name}_Client")
             Output(
               getOutputPath(defn, suffix = Some("_Client")),
@@ -238,7 +240,7 @@ object PyDefnTranslator {
           }
           val directParentsDefs = (adtParent ++ contractParents).flatMap(domain.defs.meta.nodes.get).collect { case u: DomainMember.User => u }
 
-          val superclasses        = domainEnquiries.collectParents( directParentsDefs).toSet
+          val superclasses        = domainEnquiries.collectParents(directParentsDefs).toSet
           val uniqueContracts     = dtoContracts.filterNot(c1 => superclasses.contains(c1))
           val genMarkerParent     = if (adtParent.nonEmpty || contractParents.nonEmpty) Nil else List(genMarker)
           val adtMemberMetaParent = if (adtParent.isEmpty) Nil else List(baboonAdtMemberMeta)
@@ -315,7 +317,7 @@ object PyDefnTranslator {
           )
         case adt: Typedef.Adt =>
           val adtContractDefs    = adt.contracts.flatMap(domain.defs.meta.nodes.get).collect { case u: DomainMember.User => u }
-          val adtSuperclasses    = domainEnquiries.collectParents( adtContractDefs).toSet
+          val adtSuperclasses    = domainEnquiries.collectParents(adtContractDefs).toSet
           val uniqueAdtContracts = adt.contracts.filterNot(c => adtSuperclasses.contains(c))
           val contracts          = uniqueAdtContracts.map(c => domainTypes.asPyType(c, fileTools.definitionsBasePkg))
           val defaultParents     = contracts ++ List(pydanticBaseModel)
