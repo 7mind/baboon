@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:typed_data';
 import 'dart:convert';
 
@@ -1187,6 +1188,14 @@ bool baboonDeepEquals(dynamic a, dynamic b) {
   }
   return a == b;
 }
+
+/// Map keyed by `bytes`: `Uint8List` `==` is identity, so keys are hashed and compared by content.
+Map<K, V> baboonBytesKeyedMap<K, V>(Iterable<MapEntry<K, V>> entries) =>
+    LinkedHashMap<K, V>(equals: baboonDeepEquals, hashCode: baboonDeepHashCode)..addEntries(entries);
+
+/// Set of `bytes`, with elements hashed and compared by content (see [baboonBytesKeyedMap]).
+Set<E> baboonBytesSet<E>(Iterable<E> elements) =>
+    LinkedHashSet<E>(equals: baboonDeepEquals, hashCode: baboonDeepHashCode)..addAll(elements);
 
 // --- Lazy ---
 

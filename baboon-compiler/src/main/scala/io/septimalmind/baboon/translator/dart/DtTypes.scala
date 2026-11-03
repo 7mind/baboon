@@ -72,6 +72,8 @@ object DtTypes {
   val baboonBinWriter: DtType       = DtType(baboonRuntimePkg, "BaboonBinWriter")
   val baboonBinReader: DtType       = DtType(baboonRuntimePkg, "BaboonBinReader")
   val baboonByteStringTools: DtType = DtType(baboonRuntimePkg, "BaboonByteStringTools")
+  val baboonBytesKeyedMap: DtType   = DtType(baboonRuntimePkg, "baboonBytesKeyedMap")
+  val baboonBytesSet: DtType        = DtType(baboonRuntimePkg, "baboonBytesSet")
   val baboonDecimal: DtType         = DtType(baboonRuntimePkg, "BaboonDecimal")
   val baboonDateTimeOffset: DtType  = DtType(baboonRuntimePkg, "BaboonDateTimeOffset")
   // Identifier-repr runtime helpers (PR-57d)

@@ -107,9 +107,12 @@ class DtConversionTranslator[F[+_, +_]: Error2](
         val kv       = q"$tmp.key"
         val vv       = q"$tmp.value"
 
-        q"Map.fromEntries($oldRef.entries.map(($tmp) => MapEntry(${transfer(keyRef, kv, depth + 1, Some(co.args.head), isPromotable = false)}, ${transfer(valueRef, vv, depth + 1, Some(co.args.last), isPromotable = false)})))"
+        DtCollectionBuilders.mapFromEntries(
+          keyRef,
+          q"$oldRef.entries.map(($tmp) => MapEntry(${transfer(keyRef, kv, depth + 1, Some(co.args.head), isPromotable = false)}, ${transfer(valueRef, vv, depth + 1, Some(co.args.last), isPromotable = false)}))",
+        )
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.set =>
-        q"$oldRef.map(($tmp) => ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head), isPromotable = true)}).toSet()"
+        DtCollectionBuilders.setFrom(c.args.head, q"$oldRef.map(($tmp) => ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head), isPromotable = true)})")
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
         val inner      = transfer(c.args.head, tmp, depth + 1, Some(co.args.head), isPromotable = true)
         val nonNullRef = if (isPromotable) oldRef else q"$oldRef!"
@@ -292,8 +295,9 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                       case TypeRef.Constructor(id, args) =>
                         id match {
                           case TypeId.Builtins.lst => q"<${trans.asDtRef(args.head, domain, evo)}>[]"
-                          case TypeId.Builtins.set => q"<${trans.asDtRef(args.head, domain, evo)}>{}"
-                          case TypeId.Builtins.map => q"<${trans.asDtRef(args.head, domain, evo)}, ${trans.asDtRef(args.last, domain, evo)}>{}"
+                          case TypeId.Builtins.set => DtCollectionBuilders.emptySet(args.head, trans.asDtRef(args.head, domain, evo))
+                          case TypeId.Builtins.map =>
+                            DtCollectionBuilders.emptyMap(args.head, trans.asDtRef(args.head, domain, evo), trans.asDtRef(args.last, domain, evo))
                           case TypeId.Builtins.opt => q"null"
                           case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
@@ -384,35 +388,38 @@ class DtConversionTranslator[F[+_, +_]: Error2](
               evo,
             )}>[]"""
       case (TypeId.Builtins.opt, TypeId.Builtins.set) =>
-        q"""($fieldRef != null) ? {(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}; })()} : <${trans
-            .asDtRef(
-              newArgs.head,
-              domain,
-              evo,
-            )}>{}"""
+        val elementType = trans.asDtRef(newArgs.head, domain, evo)
+        val single = DtCollectionBuilders.setFrom(
+          newArgs.head,
+          q"""[(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}; })()]""",
+        )
+        q"""($fieldRef != null) ? $single : ${DtCollectionBuilders.emptySet(newArgs.head, elementType)}"""
       case (TypeId.Builtins.opt, TypeId.Builtins.opt) =>
         q"""($fieldRef != null) ? (() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}; })() : null"""
 
       case (TypeId.Builtins.lst, TypeId.Builtins.lst) =>
         q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}).toList()"""
       case (TypeId.Builtins.lst, TypeId.Builtins.set) =>
-        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}).toSet()"""
+        DtCollectionBuilders.setFrom(newArgs.head, q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)})""")
 
       case (TypeId.Builtins.set, TypeId.Builtins.lst) =>
         q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}).toList()"""
       case (TypeId.Builtins.set, TypeId.Builtins.set) =>
-        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}).toSet()"""
+        DtCollectionBuilders.setFrom(newArgs.head, q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)})""")
 
       case (TypeId.Builtins.map, TypeId.Builtins.map) =>
         val kv = q"entry.key"
         val vv = q"entry.value"
-        q"""Map.fromEntries($fieldRef.entries.map((entry) => MapEntry(${transfer(newArgs.head, kv, 1, Some(oldArgs.head), isPromotable = false)}, ${transfer(
-            newArgs.last,
-            vv,
-            1,
-            Some(oldArgs.last),
-            isPromotable = false,
-          )})))"""
+        DtCollectionBuilders.mapFromEntries(
+          newArgs.head,
+          q"""$fieldRef.entries.map((entry) => MapEntry(${transfer(newArgs.head, kv, 1, Some(oldArgs.head), isPromotable = false)}, ${transfer(
+              newArgs.last,
+              vv,
+              1,
+              Some(oldArgs.last),
+              isPromotable = false,
+            )}))""",
+        )
       case _ =>
         throw new IllegalStateException("Unsupported collection swap")
     }

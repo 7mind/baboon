@@ -407,11 +407,11 @@ class DtUEBACodecGenerator(
           case TypeId.Builtins.map =>
             val keyDecoder   = mkDecoder(c.args.head)
             val valueDecoder = mkDecoder(c.args.last)
-            q"""Map.fromEntries(List.generate(reader.readI32(), (_) => MapEntry($keyDecoder, $valueDecoder)))"""
+            DtCollectionBuilders.mapFromEntries(c.args.head, q"""List.generate(reader.readI32(), (_) => MapEntry($keyDecoder, $valueDecoder))""")
           case TypeId.Builtins.lst =>
             q"""List.generate(reader.readI32(), (_) => ${mkDecoder(c.args.head)})"""
           case TypeId.Builtins.set =>
-            q"""Set.of(List.generate(reader.readI32(), (_) => ${mkDecoder(c.args.head)}))"""
+            DtCollectionBuilders.setFrom(c.args.head, q"""List.generate(reader.readI32(), (_) => ${mkDecoder(c.args.head)})""")
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
