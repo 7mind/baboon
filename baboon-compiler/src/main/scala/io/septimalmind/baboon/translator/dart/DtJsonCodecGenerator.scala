@@ -329,11 +329,11 @@ class DtJsonCodecGenerator(
               q"""($ref as List).map(($varName) => $elemDec).toList()"""
             case TypeId.Builtins.set =>
               val elemDec = decodeElement(c.args.head, q"$varName", depth + 1)
-              q"""($ref as List).map(($varName) => $elemDec).toSet()"""
+              DtCollectionBuilders.setFrom(c.args.head, q"""($ref as List).map(($varName) => $elemDec)""")
             case TypeId.Builtins.map =>
               val keyDec   = decodeKey(c.args.head, q"$varName.key")
               val valueDec = decodeElement(c.args.last, q"$varName.value", depth + 1)
-              q"""Map.fromEntries(($ref as Map<String, dynamic>).entries.map(($varName) => MapEntry($keyDec, $valueDec)))"""
+              DtCollectionBuilders.mapFromEntries(c.args.head, q"""($ref as Map<String, dynamic>).entries.map(($varName) => MapEntry($keyDec, $valueDec))""")
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
         case a: TypeRef.Any => mkAnyDecoder(a, ref)
