@@ -3503,7 +3503,7 @@ if [ "$HELP_RC" -ne 0 ]; then
   echo "$HELP_OUT" >&2
   exit 1
 fi
-if ! printf '%s' "$HELP_OUT" | grep -qF "Usage: baboon"; then
+if ! printf '%s' "$HELP_OUT" | grep -F "Usage: baboon" >/dev/null; then
   echo "FAIL: baboon (no args) did not print help text (missing 'Usage: baboon')" >&2
   echo "$HELP_OUT" >&2
   exit 1

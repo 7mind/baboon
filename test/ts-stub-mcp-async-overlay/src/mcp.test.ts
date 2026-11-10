@@ -24,7 +24,7 @@
  * `send` / `initSession` that round-trip a real `tools/call`.
  */
 
-import { describe, test, expect } from "vitest";
+import { assert, describe, test, expect } from "vitest";
 import Ajv from "ajv/dist/2020.js";
 
 import {
@@ -242,8 +242,10 @@ describe("MCP async §3: tools/call success path", () => {
             isError?: boolean;
         };
         expect(result.content).toHaveLength(1);
-        expect(result.content[0].type).toBe("text");
-        const payload = JSON.parse(result.content[0].text) as { ok: boolean };
+        const content = result.content[0];
+        assert.isDefined(content);
+        expect(content.type).toBe("text");
+        const payload = JSON.parse(content.text) as { ok: boolean };
         expect(payload.ok).toBe(true);
         expect(result.isError === false || result.isError === undefined).toBe(true);
     });
