@@ -7,7 +7,7 @@ describe("UEBA layout validation", () => {
     const value = new T1_E2_RET(T1_E2.A, undefined);
 
     test("rejects invalid index entries before decoding an otherwise valid payload", () => {
-        for (const [offset, length] of [[0, 0], [-1, 1], [0, -1]]) {
+        for (const [offset, length] of [[0, 0], [-1, 1], [0, -1]] as const) {
             const writer = new BaboonBinWriter();
             writer.writeByte(1);
             writer.writeI32(offset);

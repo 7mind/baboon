@@ -12,7 +12,7 @@ test("identity collection encoding materializes sparse values and preserves set 
 
 test("identity collection encoding retains custom iterator and getter order", () => {
     const events: string[] = [];
-    const values = [1, 2];
+    const values: [number, number] = [1, 2];
     Object.defineProperty(values, "0", { get: () => { events.push("get"); return 1; } });
     values[Symbol.iterator] = function* (): Generator<number, undefined, unknown> {
         events.push("start"); yield this[0]; events.push("middle"); yield this[1]; events.push("end");

@@ -636,6 +636,7 @@ pushd "$TEST_DIR/ts-stub"
   --generate-json-codecs-by-default=true --generate-ueba-codecs-by-default=true \
   --ts-enum-lowercase-values=true --ts-maps-as-records=true --ts-wrapped-adt-branch-codecs=true
 npm install
+npm run build
 npm test
 popd
 

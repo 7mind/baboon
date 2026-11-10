@@ -786,7 +786,8 @@ export class BinTools {
         }
         const bytes = new Uint8Array(nibbles.length / 2);
         for (let i = 0; i < bytes.length; i++) {
-            bytes[i] = (nibbles[2 * i] << 4) | nibbles[2 * i + 1];
+            // The even nibble count and loop bound guarantee both indices exist.
+            bytes[i] = (nibbles[2 * i]! << 4) | nibbles[2 * i + 1]!;
         }
         return bytes;
     }

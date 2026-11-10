@@ -8,8 +8,7 @@ import { convert__containers__from__1_0_0 } from "../generated-review-records/re
 test("record mode recursively converts string keys while retaining numeric Maps", () => {
     const result = convert__containers__from__1_0_0(new OldContainers(
         [], { x: new OldLeaf(2) }, new Map([[3, new OldLeaf(4)]]), OldColor.red));
-    expect(result.named.x).toBeInstanceOf(Leaf);
-    expect(result.named.x.value).toBe(2);
+    expect(result.named.x).toStrictEqual(new Leaf(2));
     expect(result.numbered.get(3)).toBeInstanceOf(Leaf);
     expect(result.numbered.get(3)?.value).toBe(4);
 });
