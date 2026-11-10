@@ -193,7 +193,10 @@ const back = await BaboonCompiler.decodeEnvelopeLoaded(model, bin.data); // back
   (`pkg/:#Name`, `pkg/ns#Name`, `pkg/[pkg/:#Adt]#Branch`) are taken from the input and kept.
   The payload is read with that exact version. A writer newer than every loaded version is
   converted only when its envelope proves the payload byte-identical to a loaded version
-  (`$uv`, or binary v2 `minCompat`); binary v1 envelopes cannot prove that and are refused.
+  (`$uv`, or binary v2 `minCompat`). A binary v1 bound may be a `Tolerant` prefix bound, so
+  for v1 the proof is the decode itself: the payload is read with the newest loaded version
+  when the bound reaches it and accepted only if no byte is left over; a payload carrying
+  fields the model lacks is refused.
 - Compatibility bounds are recomputed from the loaded model for the output format: JSON
   `$rv` (json-additive) and binary `readableMin` (prefix-compact / prefix-any-mode) promise
   different things and are never copied across. Bounds computed from a model that holds

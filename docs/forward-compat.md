@@ -469,9 +469,13 @@ combination byte-for-byte as `Strict` writes it.
 The JavaScript envelope conversions (`BaboonCompiler.encodedEnvelopeLoaded` /
 `decodeEnvelopeLoaded`, `BaboonRuntimeEnvelopeCodec` in the compiler) are such a
 re-encoding intermediary. They read with the writer's exact version when it is
-loaded and otherwise apply `Lossless` — refusing binary v1 envelopes from unknown
-versions outright, since their single bound may be a `Tolerant` prefix bound — and
-they recompute the output format's bounds from the loaded model rather than copying
+loaded and otherwise apply `Lossless`. A binary v1 bound may be a `Tolerant` prefix
+bound, so they decode a v1 envelope from an unknown newer version with the newest loaded
+version only when the bound reaches it and accept the result only if the whole payload is
+consumed: the prefix tiers append at the tail and every field occupies at least one byte,
+so a payload with fields the model lacks always leaves bytes unread and is refused. The
+same argument does not hold for the generated runtimes' stream entry points, which do not
+assert full consumption. They recompute the output format's bounds from the loaded model rather than copying
 the input's (`$rv` and binary `readableMin` are different tiers).
 
 ## Relationship to sameIn

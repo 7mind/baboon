@@ -237,8 +237,21 @@ final class RuntimeEnvelopeCodecTest extends BaboonTest[Either] {
         )
         // a v2 envelope whose readableMin reaches a loaded version but whose minCompat does not
         rejects(codec.uebaToJson(family, unhex(AppendVarV2Compact.replace("05 32 2E 30 2E 30 02", "05 33 2E 30 2E 30 02"))), "reaches none of them")
-        // a v1 envelope from an unknown newer version cannot prove byte-identity at all
-        rejects(codec.uebaToJson(family, unhex(StableV1.replace("05 32 2E 30 2E 30", "05 33 2E 30 2E 30"))), "binary v1 envelope cannot prove")
+        // a v1 envelope from an unknown newer version is read with the newest loaded version when its bound reaches it
+        assert(toJson(codec, family, StableV1.replace("05 32 2E 30 2E 30", "05 33 2E 30 2E 30")) == Right(stable3))
+        // ... a Tolerant prefix bound included: this payload holds exactly the 2.0.0 fields, so it is byte-identical to 2.0.0
+        val appendVar3 = AppendVarJson.replace("\"$v\":\"2.0.0\"", "\"$v\":\"3.0.0\"").replace("\"$rv\":\"1.0.0\"", "\"$uv\":\"2.0.0\",\"$rv\":\"1.0.0\"")
+        assert(toJson(codec, family, AppendVarV1Tolerant.replace("05 32 2E 30 2E 30", "05 33 2E 30 2E 30")) == Right(appendVar3))
+        // ... but a payload carrying a field the loaded model lacks leaves unread bytes and is refused
+        rejects(
+          codec.uebaToJson(family, unhex(AppendVarV1Tolerant.replace("05 32 2E 30 2E 30", "05 33 2E 30 2E 30") + " 01 01 75")),
+          "has 3 byte(s) the newest loaded version 2.0.0 does not read",
+        )
+        // a v1 bound above every loaded version is refused before decoding
+        rejects(
+          codec.uebaToJson(family, unhex(StableV1.replace("05 32 2E 30 2E 30 01 05 31", "05 33 2E 30 2E 30 01 05 33"))),
+          "its compatibility bound 3.0.0 reaches none of them",
+        )
     }
 
     "reject malformed binary envelopes" in {
