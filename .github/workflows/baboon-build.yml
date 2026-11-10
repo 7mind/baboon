@@ -97,7 +97,7 @@ jobs:
             runs-on: [ ]
             java-version: '23'
           - target: macos-aarch64-14
-            os: macos-14 # yes, this is aarch64
+            os: macos-15 # yes, this is aarch64
             runs-on: [ ]
             java-version: '23'
     name: build-${{ matrix.target }}
