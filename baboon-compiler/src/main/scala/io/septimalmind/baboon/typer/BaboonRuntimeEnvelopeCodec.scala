@@ -3,6 +3,7 @@ package io.septimalmind.baboon.typer
 import baboon.runtime.shared.{BaboonTypeMeta, BaboonTypeMetaCodec, LEDataInputStream, LEDataOutputStream}
 import io.circe.Json
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, RuntimeCodecIssue}
+import izumi.functional.bio.*
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.Error2
 import izumi.fundamentals.collections.nonempty.NEList
@@ -26,8 +27,10 @@ final case class BinEnvelopeOptions(envelopeVersion: BinEnvelopeVersion, indexed
   *
   * This is not schema migration. The writer's domain, version and type identifier are copied
   * verbatim; the payload is read with the writer's exact version, or — for a writer newer than
-  * every loaded version — with the newest loaded version only when the envelope proves the payload
-  * byte-identical to it (`ForwardReadPolicy.Lossless`). Compatibility bounds are recomputed from the
+  * every loaded version — with the newest loaded version only when the payload is byte-identical to
+  * it (`ForwardReadPolicy.Lossless`). JSON and binary v2 prove that with their byte-identical bound;
+  * binary v1, whose single bound may be a `ForwardWritePolicy.Tolerant` prefix bound, proves it by
+  * the payload decoding with nothing left over. Compatibility bounds are recomputed from the
   * loaded model for the output format, because JSON `$rv` (json-additive) and binary `readableMin`
   * (prefix-compact / prefix-any-mode) promise different things.
   */
@@ -92,8 +95,17 @@ object BaboonRuntimeEnvelopeCodec {
         bounds <- parseBounds(meta)
         // only v2 guarantees that minCompat is the byte-identical bound; a v1 slot may carry a
         // Tolerant writer's prefix bound (docs/spec/codec-envelope.md § 2.1.2)
-        target  <- resolve(family, meta, bounds, minCompatIsByteIdentical = meta.metaVersion == BaboonTypeMetaCodec.META_VERSION_2)
-        content <- guarded(codec.decodeComplete(family, target.lineage.pkg, target.readVersion, meta.typeIdentifier, payload))
+        target <- resolve(family, meta, bounds, minCompatIsByteIdentical = meta.metaVersion == BaboonTypeMetaCodec.META_VERSION_2)
+        // A forward read is lossless iff the whole payload is consumed: at or above either kind of bound the
+        // newest codec reads a correct prefix, and prefix tiers only ever append at the tail, so a Tolerant
+        // payload with fields this model lacks leaves unread bytes.
+        content <- guarded(codec.decodeComplete(family, target.lineage.pkg, target.readVersion, meta.typeIdentifier, payload)).leftMap {
+          case BaboonIssue.RuntimeCodec(RuntimeCodecIssue.TrailingBytes(_, count)) if target.readVersion != bounds.version =>
+            lossy(
+              s"${meta.domainIdentifier} ${meta.domainVersion} is newer than every loaded version and its payload has $count byte(s) the newest loaded version ${target.readVersion} does not read; load ${meta.domainVersion}"
+            )
+          case other => other
+        }
         outMeta <- jsonMeta(target, meta)
       } yield {
         BaboonTypeMetaCodec.writeJson(outMeta).mapObject(_.add(ContentKey, content))
@@ -134,18 +146,13 @@ object BaboonRuntimeEnvelopeCodec {
           if (loaded.contains(bounds.version)) {
             F.pure(bounds.version)
           } else if (bounds.version > newest) {
-            if (!minCompatIsByteIdentical) {
-              F.fail(
-                lossy(
-                  s"${meta.domainIdentifier} ${meta.domainVersion} is newer than every loaded version (newest: $newest) and a binary v1 envelope cannot prove its payload byte-identical to one: its single bound may be a ForwardWritePolicy.Tolerant prefix bound. Load ${meta.domainVersion}, or have the writer emit binary v2"
-                )
-              )
-            } else if (bounds.minCompat <= newest) {
+            if (bounds.minCompat <= newest) {
               F.pure(newest)
             } else {
+              val bound = if (minCompatIsByteIdentical) "byte-identical bound" else "compatibility bound"
               F.fail(
                 lossy(
-                  s"${meta.domainIdentifier} ${meta.domainVersion} is newer than every loaded version (newest: $newest) and its byte-identical bound ${bounds.minCompat} reaches none of them; only a forward read that drops data would decode it"
+                  s"${meta.domainIdentifier} ${meta.domainVersion} is newer than every loaded version (newest: $newest) and its $bound ${bounds.minCompat} reaches none of them; only a forward read that drops data would decode it"
                 )
               )
             }

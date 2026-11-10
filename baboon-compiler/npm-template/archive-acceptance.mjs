@@ -131,8 +131,12 @@ test("conversion never migrates or silently forward-reads", async t => {
   const lossy = await BaboonCompiler.encodedEnvelopeLoaded(model, APPEND_VAR.replace('"$v":"2.0.0"', '"$v":"3.0.0"'), V1C);
   t.false(lossy.success);
   t.regex(lossy.error, /Refusing lossy envelope conversion: .* reaches none of them/);
-  const v1Newer = await BaboonCompiler.decodeEnvelopeLoaded(model, unhex(GOLDEN[3][2].replace("05 32 2E 30 2E 30", "05 33 2E 30 2E 30")));
-  t.regex(v1Newer.error, /binary v1 envelope cannot prove/);
+  // binary v1 from a newer writer: read with the newest loaded version, lossless only if nothing is left over
+  const at3 = golden => golden.replace("05 32 2E 30 2E 30", "05 33 2E 30 2E 30");
+  t.is(await decodeOk(t, model, unhex(at3(GOLDEN[3][2]))), stable3);
+  const tolerantExtra = await BaboonCompiler.decodeEnvelopeLoaded(model, unhex(at3(APPEND_VAR_V1_TOLERANT) + " 01 01 75"));
+  t.false(tolerantExtra.success);
+  t.regex(tolerantExtra.error, /Refusing lossy envelope conversion: .* has 3 byte\(s\) the newest loaded version 2\.0\.0 does not read/);
 });
 
 test("envelope failures are explicit", async t => {
