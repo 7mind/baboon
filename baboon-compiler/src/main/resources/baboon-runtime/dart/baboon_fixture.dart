@@ -95,7 +95,7 @@ class BaboonRandom {
 
   Set<T> mkSet<T>(T Function() gen) {
     final length = _rnd.nextInt(5) + 1;
-    final result = <T>{};
+    final result = baboonBytesSet<T>([]);
     var attempts = 0;
     while (result.length < length && attempts < length * 10) {
       result.add(gen());
@@ -106,7 +106,7 @@ class BaboonRandom {
 
   Map<K, V> mkMap<K, V>(K Function() genKey, V Function() genValue) {
     final length = _rnd.nextInt(5) + 1;
-    final result = <K, V>{};
+    final result = baboonBytesKeyedMap<K, V>([]);
     var attempts = 0;
     while (result.length < length && attempts < length * 10) {
       result[genKey()] = genValue();
