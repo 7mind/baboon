@@ -4,7 +4,7 @@ import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{idt, kw, struct}
 import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
-import io.septimalmind.baboon.parser.model.{RawAdt, RawAdtMember, RawAdtMemberContract, RawAdtMemberDto, RawDtoMember, RawTypeName}
+import io.septimalmind.baboon.parser.model.{RawAdt, RawAdtBranchOrigin, RawAdtMember, RawAdtMemberContract, RawAdtMemberDto, RawDtoMember, RawTypeName}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
@@ -18,14 +18,14 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
       // an outer `meta.withMeta` would consume the doc first (into a separate outer meta)
       // and leave `dto.meta.docs.prefix` empty — causing ADT-arm prefix-doc loss
       // (PR-30.4-D02).  Mirror `dto.meta` onto the wrapper so both sides see the doc.
-      RawAdtMemberDto(dto, dto.meta)
+      RawAdtMemberDto(dto, dto.meta, RawAdtBranchOrigin.Declared)
     }
 
   def adtMemberContract[$: P]: P[RawAdtMemberContract] =
     defContract.contractEnclosed.map { c =>
       // Same reasoning as `adtMember` above: `contractEnclosed` calls `meta.member`
       // internally and captures the prefix doc into `c.meta`.  No outer `withMeta`.
-      RawAdtMemberContract(c, c.meta)
+      RawAdtMemberContract(c, c.meta, RawAdtBranchOrigin.Declared)
     }
 
   /** `+ ref` — include the referenced ADT or branch; All-vs-Branch resolution deferred to PR-63. */

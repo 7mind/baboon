@@ -179,7 +179,7 @@ final class DocCommentParserTest extends AnyWordSpec {
           |""".stripMargin
       val m = parseModel(src)
       val adt = findAdt(m.members, "A").getOrElse(fail("adt A"))
-      val ok  = adt.members.collectFirst { case RawAdtMemberDto(d, mt) if d.name.name == "Ok" => mt }.getOrElse(fail("Ok arm"))
+      val ok  = adt.members.collectFirst { case RawAdtMemberDto(d, mt, _) if d.name.name == "Ok" => mt }.getOrElse(fail("Ok arm"))
       assert(ok.docs.prefix.isDefined, s"expected prefix doc on Ok, got: ${ok.docs}")
       assert(ok.docs.prefix.get.raw.contains("the ok branch"))
     }

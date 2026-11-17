@@ -56,7 +56,7 @@ final class T161AdtDeltaKeepDropParserTest extends AnyWordSpec {
         case other                        => fail(s"expected Drop(B3) at index 1, got $other")
       }
       adt.members(2) match {
-        case RawAdtMemberDto(dto, _) => assert(dto.name == RawTypeName("B4"))
+        case RawAdtMemberDto(dto, _, _) => assert(dto.name == RawTypeName("B4"))
         case other                   => fail(s"expected RawAdtMemberDto(B4) at index 2, got $other")
       }
     }
@@ -101,7 +101,7 @@ final class T161AdtDeltaKeepDropParserTest extends AnyWordSpec {
       val adt = parseAdt(source)
       assert(adt.members.size == 1)
       adt.members.head match {
-        case RawAdtMemberDto(dto, _) =>
+        case RawAdtMemberDto(dto, _, _) =>
           assert(dto.name == RawTypeName("keep"), s"expected branch named keep, got ${dto.name}")
           assert(dto.members.size == 1)
           dto.members.head match {
@@ -116,7 +116,7 @@ final class T161AdtDeltaKeepDropParserTest extends AnyWordSpec {
       val adt = parseAdt("adt Foo { data drop { x: i32 } }")
       assert(adt.members.size == 1)
       adt.members.head match {
-        case RawAdtMemberDto(dto, _) => assert(dto.name == RawTypeName("drop"))
+        case RawAdtMemberDto(dto, _, _) => assert(dto.name == RawTypeName("drop"))
         case other                   => fail(s"expected RawAdtMemberDto(drop), got $other")
       }
     }
@@ -137,7 +137,7 @@ final class T161AdtDeltaKeepDropParserTest extends AnyWordSpec {
         case other                      => fail(s"expected Keep(None) at index 0, got $other")
       }
       adt.members(1) match {
-        case RawAdtMemberDto(dto, _) => assert(dto.name == RawTypeName("keep"))
+        case RawAdtMemberDto(dto, _, _) => assert(dto.name == RawTypeName("keep"))
         case other                   => fail(s"expected RawAdtMemberDto(keep) at index 1, got $other")
       }
       adt.members(2) match {

@@ -37,11 +37,48 @@ class ScopeBuilder[F[+_, +_]: Error2] {
       }
     } yield {
       val out     = RootScope(gen.next(), pkg, asMap)
-      val context = ScopeContext(out.identifyParents, out.index)
+      val context = ScopeContext(out.identifyParents, out.index, declaringAdtsOf(out))
 
       out.map(defn => ExtendedRawDefn(defn, context))
     }
 
+  }
+
+  /** Maps the scope of every re-emitted ADT branch to the scope of the ADT that declares it. */
+  private def declaringAdtsOf(root: RootScope[FullRawDefn]): Map[ScopeUID, ScopeUID] = {
+    def adtAt(path: NEList[RawTypeName]): SubScope[FullRawDefn] = {
+      val found = path.toList.foldLeft(Option[Scope[FullRawDefn]](root)) {
+        case (Some(scope: RootScope[FullRawDefn]), name) => scope.nested.get(ScopeName(name.name))
+        case (Some(scope: SubScope[FullRawDefn]), name)  => scope.nested.toMap.get(ScopeName(name.name))
+        case _                                           => None
+      }
+      found match {
+        case Some(adt: SubScope[FullRawDefn]) if adt.defn.defn.isInstanceOf[RawAdt] => adt
+        case other =>
+          throw new IllegalStateException(s"BUG: a re-emitted ADT branch names ${path.toList.map(_.name).mkString(".")} as its declaring ADT, which is $other")
+      }
+    }
+
+    def reEmittedIn(scope: NestedScope[FullRawDefn]): Iterable[(ScopeUID, ScopeUID)] = {
+      scope match {
+        case sub: SubScope[FullRawDefn] =>
+          val branches = sub.nested.toMap
+          val own = sub.defn.defn match {
+            case adt: RawAdt =>
+              adt.members.collect {
+                case RawAdtMemberDto(dto, _, RawAdtBranchOrigin.ReEmitted(declaringAdt))           => (dto.name, declaringAdt)
+                case RawAdtMemberContract(contract, _, RawAdtBranchOrigin.ReEmitted(declaringAdt)) => (contract.name, declaringAdt)
+              }.map { case (branch, declaringAdt) => (branches(ScopeName(branch.name)).id, adtAt(declaringAdt).id) }
+            case _ =>
+              Seq.empty
+          }
+          own ++ branches.values.flatMap(reEmittedIn)
+        case _: LeafScope[FullRawDefn] =>
+          Seq.empty
+      }
+    }
+
+    root.nested.values.flatMap(reEmittedIn).toMap
   }
 
   private def buildScope(

@@ -1,0 +1,17 @@
+model my.ok.m20.siblingfallback
+
+version "1.0.0"
+
+adt Source {
+   data Leaf { value: i32 }
+   data Node {
+      leaf: Leaf
+      self: opt[Node]
+   }
+}
+
+// Only `Node` is re-emitted. Its sibling `Leaf` has no counterpart here, so the reference keeps
+// pointing at the declaring ADT's `Leaf`.
+root adt Partial {
+   + Source.Node
+}

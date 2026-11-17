@@ -1,0 +1,23 @@
+model my.ok.m20.siblingrebind
+
+version "1.0.0"
+
+adt Source {
+   data Leaf { value: i32 }
+   data Node {
+      leaf: Leaf
+      self: opt[Node]
+   }
+}
+
+// Both branches are re-emitted: `Node`'s references to its sibling and to itself follow the copies.
+root adt Full {
+   + Source
+}
+
+// The override form: the receiving ADT's own `Leaf` replaces the inherited one.
+root adt Override {
+   + Source
+   - Source.Leaf
+   data Leaf { other: str }
+}

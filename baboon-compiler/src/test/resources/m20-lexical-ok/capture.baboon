@@ -1,0 +1,26 @@
+model my.ok.m20.capture
+
+version "1.0.0"
+
+// A different type which happens to share its name with `inner.Payload`.
+data Payload { outer: i32 }
+
+ns inner {
+   data Payload { inner: str }
+
+   adt Source {
+      data Carry { payload: Payload }
+   }
+}
+
+// `Payload` is visible here, but it is not the `Payload` that `Carry` was declared against.
+root adt Receiver {
+   + inner.Source
+}
+
+// A LOCAL branch named like the outer type: `Payload` was not a sibling branch where `Carry`
+// was declared, so it must not capture the reference either.
+root adt LocalClash {
+   + inner.Source
+   data Payload { local: i32 }
+}

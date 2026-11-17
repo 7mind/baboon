@@ -28,7 +28,10 @@ object FullRawDefn {
   }
 }
 
-case class ScopeContext(parents: Map[ScopeUID, ScopeUID], index: Map[ScopeUID, Scope[FullRawDefn]]) {
+/** @param declaringAdts for every ADT branch re-emitted by `+ X`, the scope of the ADT whose body declares
+  *                      the branch (see [[RawAdtBranchOrigin]]). `parents` holds the ADT that received it.
+  */
+case class ScopeContext(parents: Map[ScopeUID, ScopeUID], index: Map[ScopeUID, Scope[FullRawDefn]], declaringAdts: Map[ScopeUID, ScopeUID]) {
   /** `index` as seen through [[ExtendedRawDefn]]. `Scope.map` rebuilds a whole subtree, so the tree is
     * mapped once, from its root, instead of on every parent lookup.
     */
@@ -45,4 +48,8 @@ case class ExtendedRawDefn(origin: FullRawDefn, context: ScopeContext) {
 
   def parentOf(s: NestedScope[ExtendedRawDefn]): Scope[ExtendedRawDefn] =
     s.defn.context.extendedIndex(s.defn.context.parents(s.id))
+
+  /** The ADT whose body declares `s`, when `s` is a branch re-emitted into another ADT by `+ X`. */
+  def declaringAdtOf(s: NestedScope[ExtendedRawDefn]): Option[Scope[ExtendedRawDefn]] =
+    s.defn.context.declaringAdts.get(s.id).map(s.defn.context.extendedIndex)
 }

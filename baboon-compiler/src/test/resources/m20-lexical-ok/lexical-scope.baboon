@@ -1,0 +1,38 @@
+model my.ok.m20.lexical
+
+version "1.0.0"
+
+// https://github.com/7mind/baboon/issues/112: a branch re-emitted by `+ X` keeps the meaning its
+// type references had where the branch was declared. `Update`, `Tagged` and `Stamp` are visible
+// from `inner.Action` but from neither receiving ADT below.
+ns inner {
+   data Update { rename: str }
+
+   contract Tagged { tag: str }
+
+   data Stamp { at: i32 }
+
+   adt Action {
+      data Modify { update: Update }
+      data Batch {
+         updates: lst[Update]
+         last: opt[Update]
+      }
+      data Mark {
+         is Tagged
+         + Stamp
+      }
+      data Follow { previous: opt[Modify] }
+   }
+}
+
+root adt Action {
+   + inner.Action
+}
+
+// Chained include: the branches come from `inner.Action` through the top-level `Action`.
+ns outer {
+   root adt Relay {
+      + Action
+   }
+}

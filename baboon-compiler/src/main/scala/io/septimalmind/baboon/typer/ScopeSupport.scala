@@ -277,7 +277,12 @@ object ScopeSupport {
         case s: LeafScope[ExtendedRawDefn] =>
           Some(s)
             .filter(_.name == head)
-            .orElse(findScope(needles, s.defn.parentOf(s)))
+            .orElse {
+              s.defn.declaringAdtOf(s) match {
+                case Some(declaringAdt) => findFromReEmittedBranch(head, s, declaringAdt)
+                case None               => findScope(needles, s.defn.parentOf(s))
+              }
+            }
 
         case s: SubScope[ExtendedRawDefn] =>
           Some(s)
@@ -294,6 +299,30 @@ object ScopeSupport {
           headScope.flatMap(nested => findScope(value, nested))
         case None =>
           headScope
+      }
+    }
+
+    /** Looks `name` up from the body of `branch`, an ADT branch that `+ X` re-emitted into another ADT.
+      *
+      * The name means what it means where the branch is declared: the receiving ADT may sit in a scope
+      * where the name is not visible, or where it denotes a different type. The one exception is a
+      * sibling branch of the declaring ADT, which is taken from the receiving ADT when that has a branch
+      * of the same name, so branches re-emitted together (or overridden by the receiving ADT) keep
+      * referring to each other.
+      */
+    private def findFromReEmittedBranch(
+      name: ScopeName,
+      branch: LeafScope[ExtendedRawDefn],
+      declaringAdt: Scope[ExtendedRawDefn],
+    ): Option[NestedScope[ExtendedRawDefn]] = {
+      findScope(NEList(name), declaringAdt).map {
+        declared =>
+          val isSiblingBranch = declared.defn.parentOf(declared).id == declaringAdt.id
+          val counterpart = branch.defn.parentOf(branch) match {
+            case receivingAdt: SubScope[ExtendedRawDefn] if isSiblingBranch => receivingAdt.nested.toMap.get(name)
+            case _                                                          => None
+          }
+          counterpart.getOrElse(declared)
       }
     }
 

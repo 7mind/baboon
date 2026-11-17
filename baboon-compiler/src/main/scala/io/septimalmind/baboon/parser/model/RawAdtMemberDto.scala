@@ -7,11 +7,30 @@ sealed trait RawAdtMember {
   def defn: RawDefn
 }
 
-case class RawAdtMemberDto(dto: RawDto, meta: RawNodeMeta) extends RawAdtMember {
+/** Where the body of an ADT branch was written, which is where the names in it are looked up.
+  *
+  * `+ X` re-emits the branches of `X` into another ADT (`AdtInheritanceExpander`). The copy is owned by
+  * the receiving ADT, but a name in its body must keep denoting what it denoted in `X`: the receiving
+  * ADT may sit in a scope where that name is not visible at all, or denotes a different type.
+  */
+sealed trait RawAdtBranchOrigin
+
+object RawAdtBranchOrigin {
+
+  /** The branch is declared in the body of the ADT that carries it. The parser only produces this. */
+  case object Declared extends RawAdtBranchOrigin
+
+  /** The branch was re-emitted from another ADT. `declaringAdt` is the path, from the domain root, of
+    * the ADT in whose body the branch is declared; a chain of inclusions keeps the first one.
+    */
+  case class ReEmitted(declaringAdt: NEList[RawTypeName]) extends RawAdtBranchOrigin
+}
+
+case class RawAdtMemberDto(dto: RawDto, meta: RawNodeMeta, origin: RawAdtBranchOrigin) extends RawAdtMember {
   override def defn: RawDefn = dto
 }
 
-case class RawAdtMemberContract(contract: RawContract, meta: RawNodeMeta) extends RawAdtMember {
+case class RawAdtMemberContract(contract: RawContract, meta: RawNodeMeta, origin: RawAdtBranchOrigin) extends RawAdtMember {
   override def defn: RawDefn = contract
 }
 

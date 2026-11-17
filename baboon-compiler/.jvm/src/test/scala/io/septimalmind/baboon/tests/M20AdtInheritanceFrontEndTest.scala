@@ -3,7 +3,7 @@ package io.septimalmind.baboon.tests
 import io.septimalmind.baboon.BaboonLoader
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
-import io.septimalmind.baboon.typer.model.{BaboonFamily, Domain, DomainMember, Owner, Typedef}
+import io.septimalmind.baboon.typer.model.{BaboonFamily, Domain, DomainMember, Owner, TypeId, TypeRef, Typedef}
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.files.IzFiles
@@ -117,6 +117,37 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         }
         branchName -> fieldSigs
     }.toMap
+  }
+
+
+  /** Renders a `TypeRef` with every user type spelled out in full (`pkg.owner.Name`), so that an
+    * assertion pins down WHICH same-named type a reference resolved to.
+    */
+  private def renderRef(ref: TypeRef): String = {
+    def renderId(id: TypeId): String = id match {
+      case u: TypeId.User => u.render
+      case other          => other.name.name
+    }
+    ref match {
+      case TypeRef.Scalar(id)            => renderId(id)
+      case TypeRef.Constructor(id, args) => s"${renderId(id)}[${args.toList.map(renderRef).mkString(", ")}]"
+      case any: TypeRef.Any              => any.toString
+    }
+  }
+
+  private def branchOf(domain: Domain, adt: Typedef.Adt, branchName: String): Typedef.Dto = {
+    val branchId = adt.members.toList
+      .find(_.name.name == branchName)
+      .getOrElse(throw new AssertionError(s"no branch '$branchName' in ${adt.id}; branches: ${adt.members.toList.map(_.name.name)}"))
+    domain.defs.meta.nodes.get(branchId) match {
+      case Some(DomainMember.User(_, dto: Typedef.Dto, _, _)) => dto
+      case other                                              => throw new AssertionError(s"branch $branchName resolved to unexpected node: $other")
+    }
+  }
+
+  /** The fully-qualified type of every field of `adtName.branchName`, keyed by field name. */
+  private def branchFieldTypes(domain: Domain, pkgPath: String, adtName: String, branchName: String): Map[String, String] = {
+    branchOf(domain, adtFromDomain(domain, adtName, pkgPath), branchName).fields.map(f => f.name.name -> renderRef(f.tpe)).toMap
   }
 
   "M20 ADT inheritance front-end (PR-63)" should {
@@ -276,6 +307,98 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
             manualStruct == sugaredStruct,
             s"branch structures differ:\n  manual=$manualStruct\n  sugared=$sugaredStruct",
           )
+        }
+    }
+
+
+    // ---------- lexical resolution of re-emitted branches (issue #112) ----------
+
+    "resolve type references of a re-emitted branch where the branch was declared (issue #112)" in {
+      (loader: BaboonLoader[F]) =>
+        val paths = resolveBaboonFiles("m20-lexical-ok/lexical-scope.baboon")
+        for {
+          outcome <- runPipeline(loader, paths)
+        } yield {
+          val pkg    = "my.ok.m20.lexical"
+          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain = domainFor(family, pkg)
+          // `Action` exists twice (top-level and `inner.Action`); pick the receiving ones by owner.
+          val adts = domain.defs.meta.nodes.values.collect { case DomainMember.User(_, a: Typedef.Adt, _, _) => a.id.render -> a }.toMap
+          List(s"$pkg.Action", s"$pkg.outer.Relay").foreach {
+            receiving =>
+              val adt = adts.getOrElse(receiving, throw new AssertionError(s"no ADT $receiving; got ${adts.keySet}"))
+              assert(adt.members.toList.map(_.name.name).toSet == Set("Modify", "Batch", "Mark", "Follow"))
+              // Field types declared against `inner` still denote `inner`'s types.
+              assert(branchOf(domain, adt, "Modify").fields.map(f => f.name.name -> renderRef(f.tpe)).toMap == Map("update" -> s"$pkg.inner.Update"))
+              assert(
+                branchOf(domain, adt, "Batch").fields.map(f => f.name.name -> renderRef(f.tpe)).toMap ==
+                  Map("updates" -> s"lst[$pkg.inner.Update]", "last" -> s"opt[$pkg.inner.Update]")
+              )
+              // `is Tagged` and `+ Stamp` resolve against `inner` as well.
+              val mark = branchOf(domain, adt, "Mark")
+              assert(mark.contracts.map(_.render) == List(s"$pkg.inner.Tagged"))
+              assert(mark.fields.map(f => f.name.name -> renderRef(f.tpe)).toMap == Map("tag" -> "str", "at" -> "i32"))
+              // A sibling branch re-emitted alongside is referenced through the receiving ADT's copy.
+              assert(branchOf(domain, adt, "Follow").fields.map(f => f.name.name -> renderRef(f.tpe)).toMap == Map("previous" -> s"opt[$receiving.Modify]"))
+          }
+        }
+    }
+
+    "not let a same-named type at the inclusion site capture a re-emitted branch's reference" in {
+      (loader: BaboonLoader[F]) =>
+        val paths = resolveBaboonFiles("m20-lexical-ok/capture.baboon")
+        for {
+          outcome <- runPipeline(loader, paths)
+        } yield {
+          val pkg    = "my.ok.m20.capture"
+          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain = domainFor(family, pkg)
+          // `Carry.payload` was declared against `inner.Payload`; the top-level `Payload` and
+          // `LocalClash`'s own `Payload` branch are different types that merely share the name.
+          assert(branchFieldTypes(domain, pkg, "Receiver", "Carry") == Map("payload" -> s"$pkg.inner.Payload"))
+          assert(branchFieldTypes(domain, pkg, "LocalClash", "Carry") == Map("payload" -> s"$pkg.inner.Payload"))
+        }
+    }
+
+    "bind a re-emitted branch's sibling and self references to the receiving ADT's branches" in {
+      (loader: BaboonLoader[F]) =>
+        val paths = resolveBaboonFiles("m20-lexical-ok/sibling-rebind.baboon")
+        for {
+          outcome <- runPipeline(loader, paths)
+        } yield {
+          val pkg    = "my.ok.m20.siblingrebind"
+          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain = domainFor(family, pkg)
+          assert(branchFieldTypes(domain, pkg, "Full", "Node") == Map("leaf" -> s"$pkg.Full.Leaf", "self" -> s"opt[$pkg.Full.Node]"))
+          // Override form: the sibling reference follows the receiving ADT's own `Leaf`.
+          assert(branchFieldTypes(domain, pkg, "Override", "Node") == Map("leaf" -> s"$pkg.Override.Leaf", "self" -> s"opt[$pkg.Override.Node]"))
+          assert(branchFieldTypes(domain, pkg, "Override", "Leaf") == Map("other" -> "str"))
+        }
+    }
+
+    "keep a sibling reference on the declaring ADT's branch when the sibling is not re-emitted" in {
+      (loader: BaboonLoader[F]) =>
+        val paths = resolveBaboonFiles("m20-lexical-ok/sibling-fallback.baboon")
+        for {
+          outcome <- runPipeline(loader, paths)
+        } yield {
+          val pkg    = "my.ok.m20.siblingfallback"
+          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain = domainFor(family, pkg)
+          assert(branchFieldTypes(domain, pkg, "Partial", "Node") == Map("leaf" -> s"$pkg.Source.Leaf", "self" -> s"opt[$pkg.Partial.Node]"))
+        }
+    }
+
+    "resolve a `+ Template[Args]` arm of a re-emitted branch where the branch was declared" in {
+      (loader: BaboonLoader[F]) =>
+        val paths = resolveBaboonFiles("m20-lexical-ok/template-arm.baboon")
+        for {
+          outcome <- runPipeline(loader, paths)
+        } yield {
+          val pkg    = "my.ok.m20.templatearm"
+          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain = domainFor(family, pkg)
+          assert(branchFieldTypes(domain, pkg, "Receiver", "Listing") == Map("items" -> s"lst[$pkg.inner.Item]"))
         }
     }
 

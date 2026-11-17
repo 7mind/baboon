@@ -220,8 +220,8 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
           // (`Owner.Adt(receivingAdtId)` for re-emitted branches). See Q-PR-J in
           // `20260429-0025-m20-bab-a03-adt-inheritance-plan.md`.
           F.pure(targetAdt.members.collect {
-            case m: RawAdtMemberDto      => (m: RawAdtMember, resolvedId: TypeId)
-            case m: RawAdtMemberContract => (m: RawAdtMember, resolvedId: TypeId)
+            case m: RawAdtMemberDto      => (m.copy(origin = reEmitted(m.origin, resolvedId)): RawAdtMember, resolvedId: TypeId)
+            case m: RawAdtMemberContract => (m.copy(origin = reEmitted(m.origin, resolvedId)): RawAdtMember, resolvedId: TypeId)
           }.toList)
 
         case None =>
@@ -233,8 +233,10 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
                 case Some(parentAdt) =>
                   val needle = resolvedId.name.name
                   parentAdt.members.collectFirst {
-                    case m: RawAdtMemberDto if m.dto.name.name == needle           => (m: RawAdtMember, resolvedId: TypeId)
-                    case m: RawAdtMemberContract if m.contract.name.name == needle => (m: RawAdtMember, resolvedId: TypeId)
+                    case m: RawAdtMemberDto if m.dto.name.name == needle =>
+                      (m.copy(origin = reEmitted(m.origin, parentAdtId)): RawAdtMember, resolvedId: TypeId)
+                    case m: RawAdtMemberContract if m.contract.name.name == needle =>
+                      (m.copy(origin = reEmitted(m.origin, parentAdtId)): RawAdtMember, resolvedId: TypeId)
                   } match {
                     case Some(found) => F.pure(List(found))
                     case None =>
@@ -276,6 +278,19 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
           }
       }
     } yield result
+  }
+
+  /** The origin of a branch of `sourceAdt` once it is re-emitted into another ADT. The names in the
+    * branch's body keep being looked up where the branch is declared, so a branch that `sourceAdt`
+    * itself received through `+ X` keeps the ADT that declares it.
+    */
+  private def reEmitted(origin: RawAdtBranchOrigin, sourceAdt: TypeId.User): RawAdtBranchOrigin = {
+    origin match {
+      case RawAdtBranchOrigin.Declared =>
+        RawAdtBranchOrigin.ReEmitted(sourceAdt.owner.asPseudoPkg.map(RawTypeName.apply).toList ++: NEList(RawTypeName(sourceAdt.name.name)))
+      case inherited: RawAdtBranchOrigin.ReEmitted =>
+        inherited
+    }
   }
 
   /** Walk the top-level RawTLDef list (and recursively into RawNamespace) replacing each RawAdt

@@ -1,0 +1,22 @@
+model my.ok.m20.templatearm
+
+version "1.0.0"
+
+ns inner {
+   data Item { name: str }
+
+   data Page[T] {
+      items: lst[T]
+   }
+
+   adt Source {
+      data Listing {
+         + Page[Item]
+      }
+   }
+}
+
+// `Page` is a template registered under `inner`; the re-emitted `Listing` must still find it.
+root adt Receiver {
+   + inner.Source
+}
