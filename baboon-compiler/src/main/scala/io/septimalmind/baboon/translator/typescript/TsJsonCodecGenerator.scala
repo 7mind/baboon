@@ -140,9 +140,20 @@ class TsJsonCodecGenerator(
       case _ => mainEnc
     }
 
+    val decObj = dto.id.owner match {
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
+        // The inverse of the wrapped encoder above: the fields stand under the branch name.
+        q"""const obj = (json as Record<string, unknown>)["${dto.id.name.name}"] as Record<string, unknown>;
+           |if (typeof obj !== "object" || obj === null) {
+           |    throw new Error("Cannot decode to ${dto.id.name.name}: object under the key '${dto.id.name.name}' expected");
+           |}""".stripMargin
+      case _ =>
+        q"""const obj = json as Record<string, unknown>;"""
+    }
+
     (
       q"return $fullEnc",
-      q"""const obj = json as Record<string, unknown>;
+      q"""$decObj
          |return new $name (
          |    ${decodeFields.joinN().shift(4).trim}
          |)""".stripMargin,
@@ -180,7 +191,10 @@ class TsJsonCodecGenerator(
         val branchName  = mid.name.name
         val branchType  = domainTypes.asTsTypeKeepForeigns(mid, tsFileTools.definitionsBasePkg)
         val branchCodec = codecName(branchType)
-        q"""case "$branchName": return $branchCodec.instance.decode($tsBaboonCodecContext.Default, obj[key])"""
+        // A wrapped branch codec writes and reads the `{"Branch": {...}}` envelope itself, so it is
+        // handed the whole wire value; otherwise the ADT codec owns the envelope.
+        val branchWire = if (target.language.wrappedAdtBranchCodecs) "json" else "obj[key]"
+        q"""case "$branchName": return $branchCodec.instance.decode($tsBaboonCodecContext.Default, $branchWire)"""
     }
 
     (

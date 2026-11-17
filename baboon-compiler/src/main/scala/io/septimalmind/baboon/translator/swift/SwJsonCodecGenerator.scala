@@ -107,6 +107,9 @@ class SwJsonCodecGenerator(
   }
 
   private def genAdtBodies(name: SwValue.SwType, adt: Typedef.Adt): (TextTree[SwValue], TextTree[SwValue]) = {
+    // A wrapped branch codec writes and reads the `["Branch": [...]]` envelope itself, so it is handed
+    // the whole wire value; otherwise the ADT codec owns the envelope and hands over its content.
+    val branchWire = if (target.language.wrappedAdtBranchCodecs) "wire" else "entry.value"
     val branches = adt.dataMembers(domain).map {
       m =>
         val branchName = m.name.name
@@ -124,7 +127,7 @@ class SwJsonCodecGenerator(
           q"""case .$caseName(let branchVal):
              |    return $branchEncoder""".stripMargin,
           q"""case "$branchName":
-             |    return .$caseName(try ${codecName(fqBranch)}.instance.decode(ctx, entryValue))""".stripMargin,
+             |    return .$caseName(try ${codecName(fqBranch)}.instance.decode(ctx, $branchWire))""".stripMargin,
         )
     }
 
@@ -138,7 +141,6 @@ class SwJsonCodecGenerator(
          |guard let entry = jsonObj.first else {
          |    throw BaboonCodecError.invalidInput("Cannot decode to ${name.name}: empty json object")
          |}
-         |let entryValue = entry.value
          |switch entry.key {
          |${branches.map(_._2).joinN().shift(0).trim}
          |default:
@@ -194,9 +196,18 @@ class SwJsonCodecGenerator(
     }
 
     val decBody = if (d.fields.nonEmpty) {
-      q"""guard let jsonObj = wire as? [String: Any] else {
-         |    throw BaboonCodecError.invalidInput("Expected dictionary for ${name.name}")
-         |}
+      val jsonObj = d.id.owner match {
+        case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
+          // The inverse of the wrapped encoder above: the fields stand under the branch name.
+          q"""guard let jsonObj = (wire as? [String: Any])?["${d.id.name.name}"] as? [String: Any] else {
+             |    throw BaboonCodecError.invalidInput("Expected dictionary under the key '${d.id.name.name}' for ${name.name}")
+             |}""".stripMargin
+        case _ =>
+          q"""guard let jsonObj = wire as? [String: Any] else {
+             |    throw BaboonCodecError.invalidInput("Expected dictionary for ${name.name}")
+             |}""".stripMargin
+      }
+      q"""$jsonObj
          |return ${name.asDeclName}(
          |    ${decFields.join(",\n").shift(4).trim}
          |)""".stripMargin

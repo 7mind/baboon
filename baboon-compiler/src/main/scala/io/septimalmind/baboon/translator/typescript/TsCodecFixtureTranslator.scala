@@ -116,11 +116,13 @@ object TsCodecFixtureTranslator {
            |)""".stripMargin
       }
 
-      q"""function ${fixtureFnName(dto.id, FixUeba)}(rnd: $baboonRandom): $fullType {
+      // Exported: a field of another type may have this branch as its type, and its fixture then
+      // imports the branch fixture from this module.
+      q"""export function ${fixtureFnName(dto.id, FixUeba)}(rnd: $baboonRandom): $fullType {
          |    ${body(FixUeba).shift(4).trim}
          |}
          |
-         |function ${fixtureFnName(dto.id, FixJson)}(rnd: $baboonRandom): $fullType {
+         |export function ${fixtureFnName(dto.id, FixJson)}(rnd: $baboonRandom): $fullType {
          |    ${body(FixJson).shift(4).trim}
          |}""".stripMargin
     }

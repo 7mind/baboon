@@ -108,6 +108,9 @@ class DtJsonCodecGenerator(
   }
 
   private def genAdtBodies(name: DtValue.DtType, adt: Typedef.Adt): (TextTree[DtValue], TextTree[DtValue]) = {
+    // A wrapped branch codec writes and reads the `{'Branch': {...}}` envelope itself, so it is handed
+    // the whole wire value; otherwise the ADT codec owns the envelope and hands over its content.
+    val branchWire = if (target.language.wrappedAdtBranchCodecs) "wire" else "entry.value"
     val branches = adt.dataMembers(domain).map {
       m =>
         val branchName = m.name.name
@@ -126,7 +129,7 @@ class DtJsonCodecGenerator(
              |  final $branchRef = value;
              |  return $branchEncoder;
              |}""".stripMargin,
-          q"""'$branchName' => ${codecName(fqBranch)}.instance.decode(ctx, entry.value),""",
+          q"""'$branchName' => ${codecName(fqBranch)}.instance.decode(ctx, $branchWire),""",
         )
     }
 
@@ -188,7 +191,17 @@ class DtJsonCodecGenerator(
     }
 
     val decBody = if (d.fields.nonEmpty) {
-      q"""final jsonObj = wire as Map<String, dynamic>;
+      val jsonObj = d.id.owner match {
+        case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
+          // The inverse of the wrapped encoder above: the fields stand under the branch name.
+          q"""final jsonObj = (wire as Map<String, dynamic>)['${d.id.name.name}'];
+             |if (jsonObj is! Map<String, dynamic>) {
+             |  throw ArgumentError("Cannot decode to ${name.name}: object under the key '${d.id.name.name}' expected");
+             |}""".stripMargin
+        case _ =>
+          q"""final jsonObj = wire as Map<String, dynamic>;"""
+      }
+      q"""$jsonObj
          |return $name(
          |  ${decFields.join(",\n").shift(2).trim},
          |);""".stripMargin

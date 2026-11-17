@@ -327,7 +327,7 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
           List(s"$pkg.Action", s"$pkg.outer.Relay").foreach {
             receiving =>
               val adt = adts.getOrElse(receiving, throw new AssertionError(s"no ADT $receiving; got ${adts.keySet}"))
-              assert(adt.members.toList.map(_.name.name).toSet == Set("Modify", "Batch", "Mark"))
+              assert(adt.members.toList.map(_.name.name).toSet == Set("Modify", "Batch", "Mark", "Follow"))
               // Field types declared against `inner` still denote `inner`'s types.
               assert(branchOf(domain, adt, "Modify").fields.map(f => f.name.name -> renderRef(f.tpe)).toMap == Map("update" -> s"$pkg.inner.Update"))
               assert(
@@ -338,6 +338,8 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
               val mark = branchOf(domain, adt, "Mark")
               assert(mark.contracts.map(_.render) == List(s"$pkg.inner.Tagged"))
               assert(mark.fields.map(f => f.name.name -> renderRef(f.tpe)).toMap == Map("tag" -> "str", "at" -> "i32"))
+              // A sibling branch re-emitted alongside is referenced through the receiving ADT's copy.
+              assert(branchOf(domain, adt, "Follow").fields.map(f => f.name.name -> renderRef(f.tpe)).toMap == Map("previous" -> s"opt[$receiving.Modify]"))
           }
         }
     }

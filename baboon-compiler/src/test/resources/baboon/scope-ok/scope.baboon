@@ -4,6 +4,8 @@ version "1.0.0"
 
 // Cross-backend coverage for references that cross a namespace or an ADT boundary. Every backend
 // has to name the referenced type, its codec and its fixture from another package or module:
+//   - a branch referenced from outside its ADT (`Holder.dot`) and from a sibling branch (`Pair`),
+//     once through a field named like the branch it refers to (`Pair.dot`);
 //   - a type, an enum and an ADT of another namespace (`Holder.item`, `.kind`, `.shape`);
 //   - an alias declared in another namespace (`Holder.alias`, `.items`), whose target is looked up
 //     where the alias is declared;
@@ -31,6 +33,10 @@ ns inner {
       from: Item
       to: opt[Item]
     }
+    data Pair {
+      dot: Dot
+      tail: opt[Dot]
+    }
   }
 
   data Page[T] {
@@ -57,6 +63,7 @@ root data Holder {
   item: inner.Item
   kind: inner.Kind
   shape: inner.Shape
+  dot: inner.Shape.Dot
   alias: inner.ItemAlias
   items: inner.Items
 }

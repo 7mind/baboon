@@ -133,6 +133,10 @@ class ScJsonCodecGenerator(
   }
 
   private def genAdtBodies(name: ScValue.ScType, adt: Typedef.Adt): (TextTree[ScValue], TextTree[ScValue]) = {
+    // A wrapped branch codec writes and reads the `{"Branch": {...}}` envelope itself, so it is handed
+    // the whole wire value; otherwise the ADT codec owns the envelope and hands over its content.
+    val (entryPattern, branchWire) =
+      if (target.language.wrappedAdtBranchCodecs) ("(key, _)", "wire") else ("(key, json)", "json")
     val branches = adt.dataMembers(domain).map {
       m =>
         val branchNs            = q"${adt.id.name.name}"
@@ -151,7 +155,7 @@ class ScJsonCodecGenerator(
           q"""case $branchNameRef: $fqBranch => $branchEncoder
              |""".stripMargin,
           q"""case "$branchName" =>
-             |  ${fqBranch}_JsonCodec.instance.decode(ctx, json)
+             |  ${fqBranch}_JsonCodec.instance.decode(ctx, $branchWire)
              |""".stripMargin,
         )
 
@@ -167,7 +171,7 @@ class ScJsonCodecGenerator(
       q"""wire.asObject match {
          |  case Some(jsonObject) =>
          |    jsonObject.toList.headOption match {
-         |      case Some((key, json)) =>
+         |      case Some($entryPattern) =>
          |        key match {
          |          ${branches.map(_._2).joinN().shift(10).trim}
          |
@@ -227,12 +231,21 @@ class ScJsonCodecGenerator(
       } else q"Right($name())"
 
     val jsonObjectPattern = if (d.fields.nonEmpty) "jsonObject" else "_"
-    val decBody =
-      q"""wire.asObject match {
-         |  case Some($jsonObjectPattern) => ${decoderForExpr.shift(4).trim}
-         |  case _ => Left(new $javaIllegalArgumentException("Cannot decode $$wire to ${name.name}: object expected"))
-         |}
-         |""".stripMargin
+    val decBody = d.id.owner match {
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
+        // The inverse of the wrapped encoder above: the fields stand under the branch name.
+        q"""wire.asObject.flatMap(_.apply("${d.id.name.name}")).flatMap(_.asObject) match {
+           |  case Some($jsonObjectPattern) => ${decoderForExpr.shift(4).trim}
+           |  case _ => Left(new $javaIllegalArgumentException("Cannot decode $$wire to ${name.name}: object under the key '${d.id.name.name}' expected"))
+           |}
+           |""".stripMargin
+      case _ =>
+        q"""wire.asObject match {
+           |  case Some($jsonObjectPattern) => ${decoderForExpr.shift(4).trim}
+           |  case _ => Left(new $javaIllegalArgumentException("Cannot decode $$wire to ${name.name}: object expected"))
+           |}
+           |""".stripMargin
+    }
 
     (encBody, decBody)
   }

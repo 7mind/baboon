@@ -153,19 +153,31 @@ class RsJsonCodecGenerator(
         // A field-less DTO still has to reject a non-object document, but nothing reads the
         // object afterwards — and an unused binding is an error under `-D warnings`.
         val bind = if (binds.isEmpty) q"let _" else q"let obj"
-        q"""$bind = crate::baboon_runtime::json_tools::expect_object(wire, "$what")?;
-           |$ctor""".stripMargin
+        wrappedBranchName(d) match {
+          case Some(branch) =>
+            // The inverse of the wrapped encoder: the fields stand under the branch name.
+            q"""let envelope = crate::baboon_runtime::json_tools::expect_object(wire, "$what")?;
+               |$bind = crate::baboon_runtime::json_tools::expect_object(crate::baboon_runtime::json_tools::field(envelope, "$branch", "$what")?, "$what")?;
+               |$ctor""".stripMargin
+          case None =>
+            q"""$bind = crate::baboon_runtime::json_tools::expect_object(wire, "$what")?;
+               |$ctor""".stripMargin
+        }
 
       case a: Typedef.Adt =>
+        // A wrapped branch codec writes and reads the `{"Branch": {...}}` envelope itself, so it is
+        // handed the whole wire value; otherwise the ADT codec owns the envelope.
+        val (branchBinding, branchWire) =
+          if (target.language.wrappedAdtBranchCodecs) ("_", "wire") else ("branch", "branch")
         val arms = a.dataMembers(domain).toList.map {
           mid =>
             val wireVariantName = mid.name.name.capitalize
             val rsVariantName   = escapeRustTypeName(wireVariantName)
             val branchType      = trans.asRsRef(TypeRef.Scalar(mid), domain, evo)
-            q""""$wireVariantName" => Ok(${name.asName}::$rsVariantName($branchType::decode_json(ctx, branch)?)),"""
+            q""""$wireVariantName" => Ok(${name.asName}::$rsVariantName($branchType::decode_json(ctx, $branchWire)?)),"""
         }
         q"""let obj = crate::baboon_runtime::json_tools::expect_object(wire, "$what")?;
-           |let (tag, branch) = obj.iter().next().ok_or_else(|| {
+           |let (tag, $branchBinding) = obj.iter().next().ok_or_else(|| {
            |    crate::baboon_runtime::json_tools::decoder_failure("$what: expected a single-key ADT envelope, got an empty object")
            |})?;
            |if obj.len() != 1 {
@@ -297,6 +309,17 @@ class RsJsonCodecGenerator(
     * is what the derive called — while the shapes serde only expressed through field attributes
     * (hex bytes, decimal-as-number, timestamps) are written by the matching `json_tools` helper.
     */
+  /** The key of the `{"Branch": {...}}` envelope that the JSON codec of `d` writes and reads itself:
+    * with wrapped ADT branch codecs a branch is self-describing wherever it stands, also as the
+    * type of a field, and the codec of its ADT just delegates to it.
+    */
+  private def wrappedBranchName(d: Typedef.Dto): Option[String] = {
+    d.id.owner match {
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs => Some(d.id.name.name.capitalize)
+      case _                                                      => None
+    }
+  }
+
   private def explicitEncoder(defn: DomainMember.User, name: RsValue.RsType): TextTree[RsValue] = {
     defn.defn match {
       case d: Typedef.Dto =>
@@ -314,24 +337,43 @@ class RsJsonCodecGenerator(
         // is an error under the `-D warnings` the generated crates build with.
         val binding = if (inserts.isEmpty) q"let obj" else q"let mut obj"
         val build   = if (inserts.isEmpty) q"" else inserts.joinN()
-        q"""$binding = serde_json::Map::new();
-           |$build
-           |Ok(serde_json::Value::Object(obj))""".stripMargin
+        wrappedBranchName(d) match {
+          case Some(branch) =>
+            q"""$binding = serde_json::Map::new();
+               |$build
+               |let mut envelope = serde_json::Map::new();
+               |envelope.insert("$branch".to_string(), serde_json::Value::Object(obj));
+               |Ok(serde_json::Value::Object(envelope))""".stripMargin
+          case None =>
+            q"""$binding = serde_json::Map::new();
+               |$build
+               |Ok(serde_json::Value::Object(obj))""".stripMargin
+        }
 
       case a: Typedef.Adt =>
         val arms = a.dataMembers(domain).toList.map {
           mid =>
             val wireVariantName = mid.name.name.capitalize
             val rsVariantName   = escapeRustTypeName(wireVariantName)
-            q"""${name.asName}::$rsVariantName(v) => {
-               |    obj.insert("$wireVariantName".to_string(), v.encode_json(ctx)?);
-               |}""".stripMargin
+            if (target.language.wrappedAdtBranchCodecs) {
+              q"""${name.asName}::$rsVariantName(v) => v.encode_json(ctx),"""
+            } else {
+              q"""${name.asName}::$rsVariantName(v) => {
+                 |    obj.insert("$wireVariantName".to_string(), v.encode_json(ctx)?);
+                 |}""".stripMargin
+            }
         }
-        q"""let mut obj = serde_json::Map::new();
-           |match self {
-           |    ${arms.joinN().shift(4).trim}
-           |}
-           |Ok(serde_json::Value::Object(obj))""".stripMargin
+        if (target.language.wrappedAdtBranchCodecs) {
+          q"""match self {
+             |    ${arms.joinN().shift(4).trim}
+             |}""".stripMargin
+        } else {
+          q"""let mut obj = serde_json::Map::new();
+             |match self {
+             |    ${arms.joinN().shift(4).trim}
+             |}
+             |Ok(serde_json::Value::Object(obj))""".stripMargin
+        }
 
       case _: Typedef.Enum =>
         q"Ok(serde_json::Value::String(self.to_string()))"
