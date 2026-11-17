@@ -54,6 +54,19 @@ object CSCodecFixtureTranslator {
     private case object FixUeba extends FixtureFormat
     private case object FixJson extends FixtureFormat
 
+    /** The fixture of `id`, by a path that resolves from every generated fixture, whichever namespace
+      * it stands in: a fixture stands beside its type, and the fixture of an ADT branch is nested in the
+      * fixture of its ADT.
+      */
+    private def fixtureRef(id: TypeId.User): TextTree[CSValue] = {
+      id.owner match {
+        case Owner.Adt(adtId) =>
+          q"${fixtureRef(adtId)}.${id.name.name.capitalize}_Fixture"
+        case _ =>
+          q"${domainTypes.csFixtureRef(id).fullyQualified}"
+      }
+    }
+
     private def doTranslateDto(dto: Typedef.Dto): TextTree[CSValue] = {
       val fullType = domainTypes.asCsType(dto.id)
 
@@ -261,14 +274,14 @@ object CSCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"$baboonFixture.NextBoolean()"
 
         case id: TypeId.User if domainEnquiries.isEnum(tpe) => q"$baboonFixture.NextRandomEnum<${domainTypes.asCsType(id).fullyQualified}>()"
-        case TypeId.User(_, _, name)                          =>
+        case id: TypeId.User                                  =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (C# analog).
           val method = format match {
             case FixUeba => q"Random"
             case FixJson => q"RandomJson"
           }
-          q"${name.name}_Fixture.$method()"
+          q"${fixtureRef(id)}.$method()"
 
         case t =>
           throw new IllegalArgumentException(s"Unexpected scalar type: $t")

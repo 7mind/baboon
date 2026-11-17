@@ -22,7 +22,6 @@ ns inner {
          is Tagged
          + Stamp
       }
-      data Follow { previous: opt[Modify] }
    }
 }
 

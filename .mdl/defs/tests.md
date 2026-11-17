@@ -48,6 +48,9 @@ TEST_DIR="./target/test-regular"
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
 rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/kt-stub-kmp" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub" "$TEST_DIR/sw-stub"
+# The cross-language blobs written by the previous run describe the previous models. A lane that
+# reads a peer's blob before the peer has rewritten it would fail on a shape that no longer exists.
+rm -rf "$TEST_DIR/target"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -405,6 +408,9 @@ TEST_DIR="./target/test-wrapped"
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
 rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/kt-stub-kmp" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub" "$TEST_DIR/sw-stub"
+# The cross-language blobs written by the previous run describe the previous models. A lane that
+# reads a peer's blob before the peer has rewritten it would fail on a shape that no longer exists.
+rm -rf "$TEST_DIR/target"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \

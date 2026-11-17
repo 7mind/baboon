@@ -196,6 +196,11 @@ let package = Package(
             path: "Sources/MyOkM20Intersect"
         ),
         .target(
+            name: "MyOkM20Lexical",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkM20Lexical"
+        ),
+        .target(
             name: "MyOkM20Nsqual",
             dependencies: ["BaboonRuntime"],
             path: "Sources/MyOkM20Nsqual"
@@ -204,6 +209,13 @@ let package = Package(
             name: "MyOkM20Simple",
             dependencies: ["BaboonRuntime"],
             path: "Sources/MyOkM20Simple"
+        ),
+
+        // ----- scope (references crossing a namespace or an ADT boundary) ---------------------------
+        .target(
+            name: "MyOkScope",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkScope"
         ),
 
         // ----- recursive.tree (T24 minimal recursive-DTO fixture; recursive DTO `Tree`) ---------
@@ -318,6 +330,11 @@ let package = Package(
             path: "Tests/BaboonTests/MyOkM20Intersect"
         ),
         .testTarget(
+            name: "MyOkM20LexicalTests",
+            dependencies: ["BaboonRuntime", "MyOkM20Lexical"],
+            path: "Tests/BaboonTests/MyOkM20Lexical"
+        ),
+        .testTarget(
             name: "MyOkM20NsqualTests",
             dependencies: ["BaboonRuntime", "MyOkM20Nsqual"],
             path: "Tests/BaboonTests/MyOkM20Nsqual"
@@ -326,6 +343,11 @@ let package = Package(
             name: "MyOkM20SimpleTests",
             dependencies: ["BaboonRuntime", "MyOkM20Simple"],
             path: "Tests/BaboonTests/MyOkM20Simple"
+        ),
+        .testTarget(
+            name: "MyOkScopeTests",
+            dependencies: ["BaboonRuntime", "MyOkScope"],
+            path: "Tests/BaboonTests/MyOkScope"
         ),
         .testTarget(
             name: "RenameNsTests",

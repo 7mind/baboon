@@ -85,6 +85,19 @@ object JvCodecFixtureTranslator {
       q"${id.name.name.capitalize}_Fixture"
     }
 
+    /** The fixture of `id`, by a path that resolves from every generated fixture, whichever namespace
+      * it stands in: a fixture stands beside its type, and the fixture of an ADT branch is nested in the
+      * fixture of its ADT.
+      */
+    private def fixtureRef(id: TypeId.User): TextTree[JvValue] = {
+      id.owner match {
+        case Owner.Adt(adtId) =>
+          q"${fixtureRef(adtId)}.${fixtureTpeName(id)}"
+        case _ =>
+          q"${JvValue.JvType(domainTypes.toJvTypeRefKeepForeigns(id).pkg, s"${id.name.name.capitalize}_Fixture", fq = true)}"
+      }
+    }
+
     private def doTranslateDto(dto: Typedef.Dto): TextTree[JvValue] = {
       val fullType = domainTypes.toJvTypeRefKeepForeigns(dto.id)
 
@@ -234,15 +247,17 @@ object JvCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
-        case TypeId.User(_, _, name) if domainEnquiries.isEnum(tpe) => q"rnd.mkEnum(${name.name}.class, ${name.name}.values())"
-        case u: TypeId.User                                           =>
+        case u: TypeId.User if domainEnquiries.isEnum(tpe) =>
+          val enumType = domainTypes.toJvTypeRefKeepForeigns(u)
+          q"rnd.mkEnum($enumType.class, $enumType.values())"
+        case u: TypeId.User =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Java analog).
           val method = format match {
             case FixUeba => q"random"
             case FixJson => q"randomJson"
           }
-          q"${u.name.name}_Fixture.$method(rnd)"
+          q"${fixtureRef(u)}.$method(rnd)"
 
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }

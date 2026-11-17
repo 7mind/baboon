@@ -82,6 +82,19 @@ object ScCodecFixtureTranslator {
       q"${id.name.name.capitalize}_Fixture"
     }
 
+    /** The fixture of `id`, by a path that resolves from every generated fixture, whichever namespace
+      * it stands in: a fixture stands beside its type, and the fixture of an ADT branch is nested in the
+      * fixture of its ADT.
+      */
+    private def fixtureRef(id: TypeId.User): TextTree[ScValue] = {
+      id.owner match {
+        case Owner.Adt(adtId) =>
+          q"${fixtureRef(adtId)}.${fixtureTpe(id)}"
+        case _ =>
+          q"${ScValue.ScType(domainTypes.toScTypeRefKeepForeigns(id).pkg, s"${id.name.name.capitalize}_Fixture", fq = true)}"
+      }
+    }
+
     // Branch selector for any-field fixture payloads. PR-07-D01: tests round-trip a fixture through a
     // single codec; if the fixture's `AnyOpaque` branch matches the codec direction, no facade is
     // needed and equality holds. We emit two parallel methods (`random` for the UEBA branch,
@@ -243,15 +256,15 @@ object ScCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
-        case TypeId.User(_, _, name) if domainEnquiries.isEnum(tpe) => q"rnd.mkEnum(${name.name})"
-        case u: TypeId.User                                           =>
+        case u: TypeId.User if domainEnquiries.isEnum(tpe) => q"rnd.mkEnum(${domainTypes.toScTypeRefKeepForeigns(u)})"
+        case u: TypeId.User                                 =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01.
           val method = format match {
             case FixUeba => q"random"
             case FixJson => q"randomJson"
           }
-          q"${u.name.name}_Fixture.$method(rnd)"
+          q"${fixtureRef(u)}.$method(rnd)"
 
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }

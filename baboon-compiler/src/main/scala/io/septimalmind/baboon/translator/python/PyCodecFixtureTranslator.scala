@@ -4,7 +4,7 @@ import io.septimalmind.baboon.translator.python.PyKeywords.escapePyKeyword
 import io.septimalmind.baboon.translator.python.PyTypes.{baboonAnyMeta, baboonAnyOpaqueJson, baboonAnyOpaqueUeba, baboonFixture, pyList, pyStaticMethod}
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
-import io.septimalmind.baboon.typer.model.{BaboonEvolution, BaboonLang, Domain, DomainMember, TypeId, TypeRef, Typedef}
+import io.septimalmind.baboon.typer.model.{BaboonEvolution, BaboonLang, Domain, DomainMember, Owner, TypeId, TypeRef, Typedef}
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -199,8 +199,13 @@ object PyCodecFixtureTranslator {
 
     override def fixtureType(tid: TypeId.User): PyType = {
       val typeName = s"${tid.name.name.capitalize}_Fixture"
-      val pyModuleId = domainTypes.toPyModule(tid, pyFileTools.fixturesBasePkg)
-        .withModuleName(typeName)
+      // The fixture class of an ADT branch is written into the fixture module of its ADT.
+      val moduleOwner = tid.owner match {
+        case Owner.Adt(adtId) => adtId
+        case _                => tid
+      }
+      val pyModuleId = domainTypes.toPyModule(moduleOwner, pyFileTools.fixturesBasePkg)
+        .withModuleName(s"${moduleOwner.name.name.capitalize}_Fixture")
       PyType(pyModuleId, typeName)
     }
   }

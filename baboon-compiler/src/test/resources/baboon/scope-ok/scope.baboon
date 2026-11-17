@@ -1,0 +1,62 @@
+model my.ok.scope
+
+version "1.0.0"
+
+// Cross-backend coverage for references that cross a namespace or an ADT boundary. Every backend
+// has to name the referenced type, its codec and its fixture from another package or module:
+//   - a type, an enum and an ADT of another namespace (`Holder.item`, `.kind`, `.shape`);
+//   - an alias declared in another namespace (`Holder.alias`, `.items`), whose target is looked up
+//     where the alias is declared;
+//   - a template declared in another namespace (`IntPage`, `other.ThingPage`), whose body is looked
+//     up where the template is declared while its arguments are looked up where it is instantiated
+//     (https://github.com/7mind/baboon/issues/113).
+ns inner {
+  enum Kind {
+    First
+    Second
+  }
+
+  data Item {
+    name: str
+    kind: Kind
+  }
+
+  contract Tagged { tag: str }
+
+  data Stamp { at: i32 }
+
+  adt Shape {
+    data Dot { item: Item }
+    data Line {
+      from: Item
+      to: opt[Item]
+    }
+  }
+
+  data Page[T] {
+    is Tagged
+    + Stamp
+    items: lst[T]
+    first: Item
+  }
+
+  type ItemAlias = Item
+
+  type Items = lst[Item]
+}
+
+ns other {
+  data Thing { v: i32 }
+
+  root type ThingPage = inner.Page[Thing]
+}
+
+root type IntPage = inner.Page[i32]
+
+root data Holder {
+  item: inner.Item
+  kind: inner.Kind
+  shape: inner.Shape
+  alias: inner.ItemAlias
+  items: inner.Items
+}

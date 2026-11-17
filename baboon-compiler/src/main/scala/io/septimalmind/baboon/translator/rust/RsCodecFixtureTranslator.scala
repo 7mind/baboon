@@ -80,12 +80,12 @@ object RsCodecFixtureTranslator {
       val membersGenerators = members.sortBy(_.id.toString).map {
         dto =>
           val branchName = escapeRustTypeName(dto.id.name.name.capitalize)
-          q"$adtName::$branchName(${fixtureFnName(dto.id)}(rnd))"
+          q"$adtName::$branchName(${branchFixturesModule(adt.id)}::${fixtureFnName(dto.id)}(rnd))"
       }
       val membersGeneratorsJson = members.sortBy(_.id.toString).map {
         dto =>
           val branchName = escapeRustTypeName(dto.id.name.name.capitalize)
-          q"$adtName::$branchName(${fixtureFnNameJson(dto.id)}(rnd))"
+          q"$adtName::$branchName(${branchFixturesModule(adt.id)}::${fixtureFnNameJson(dto.id)}(rnd))"
       }
 
       val randomAllEntries     = membersGenerators.map(g => q"$g,")
@@ -115,7 +115,14 @@ object RsCodecFixtureTranslator {
          |    ]
          |}
          |
-         |${membersFixtures.joinNN()}""".stripMargin
+         |/// The fixtures of the branches. They stand in a module of their own, so that the glob re-export
+         |/// of this module does not put them beside the fixtures of same-named types of the namespace.
+         |pub mod ${branchFixturesModule(adt.id)} {
+         |    #[allow(unused_imports)]
+         |    use super::*;
+         |
+         |    ${membersFixtures.joinNN().shift(4).trim}
+         |}""".stripMargin
     }
 
     private def doTranslateDtoPrivate(dto: Typedef.Dto, format: FixtureFormat): TextTree[RsValue] = {
@@ -130,7 +137,7 @@ object RsCodecFixtureTranslator {
         case FixJson => fixtureFnNameJson(dto.id)
       }
 
-      q"""fn $name($rndParam: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
+      q"""pub fn $name($rndParam: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
          |    $fullType {
          |        ${generatedFields.joinN().shift(8).trim}
          |    }
@@ -143,6 +150,30 @@ object RsCodecFixtureTranslator {
 
     private def fixtureFnNameJson(id: TypeId): String = {
       s"random_${toSnakeCaseRaw(id.name.name)}_json"
+    }
+
+    /** The module, nested in the fixture module of the ADT `adtId`, that holds the fixtures of its
+      * branches. It carries the name of the ADT because the fixture modules of a namespace are glob
+      * re-exported side by side, where two modules of one name are an ambiguity.
+      */
+    private def branchFixturesModule(adtId: TypeId.User): String = {
+      s"${toSnakeCaseRaw(adtId.name.name)}_branches"
+    }
+
+    /** The fixture module of `id`: it stands beside the module of the type, as `<type module>_fixture`. */
+    private def fixtureModule(id: TypeId.User): String = {
+      val typeModule = domainTypes.toRsTypeRefKeepForeigns(id).crate.parts.toList
+      (typeModule.init :+ s"${typeModule.last}_fixture").mkString("::")
+    }
+
+    /** The fixture function `fn` of `id`, by a path that resolves from every generated fixture,
+      * whichever namespace it stands in.
+      */
+    private def fixtureFnPath(id: TypeId.User, fn: String): String = {
+      id.owner match {
+        case Owner.Adt(adtId) => s"${fixtureModule(adtId)}::${branchFixturesModule(adtId)}::$fn"
+        case _                => s"${fixtureModule(id)}::$fn"
+      }
     }
 
     private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[RsValue] = {
@@ -245,7 +276,7 @@ object RsCodecFixtureTranslator {
             case FixUeba => fixtureFnName(u)
             case FixJson => fixtureFnNameJson(u)
           }
-          q"super::$name(rnd)"
+          q"${fixtureFnPath(u, name)}(rnd)"
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }
     }
