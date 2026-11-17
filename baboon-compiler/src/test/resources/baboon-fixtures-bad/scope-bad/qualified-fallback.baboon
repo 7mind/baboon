@@ -1,0 +1,15 @@
+model my.bad.scope.qualified
+
+version "1.0.0"
+
+data Outside { v: i32 }
+
+ns inner {
+  data Inside { v: i32 }
+}
+
+// https://github.com/7mind/baboon/issues/114: `inner` has no member `Outside`. The reference must
+// not fall back to the `Outside` of an enclosing scope.
+root data Holder {
+  x: inner.Outside
+}

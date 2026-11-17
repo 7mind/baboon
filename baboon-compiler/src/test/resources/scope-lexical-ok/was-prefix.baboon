@@ -1,0 +1,15 @@
+model my.ok.scope.wasprefix
+
+version "1.0.0"
+
+ns inner {
+  data Keep { v: i32 }
+}
+
+ns deep {
+  // `deep` has no member `inner`: the qualifier of the old name is `deep.inner` as written, not the
+  // top-level `inner` that happens to be visible from here.
+  root data New : was[deep.inner.Old] {
+    x: i32
+  }
+}

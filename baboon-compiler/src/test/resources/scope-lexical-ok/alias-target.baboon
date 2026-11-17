@@ -1,0 +1,17 @@
+model my.ok.scope.aliastarget
+
+version "1.0.0"
+
+// The target of an alias is written next to the alias: `X` is visible from `a`, not from `Y`.
+ns a {
+  data X { v: i32 }
+
+  type T = X
+
+  type L = lst[X]
+}
+
+root data Y {
+  f: a.T
+  g: a.L
+}

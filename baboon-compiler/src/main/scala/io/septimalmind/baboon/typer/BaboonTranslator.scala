@@ -517,7 +517,20 @@ class BaboonTranslator[F[+_, +_]: Error2](
   private def convertTpe(
     tpe: RawTypeRef,
     meta: RawNodeMeta,
-    aliasChain: Set[String] = Set.empty,
+  ): F[NEList[BaboonIssue], TypeRef] = {
+    convertTpeFrom(tpe, meta, defn, Set.empty)
+  }
+
+  /** @param from            the scope the names in `tpe` are looked up from: the definition being
+    *                        translated, unless `tpe` is the target of an alias (then it is that alias,
+    *                        which may be declared in another namespace) or carries a scope of its own
+    * @param followedAliases the aliases followed on the way to `tpe`
+    */
+  private def convertTpeFrom(
+    tpe: RawTypeRef,
+    meta: RawNodeMeta,
+    from: Scope[ExtendedRawDefn],
+    followedAliases: Set[Scope.ScopeUID],
   ): F[NEList[BaboonIssue], TypeRef] = {
     tpe match {
       // Bare `any` (unprefixed, no brackets) always resolves to `TypeRef.Any(Global, None)` —
@@ -531,17 +544,16 @@ class BaboonTranslator[F[+_, +_]: Error2](
       case RawTypeRef.Simple(RawTypeName("any"), Nil) =>
         F.pure(TypeRef.Any(AnyVariant.Global, None))
       case RawTypeRef.Simple(name, prefix) =>
-        scopeSupport.resolveAlias(prefix, name, defn) match {
-          case Some(target) =>
-            val key = (prefix.map(_.name) :+ name.name).mkString(".")
-            if (aliasChain.contains(key)) {
+        scopeSupport.resolveAlias(prefix, name, from) match {
+          case Some(alias) =>
+            if (followedAliases.contains(alias.scope.id)) {
               F.fail(BaboonIssue.of(TyperIssue.CircularAlias(name, meta)))
             } else {
-              convertTpe(target, meta, aliasChain + key)
+              convertTpeFrom(alias.target, meta, alias.scope, followedAliases + alias.scope.id)
             }
           case None =>
             for {
-              id <- scopeSupport.resolveTypeId(prefix, name, defn, pkg, meta)
+              id <- scopeSupport.resolveTypeId(prefix, name, from, pkg, meta)
               asScalar <- id match {
                 case scalar: TypeId.Scalar =>
                   F.pure(scalar)
@@ -557,14 +569,14 @@ class BaboonTranslator[F[+_, +_]: Error2](
           _ <- F.when(prefix.nonEmpty)(
             F.fail(BaboonIssue.of(TyperIssue.ScopedRefToNamespacedGeneric(prefix, meta)))
           )
-          id <- scopeSupport.resolveTypeId(prefix, name, defn, pkg, meta)
+          id <- scopeSupport.resolveTypeId(prefix, name, from, pkg, meta)
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
               F.pure(coll)
             case _ =>
               F.fail(BaboonIssue.of(TyperIssue.CollectionExpected(id, meta)))
           }
-          args <- F.traverseAccumErrors(params.toList)(convertTpe(_, meta, aliasChain))
+          args <- F.traverseAccumErrors(params.toList)(convertTpeFrom(_, meta, from, followedAliases))
           nel <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyGenericArgs(id, meta))) {
             NEList.from(args)
           }
@@ -579,8 +591,10 @@ class BaboonTranslator[F[+_, +_]: Error2](
         }
         underlying match {
           case None      => F.pure(TypeRef.Any(variant, None))
-          case Some(raw) => convertTpe(raw, meta, aliasChain).map(u => TypeRef.Any(variant, Some(u)))
+          case Some(raw) => convertTpeFrom(raw, meta, from, followedAliases).map(u => TypeRef.Any(variant, Some(u)))
         }
+      case RawTypeRef.Scoped(ref, scope) =>
+        convertTpeFrom(ref, meta, scopeSupport.lookupScope(scope, from), followedAliases)
     }
   }
 

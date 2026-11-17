@@ -9,6 +9,8 @@ sealed trait RawTypeRef {
     case RawTypeRef.Constructor(name, params, prefix) =>
       val base = (prefix.map(_.name) :+ name.name).mkString(".")
       s"$base[${params.toList.map(_.render).mkString(", ")}]"
+    case RawTypeRef.Scoped(ref, _) =>
+      ref.render
     case RawTypeRef.AnyRef(qualifier, underlying) =>
       // `AnyRef` guarantees at least one of qualifier/underlying is defined (see require below),
       // so the rendered form always has brackets.
@@ -20,6 +22,11 @@ sealed trait RawTypeRef {
 object RawTypeRef {
   case class Simple(name: RawTypeName, prefix: List[RawTypeName]) extends RawTypeRef
   case class Constructor(name: RawTypeName, params: NEList[RawTypeRef], prefix: List[RawTypeName]) extends RawTypeRef
+
+  /** `ref`, looked up from `scope` instead of from the definition in whose body it stands (see
+    * [[RawLookupScope.Namespace]]). Never produced by the parser.
+    */
+  case class Scoped(ref: Simple, scope: RawLookupScope.Namespace) extends RawTypeRef
 
   // `any` is a global builtin — never prefixed, optionally qualified and/or underlying-typed.
   // At least one of `qualifier` / `underlying` must be defined: bare `any` is represented as

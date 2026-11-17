@@ -1,0 +1,38 @@
+model my.ok.scope.tplbody
+
+version "1.0.0"
+
+// https://github.com/7mind/baboon/issues/113: the names in a template's body mean what they mean
+// where the template is declared. `Item`, `Tagged` and `Stamp` are visible from `inner` only; the
+// template arguments (`Thing`) are written where the template is instantiated and resolve there.
+ns inner {
+  data Item { name: str }
+
+  contract Tagged { tag: str }
+
+  data Stamp { at: i32 }
+
+  data Page[T] {
+    is Tagged
+    + Stamp
+    items: lst[T]
+    first: Item
+  }
+
+  data Wrapper[U] {
+    + Page[U]
+    extra: Item
+  }
+}
+
+ns other {
+  data Thing { v: i32 }
+
+  root type ThingPage = inner.Page[Thing]
+
+  root data Holder {
+    + inner.Wrapper[Thing]
+  }
+}
+
+root type IntPage = inner.Page[i32]

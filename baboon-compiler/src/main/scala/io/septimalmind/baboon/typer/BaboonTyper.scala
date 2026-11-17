@@ -171,39 +171,11 @@ object BaboonTyper {
         go(scope).toList
       }
 
-      def findScope(needles: NEList[ScopeName], scope: Scope[ExtendedRawDefn]): Option[NestedScope[ExtendedRawDefn]] = {
-        val head = needles.head
-
-        val headScope = scope match {
-          case s: RootScope[ExtendedRawDefn] =>
-            s.nested.get(head)
-
-          case s: LeafScope[ExtendedRawDefn] =>
-            Some(s)
-              .filter(_.name == head)
-              .orElse(findScope(needles, s.defn.parentOf(s)))
-
-          case s: SubScope[ExtendedRawDefn] =>
-            Some(s)
-              .filter(_.name == head)
-              .orElse(s.nested.toMap.get(head))
-              .orElse(findScope(needles, s.defn.parentOf(s)))
-        }
-
-        NEList.from(needles.tail) match {
-          case Some(value) =>
-            headScope.flatMap(nested => findScope(value, nested))
-          case None =>
-            headScope
-        }
-      }
-
       def ownerForPrefix(
         prefix: List[RawTypeName],
         scope: NestedScope[ExtendedRawDefn],
       ): F[NEList[BaboonIssue], Owner] = {
-        val pathNames = NEList.unsafeFrom(prefix.map(p => ScopeName(p.name)))
-        findScope(pathNames, scope) match {
+        scopeSupport.resolveScope(NEList.unsafeFrom(prefix), scope) match {
           case Some(found) =>
             found.defn.defn match {
               case adt: RawAdt =>

@@ -33,11 +33,28 @@ trait ScopeSupport[F[+_, +_]] {
     meta: RawNodeMeta,
   ): F[NEList[BaboonIssue], TypeId.User]
 
+  /** The scope that `path` denotes when looked up from `scope`, if it denotes one: the first name is
+    * searched for in `scope` and the scopes around it, every further name is a member of the one before.
+    */
+  def resolveScope(
+    path: NEList[RawTypeName],
+    scope: Scope[ExtendedRawDefn],
+  ): Option[NestedScope[ExtendedRawDefn]]
+
+  /** The alias that `prefix.name` denotes when looked up from `scope`, if it denotes one. */
   def resolveAlias(
     prefix: List[RawTypeName],
     name: RawTypeName,
     scope: Scope[ExtendedRawDefn],
-  ): Option[RawTypeRef]
+  ): Option[ScopeSupport.ResolvedAlias]
+
+  /** The scope that the first name of a reference with the lookup scope `from` is looked up from,
+    * for a reference standing in the body of the definition `enclosing`.
+    */
+  def lookupScope(
+    from: RawLookupScope,
+    enclosing: Scope[ExtendedRawDefn],
+  ): Scope[ExtendedRawDefn]
 
   def ownerOf(
     scope: NestedScope[ExtendedRawDefn],
@@ -47,6 +64,11 @@ trait ScopeSupport[F[+_, +_]] {
 
 object ScopeSupport {
   case class LookupResult(suffix: List[Scope[ExtendedRawDefn]], scope: NestedScope[ExtendedRawDefn])
+
+  /** @param target the aliased type as written in the alias
+    * @param scope  the alias itself: `target` stands in its body, so that is where its names are looked up from
+    */
+  case class ResolvedAlias(target: RawTypeRef, scope: NestedScope[ExtendedRawDefn])
 
   class ScopeSupportImpl[F[+_, +_]: Error2](
     types: TypeInfo
@@ -58,7 +80,7 @@ object ScopeSupport {
       pkg: Pkg,
       meta: RawNodeMeta,
     ): F[NEList[BaboonIssue], TypeId.User] = {
-      val found = findScope(NEList(ScopeName(name.path.head.name)), scope)
+      val found = findScope(NEList(ScopeName(name.path.head.name)), lookupScope(name.scope, scope))
       found match {
         case Some(found) =>
           for {
@@ -267,38 +289,100 @@ object ScopeSupport {
 
     }
 
-    private def findScope(needles: NEList[ScopeName], scope: Scope[ExtendedRawDefn]): Option[NestedScope[ExtendedRawDefn]] = {
-      val head = needles.head
+    def resolveScope(path: NEList[RawTypeName], scope: Scope[ExtendedRawDefn]): Option[NestedScope[ExtendedRawDefn]] = {
+      findScope(path.map(n => ScopeName(n.name)), scope)
+    }
 
-      val headScope = scope match {
+    /** The scope that the path `needles` denotes when looked up from `scope`. Only the first name is
+      * searched for in the enclosing scopes; every further name must be a member of the scope before it.
+      */
+    private def findScope(needles: NEList[ScopeName], scope: Scope[ExtendedRawDefn]): Option[NestedScope[ExtendedRawDefn]] = {
+      findVisible(needles.head, scope).flatMap(memberAt(needles.tail, _))
+    }
+
+    /** The nearest scope called `name` that is visible from `scope`: `scope` itself, one of its
+      * members, or the same of an enclosing scope.
+      */
+    private def findVisible(name: ScopeName, scope: Scope[ExtendedRawDefn]): Option[NestedScope[ExtendedRawDefn]] = {
+      scope match {
         case s: RootScope[ExtendedRawDefn] =>
-          s.nested.get(head)
+          s.nested.get(name)
 
         case s: LeafScope[ExtendedRawDefn] =>
           Some(s)
-            .filter(_.name == head)
+            .filter(_.name == name)
             .orElse {
               s.defn.declaringAdtOf(s) match {
-                case Some(declaringAdt) => findFromReEmittedBranch(head, s, declaringAdt)
-                case None               => findScope(needles, s.defn.parentOf(s))
+                case Some(declaringAdt) => findFromReEmittedBranch(name, s, declaringAdt)
+                case None               => findVisible(name, s.defn.parentOf(s))
               }
             }
 
         case s: SubScope[ExtendedRawDefn] =>
           Some(s)
-            .filter(_.name == head)
+            .filter(_.name == name)
             .orElse(
               s.nested.toMap
-                .get(head)
+                .get(name)
             )
-            .orElse(findScope(needles, s.defn.parentOf(s)))
+            .orElse(findVisible(name, s.defn.parentOf(s)))
       }
+    }
 
-      NEList.from(needles.tail) match {
-        case Some(value) =>
-          headScope.flatMap(nested => findScope(value, nested))
-        case None =>
-          headScope
+    @tailrec
+    private def memberAt(path: List[ScopeName], scope: NestedScope[ExtendedRawDefn]): Option[NestedScope[ExtendedRawDefn]] = {
+      path match {
+        case Nil =>
+          Some(scope)
+        case name :: rest =>
+          scope match {
+            case s: SubScope[ExtendedRawDefn] =>
+              s.nested.toMap.get(name) match {
+                case Some(member) => memberAt(rest, member)
+                case None         => None
+              }
+            case _: LeafScope[ExtendedRawDefn] =>
+              None
+          }
+      }
+    }
+
+    def lookupScope(from: RawLookupScope, enclosing: Scope[ExtendedRawDefn]): Scope[ExtendedRawDefn] = {
+      from match {
+        case RawLookupScope.Enclosing       => enclosing
+        case RawLookupScope.Namespace(path) => namespaceAt(path.map(n => ScopeName(n.name)), rootOf(enclosing))
+      }
+    }
+
+    @tailrec
+    private def rootOf(scope: Scope[ExtendedRawDefn]): RootScope[ExtendedRawDefn] = {
+      scope match {
+        case root: RootScope[ExtendedRawDefn]     => root
+        case nested: NestedScope[ExtendedRawDefn] => rootOf(nested.defn.parentOf(nested))
+      }
+    }
+
+    /** The namespace reached from `scope` along `path`, or the deepest one on that path which has a
+      * scope. A namespace declaring nothing but templates has none (`TemplateRegistryBuilder` removes
+      * it together with them), and the names visible from it are those of the namespace around it.
+      */
+    @tailrec
+    private def namespaceAt(path: List[ScopeName], scope: Scope[ExtendedRawDefn]): Scope[ExtendedRawDefn] = {
+      path match {
+        case Nil =>
+          scope
+        case name :: rest =>
+          val members = scope match {
+            case s: RootScope[ExtendedRawDefn] => s.nested
+            case s: SubScope[ExtendedRawDefn]  => s.nested.toMap
+            case _: LeafScope[ExtendedRawDefn] => Map.empty[ScopeName, NestedScope[ExtendedRawDefn]]
+          }
+          members.get(name) match {
+            case Some(namespace: SubScope[ExtendedRawDefn]) if namespace.defn.defn.isInstanceOf[RawNamespace] =>
+              namespaceAt(rest, namespace)
+            case _ =>
+              scope
+          }
       }
     }
 
@@ -315,7 +399,7 @@ object ScopeSupport {
       branch: LeafScope[ExtendedRawDefn],
       declaringAdt: Scope[ExtendedRawDefn],
     ): Option[NestedScope[ExtendedRawDefn]] = {
-      findScope(NEList(name), declaringAdt).map {
+      findVisible(name, declaringAdt).map {
         declared =>
           val isSiblingBranch = declared.defn.parentOf(declared).id == declaringAdt.id
           val counterpart = branch.defn.parentOf(branch) match {
@@ -337,12 +421,12 @@ object ScopeSupport {
       prefix: List[RawTypeName],
       name: RawTypeName,
       scope: Scope[ExtendedRawDefn],
-    ): Option[RawTypeRef] = {
+    ): Option[ResolvedAlias] = {
       val needle = prefix.map(_.name).map(ScopeName.apply) ++: NEList(ScopeName(name.name))
       findScope(needle, scope).flatMap {
         found =>
           found.defn.defn match {
-            case alias: RawAlias => Some(alias.target)
+            case alias: RawAlias => Some(ResolvedAlias(alias.target, found))
             case _               => None
           }
       }

@@ -267,6 +267,8 @@ object TemplateInstantiator {
         name.name.startsWith(extractionSentinelPrefix) || params.toList.exists(mentionsSentinel)
       case RawTypeRef.AnyRef(_, underlying) =>
         underlying.exists(mentionsSentinel)
+      case RawTypeRef.Scoped(ref, _) =>
+        mentionsSentinel(ref)
     }
 
     /** True iff a `RawDtoMember` carries a sentinel-mentioning type and must therefore be dropped
@@ -292,8 +294,10 @@ object TemplateInstantiator {
       meta: RawNodeMeta,
     ): F[NEList[BaboonIssue], Seq[RawDtoMember]] = {
       // Substitute each template parameter with a unique sentinel ref.
-      val substMap: Map[String, RawTypeRef] =
-        typeParams.map(p => p.name -> (RawTypeRef.Simple(RawTypeName(sentinelNameFor(p.name)), Nil): RawTypeRef)).toMap
+      val substMap = Substitution(
+        typeParams.map(p => p.name -> (RawTypeRef.Simple(RawTypeName(sentinelNameFor(p.name)), Nil): RawTypeRef)).toMap,
+        namespaceOf(ownerForCurrent),
+      )
 
       // Drop the extraction-carrier members before substitution — they never contribute fields.
       val structuralMembers = members.filterNot(_.isInstanceOf[RawDtoMember.ExtractionDef])
@@ -405,10 +409,16 @@ object TemplateInstantiator {
       case RawAdtBranchOrigin.Declared =>
         ownerForCarrier
       case RawAdtBranchOrigin.ReEmitted(declaringAdt) =>
-        declaringAdt.toList.init match {
-          case Nil       => Owner.Toplevel
-          case namespace => Owner.Ns(namespace.map(n => TypeName(n.name)))
-        }
+        ownerOfNamespace(declaringAdt.toList.init.map(n => TypeName(n.name)))
+    }
+
+    private def ownerOfNamespace(path: List[TypeName]): Owner = {
+      if (path.isEmpty) Owner.Toplevel else Owner.Ns(path)
+    }
+
+    /** The lookup scope of the names written in the body of a template that `owner` declares. */
+    private def namespaceOf(owner: Owner): RawLookupScope.Namespace = {
+      RawLookupScope.Namespace(nsPathFromOwner(owner).map(n => RawTypeName(n.name)))
     }
 
     /** Convert an `Owner` to its namespace path (List[TypeName]) for further nesting. */
@@ -523,7 +533,10 @@ object TemplateInstantiator {
         // (`pathSegments` and `headName` were captured earlier for the synthetic recursion-guard matrix.)
         val prefixSegments = pathSegments.init
         val ownerForLookup: Owner = if (prefixSegments.isEmpty) {
-          ownerForCurrent
+          parent.scope match {
+            case RawLookupScope.Enclosing       => ownerForCurrent
+            case RawLookupScope.Namespace(path) => ownerOfNamespace(path.map(n => TypeName(n.name)))
+          }
         } else {
           Owner.Ns(prefixSegments.map(TypeName(_)))
         }
@@ -603,7 +616,7 @@ object TemplateInstantiator {
                 )
               } else {
                 // Substitute the body's members.
-                val substMap: Map[String, RawTypeRef] = body.typeParams.map(_.name).zip(argList).toMap
+                val substMap = Substitution(body.typeParams.map(_.name).zip(argList).toMap, namespaceOf(ownerForLookup))
                 body.rawDefn match {
                   case RawTemplateDefn.Dto(rawDto) =>
                     for {
@@ -913,12 +926,12 @@ object TemplateInstantiator {
               // B at the template owner's scope, mirroring what the mirror edge does via bId.
               val bScopedRef: ScopedRef = templateOwner match {
                 case Owner.Toplevel =>
-                  ScopedRef(NEList(c.name))
+                  ScopedRef(NEList(c.name), RawLookupScope.Enclosing)
                 case Owner.Ns(path) =>
-                  ScopedRef(NEList.unsafeFrom(path.map(tn => RawTypeName(tn.name)).toList :+ c.name))
+                  ScopedRef(NEList.unsafeFrom(path.map(tn => RawTypeName(tn.name)).toList :+ c.name), RawLookupScope.Enclosing)
                 case Owner.Adt(_) =>
                   // Templates cannot be declared inside an ADT scope (enforced in TemplateRegistryBuilder).
-                  ScopedRef(NEList(c.name))
+                  ScopedRef(NEList(c.name), RawLookupScope.Enclosing)
               }
               contractRefs += RawDtoMember.ContractRef(RawContractRef(bScopedRef), c.meta)
             case ExtractionKind.Mirror =>
@@ -982,8 +995,7 @@ object TemplateInstantiator {
               )
             )
           case None =>
-            val substMap: Map[String, RawTypeRef] =
-              body.typeParams.map(_.name).zip(args).toMap
+            val substMap = Substitution(body.typeParams.map(_.name).zip(args).toMap, namespaceOf(templateKey._2))
 
             // Per spec §6 (Q1 lock): the synthesized type's type-level doc is
             // `aliasCleaned + "\n\n" + templateCleaned` when both are present;
@@ -1082,7 +1094,7 @@ object TemplateInstantiator {
                         // `is B` contract refs (contract variant). T38's synthesis pass already
                         // produced the sibling contract; clearing `extractions` keeps the later
                         // host-gating scan happy.
-                        contracts   = raw.contracts ++ adtContractRefs,
+                        contracts   = raw.contracts.map(c => c.copy(contract = RawContractRef(declared(c.contract.tpe, substMap)))) ++ adtContractRefs,
                         extractions = Nil,
                         derived     = alias.derived,
                         meta        = mergedMeta,
@@ -1137,6 +1149,15 @@ object TemplateInstantiator {
 
     // ─── substitution helpers ─────────────────────────────────────────────────
 
+    /** What a template's body is rewritten with when the template is instantiated.
+      *
+      * @param typeArgs   the argument given for each type parameter. An argument is written where the
+      *                   template is instantiated and keeps being looked up from there.
+      * @param declaredIn the namespace that declares the template. Every other name in the body keeps
+      *                   being looked up from there, wherever the instantiation stands.
+      */
+    private case class Substitution(typeArgs: Map[String, RawTypeRef], declaredIn: RawLookupScope.Namespace)
+
     /** Substitute all `RawDtoMember` field types in a DTO/Contract member list.
       *
       * T38: `RawDtoMember.ExtractionDef` carriers are DROPPED here. On a normal template
@@ -1147,7 +1168,7 @@ object TemplateInstantiator {
       */
     private def substituteMembers(
       members: Seq[RawDtoMember],
-      substMap: Map[String, RawTypeRef],
+      substMap: Substitution,
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
@@ -1159,7 +1180,7 @@ object TemplateInstantiator {
 
     private def substituteDtoMember(
       member: RawDtoMember,
-      substMap: Map[String, RawTypeRef],
+      substMap: Substitution,
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
@@ -1184,23 +1205,43 @@ object TemplateInstantiator {
         // template instantiations); rejecting them here keeps the invariant. So we substitute
         // each arg through the same `substituteTypeRef` that would catch a forbidden inner
         // template instantiation.
-        case p @ RawDtoMember.ParentDef(_, _, Some(parentArgs)) =>
+        case p @ RawDtoMember.ParentDef(parent, _, Some(parentArgs)) =>
           F.traverseAccumErrors(parentArgs.toList)(a => substituteTypeRef(a, substMap, templateName, registry, meta, pkg)).map {
-            newArgs => p.copy(args = Some(NEList.unsafeFrom(newArgs)))
+            newArgs => p.copy(parent = declared(parent, substMap), args = Some(NEList.unsafeFrom(newArgs)))
           }
-        case u @ RawDtoMember.UnparentDef(_, _, Some(parentArgs)) =>
+        case u @ RawDtoMember.UnparentDef(parent, _, Some(parentArgs)) =>
           F.traverseAccumErrors(parentArgs.toList)(a => substituteTypeRef(a, substMap, templateName, registry, meta, pkg)).map {
-            newArgs => u.copy(args = Some(NEList.unsafeFrom(newArgs)))
+            newArgs => u.copy(parent = declared(parent, substMap), args = Some(NEList.unsafeFrom(newArgs)))
           }
-        case i @ RawDtoMember.IntersectionDef(_, _, Some(parentArgs)) =>
+        case i @ RawDtoMember.IntersectionDef(parent, _, Some(parentArgs)) =>
           F.traverseAccumErrors(parentArgs.toList)(a => substituteTypeRef(a, substMap, templateName, registry, meta, pkg)).map {
-            newArgs => i.copy(args = Some(NEList.unsafeFrom(newArgs)))
+            newArgs => i.copy(parent = declared(parent, substMap), args = Some(NEList.unsafeFrom(newArgs)))
           }
+        // No type arguments to substitute, but the type (or, with arguments above, the template) that
+        // the arm names is still a name written in the template's body.
+        case p @ RawDtoMember.ParentDef(parent, _, None) =>
+          F.pure(p.copy(parent = declared(parent, substMap)))
+        case u @ RawDtoMember.UnparentDef(parent, _, None) =>
+          F.pure(u.copy(parent = declared(parent, substMap)))
+        case i @ RawDtoMember.IntersectionDef(parent, _, None) =>
+          F.pure(i.copy(parent = declared(parent, substMap)))
+        case c @ RawDtoMember.ContractRef(contract, _) =>
+          F.pure(c.copy(contract = RawContractRef(declared(contract.tpe, substMap))))
         case other =>
-          // ParentDef/UnparentDef/IntersectionDef with args = None, ContractRef,
-          // IntersectionFields (typer-internal — never appears at substitution time in practice
-          // because it is produced AFTER substitution by `lowerStructuralArmsInMembers`).
+          // IntersectionFields / TemplateArmFieldDef are typer-internal — they never appear at
+          // substitution time in practice because they are produced AFTER substitution by
+          // `lowerStructuralArmsInMembers`; ExtractionDef carriers are dropped by `substituteMembers`.
           F.pure(other)
+      }
+    }
+
+    /** `ref`, a name written in the body of the template being instantiated, bound to the namespace
+      * that declares the template. A name that already carries a scope keeps it.
+      */
+    private def declared(ref: ScopedRef, substMap: Substitution): ScopedRef = {
+      ref.scope match {
+        case RawLookupScope.Enclosing    => ref.copy(scope = substMap.declaredIn)
+        case _: RawLookupScope.Namespace => ref
       }
     }
 
@@ -1210,7 +1251,7 @@ object TemplateInstantiator {
       */
     private def substituteAdtMembers(
       members: Seq[RawAdtMember],
-      substMap: Map[String, RawTypeRef],
+      substMap: Substitution,
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
@@ -1221,7 +1262,7 @@ object TemplateInstantiator {
 
     private def substituteAdtMember(
       member: RawAdtMember,
-      substMap: Map[String, RawTypeRef],
+      substMap: Substitution,
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
@@ -1245,7 +1286,7 @@ object TemplateInstantiator {
     /** Substitute all `RawFunc` argument/return/error type refs in a service. */
     private def substituteFuncs(
       funcs: Seq[RawFunc],
-      substMap: Map[String, RawTypeRef],
+      substMap: Substitution,
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
@@ -1256,7 +1297,7 @@ object TemplateInstantiator {
 
     private def substituteFunc(
       func: RawFunc,
-      substMap: Map[String, RawTypeRef],
+      substMap: Substitution,
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
@@ -1269,7 +1310,7 @@ object TemplateInstantiator {
 
     private def substituteArg(
       arg: RawFuncArg,
-      substMap: Map[String, RawTypeRef],
+      substMap: Substitution,
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
@@ -1310,7 +1351,7 @@ object TemplateInstantiator {
       */
     private def substituteTypeRef(
       ref: RawTypeRef,
-      substMap: Map[String, RawTypeRef],
+      substMap: Substitution,
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
@@ -1318,13 +1359,16 @@ object TemplateInstantiator {
     ): F[NEList[BaboonIssue], RawTypeRef] = {
       ref match {
         case s @ RawTypeRef.Simple(name, Nil) =>
-          substMap.get(name.name) match {
+          substMap.typeArgs.get(name.name) match {
             case Some(replacement) => F.pure(replacement)
-            case None              => F.pure(s)
+            case None              => F.pure(RawTypeRef.Scoped(s, substMap.declaredIn))
           }
 
         case s: RawTypeRef.Simple =>
           // Simple ref with a prefix — cannot be a type-param placeholder (those have no prefix).
+          F.pure(RawTypeRef.Scoped(s, substMap.declaredIn))
+
+        case s: RawTypeRef.Scoped =>
           F.pure(s)
 
         case ctor @ RawTypeRef.Constructor(name, params, prefix) =>

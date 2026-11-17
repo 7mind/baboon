@@ -64,6 +64,18 @@ root data Order {
 
 Only `OrderId`, `OrderLine`, and `Order` survive codegen; helper types that are never referenced by a root vanish.
 
+### How names are looked up
+
+A type name is looked up from the place it is written: the definition it stands in, then the namespace around that definition, then the namespace around that one, up to the top level. The first match wins, so a namespace's own `Item` hides a top-level `Item` for everything written inside that namespace.
+
+Only the first name of a qualified reference is searched for this way. In `orders.OrderLine`, `orders` is found by walking outwards, but `OrderLine` must be a member of `orders`; if it is not, the reference is an error rather than a fallback to some `OrderLine` of an enclosing scope.
+
+A name keeps the meaning it has where it is written even when the compiler types its text somewhere else:
+
+- the body of a [template](#templates-generics) is looked up in the namespace that declares the template, while the template's arguments are looked up where the template is instantiated;
+- the target of a [type alias](#type-aliases) is looked up where the alias is declared, wherever the alias is used;
+- an [ADT branch re-emitted by `+ X`](#adt-branch-inheritance-and-subtraction) is looked up where the branch is declared.
+
 ## Data records
 
 Plain records are declared with `data` blocks. Derived typeclasses (e.g., codecs) attach via `: derived[...]`.
@@ -568,6 +580,8 @@ ns billing {
 
 Aliases cannot be declared inside ADTs or other type definitions, and they cannot be marked `root` (since they produce no output).
 
+The target of an alias is looked up where the alias is declared, not where the alias is used: `billing.Amount` means the same type from any namespace, and a `type Line = OrderLine` declared in `ns orders` refers to `orders.OrderLine` even when it is used from a namespace with an `OrderLine` of its own.
+
 ## Templates (generics)
 
 User-defined templates parameterise a `data`, `adt`, `contract`, or `service` declaration over one or more type parameters. They are instantiated **only** through type aliases, and monomorphised at compile time so every backend emits a concrete type — there is no per-language reified generic in the output. The full specification is in [docs/spec/generics.md](spec/generics.md); the summary below covers the surface syntax.
@@ -639,6 +653,26 @@ ns bar {
   root type Z = foo.X[str]               // cross-namespace alias
 }
 ```
+
+The names in a template's body are looked up in the namespace that declares the template; only the type arguments are looked up where the template is instantiated:
+
+```baboon
+ns foo {
+  data Meta { rev: u32 }
+  data Page[T] {
+    items: lst[T]
+    meta: Meta                           // always foo.Meta
+  }
+}
+
+ns bar {
+  data Meta { other: str }               // unrelated to foo.Meta
+  data Row { v: i32 }
+  root type Rows = foo.Page[Row]         // items: lst[bar.Row], meta: foo.Meta
+}
+```
+
+The same holds for a template used as a structural arm (`+ foo.Page[Row]`), and for a template whose body instantiates another template of its own namespace by an unprefixed name.
 
 Cross-**package** instantiation (template declared in a different `.baboon` file) is out of scope.
 
@@ -1109,7 +1143,7 @@ enum Color {
 ```
 
 - **Field rename**: `newName: Type was oldName` inside `data`/`id`/`contract` bodies.
-- **Type rename**: a `was[OldType]` annotation in the type's `:` annotation list (combinable with `derived[...]`). The old name may include a namespace path.
+- **Type rename**: a `was[OldType]` annotation in the type's `:` annotation list (combinable with `derived[...]`). The old name may include a namespace path. The first namespace of that path is looked up outwards from the renamed type and every further one must be its member; a path that names no namespace of the current version is taken as written, from the top level.
 - **Enum member rename**: `NewMember : was[OldMember]`.
 
 The comparator validates each marker against the previous version (a `was` pointing at a name that never existed is an evolution error) and derives the corresponding conversions instead of emitting manual stubs.

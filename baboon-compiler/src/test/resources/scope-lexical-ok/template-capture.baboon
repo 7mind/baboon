@@ -1,0 +1,22 @@
+model my.ok.scope.tplcapture
+
+version "1.0.0"
+
+// A different type which happens to share its name with `inner.Item`. It is visible where the
+// template is instantiated, but it is not the `Item` the template's body was written against.
+data Item { outer: i32 }
+
+ns inner {
+  data Item { name: str }
+
+  data Page[T] {
+    items: lst[T]
+    first: Item
+  }
+}
+
+root type IntPage = inner.Page[i32]
+
+root data Holder {
+  + inner.Page[i32]
+}

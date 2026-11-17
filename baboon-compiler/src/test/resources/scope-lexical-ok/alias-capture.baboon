@@ -1,0 +1,16 @@
+model my.ok.scope.aliascapture
+
+version "1.0.0"
+
+// A different type which happens to share its name with `a.X`.
+data X { outer: str }
+
+ns a {
+  data X { v: i32 }
+
+  type T = X
+}
+
+root data Y {
+  f: a.T
+}
