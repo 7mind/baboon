@@ -409,7 +409,25 @@ object CSDefnTranslator {
           val identifierCodecObject: TextTree[CSValue] =
             if (dto.isIdentifier) renderIdentifierCodecClass(dto, name) else q""
 
-          val members = (eq ++ meta) ++ (if (dto.isIdentifier) Seq(identifierToStringOverride) else Seq.empty)
+          // The compiler does not synthesize the property of a positional parameter when the record
+          // already has a member of that name, and an ADT branch inherits its sibling branches as
+          // nested types of the ADT record: `record Node(Tree.Leaf Leaf) : Tree` is CS8866. Such a
+          // property is declared by hand; `new` states that it hides the inherited type.
+          val siblingTypeNames: Set[String] = dto.id.owner match {
+            case Owner.Adt(adtId) =>
+              domain.defs.meta.nodes(adtId) match {
+                case DomainMember.User(_, adt: Typedef.Adt, _, _) => adt.members.toList.map(m => domainTypes.asCsType(m).name).toSet
+                case other                                        => throw new IllegalStateException(s"BUG: the owner of the ADT branch ${dto.id} is not an ADT: $other")
+              }
+            case _ =>
+              Set.empty
+          }
+          val hidingProperties = outs.collect {
+            case (mname, tpe, _) if siblingTypeNames.contains(mname) =>
+              q"public new $tpe $mname { get; init; } = $mname;"
+          }
+
+          val members = hidingProperties ++ (eq ++ meta) ++ (if (dto.isIdentifier) Seq(identifierToStringOverride) else Seq.empty)
           val mainTree =
             q"""[$serializable]
                |public sealed record ${name.asName}(
