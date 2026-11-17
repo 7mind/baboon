@@ -169,6 +169,7 @@ adt PublicErrors {
 - `- X` drops every branch of `X`; `- X.Branch` drops a single named branch.
 - Chained inclusions auto-expand via toposort, so `+ A` where `A` itself does `+ B` pulls both A's and B's branches transparently.
 - Constructor-name collisions are a typer error.
+- `X` may be an instantiated [template](#templates-generics) (`root type IntWrap = Wrap[i32]`, then `+ IntWrap`), and a templated ADT may use `+`/`-`/`^` arms in its own body.
 - A re-emitted branch keeps the meaning of the type names in its body: they are resolved where the branch is declared, not where it is included. The receiving ADT may live in another namespace, where those names are not visible or denote different types. The one exception is a reference to a sibling branch of the declaring ADT: it binds to the receiving ADT's branch of the same name when there is one (re-emitted alongside, or a local override), and to the declaring ADT's branch otherwise.
 
 Branch reuse is a syntactic expansion at the typer-early stage; downstream codegen sees the fully-expanded constructor list. The expanded ADTs participate in evolution like any other ADT — adding/removing branches in a later version follows the standard rules in [Evolution workflow](#evolution-workflow).

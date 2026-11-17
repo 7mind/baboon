@@ -1,0 +1,21 @@
+model my.ok.m20.templateadt
+
+version "1.0.0"
+
+adt Base {
+  data Common { v: i32 }
+}
+
+// A templated ADT may include the branches of another ADT...
+adt Wrap[T] {
+  + Base
+  data Own { t: T }
+}
+
+root type IntWrap = Wrap[i32]
+
+// ...and an instantiated template is an ADT like any other, so its branches can be included too.
+root adt Outer {
+  + IntWrap
+  data Extra { e: str }
+}

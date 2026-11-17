@@ -400,6 +400,22 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         }
     }
 
+    "expand `+ X` in a templated ADT, and `+ X` of an instantiated template" in {
+      (loader: BaboonLoader[F]) =>
+        val paths = resolveBaboonFiles("m20-lexical-ok/template-adt-include.baboon")
+        for {
+          outcome <- runPipeline(loader, paths)
+        } yield {
+          val pkg    = "my.ok.m20.templateadt"
+          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain = domainFor(family, pkg)
+          assert(adtFromDomain(domain, "IntWrap", pkg).members.toList.map(_.name.name).toSet == Set("Common", "Own"))
+          assert(branchFieldTypes(domain, pkg, "IntWrap", "Own") == Map("t" -> "i32"))
+          assert(adtFromDomain(domain, "Outer", pkg).members.toList.map(_.name.name).toSet == Set("Common", "Own", "Extra"))
+          assert(branchFieldTypes(domain, pkg, "Outer", "Own") == Map("t" -> "i32"))
+        }
+    }
+
     // ---------- negative tests ----------
 
     "reject cycle `A + B; B + A` with CircularInheritance" in {

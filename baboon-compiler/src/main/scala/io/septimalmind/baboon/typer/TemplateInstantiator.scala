@@ -379,11 +379,11 @@ object TemplateInstantiator {
           // Walk each branch's body.
           F.traverseAccumErrors(adt.members) {
             case m: RawAdtMemberDto =>
-              lowerStructuralArmsInMembers(pkg, m.dto.members, registry, ownerOfBranchBody(m.origin, ownerForCurrent), m.dto.name.name, depth = 0, cycleSet = Set.empty).map {
+              lowerStructuralArmsInMembers(pkg, m.dto.members, registry, ownerForCurrent, m.dto.name.name, depth = 0, cycleSet = Set.empty).map {
                 newMembers => m.copy(dto = m.dto.copy(members = newMembers))
               }
             case m: RawAdtMemberContract =>
-              lowerStructuralArmsInMembers(pkg, m.contract.members, registry, ownerOfBranchBody(m.origin, ownerForCurrent), m.contract.name.name, depth = 0, cycleSet = Set.empty).map {
+              lowerStructuralArmsInMembers(pkg, m.contract.members, registry, ownerForCurrent, m.contract.name.name, depth = 0, cycleSet = Set.empty).map {
                 newMembers => m.copy(contract = m.contract.copy(members = newMembers))
               }
             case other =>
@@ -399,17 +399,6 @@ object TemplateInstantiator {
         case other =>
           F.pure(other)
       }
-    }
-
-    /** The owner against which the unprefixed template references in an ADT branch's body are looked
-      * up: the namespace of the ADT that declares the branch, which for a branch re-emitted by `+ X`
-      * is not the namespace of the ADT carrying it (`ownerForCarrier`).
-      */
-    private def ownerOfBranchBody(origin: RawAdtBranchOrigin, ownerForCarrier: Owner): Owner = origin match {
-      case RawAdtBranchOrigin.Declared =>
-        ownerForCarrier
-      case RawAdtBranchOrigin.ReEmitted(declaringAdt) =>
-        ownerOfNamespace(declaringAdt.toList.init.map(n => TypeName(n.name)))
     }
 
     private def ownerOfNamespace(path: List[TypeName]): Owner = {

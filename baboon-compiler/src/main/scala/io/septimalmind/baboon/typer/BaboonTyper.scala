@@ -455,21 +455,15 @@ object BaboonTyper {
         // precise diagnostic. Catch the error here, before order() runs.
         _ <- templateInstantiator.validateNoBareTemplateRefs(pkg, nonTemplateMembers, templateRegistry)
 
-        builder = new ScopeBuilder[F]()
-        // Build an initial scope tree over the as-parsed (PR-62) raw AST so we can resolve
-        // `+ X` / `- X` / `^ X` refs in ADT bodies. The PR-63 typer-early pass uses this
-        // initial tree to rewrite each `RawAdt`'s member list, replacing inheritance arms with
-        // literal `RawAdtMemberDto` entries pulled from the referenced ADTs.
-        initialScopes   <- builder.buildScopes(pkg, nonTemplateMembers, meta)
-        initialFlattened = flattenScopes(initialScopes)
-        initialOrdered  <- order(pkg, initialFlattened, meta)
-        expandedMembers <- adtInheritanceExpander.expand(pkg, nonTemplateMembers, initialOrdered, meta)
-
         // PR-29.5: instantiate template aliases. Every `RawTLDef.Alias` whose RHS is a
         // `RawTypeRef.Constructor` over a registered template is replaced by the corresponding
         // concrete `RawTLDef.{DTO|ADT|Contract|Service}` keyed by the alias's name (locked
         // decision #4). Aliases NOT pointing at a template pass through unchanged.
-        instantiateResult <- templateInstantiator.instantiate(pkg, expandedMembers, templateRegistry)
+        //
+        // This runs BEFORE the ADT inheritance expansion below: an instantiated ADT template is an
+        // ADT like any other, so its own `+ X` arms have to be expanded and it can itself be the `X`
+        // of another ADT's arm. Neither is possible while it is still an alias.
+        instantiateResult <- templateInstantiator.instantiate(pkg, nonTemplateMembers, templateRegistry)
         (instantiatedMembers, mirrorExtractionEdges) = instantiateResult
 
         // T38 (auto-extracted-contracts): synthesize one sibling `RawContract` per `has` clause on a
@@ -482,12 +476,22 @@ object BaboonTyper {
         synthResult <- synthesizeExtractions(pkg, instantiatedMembers, templateRegistry)
         (membersWithExtractions, synthesizedExtractions) = synthResult
 
+        builder = new ScopeBuilder[F]()
+        // Build an initial scope tree so we can resolve `+ X` / `- X` / `^ X` refs in ADT bodies.
+        // The PR-63 typer-early pass uses this initial tree to rewrite each `RawAdt`'s member list,
+        // replacing inheritance arms with literal `RawAdtMemberDto` entries pulled from the
+        // referenced ADTs.
+        initialScopes   <- builder.buildScopes(pkg, membersWithExtractions, meta)
+        initialFlattened = flattenScopes(initialScopes)
+        initialOrdered  <- order(pkg, initialFlattened, meta)
+        expandedMembers <- adtInheritanceExpander.expand(pkg, membersWithExtractions, initialOrdered, meta)
+
         // Re-build the scope tree over the rewritten defns so that re-emitted branches are
         // registered as nested scopes under the receiving ADT (otherwise
         // `convertAdt` → `scopeSupport.resolveUserTypeId` would fail to find the synthesized
         // branch DTOs). After this point the `RawAdtMember.{Include, Exclude, Intersect}`
         // arms have been desugared and the standard pipeline runs unchanged.
-        scopes   <- builder.buildScopes(pkg, membersWithExtractions, meta)
+        scopes   <- builder.buildScopes(pkg, expandedMembers, meta)
         flattened = flattenScopes(scopes)
         renames  <- computeRenames(pkg, flattened)
         ordered  <- order(pkg, flattened, meta)
