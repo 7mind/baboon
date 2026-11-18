@@ -256,7 +256,7 @@ class CSJsonCodecGenerator(
     val encBody = q"""return $fullEnc;"""
 
     val fullDec = d.id.owner match {
-      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs => q"wire.Value<JObject>()!.Properties().First().Value.Value<JObject>()"
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs => q"""wire.Value<JObject>()?.Property("${d.id.name.name}")?.Value.Value<JObject>()"""
       case _                                                      => q"wire.Value<JObject>()"
     }
 
