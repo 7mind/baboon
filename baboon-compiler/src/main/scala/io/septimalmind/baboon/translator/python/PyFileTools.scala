@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.python
 
 import io.septimalmind.baboon.CompilerTarget.PyTarget
-import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain}
+import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain, Pkg}
 
 trait PyFileTools {
   def basename(dom: Domain, evolution: BaboonEvolution): String
@@ -11,6 +11,10 @@ trait PyFileTools {
 }
 
 object PyFileTools {
+  // A domain's directories are lower-cased, and every module path has to spell them the same
+  // way: the file system may be case-sensitive.
+  def domainPath(pkg: Pkg): List[String] = pkg.path.toList.map(_.toLowerCase)
+
   class ScFileToolsImpl(pyTarget: PyTarget) extends PyFileTools {
     override val definitionsBasePkg: List[String] = pyTarget.output.packageBases.definitions
     override val fixturesBasePkg: List[String]    = pyTarget.output.packageBases.fixtures
@@ -24,7 +28,7 @@ object PyFileTools {
     }
 
     private def basename(dom: Domain, omitVersion: Boolean): String = {
-      val base     = dom.id.path.map(_.toLowerCase)
+      val base     = PyFileTools.domainPath(dom.id)
       val version  = dom.version.format(prefix = "v", delimiter = "_")
       val segments = if (omitVersion) base else base ++ Seq(version)
       segments.mkString("/")

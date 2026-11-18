@@ -67,9 +67,9 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     } else {
       val domainIdStr   = lineage.pkg.path.mkString(".")
       val facadeName    = "Domain" + lineage.pkg.path.map(s => s.capitalize).mkString + "Facade"
-      val moduleIdParts = lineage.pkg.path.toList.map(_.toLowerCase) :+ "domain_facade"
+      val moduleIdParts = PyFileTools.domainPath(lineage.pkg) :+ "domain_facade"
       val facadeModule  = PyValue.PyModuleId(NEList.unsafeFrom(moduleIdParts))
-      val basename      = lineage.pkg.path.map(_.toLowerCase).mkString("/")
+      val basename      = PyFileTools.domainPath(lineage.pkg).mkString("/")
 
       val sortedVersions = lineage.versions.iterator.toList.sortBy(_._1)
 
@@ -454,7 +454,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     val metaOutput = PyDefnTranslator.Output(
       s"$basename/baboon_metadata.py",
       metaTree,
-      PyModuleId(NEList.unsafeFrom(domain.id.path.toList :+ "baboon_metadata")),
+      PyModuleId(NEList.unsafeFrom(PyFileTools.domainPath(domain.id) :+ "baboon_metadata")),
       CompilerProduct.Definition,
     )
 

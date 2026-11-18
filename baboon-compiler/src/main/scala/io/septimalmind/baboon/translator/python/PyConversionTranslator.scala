@@ -421,7 +421,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
     val convModuleId = PyModuleId(
       NEList.unsafeFrom(
         pyFileTools.definitionsBasePkg ++
-        domain.id.path ++
+        PyFileTools.domainPath(domain.id) ++
         versionPathPart :+ moduleName
       )
     )

@@ -120,7 +120,7 @@ final class PyTypeTranslator {
     evolution: BaboonEvolution,
     pkgBase: List[String],
   ): PyModuleId = {
-    val pathToModule    = tid.pkg.path.toList
+    val pathToModule    = PyFileTools.domainPath(tid.pkg)
     val versionPathPart = if (version != evolution.latest) List(version.format(prefix = "v", delimiter = "_")) else Nil
     val ownerPath       = renderOwner(tid.owner)
     val name            = typeModuleName(tid).toList
@@ -129,7 +129,7 @@ final class PyTypeTranslator {
   }
 
   def toPyModule(pkg: Pkg): PyModuleId = {
-    PyModuleId(NEList.unsafeFrom(pkg.path.toList))
+    PyModuleId(NEList.unsafeFrom(PyFileTools.domainPath(pkg)))
   }
 
   private def derefForeign(

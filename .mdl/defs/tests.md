@@ -245,7 +245,11 @@ pushd "$TEST_DIR/py-stub"
 python3 -m venv .venv
 if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m pip install -r requirements.txt
-python3 -m unittest discover -s BaboonTests/GeneratedTests/testpkg/pkg0
+# The generated test directories are namespace packages, which `discover` does not descend
+# into: run it once per directory that holds tests, so that every domain is covered.
+for tests_dir in $(find BaboonTests/GeneratedTests -name 'test_*.py' -exec dirname {} \; | sort -u); do
+  python3 -m unittest discover -s "$tests_dir"
+done
 python3 -m unittest discover -s BaboonTests/RuntimeTests
 "$BABOON_BIN" --model-dir ReviewModels --lockfile GeneratedReview.lock \
   :python --output GeneratedReview/BaboonDefinitions/Generated \
@@ -595,7 +599,11 @@ pushd "$TEST_DIR/py-stub"
 python3 -m venv .venv
 if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m pip install -r requirements.txt
-python3 -m unittest discover -s BaboonTests/GeneratedTests/testpkg/pkg0
+# The generated test directories are namespace packages, which `discover` does not descend
+# into: run it once per directory that holds tests, so that every domain is covered.
+for tests_dir in $(find BaboonTests/GeneratedTests -name 'test_*.py' -exec dirname {} \; | sort -u); do
+  python3 -m unittest discover -s "$tests_dir"
+done
 python3 -m unittest discover -s BaboonTests/RuntimeTests
 "$BABOON_BIN" --model-dir ReviewModels --lockfile GeneratedReview.lock \
   :python --output GeneratedReview/BaboonDefinitions/Generated \

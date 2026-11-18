@@ -98,7 +98,7 @@ object PyServiceWiringTranslator {
     }
 
     private lazy val serviceRtModule: PyModuleId = {
-      val pathToModule = domain.id.path.toList
+      val pathToModule = PyFileTools.domainPath(domain.id)
       val fullPath     = fileTools.definitionsBasePkg ++ pathToModule ++ List("BaboonServiceRt")
       PyModuleId(NEList.unsafeFrom(fullPath))
     }

@@ -105,7 +105,7 @@ object PyDefnTranslator {
         tree =>
           val fbase = fileTools.basename(domain, evolution)
           val serviceRtModule = {
-            val pathToModule = domain.id.path.toList
+            val pathToModule = PyFileTools.domainPath(domain.id)
             val fullPath     = fileTools.definitionsBasePkg ++ pathToModule ++ List("BaboonServiceRt")
             PyModuleId(NEList.unsafeFrom(fullPath))
           }
@@ -126,7 +126,7 @@ object PyDefnTranslator {
             Output(
               getOutputPath(defn, suffix = Some("_Fixture")),
               fixture,
-              domainTypes.toPyModule(defn.id, fileTools.fixturesBasePkg),
+              codecsFixture.fixtureType(defn.id).moduleId,
               CompilerProduct.Fixture,
             )
         )
