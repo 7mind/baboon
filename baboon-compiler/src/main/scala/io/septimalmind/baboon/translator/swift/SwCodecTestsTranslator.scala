@@ -248,7 +248,7 @@ object SwCodecTestsTranslator {
          |let outFile = URL(fileURLWithPath: outPath)
          |let encoded = $codecName.instance.encode($baboonCodecContext.defaultCtx, $fixtureVar)
          |let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
-         |try jsonData.write(to: outFile)""".stripMargin
+         |try jsonData.write(to: outFile, options: .atomic)""".stripMargin
     }
 
     private def crossLanguageUebaRead(definition: DomainMember.User, srcRef: SwType): TextTree[SwValue] = {
@@ -294,7 +294,7 @@ object SwCodecTestsTranslator {
          |let outFile = URL(fileURLWithPath: outPath)
          |let writer = $baboonBinTools.createWriter()
          |$codecName.instance.encode($baboonCodecContext.compact, writer, $fixtureVar)
-         |try writer.toData().write(to: outFile)""".stripMargin
+         |try writer.toData().write(to: outFile, options: .atomic)""".stripMargin
     }
   }
 }

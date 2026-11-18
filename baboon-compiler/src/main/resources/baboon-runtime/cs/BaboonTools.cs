@@ -203,7 +203,18 @@ namespace Baboon.Runtime.Shared
                 Directory.CreateDirectory(directoryPath);
             }
 
-            File.WriteAllBytes(filePath, data);
+            // Peer-language test lanes read these files while this one is still running, so the
+            // content is renamed into place: a reader sees a whole file or none.
+            var tempPath = filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.WriteAllBytes(tempPath, data);
+            if (File.Exists(filePath))
+            {
+                File.Replace(tempPath, filePath, null);
+            }
+            else
+            {
+                File.Move(tempPath, filePath);
+            }
         }
 
         // Resolve the cross-language fixture root the same way the readers
