@@ -247,7 +247,12 @@ if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else sou
 python3 -m pip install -r requirements.txt
 # The generated test directories are namespace packages, which `discover` does not descend
 # into: run it once per directory that holds tests, so that every domain is covered.
-for tests_dir in $(find BaboonTests/GeneratedTests -name 'test_*.py' -exec dirname {} \; | sort -u); do
+PY_TEST_DIRS="$(find BaboonTests/GeneratedTests -name 'test_*.py' -exec dirname {} \; | sort -u)"
+if [ -z "$PY_TEST_DIRS" ]; then
+  echo "No generated Python tests under BaboonTests/GeneratedTests" >&2
+  exit 1
+fi
+for tests_dir in $PY_TEST_DIRS; do
   python3 -m unittest discover -s "$tests_dir"
 done
 python3 -m unittest discover -s BaboonTests/RuntimeTests
@@ -601,7 +606,12 @@ if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else sou
 python3 -m pip install -r requirements.txt
 # The generated test directories are namespace packages, which `discover` does not descend
 # into: run it once per directory that holds tests, so that every domain is covered.
-for tests_dir in $(find BaboonTests/GeneratedTests -name 'test_*.py' -exec dirname {} \; | sort -u); do
+PY_TEST_DIRS="$(find BaboonTests/GeneratedTests -name 'test_*.py' -exec dirname {} \; | sort -u)"
+if [ -z "$PY_TEST_DIRS" ]; then
+  echo "No generated Python tests under BaboonTests/GeneratedTests" >&2
+  exit 1
+fi
+for tests_dir in $PY_TEST_DIRS; do
   python3 -m unittest discover -s "$tests_dir"
 done
 python3 -m unittest discover -s BaboonTests/RuntimeTests
