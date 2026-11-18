@@ -123,6 +123,61 @@ let package = Package(
             dependencies: ["BaboonRuntime"],
             path: "Sources/MyOkIdcontracts"
         ),
+        .target(
+            name: "M30ScDocs",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/M30ScDocs"
+        ),
+        .target(
+            name: "MixedCasePkg",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MixedCasePkg"
+        ),
+        .target(
+            name: "MyLspM29",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyLspM29"
+        ),
+        .target(
+            name: "MyLspM33",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyLspM33"
+        ),
+        .target(
+            name: "MyOkM28U64key",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkM28U64key"
+        ),
+        .target(
+            name: "MyOkM29",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkM29"
+        ),
+        .target(
+            name: "MyOkM30",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkM30"
+        ),
+        .target(
+            name: "MyOkM31",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkM31"
+        ),
+        .target(
+            name: "MyOkM33",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkM33"
+        ),
+        .target(
+            name: "RecursiveContractOk",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/RecursiveContractOk"
+        ),
+        .target(
+            name: "ReservedWords",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/ReservedWords"
+        ),
 
         // ----- M19 (identifier-and-contract evolution) fixtures ---------------------------------
         .target(
@@ -201,14 +256,34 @@ let package = Package(
             path: "Sources/MyOkM20Lexical"
         ),
         .target(
+            name: "MyOkM20Multi_intersect",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkM20Multi_intersect"
+        ),
+        .target(
             name: "MyOkM20Nsqual",
             dependencies: ["BaboonRuntime"],
             path: "Sources/MyOkM20Nsqual"
         ),
         .target(
+            name: "MyOkM20Redefine",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkM20Redefine"
+        ),
+        .target(
             name: "MyOkM20Simple",
             dependencies: ["BaboonRuntime"],
             path: "Sources/MyOkM20Simple"
+        ),
+        .target(
+            name: "MyOkM20Was_propagation_v1_0_0",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/MyOkM20Was_propagation_v1_0_0"
+        ),
+        .target(
+            name: "MyOkM20Was_propagation",
+            dependencies: ["BaboonRuntime", "MyOkM20Was_propagation_v1_0_0"],
+            path: "Sources/MyOkM20Was_propagation"
         ),
 
         // ----- scope (references crossing a namespace or an ADT boundary) ---------------------------
@@ -275,6 +350,56 @@ let package = Package(
             path: "Tests/BaboonTests/MyOkIdcontracts"
         ),
         .testTarget(
+            name: "M30ScDocsTests",
+            dependencies: ["BaboonRuntime", "M30ScDocs"],
+            path: "Tests/BaboonTests/M30ScDocs"
+        ),
+        .testTarget(
+            name: "MixedCasePkgTests",
+            dependencies: ["BaboonRuntime", "MixedCasePkg"],
+            path: "Tests/BaboonTests/MixedCasePkg"
+        ),
+        .testTarget(
+            name: "MyLspM29Tests",
+            dependencies: ["BaboonRuntime", "MyLspM29"],
+            path: "Tests/BaboonTests/MyLspM29"
+        ),
+        .testTarget(
+            name: "MyLspM33Tests",
+            dependencies: ["BaboonRuntime", "MyLspM33"],
+            path: "Tests/BaboonTests/MyLspM33"
+        ),
+        .testTarget(
+            name: "MyOkM28U64keyTests",
+            dependencies: ["BaboonRuntime", "MyOkM28U64key"],
+            path: "Tests/BaboonTests/MyOkM28U64key"
+        ),
+        .testTarget(
+            name: "MyOkM29Tests",
+            dependencies: ["BaboonRuntime", "MyOkM29"],
+            path: "Tests/BaboonTests/MyOkM29"
+        ),
+        .testTarget(
+            name: "MyOkM30Tests",
+            dependencies: ["BaboonRuntime", "MyOkM30"],
+            path: "Tests/BaboonTests/MyOkM30"
+        ),
+        .testTarget(
+            name: "MyOkM31Tests",
+            dependencies: ["BaboonRuntime", "MyOkM31"],
+            path: "Tests/BaboonTests/MyOkM31"
+        ),
+        .testTarget(
+            name: "MyOkM33Tests",
+            dependencies: ["BaboonRuntime", "MyOkM33"],
+            path: "Tests/BaboonTests/MyOkM33"
+        ),
+        .testTarget(
+            name: "ReservedWordsTests",
+            dependencies: ["BaboonRuntime", "ReservedWords"],
+            path: "Tests/BaboonTests/ReservedWords"
+        ),
+        .testTarget(
             name: "MyOkM19AliasTests",
             dependencies: ["BaboonRuntime", "MyOkM19Alias"],
             path: "Tests/BaboonTests/MyOkM19Alias"
@@ -335,14 +460,29 @@ let package = Package(
             path: "Tests/BaboonTests/MyOkM20Lexical"
         ),
         .testTarget(
+            name: "MyOkM20Multi_intersectTests",
+            dependencies: ["BaboonRuntime", "MyOkM20Multi_intersect"],
+            path: "Tests/BaboonTests/MyOkM20Multi_intersect"
+        ),
+        .testTarget(
             name: "MyOkM20NsqualTests",
             dependencies: ["BaboonRuntime", "MyOkM20Nsqual"],
             path: "Tests/BaboonTests/MyOkM20Nsqual"
         ),
         .testTarget(
+            name: "MyOkM20RedefineTests",
+            dependencies: ["BaboonRuntime", "MyOkM20Redefine"],
+            path: "Tests/BaboonTests/MyOkM20Redefine"
+        ),
+        .testTarget(
             name: "MyOkM20SimpleTests",
             dependencies: ["BaboonRuntime", "MyOkM20Simple"],
             path: "Tests/BaboonTests/MyOkM20Simple"
+        ),
+        .testTarget(
+            name: "MyOkM20Was_propagationTests",
+            dependencies: ["BaboonRuntime", "MyOkM20Was_propagation"],
+            path: "Tests/BaboonTests/MyOkM20Was_propagation"
         ),
         .testTarget(
             name: "MyOkScopeTests",

@@ -390,6 +390,7 @@ if ! command -v swift &> /dev/null; then
 fi
 
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+./scripts/swift-check-targets.sh "$TEST_DIR/sw-stub"
 ./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
 
 ret success:bool=true
@@ -719,6 +720,7 @@ if ! command -v swift &> /dev/null; then
 fi
 
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+./scripts/swift-check-targets.sh "$TEST_DIR/sw-stub"
 ./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
 
 ret success:bool=true
