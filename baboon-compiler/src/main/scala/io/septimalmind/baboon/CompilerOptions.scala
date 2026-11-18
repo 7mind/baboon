@@ -367,7 +367,7 @@ final case class OutputOptions(
       case RuntimeGenOpt.With    => Set(CompilerProduct.Runtime, CompilerProduct.Definition)
     }
     val conversionProducts = if (generateConversions) Set(CompilerProduct.Conversion) else Set.empty
-    val fixturesProducts   = fixturesOutput.map(_ => CompilerProduct.Fixture).toSet
+    val fixturesProducts   = fixturesOutput.map(_ => Set(CompilerProduct.Fixture, CompilerProduct.FixtureRuntime)).getOrElse(Set.empty)
     val testProducts       = testsOutput.map(_ => Set(CompilerProduct.Test, CompilerProduct.FixtureRuntime)).getOrElse(Set.empty)
 
     defaultProducts ++ conversionProducts ++ fixturesProducts ++ testProducts
@@ -396,6 +396,27 @@ final case class OutputOptions(
   def targetPaths: Map[CompilerProduct, FSPath] = {
     products.flatMap(t => targetPathFor(t).map(p => (t, p))).toMap
   }
+
+  // Where each output is rooted below the closest directory they all share. An output that was
+  // not requested takes no part in finding that directory; a lone `output` is a package of its
+  // own name.
+  lazy val packageBases: OutputOptions.PackageBases = {
+    val optional = List(fixturesOutput, testsOutput).flatten
+    val commonPrefix = optional.map(_.segments).foldLeft(output.segments) {
+      (prefix, next) => prefix.zip(next).takeWhile { case (a, b) => a == b }.map(_._1)
+    }
+    def below(path: FSPath): List[String] = path.segments.drop(commonPrefix.size).map(_.mkString).toList
+
+    if (optional.nonEmpty && commonPrefix.nonEmpty) {
+      OutputOptions.PackageBases(below(output), fixturesOutput.toList.flatMap(below), testsOutput.toList.flatMap(below))
+    } else {
+      OutputOptions.PackageBases(List(output.name.mkString), Nil, Nil)
+    }
+  }
+}
+
+object OutputOptions {
+  final case class PackageBases(definitions: List[String], fixtures: List[String], tests: List[String])
 }
 
 sealed trait LockfileUpdate
