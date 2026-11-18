@@ -254,4 +254,15 @@ class SwTypeTranslator {
   def escapeSwiftKeyword(name: String): String = {
     if (swiftKeywords.contains(name)) s"`$name`" else name
   }
+
+  // In an expression `X.Type` and `X.Protocol` are metatypes of `X` whatever the backticks say,
+  // so a dotted path to a type with such a name resolves only in type position.
+  private val metatypeMemberNames: Set[String] = Set("Type", "Protocol")
+
+  def renderTypePath(module: Option[String], name: String): String = {
+    val segments  = name.split('.')
+    val path      = (module.toList ++ segments.map(escapeSwiftKeyword)).mkString(".")
+    val qualified = module.toList ++ segments
+    if (qualified.drop(1).exists(metatypeMemberNames.contains)) s"BaboonTypePosition<$path>" else path
+  }
 }

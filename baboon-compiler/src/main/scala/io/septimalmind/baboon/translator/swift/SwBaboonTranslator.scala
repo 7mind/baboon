@@ -335,11 +335,9 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     val rendered = o.tree.mapRender {
       case t: SwValue.SwTypeName => trans.escapeSwiftKeyword(t.name)
       case t: SwValue.SwType if t.fq =>
-        val moduleName  = t.pkg.parts.head
-        val escapedName = t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
-        s"$moduleName.$escapedName"
+        trans.renderTypePath(Some(t.pkg.parts.head), t.name)
       case t: SwValue.SwType =>
-        t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
+        trans.renderTypePath(None, t.name)
     }
 
     if (o.doNotModify) {

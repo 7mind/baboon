@@ -60,6 +60,10 @@ extension BaboonIndirect: Hashable where Value: Hashable {
 
 // --- Metadata Interfaces ---
 
+// Generated code names a type through this alias when the type is called `Type` or `Protocol`:
+// in an expression `X.Type` is the metatype of `X`, while a generic argument is a type position.
+public typealias BaboonTypePosition<T> = T
+
 public protocol BaboonGenerated {}
 
 public protocol BaboonGeneratedLatest: BaboonGenerated {}

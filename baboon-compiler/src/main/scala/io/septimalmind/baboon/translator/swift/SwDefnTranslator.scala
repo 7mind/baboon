@@ -969,11 +969,8 @@ object SwDefnTranslator {
       // mode; the container syntax itself is plain text emitted via SwTypeName so
       // the no-codec backends never see it as a real symbol.
       val swFqName: SwValue => String = {
-        case t: SwType if t.fq =>
-          val module  = t.pkg.parts.head
-          val escaped = t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
-          s"$module.$escaped"
-        case t: SwType             => t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
+        case t: SwType if t.fq     => trans.renderTypePath(Some(t.pkg.parts.head), t.name)
+        case t: SwType             => trans.renderTypePath(None, t.name)
         case n: SwValue.SwTypeName => trans.escapeSwiftKeyword(n.name)
       }
 
